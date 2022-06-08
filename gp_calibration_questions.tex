@@ -84,7 +84,23 @@ refers to calibration parameters. I would assume there is also some notion of ob
 \end{itemize}
 
 \subsection{Statistical Model Relating Computer Simulation and Observational Data}
+I have already defined the computer model $f$, and I will denote the outputs of this model as $y = f(x, u)$, for parameter values $(x, u) \in \mathcal{X} \times \mathcal{U} = \mathcal{P}$.
+The real interest lies with the actual physical process that the computer model seeks to replicate. I will denote the value of this physical process at $x \in \mathcal{X}$ by $z^*(x)$. 
+However, the field observations of this process - which I denote by $z(x)$ - are noisy. We thus assume a typical Gaussian noise model for these observations. 
+\[z(x) = z^*(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^2)\]  
+Kennedy and O'Hagan then relate the physical process to the computer model via 
+\[z^*(x) = f(x, u) + b(x)\]
+where $b(\cdot)$ is a discrepancy term or ``bias''. My understanding of the current PEcAn approach is to set $b \equiv 0$, which assumes that the computer model is faithful to the physical
+process (when calibrated correctly). The ``$u$'' in the above expression can thus be interpreted as the ``true'' or ``correct''  value of the calibration parameters, though I don't think this 
+point is especially necessary in a Bayesian framework. 
 
+To summarize, the Kennedy and O'Hagan model is 
+\[z(x) = z^*(x) + \epsilon = f(x, u) + b(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^2)\] 
+
+\subsubsection{Questions}
+\begin{itemize}
+\item Am I correct in assuming that you are using the above model with discrepancy $b \equiv 0$?
+\end{itemize}
 
 
 \section{PEcAn Code}
