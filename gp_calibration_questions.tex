@@ -1,0 +1,98 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\def\R{\mathbb{R}}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\newcommand*{\vertbar}{\rule[-1ex]{0.5pt}{2.5ex}} % For lines in matrix to represent columns
+\newcommand*{\horzbar}{\rule[.5ex]{2.5ex}{0.5pt}} % For lines in matrix to represent rows
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{notation}{Notation}
+
+\begin{document}
+
+\begin{center}
+\Large
+Questions on GP Emulation/Calibration Methodology 
+\end{center}
+
+\section{Methodological Foundations}
+I have been using Robert Gramacy's free online \href{https://bobby.gramacy.com/surrogates/}{textbook} on GPs and surrogate modeling as a primary reference on calibration of 
+computer models. It is quite recent and nicely synthesizes many of the important papers on the subject. I do use my own notation here though, as I find that his can contain a somewhat
+excessive number of sub and superscripts. I'll just walk through my understanding of the methodology, asking questions along the way. 
+
+\subsection{Defining the Parameters of Interest}
+The \textit{computer model} (i.e. \textit{simulator} or \textit{process-based model}, as referred to in the PEcAn papers) is deterministic and hence can be modeled as a function
+$f: \mathcal{P} \to \R$, where $\mathcal{P} \subset \R^d$ is the parameter space of the computer model. For now I am assuming scalar output for simplicity, although I know that 
+most of the PEcAn models have many outputs. The Kennedy and O'Hagan calibration framework (summarized in Gramacy's book) distinguishes between two types of parameters, so 
+that 
+\[\mathcal{P} = \mathcal{X} \times \mathcal{U}\]
+where $\mathcal{X}$ is the space of \textit{observational parameters} and $\mathcal{U}$ the space of \textit{calibration parameters}. The former refers to those parameters that are 
+observed in the real-world data and can also be included in the computer model. The calibration parameters cannot be observed in the real-world; this can mean that they have no 
+real-world meaning (e.g. the mesh size in the computer model) or that they do exist in the real-world but cannot be directly observed. To my understanding, the observation parameters
+are just like covariates in a typical regression, in the sense that the analysis will be conducted conditional on the values of the observation parameters. The calibration parameters are 
+the true objects of interest; we seek to tune these parameters using field data as well as understand the uncertainty in the computer model as a function of the calibration parameters. 
+
+\subsubsection{Questions}
+\begin{itemize}
+\item Is the distinction between observation and calibration parameters relevant for the PEcAn models? My understanding is that what you refer to as \textit{process-model parameters}
+refers to calibration parameters. I would assume there is also some notion of observation parameters. 
+\end{itemize}
+
+\subsection{Statistical Model Relating Computer Simulation and Observational Data}
+
+
+
+\section{PEcAn Code}
+
+
+\end{document} 
+
+
+
+
+
