@@ -96,11 +96,27 @@ point is especially necessary in a Bayesian framework.
 
 To summarize, the Kennedy and O'Hagan model is 
 \[z(x) = z^*(x) + \epsilon = f(x, u) + b(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^2)\] 
+and assume we have observational data $\{(x_i, z_i)\}_{i = 1}^{n}$. Let $z := (z_1, \dots, z_n)^T$. 
+
+For the remainder of this document I will set the discrepancy to $0$, as I believe that's what is done in PEcAn, which gives the working model: 
+\[z_i|x_i, u \overset{ind}{\sim} N(y_i^u, \tau^2), \qquad i = 1, \dots, n \]
+where $y_i^u := f(x_i, u)$. 
 
 \subsubsection{Questions}
 \begin{itemize}
 \item Am I correct in assuming that you are using the above model with discrepancy $b \equiv 0$?
 \end{itemize}
+
+\subsection{``Brute Force'' Calibration}
+You mention a brute force calibration strategy in your paper, and I just wanted to write that out below to make sure I'm on the right page. The current parameters of interest are
+$u$ and $\tau$. We therefore have posterior (conditional on field observations), 
+\[p(u, \tau|z) \propto p(z|u, \tau)p(u, \tau) = N_n(z|y^u, \tau^2 I_n)p(u, \tau)\]
+for some assumed prior on $(u, \tau)$ and where $y^u := (y_1^u, \dots, y_n^u)$. Everything here is implicitly conditional on $x_1, \dots, x_n$ but I will suppress this to simplify notation. 
+We can use MCMC to sample from this posterior. However, the key observation is that evaluating the likelihood $N_n(z|y^u, \tau^2 I_n)$ requires the computation of $y^u$, which 
+involves running the entire simulation with the current calibration $u$. Therefore, the computer model must be run in full at every single step of MCMC, 
+which is infeasible for computationally expensive simulations. 
+
+\subsection{Emulator Methodology: ``Modular Approach''}
 
 
 \section{PEcAn Code}
