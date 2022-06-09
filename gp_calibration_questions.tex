@@ -125,7 +125,7 @@ The calibration approach is as follows.
 \item Run the full model on $N$ design points (i.e. knots): $\{(x_1^m, u_1), \dots, (x_N^m, u_N)\}$, where the ``m'' superscript differentiates from the vector of observation parameters $x$
 sampled in the field data. Presumably, the design points are chosen such that $\{x_1^m, \dots, x_N^m\} \subset \{x_1, \dots, x_n\}$; that is, the model is run at the observation parameter
 values observed in the real-world, with the possibility of replicates. Continuing with the same notation as before, let $x^m$ and $u^m$ be N-dimensional vectors containing the 
-$x_i^m$ and $u_i^m$, respectively. Also let $y^m = (y_1^{u_1}, \dots, y_N^{u_N})$ be the vector of simulator outputs evaluated at the $N$ design points. 
+$x_i^m$ and $u_i$, respectively. Also let $y^m = (y_1^{u_1}, \dots, y_N^{u_N})$ be the vector of simulator outputs evaluated at the $N$ design points. 
 \item Fit the GP emulator \textit{only using the computer model data} $y^m$. Denote the fit emulator by $\eta$. 
 \item Now essentially conduct the brute force approach described above, but with $\eta$ replacing $f$. That is, we sample from posterior
 \[p(u, \tau|z, \eta) \propto p(z|u, \tau, \eta)p(u, \tau) = N_n(z|\eta(x, u), \tau^2 I_n)p(u, \tau)\]
@@ -142,19 +142,42 @@ The above section approached the problem of sampling from the posterior
 by replacing the full simulator computations $y^u$ with a surrogate that approximates the full computations. Assuming the surrogate is much faster than the original simulation, then 
 this can drastically speed likelihood computation. An alternative method is to essentially skip this intermediate step and directly emulate the likelihood itself. In this case, the function 
 we seek to emulate is
-\[\tilde{f}(x_i, u_i) := p(z_i|y_i^{u_i}, \tau) = N(z_i|y_i^{u_i}, \tau^2)\]\
+\[\tilde{f}(x_i, z_i, u) := p(z_i|y_i^{u}, \tau) = N(z_i|y_i^{u}, \tau^2)\]\
+To be able to  define this I believe we must consider the extended input space $\mathcal{X} \times \mathcal{Z} \times \mathcal{U}$, which has added the space of observed real-world
+outputs as an extension to the parameter space $\mathcal{P}$. 
 Taking things a step further, we can emulate a sufficient statistic that allows full calculation of the likelihood. That is, we can emulate
-\[T(x_i, u_i) := (z_i - y_i^{u_i})^2\]\
+\[T(x_i, z_i, u) := (z_i - y_i^{u})^2\]\
+Let $\hat{T}(\cdot, \cdot, \cdot)$ denote the fitted GP emulator. 
+This approach again allows cheaper (approximate) likelihood computations. Indeed, the likelihood of observed data $z \in \R^n$ (implicitly conditioned on $x \in \R^n$) is given by  
+\begin{align*}
+p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \norm{z - y^u}^2_2 \right\} \\
+					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\} \\
+\end{align*}
+Thus, the likelihood can be approximated using evaluations of the GP $\hat{T}$. 
+Given this, here is my current understanding of the emulator methodology (for a single site). I'm not considering the experimental design or MCMC methodologies yet at this point, so 
+I take them as given. 
+\begin{itemize}
+\item Choose design points $\{(x_1^m, z_1^m, u_1), \dots (x_N^m, z_N^m, u_N)\}$. 
+\item Run full simulator at these $(x_i^m, u_i)$ points, producing the vector of simulator outputs $y^m \in \R^N$, as before. 
+\item Fit GP emulator to the mapping $T(x_i, z_i, u) = (z_i - y_i^{u})^2$, producing fit emulator $\hat{T}(\cdot, \cdot, \cdot)$. 
+\item Perform MCMC for the approximate posterior
+\[p(u, \tau|x^m, z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}p(u, \tau)\]
+\end{itemize}
 
 \subsubsection{Questions}
 \begin{itemize}
 \item What choices are you making for the GP parameters (mean function $\mu$ and kernel/covariance function $k$)?
 \item Am I correct in defining the sufficient statistic function that you are emulating? 
+\item The fact that I am differentiating between parameters $x$ and $u$ means that each (exact) likelihood evaluation (likelihood for the entire observed 
+data vector $z \in \R^n$) requires $n$ runs of the simulation, one run for each $x_i$. This may not accurately capture how the SIPNET or other models work, 
+as I haven't looked into the specifics yet. 
 \end{itemize}
 
+\subsection{MCMC Algorithm}
+\textbf{TODO}
 
 \section{PEcAn Code}
-
+\textbf{TODO}
 
 \end{document} 
 
