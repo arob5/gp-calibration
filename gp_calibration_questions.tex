@@ -118,9 +118,9 @@ which is infeasible for computationally expensive simulations.
 
 \subsection{Emulator Methodology: ``Modular Approach''}
 To deal with the computational issue in the brute force approach, we replace the computer model with a GP emulator/surrogate $\eta(\cdot) \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$. 
-Among the various emulator calibration approaches, I believe you are using the ``modular'' approach described in Gramacy 8.1.2 and originally in 
+Among the various emulator calibration approaches, a simple one is the ``modular'' approach described in Gramacy 8.1.2 and originally in 
 \href{https://projecteuclid.org/journals/bayesian-analysis/volume-4/issue-1/Modularization-in-Bayesian-analysis-with-emphasis-on-analysis-of-computer/10.1214/09-BA404.full}{Bayarri et al (2009)}. 
-For now I am considering emulating the model outputs directly; I know that you emulate the sufficient statistics - I'll add this in once i have the basics down. The calibration approach is as follows. 
+The calibration approach is as follows. 
 \begin{enumerate}
 \item Run the full model on $N$ design points (i.e. knots): $\{(x_1^m, u_1), \dots, (x_N^m, u_N)\}$, where the ``m'' superscript differentiates from the vector of observation parameters $x$
 sampled in the field data. Presumably, the design points are chosen such that $\{x_1^m, \dots, x_N^m\} \subset \{x_1, \dots, x_n\}$; that is, the model is run at the observation parameter
@@ -132,10 +132,17 @@ $x_i^m$ and $u_i^m$, respectively. Also let $y^m = (y_1^{u_1}, \dots, y_N^{u_N})
 Now in each step of MCMC we need only evaluate the mean of the GP $\eta(x, u)$ at the current proposed $u$, rather than the whole computer model $f$. 
 \end{enumerate}
 This approach is not the one proposed by Kennedy and O'Hagan, which is the ``fully Bayesian'' approach: they assume a GP prior for $f$, then consider the posterior over the GP parameters
-in addition to the other parameters. Gramacy notes that the modular approach can help to avoid some of the pathologies sometimes present in the fully Bayesian approach. 
+in addition to the other parameters. Gramacy notes that the modular approach can help to avoid some of the pathologies sometimes present in the fully Bayesian approach. This is of course not
+the approach used in PEcAn as I am still considering emulating model outputs directly here (instead of sufficient statistics), but I still find it helpful to review before considering the sufficient 
+statistic approach. 
 
-\textbf{TODO:} I don't think they're using this approach since they are emulating the discrepancy with field data and thus using the field data to fit the GP. 
-
+\subsection{Emulator Methodology: Emulating Likelihood}
+The above section approached the problem of sampling from the posterior
+\[p(u, \tau|z) \propto N_n(z|y^u, \tau^2 I_n)p(u, \tau)\]
+by replacing the full simulator computations $y^u$ with a surrogate that approximates the full computations. Assuming the surrogate is much faster than the original simulation, then 
+this can drastically speed likelihood computation. An alternative method is to essentially skip this intermediate step and directly emulate the likelihood itself. In this case, the function 
+we seek to emulate is
+\[f(x_i, u) = p(z_i|x_i, )\]
 
 \subsubsection{Questions}
 \begin{itemize}
