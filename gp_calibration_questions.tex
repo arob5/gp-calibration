@@ -142,12 +142,14 @@ The above section approached the problem of sampling from the posterior
 by replacing the full simulator computations $y^u$ with a surrogate that approximates the full computations. Assuming the surrogate is much faster than the original simulation, then 
 this can drastically speed likelihood computation. An alternative method is to essentially skip this intermediate step and directly emulate the likelihood itself. In this case, the function 
 we seek to emulate is
-\[f(x_i, u) = p(z_i|x_i, )\]
+\[\tilde{f}(x_i, u_i) := p(z_i|y_i^{u_i}, \tau) = N(z_i|y_i^{u_i}, \tau^2)\]\
+Taking things a step further, we can emulate a sufficient statistic that allows full calculation of the likelihood. That is, we can emulate
+\[T(x_i, u_i) := (z_i - y_i^{u_i})^2\]\
 
 \subsubsection{Questions}
 \begin{itemize}
-\item Am I correct in describing the calibration methodology used in PEcAn? 
 \item What choices are you making for the GP parameters (mean function $\mu$ and kernel/covariance function $k$)?
+\item Am I correct in defining the sufficient statistic function that you are emulating? 
 \end{itemize}
 
 
