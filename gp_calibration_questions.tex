@@ -80,7 +80,8 @@ the true objects of interest; we seek to tune these parameters using field data 
 \subsubsection{Questions}
 \begin{itemize}
 \item Is the distinction between observation and calibration parameters relevant for the PEcAn models? My understanding is that what you refer to as \textit{process-model parameters}
-refers to calibration parameters. I would assume there is also some notion of observation parameters. 
+refers to calibration parameters. I would assume there is also some notion of observation parameters. \\
+\textbf{Answer: } Yes, the distinction is relevant, but typically don't have well-constrained observable parameters. Looking at the code should help clear up how these are treated. 
 \end{itemize}
 
 \subsection{Statistical Model Relating Computer Simulation and Observational Data}
@@ -104,7 +105,8 @@ where $y_i^u := f(x_i, u)$.
 
 \subsubsection{Questions}
 \begin{itemize}
-\item Am I correct in assuming that you are using the above model with discrepancy $b \equiv 0$?
+\item Am I correct in assuming that you are using the above model with discrepancy $b \equiv 0$? \\
+\textbf{Answer: } Yes, this is correct. The future possibility of including a discrepancy term is mentioned in section 4.2 of Fer et al (2018). 
 \end{itemize}
 
 \subsection{``Brute Force'' Calibration}
@@ -166,11 +168,10 @@ I take them as given.
 
 \subsubsection{Questions}
 \begin{itemize}
-\item What choices are you making for the GP parameters (mean function $\mu$ and kernel/covariance function $k$)?
+\item What choices are you making for the GP parameters (mean function $\mu$ and kernel/covariance function $k$)? \\
+\textbf{Answer: } Using the defaults of the \textit{mlegp} R package. I believe the default kernel is the inverse squared exponential but I need to check. 
 \item Am I correct in defining the sufficient statistic function that you are emulating? 
-\item The fact that I am differentiating between parameters $x$ and $u$ means that each (exact) likelihood evaluation (likelihood for the entire observed 
-data vector $z \in \R^n$) requires $n$ runs of the simulation, one run for each $x_i$. This may not accurately capture how the SIPNET or other models work, 
-as I haven't looked into the specifics yet. 
+\textbf{Answer: } Yes. 
 \end{itemize}
 
 \subsection{MCMC Algorithm}
