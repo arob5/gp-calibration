@@ -177,6 +177,50 @@ I take them as given.
 \subsection{MCMC Algorithm}
 \textbf{TODO}
 
+
+\section{Future Directions}
+\subsection{GP Modeling Improvements} (Istem's work with her student this summer)
+\begin{itemize}
+\item Investigating radial/isotropic covariance assumption (i.e. using separable/antisotropic kernels) (see Gramacy 5.2.5).
+\item Investigating stationarity assumption. 
+	\begin{itemize}
+	\item Heteroskedastic modeling (see Gramacy ch 10). 
+	\end{itemize}
+\end{itemize}
+
+\subsection{Experimental Design Improvements}
+\begin{itemize}
+\item Lots of literature in sequential design/active learning/Bayesian optimization
+\end{itemize}
+
+\subsection{Speeding up GP calculations}
+There is a lot of literature in this area as well, with all of the techniques essentially trying to cope with the expensive matrix decompositions required 
+to calculate the inverse and determinant in the equations used for GP prediction and inference. The introduction to chapter 9 in Gramacy's book has a 
+very nice list of some of these methods (pseudo-inputs, compactly supported kernels, local neighborhoods, etc.) 
+
+\subsection{MCMC}
+Here, we focus in on specific improvements on MCMC side of things, noting that there could certainly be interplay between the previous areas of possible improvement 
+and improvements to the MCMC algorithm itself. 
+
+As a first step, Jonathan has already mentioned the potential for adopting a gradient-based approach by trying out Hamiltonian Monte Carlo. 
+
+There is certainly a wide body of literature on MCMC algorithms in settings with expensive likelihood calculations. I looked around a bit for literature in this vein but 
+tailored specifically to parameter calibration for computer experiments and didn't find as much as I expected. Here are some papers I did find: 
+\begin{itemize}
+\item \href{https://docs.google.com/document/d/16C8Zjw3b5aVr-hwDpqHWf8gr0cP80vcCHxAlFY6zVkE/edit#heading=h.mw4tscs8lgdr}{Bayesian calibration of terrestrial ecosystem models: a study of advanced Markov chain Monte Carlo methods}
+\item \href{https://www.tandfonline.com/doi/abs/10.1198/TECH.2010.09195}{Efficient MCMC Schemes for Computationally Expensive Posterior Distributions}
+\item \href{https://www.sciencedirect.com/science/article/pii/S0304380021001708}{Sequential Monte-Carlo algorithms for Bayesian model calibration – A review and method comparison} 
+(SMC, but interesting comparison to MCMC in the calibration setting)
+\end{itemize}
+
+
+
+\subsection{Targeting Specific Needs in Terrestrial Carbon Monitoring}
+I included this section as a longer-term goal of better understanding the current state of the terrestrial carbon monitoring field, and how a combination 
+of improvements in statistical modeling and computational techniques might help address current limitations. 
+
+
+
 \section{PEcAn Code}
 \textbf{TODO}
 
