@@ -124,14 +124,14 @@ Among the various emulator calibration approaches, a simple one is the ``modular
 \href{https://projecteuclid.org/journals/bayesian-analysis/volume-4/issue-1/Modularization-in-Bayesian-analysis-with-emphasis-on-analysis-of-computer/10.1214/09-BA404.full}{Bayarri et al (2009)}. 
 The calibration approach is as follows. 
 \begin{enumerate}
-\item Run the full model on $N$ design points (i.e. knots): $\{(x_1^m, u_1), \dots, (x_N^m, u_N)\}$, where the ``m'' superscript differentiates from the vector of observation parameters $x$
-sampled in the field data. Presumably, the design points are chosen such that $\{x_1^m, \dots, x_N^m\} \subset \{x_1, \dots, x_n\}$; that is, the model is run at the observation parameter
-values observed in the real-world, with the possibility of replicates. Continuing with the same notation as before, let $x^m$ and $u^m$ be N-dimensional vectors containing the 
-$x_i^m$ and $u_i$, respectively. Also let $y^m = (y_1^{u_1}, \dots, y_N^{u_N})$ be the vector of simulator outputs evaluated at the $N$ design points. 
-\item Fit the GP emulator \textit{only using the computer model data} $y^m$. Denote the fit emulator by $\eta$. 
-\item Now essentially conduct the brute force approach described above, but with $\eta$ replacing $f$. That is, we sample from posterior
-\[p(u, \tau|z, \eta) \propto p(z|u, \tau, \eta)p(u, \tau) = N_n(z|\eta(x, u), \tau^2 I_n)p(u, \tau)\]
-Now in each step of MCMC we need only evaluate the mean of the GP $\eta(x, u)$ at the current proposed $u$, rather than the whole computer model $f$. 
+\item Run the full model on $N$ design points (i.e. knots): $\{(\tilde{x}_1, u_1), \dots, (\tilde{x}_N, u_N)\}$, where the tilde differentiates these points from the vector of observation parameters $x$
+sampled in the field data. Presumably, the design points are chosen such that $\{\tilde{x}_1, \dots, \tilde{x}_N\} \subset \{x_1, \dots, x_n\}$; that is, the model is run at the observation parameter
+values observed in the real-world, with the possibility of replicates. Let $\tilde{x}$ and $\tilde{u}$ be N-dimensional vectors containing the 
+$\tilde{x}_i$ and $\tilde{u}_i$, respectively. Also let $\tilde{y} := (y_1^{\tilde{u}_1}, \dots, y_N^{\tilde{u}_N})$ be the vector of simulator outputs evaluated at the $N$ design points. 
+\item Fit the GP emulator \textit{only using the computer model data} $\tilde{y}$. Denote the fit emulator by $\hat{f}$. 
+\item Now essentially conduct the brute force approach described above, but with $\hat{f}$ replacing $f$. That is, we sample from posterior
+\[p(u, \tau|z, \hat{f}) \propto p(z|u, \tau, \hat{f})p(u, \tau) = N_n(z|\hat{f}(x, u), \tau^2 I_n)p(u, \tau)\]
+Now in each step of MCMC we need only evaluate the mean of the GP $\hat{f}(x, u)$ at the current proposed $u$, rather than the whole computer model $f$. 
 \end{enumerate}
 This approach is not the one proposed by Kennedy and O'Hagan, which is the ``fully Bayesian'' approach: they assume a GP prior for $f$, then consider the posterior over the GP parameters
 in addition to the other parameters. Gramacy notes that the modular approach can help to avoid some of the pathologies sometimes present in the fully Bayesian approach. This is of course not
@@ -144,26 +144,28 @@ The above section approached the problem of sampling from the posterior
 by replacing the full simulator computations $y^u$ with a surrogate that approximates the full computations. Assuming the surrogate is much faster than the original simulation, then 
 this can drastically speed likelihood computation. An alternative method is to essentially skip this intermediate step and directly emulate the likelihood itself. In this case, the function 
 we seek to emulate is
-\[\tilde{f}(x_i, z_i, u) := p(z_i|y_i^{u}, \tau) = N(z_i|y_i^{u}, \tau^2)\]\
-To be able to  define this I believe we must consider the extended input space $\mathcal{X} \times \mathcal{Z} \times \mathcal{U}$, which has added the space of observed real-world
-outputs as an extension to the parameter space $\mathcal{P}$. 
+\[L(x, z, u) := p(z|y^{u}, \tau) = N_n(z|y^{u}, \tau^2 I_n)\]\
+To be able to  define this I believe we must consider the extended input space $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{U}$, where $\mathcal{X}^n = \mathcal{X} \times \cdots \times \mathcal{X}$
+and similarly for $\mathcal{Z}^n$.
 Taking things a step further, we can emulate a sufficient statistic that allows full calculation of the likelihood. That is, we can emulate
-\[T(x_i, z_i, u) := (z_i - y_i^{u})^2\]\
-Let $\hat{T}(\cdot, \cdot, \cdot)$ denote the fitted GP emulator. 
+\[T(x, z, u) := \sum_{i = 1}^n (z_i - y_i^{u})^2\]\
+again defined on the domain $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{U}$. Let $\hat{T}(\cdot, \cdot, \cdot)$ denote the fitted GP emulator. 
 This approach again allows cheaper (approximate) likelihood computations. Indeed, the likelihood of observed data $z \in \R^n$ (implicitly conditioned on $x \in \R^n$) is given by  
 \begin{align*}
 p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \norm{z - y^u}^2_2 \right\} \\
-					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\} \\
+					         &= \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} T(x_i, z_i, u) \right\} \\
+					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}
 \end{align*}
 Thus, the likelihood can be approximated using evaluations of the GP $\hat{T}$. 
 Given this, here is my current understanding of the emulator methodology (for a single site). I'm not considering the experimental design or MCMC methodologies yet at this point, so 
 I take them as given. 
 \begin{itemize}
-\item Choose design points $\{(x_1^m, z_1^m, u_1), \dots (x_N^m, z_N^m, u_N)\}$. 
-\item Run full simulator at these $(x_i^m, u_i)$ points, producing the vector of simulator outputs $y^m \in \R^N$, as before. 
-\item Fit GP emulator to the mapping $T(x_i, z_i, u) = (z_i - y_i^{u})^2$, producing fit emulator $\hat{T}(\cdot, \cdot, \cdot)$. 
+\item Choose design points $\{(\tilde{x}_1, \tilde{z}_1, \tilde{u}_1), \dots (\tilde{x}_N, \tilde{z}_N, \tilde{u}_N)\}$, where $\tilde{x}_i \in \mathcal{X}^n$, $\tilde{z}_i \in \mathcal{Z}^n$, and $u_i \in \mathcal{U}$. 
+\item Run full simulator at the $(\tilde{x}_i, \tilde{u}_i)$ points, producing the vector of simulator outputs $\tilde{y} \in \R^{N \times n}$. This requires $N \times n$ runs since $\tilde{x}_i$ and $\tilde{z}_i$
+each have $n$ components. 
+\item Fit GP emulator to the mapping $T(x, z, u) := \sum_{i = 1}^n (z_i - y_i^{u})^2$ using the dataset $\left\{(\tilde{x}_{ij}, \tilde{z}_{ij}, \tilde{u}_i), y_{ij}^{\tilde{u}_i}\right\}_{1 \leq i \leq N, 1 \leq j \leq n}$, producing fit emulator $\hat{T}(\cdot, \cdot, \cdot)$. 
 \item Perform MCMC for the approximate posterior
-\[p(u, \tau|x^m, z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}p(u, \tau)\]
+\[p(u, \tau|z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}p(u, \tau)\]
 \end{itemize}
 
 \subsubsection{Questions}
@@ -207,7 +209,7 @@ As a first step, Jonathan has already mentioned the potential for adopting a gra
 There is certainly a wide body of literature on MCMC algorithms in settings with expensive likelihood calculations. I looked around a bit for literature in this vein but 
 tailored specifically to parameter calibration for computer experiments and didn't find as much as I expected. Here are some papers I did find: 
 \begin{itemize}
-\item \href{https://docs.google.com/document/d/16C8Zjw3b5aVr-hwDpqHWf8gr0cP80vcCHxAlFY6zVkE/edit#heading=h.mw4tscs8lgdr}{Bayesian calibration of terrestrial ecosystem models: a study of advanced Markov chain Monte Carlo methods}
+\item \href{https://bg.copernicus.org/articles/14/4295/2017/}{Bayesian calibration of terrestrial ecosystem models: a study of advanced Markov chain Monte Carlo methods}
 \item \href{https://www.tandfonline.com/doi/abs/10.1198/TECH.2010.09195}{Efficient MCMC Schemes for Computationally Expensive Posterior Distributions}
 \item \href{https://www.sciencedirect.com/science/article/pii/S0304380021001708}{Sequential Monte-Carlo algorithms for Bayesian model calibration – A review and method comparison} 
 (SMC, but interesting comparison to MCMC in the calibration setting)
@@ -222,7 +224,10 @@ of improvements in statistical modeling and computational techniques might help 
 
 
 \section{PEcAn Code}
-\textbf{TODO}
+\subsection{Suggestions/Updates}
+\begin{enumerate}
+\item Add a config file to specify file paths that will be read by makefile, rather than having file paths embedded in makefile itself. 
+\end{enumerate}
 
 \end{document} 
 
