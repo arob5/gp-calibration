@@ -210,9 +210,14 @@ There is certainly a wide body of literature on MCMC algorithms in settings with
 tailored specifically to parameter calibration for computer experiments and didn't find as much as I expected. Here are some papers I did find: 
 \begin{itemize}
 \item \href{https://bg.copernicus.org/articles/14/4295/2017/}{Bayesian calibration of terrestrial ecosystem models: a study of advanced Markov chain Monte Carlo methods}
-\item \href{http://mlg.eng.cam.ac.uk/pub/pdf/Ras03.pdf}{Gaussian Processes to Speed Up Hybrid Monte Carlo for Expensive Bayesian Integrals}
+	\begin{itemize}
+	\item Advocates Differential Evolution Adaptive Metropolis (DREAM) over Adaptive Metropolis (AM)
+	\item Finds that DREAM improves model fit and predictive performance, and identifies multimodal distributions of parameters where AM fails. 
+	\item Also finds that heteroskedastic Gaussian noise model is appropriate, whereas uncorrelated error model would underestimate parameter uncertainty. 
+	\end{itemize}
 \item \href{https://www.tandfonline.com/doi/abs/10.1198/TECH.2010.09195}{Efficient MCMC Schemes for Computationally Expensive Posterior Distributions}
 	\begin{itemize}
+	\item Builds on Rasmussen's work \href{http://mlg.eng.cam.ac.uk/pub/pdf/Ras03.pdf}{Gaussian Processes to Speed Up Hybrid Monte Carlo for Expensive Bayesian Integrals}
 	\item HMC approach with GP approximation to log posterior.
 	\item Parallel tempering for multimodal distributions.
 	\item True target (i.e. using full simulation) is maintained at the lowest temperature, so stationary distribution of lowest temperature chain is exactly the posterior of interest. 
@@ -227,7 +232,12 @@ tailored specifically to parameter calibration for computer experiments and didn
 
 \subsection{Targeting Specific Needs in Terrestrial Carbon Monitoring}
 I included this section as a longer-term goal of better understanding the current state of the terrestrial carbon monitoring field, and how a combination 
-of improvements in statistical modeling and computational techniques might help address current limitations. 
+of improvements in statistical modeling and computational techniques might help address current limitations. To this end, here are some papers I have bookmarked 
+for future reading. 
+\begin{itemize}
+\item \href{https://www.globalcarbonproject.org/global/pdf/trudinger.07_opti_jgr.pdf}{OptIC project: An intercomparison of optimization techniques for parameter estimation in terrestrial biogeochemical models}
+\item \href{https://centaur.reading.ac.uk/28464/1/Fox_etal.REFLEX.AFM.2009.pdf}{The REFLEX project: Comparing different algorithms and implementations for the inversion of a terrestrial ecosystem model against eddy covariance data}
+\end{itemize}
 
 
 
