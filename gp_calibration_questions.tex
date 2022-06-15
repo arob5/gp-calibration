@@ -210,7 +210,15 @@ There is certainly a wide body of literature on MCMC algorithms in settings with
 tailored specifically to parameter calibration for computer experiments and didn't find as much as I expected. Here are some papers I did find: 
 \begin{itemize}
 \item \href{https://bg.copernicus.org/articles/14/4295/2017/}{Bayesian calibration of terrestrial ecosystem models: a study of advanced Markov chain Monte Carlo methods}
+\item \href{http://mlg.eng.cam.ac.uk/pub/pdf/Ras03.pdf}{Gaussian Processes to Speed Up Hybrid Monte Carlo for Expensive Bayesian Integrals}
 \item \href{https://www.tandfonline.com/doi/abs/10.1198/TECH.2010.09195}{Efficient MCMC Schemes for Computationally Expensive Posterior Distributions}
+	\begin{itemize}
+	\item HMC approach with GP approximation to log posterior.
+	\item Parallel tempering for multimodal distributions.
+	\item True target (i.e. using full simulation) is maintained at the lowest temperature, so stationary distribution of lowest temperature chain is exactly the posterior of interest. 
+	\item ``Exploratory phase'' uses GP approximation to propose parameter values (via leapfrog discretization), and evaluates the full posterior on the final proposed values to refine the GP approximation.
+	\item ``Sampling phase'' uses the GP approximation returned from the exploratory phase, then proposes param values using leapfrog discretization and GP, and accepts via MH rejection criterion.
+	\end{itemize}
 \item \href{https://www.sciencedirect.com/science/article/pii/S0304380021001708}{Sequential Monte-Carlo algorithms for Bayesian model calibration – A review and method comparison} 
 (SMC, but interesting comparison to MCMC in the calibration setting)
 \end{itemize}
