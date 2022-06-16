@@ -153,8 +153,8 @@ again defined on the domain $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{
 This approach again allows cheaper (approximate) likelihood computations. Indeed, the likelihood of observed data $z \in \R^n$ (implicitly conditioned on $x \in \R^n$) is given by  
 \begin{align*}
 p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \norm{z - y^u}^2_2 \right\} \\
-					         &= \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} T(x_i, z_i, u) \right\} \\
-					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}
+					         &= \tau^{-n} \exp\left\{-\frac{1}{\tau^2} T(x, z, u) \right\} \\
+					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \hat{T}(x, z, u) \right\}
 \end{align*}
 Thus, the likelihood can be approximated using evaluations of the GP $\hat{T}$. 
 Given this, here is my current understanding of the emulator methodology (for a single site). I'm not considering the experimental design or MCMC methodologies yet at this point, so 
@@ -165,7 +165,7 @@ I take them as given.
 each have $n$ components. 
 \item Fit GP emulator to the mapping $T(x, z, u) := \sum_{i = 1}^n (z_i - y_i^{u})^2$ using the dataset $\left\{(\tilde{x}_{ij}, \tilde{z}_{ij}, \tilde{u}_i), y_{ij}^{\tilde{u}_i}\right\}_{1 \leq i \leq N, 1 \leq j \leq n}$, producing fit emulator $\hat{T}(\cdot, \cdot, \cdot)$. 
 \item Perform MCMC for the approximate posterior
-\[p(u, \tau|z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \sum_{i = 1}^{n} \hat{T}(x_i, z_i, u) \right\}p(u, \tau)\]
+\[p(u, \tau|z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \hat{T}(x, z, u) \right\}p(u, \tau)\]
 \end{itemize}
 
 \subsubsection{Questions}
