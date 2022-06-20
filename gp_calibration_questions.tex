@@ -283,6 +283,13 @@ tailored specifically to parameter calibration for computer experiments and didn
 	\end{itemize}
 \item \href{https://www.sciencedirect.com/science/article/pii/S0304380021001708}{Sequential Monte-Carlo algorithms for Bayesian model calibration – A review and method comparison} 
 (SMC, but interesting comparison to MCMC in the calibration setting)
+	\begin{itemize}
+	\item SMC generally thought to be less efficient than MCMC for parameter calibration, but SMC is parallelizable; with sufficient number of cores and for runtime-intensive models, authors show that SMC can sometimes be faster
+	\item Downside: SMC can be very sensitive to tuning parameters.
+	\item Benchmarked SMC against Differential Evolution MCMC with snooker update
+	\item They achieved best results with a mix of MCMC and SMC steps. Authors indicate that such ``mixed'' algorithms may be an interesting direction for future research.  
+	\item Other future research needs: better adaptive SMC algorithms, more reliable convergence checks that can identify issues during SMC runs. 
+	\end{itemize}
 \end{itemize}
 
 
