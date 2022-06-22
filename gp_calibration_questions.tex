@@ -90,19 +90,19 @@ refers to calibration parameters. I would assume there is also some notion of ob
 I have already defined the computer model $f$, and I will denote the outputs of this model as $y = f(x, u)$, for parameter values $(x, u) \in \mathcal{X} \times \mathcal{U} = \mathcal{P}$.
 The real interest lies with the actual physical process that the computer model seeks to replicate. I will denote the value of this physical process at $x \in \mathcal{X}$ by $z^*(x)$. 
 However, the field observations of this process - which I denote by $z(x)$ - are noisy. We thus assume a typical Gaussian noise model for these observations. 
-\[z(x) = z^*(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^2)\]  
-Kennedy and O'Hagan then relate the physical process to the computer model via 
+\[z(x) = z^*(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^{-1})\]  
+parameterized with respect to the precision parameter $\tau$, the inverse of the variance. Kennedy and O'Hagan then relate the physical process to the computer model via 
 \[z^*(x) = f(x, u) + b(x)\]
 where $b(\cdot)$ is a discrepancy term or ``bias''. My understanding of the current PEcAn approach is to set $b \equiv 0$, which assumes that the computer model is faithful to the physical
 process (when calibrated correctly). The ``$u$'' in the above expression can thus be interpreted as the ``true'' or ``correct''  value of the calibration parameters, though I don't think this 
 point is especially necessary in a Bayesian framework. 
 
 To summarize, the Kennedy and O'Hagan model is 
-\[z(x) = z^*(x) + \epsilon = f(x, u) + b(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^2)\] 
+\[z(x) = z^*(x) + \epsilon = f(x, u) + b(x) + \epsilon, \qquad \epsilon \overset{iid}{\sim} N(0, \tau^{-1})\] 
 and assume we have observational data $\{(x_i, z_i)\}_{i = 1}^{n}$. Let $z := (z_1, \dots, z_n)^T$. 
 
 For the remainder of this document I will set the discrepancy to $0$, as I believe that's what is done in PEcAn, which gives the working model: 
-\[z_i|x_i, u \overset{ind}{\sim} N(y_i^u, \tau^2), \qquad i = 1, \dots, n \]
+\[z_i|x_i, u \overset{ind}{\sim} N(y_i^u, \tau^{-1}), \qquad i = 1, \dots, n \]
 where $y_i^u := f(x_i, u)$. 
 
 \subsubsection{Questions}
@@ -114,25 +114,25 @@ where $y_i^u := f(x_i, u)$.
 \subsection{``Brute Force'' Calibration}
 You mention a brute force calibration strategy in your paper, and I just wanted to write that out below to make sure I'm on the right page. The current parameters of interest are
 $u$ and $\tau$. We therefore have posterior (conditional on field observations), 
-\[p(u, \tau|z) \propto p(z|u, \tau)p(u, \tau) = N_n(z|y^u, \tau^2 I_n)p(u, \tau)\]
+\[p(u, \tau|z) \propto p(z|u, \tau)p(u, \tau) = N_n(z|y^u, \tau^{-1} I_n)p(u, \tau)\]
 for some assumed prior on $(u, \tau)$ and where $y^u := (y_1^u, \dots, y_n^u)$. Everything here is implicitly conditional on $x_1, \dots, x_n$ but I will suppress this to simplify notation. 
-We can use MCMC to sample from this posterior. However, the key observation is that evaluating the likelihood $N_n(z|y^u, \tau^2 I_n)$ requires the computation of $y^u$, which 
+We can use MCMC to sample from this posterior. However, the key observation is that evaluating the likelihood $N_n(z|y^u, \tau^{-1} I_n)$ requires the computation of $y^u$, which 
 involves running the entire simulation with the current calibration $u$. Therefore, the computer model must be run in full at every single step of MCMC, 
 which is infeasible for computationally expensive simulations. 
 
 \subsection{Emulator Methodology: ``Modular Approach''}
-To deal with the computational issue in the brute force approach, we replace the computer model with a GP emulator/surrogate $\eta(\cdot) \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$. 
+To deal with the computational issue in the brute force approach, we replace the computer model with a GP emulator/surrogate $\hat{f}(\cdot) \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$. 
 Among the various emulator calibration approaches, a simple one is the ``modular'' approach described in Gramacy 8.1.2 and originally in 
 \href{https://projecteuclid.org/journals/bayesian-analysis/volume-4/issue-1/Modularization-in-Bayesian-analysis-with-emphasis-on-analysis-of-computer/10.1214/09-BA404.full}{Bayarri et al (2009)}. 
 The calibration approach is as follows. 
 \begin{enumerate}
-\item Run the full model on $N$ design points (i.e. knots): $\{(\tilde{x}_1, u_1), \dots, (\tilde{x}_N, u_N)\}$, where the tilde differentiates these points from the vector of observation parameters $x$
+\item Run the full model on $N$ design points (i.e. knots): $\{(\tilde{x}_1, \tilde{u}_1), \dots, (\tilde{x}_N, \tilde{u}_N)\}$, where the tilde differentiates these points from the vector of observation parameters $x$
 sampled in the field data. Presumably, the design points are chosen such that $\{\tilde{x}_1, \dots, \tilde{x}_N\} \subset \{x_1, \dots, x_n\}$; that is, the model is run at the observation parameter
 values observed in the real-world, with the possibility of replicates. Let $\tilde{x}$ and $\tilde{u}$ be N-dimensional vectors containing the 
 $\tilde{x}_i$ and $\tilde{u}_i$, respectively. Also let $\tilde{y} := (y_1^{\tilde{u}_1}, \dots, y_N^{\tilde{u}_N})$ be the vector of simulator outputs evaluated at the $N$ design points. 
 \item Fit the GP emulator \textit{only using the computer model data} $\tilde{y}$. Denote the fit emulator by $\hat{f}$. 
 \item Now essentially conduct the brute force approach described above, but with $\hat{f}$ replacing $f$. That is, we sample from posterior
-\[p(u, \tau|z, \hat{f}) \propto p(z|u, \tau, \hat{f})p(u, \tau) = N_n(z|\hat{f}(x, u), \tau^2 I_n)p(u, \tau)\]
+\[p(u, \tau|z, \hat{f}) \propto p(z|u, \tau, \hat{f})p(u, \tau) = N_n(z|\hat{f}(x, u), \tau^{-1} I_n)p(u, \tau)\]
 Now in each step of MCMC we need only evaluate the mean of the GP $\hat{f}(x, u)$ at the current proposed $u$, rather than the whole computer model $f$. 
 \end{enumerate}
 This approach is not the one proposed by Kennedy and O'Hagan, which is the ``fully Bayesian'' approach: they assume a GP prior for $f$, then consider the posterior over the GP parameters
@@ -142,21 +142,21 @@ statistic approach.
 
 \subsection{Emulator Methodology: Emulating Likelihood}
 The above section approached the problem of sampling from the posterior
-\[p(u, \tau|z) \propto N_n(z|y^u, \tau^2 I_n)p(u, \tau)\]
+\[p(u, \tau|z) \propto N_n(z|y^u, \tau^{-1} I_n)p(u, \tau)\]
 by replacing the full simulator computations $y^u$ with a surrogate that approximates the full computations. Assuming the surrogate is much faster than the original simulation, then 
 this can drastically speed likelihood computation. An alternative method is to essentially skip this intermediate step and directly emulate the likelihood itself. In this case, the function 
 we seek to emulate is
-\[L(x, z, u) := p(z|y^{u}, \tau) = N_n(z|y^{u}, \tau^2 I_n)\]\
+\[L(x, z, u) := p(z|y^{u}, \tau) = N_n(z|y^{u}, \tau^{-1} I_n)\]\
 To be able to  define this I believe we must consider the extended input space $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{U}$, where $\mathcal{X}^n = \mathcal{X} \times \cdots \times \mathcal{X}$
-and similarly for $\mathcal{Z}^n$.
+and similarly for $\mathcal{Z}^n$. If we're essentially just treating the $x$ and $z$ values as given, then the domain might be simplified to just $\mathcal{U}$. 
 Taking things a step further, we can emulate a sufficient statistic that allows full calculation of the likelihood. That is, we can emulate
 \[T(x, z, u) := \sum_{i = 1}^n (z_i - y_i^{u})^2\]\
 again defined on the domain $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{U}$. Let $\hat{T}(\cdot, \cdot, \cdot)$ denote the fitted GP emulator. 
 This approach again allows cheaper (approximate) likelihood computations. Indeed, the likelihood of observed data $z \in \R^n$ (implicitly conditioned on $x \in \R^n$) is given by  
 \begin{align*}
-p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \norm{z - y^u}^2_2 \right\} \\
-					         &= \tau^{-n} \exp\left\{-\frac{1}{\tau^2} T(x, z, u) \right\} \\
-					         &\approx \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \hat{T}(x, z, u) \right\}
+p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \norm{z - y^u}^2_2 \right\} \\
+					         &= \tau^{n/2} \exp\left\{-\frac{\tau}{2} T(x, z, u) \right\} \\
+					         &\approx \tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u) \right\} \\
 \end{align*}
 Thus, the likelihood can be approximated using evaluations of the GP $\hat{T}$. 
 Given this, here is my current understanding of the emulator methodology (for a single site). I'm not considering the experimental design or MCMC methodologies yet at this point, so 
@@ -167,7 +167,7 @@ I take them as given.
 each have $n$ components. 
 \item Fit GP emulator to the mapping $T(x, z, u) := \sum_{i = 1}^n (z_i - y_i^{u})^2$ using the dataset $\left\{(\tilde{x}_{ij}, \tilde{z}_{ij}, \tilde{u}_i), y_{ij}^{\tilde{u}_i}\right\}_{1 \leq i \leq N, 1 \leq j \leq n}$, producing fit emulator $\hat{T}(\cdot, \cdot, \cdot)$. 
 \item Perform MCMC for the approximate posterior
-\[p(u, \tau|z) \propto \tau^{-n} \exp\left\{-\frac{1}{\tau^2} \hat{T}(x, z, u) \right\}p(u, \tau)\]
+\[p(u, \tau|z) \propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u) \right\}p(u, \tau)\]
 \end{itemize}
 
 \subsubsection{Questions}
@@ -211,15 +211,15 @@ This GP kernel also allows for the calculation of the variance at each point, wh
 	
 	\For{$t = 1, \dots, N_{\text{MCMC}}$} {
 	\textit{MH step with GP approximation}: \\[.2cm]
-	Sample $u^{(t)} \sim q(u^{(t - 1)}, u^{(t)})$ \\
+	Sample $u^{(t)} \sim q(u^{(t - 1)}, \cdot)$ \\
 	Sample $T^{(t - 1)} \sim \hat{T}(x, z, u^{(t - 1)})$, $T^{(t)} \sim \hat{T}(x, z, u^{(t)})$ \\
-	Calculate approximate likelihood $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{-n} \exp\left\{\left(\tau^{(t - 1)}\right)^{-2} \hat{T}^{(t - 1)}\right\}$, and similarly for $\hat{\mathcal{L}}^{(t)} $  \\
+	Calculate approximate likelihood $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t - 1)}) \right\}$, and similarly for $\hat{\mathcal{L}}^{(t)} $  \\
 	Accept $u^{(t)}$ with probability $\min\left\{1, \frac{\hat{\mathcal{L}}^{(t)}p_0(u^{(t)}, \tau^{(t - 1)})}{\hat{\mathcal{L}}^{(t - 1)} p_0(u^{(t - 1)}, \tau^{(t - 1)})}\right\}$
 	
 	\bigskip
 	
 	\textit{Gibbs step for statistical parameters}: \\[.2cm]
-	Sample $\tau^{(t)} \sim p(\tau^{(t)}|u^{(t)})$
+	Sample $\tau^{(t)} \sim p(\tau|u^{(t)})$
 	
 	}
 
@@ -231,10 +231,7 @@ This GP kernel also allows for the calculation of the variance at each point, wh
 \subsubsection{Questions}
 \begin{itemize}
 \item What proposal distribution $q(\cdot, \cdot)$ are you using? Are you mimicking the Haario et al paper, which is basically random walk MH, but with an adaptively chosen proposal variance?
-\item In the paper, you mention sampling current and proposed values for the sufficient statistic, as well as interpolation uncertainty. What specifically do you mean by interpolation uncertainty? Are 
-you just using the GP variance at the the value of the parameter, e.g. $k((x, z, u^{(t)}), (x, z, u^{(t)}))$? If this is correct, I'm curious how you use these variance calculations in subsequent analysis. 
 \end{itemize}
-
 
 
 \section{Future Directions}
