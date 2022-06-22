@@ -260,6 +260,8 @@ and improvements to the MCMC algorithm itself.
 
 As a first step, Jonathan has already mentioned the potential for adopting a gradient-based approach by trying out Hamiltonian Monte Carlo. 
 
+
+\subsubsection{Literature Review}
 There is certainly a wide body of literature on MCMC algorithms in settings with expensive likelihood calculations. I looked around a bit for literature in this vein but 
 tailored specifically to parameter calibration for computer experiments and didn't find as much as I expected. Here are some papers I did find: 
 \begin{itemize}
@@ -289,7 +291,16 @@ tailored specifically to parameter calibration for computer experiments and didn
 	\end{itemize}
 \end{itemize}
 
-
+\subsubsection{Integrating over GP Uncertainty}
+Recall that we are interested in sampling from the posterior
+\[p(u, \tau|z) \propto N_n(z|y^u, \tau^{-1} I_n)p(u, \tau)\]
+and we have opted for the GP approximation 
+\[p(u, \tau|z) \propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u) \right\}p(u, \tau)\]
+To account for the uncertainty introduced by approximating $T$ with $\hat{T}$, the current algorithm samples from $\hat{T}(x, z, u) \sim N(\mu(u), k(u, u))$ in the MH 
+accept-reject step. An alternative approach to incorporating uncertainty that is more conducive to HMC implementation in Stan is to average the likelihood over the GP 
+interpolation uncertainty. Noting that the below expectation is with respect to the Gaussian distribution of $\hat{T}(x, z, u)$, we obtain 
+\[\E \left[\tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \E \left[ \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{1}{8}\tau^2 k(u, u)\right\}\]
+where the final equality follows from the form of the Gaussian moment generating function (MGF). 
 
 \subsection{Targeting Specific Needs in Terrestrial Carbon Monitoring}
 I included this section as a longer-term goal of better understanding the current state of the terrestrial carbon monitoring field, and how a combination 
