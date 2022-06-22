@@ -299,8 +299,10 @@ and we have opted for the GP approximation
 To account for the uncertainty introduced by approximating $T$ with $\hat{T}$, the current algorithm samples from $\hat{T}(x, z, u) \sim N(\mu(u), k(u, u))$ in the MH 
 accept-reject step. An alternative approach to incorporating uncertainty that is more conducive to HMC implementation in Stan is to average the likelihood over the GP 
 interpolation uncertainty. Noting that the below expectation is with respect to the Gaussian distribution of $\hat{T}(x, z, u)$, we obtain 
-\[\E \left[\tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \E \left[ \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{1}{8}\tau^2 k(u, u)\right\}\]
-where the final equality follows from the form of the Gaussian moment generating function (MGF). 
+\[\E \left[\tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \E \left[ \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8} k(u, u)\right\}\]
+where the final equality follows from the form of the Gaussian moment generating function (MGF). Therefore, an alternative to the re-sampling MCMC approach described above is to use the posterior approximation
+\[p(u, \tau|z) \propto \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8} k(u, u)\right\}p(u, \tau)\]
+where the righthand side may now be evaluated directly to calculate the MH ratio, as the interpolation uncertainty is now baked in to this closed-form expression. Note that based on my definition of the GP in earlier sections I should really be writing $\mu(x, z, u)$ and $k((x, z, u), (x, z, u))$, but I am essentially treating $x$ and $z$ as given above and focusing attention on $u$. 
 
 \subsection{Targeting Specific Needs in Terrestrial Carbon Monitoring}
 I included this section as a longer-term goal of better understanding the current state of the terrestrial carbon monitoring field, and how a combination 
