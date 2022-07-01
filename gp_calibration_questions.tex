@@ -208,6 +208,19 @@ However, the sampling approach bakes the GP uncertainty directly into the sample
 given in the algorithm box below. Also, the ``Future Directions'' section later in this paper considers integrating over the GP to account for this uncertainty as an alternative to sampling. 
 
 \subsubsection{Updating $\tau$}
+After updating updating $u$ conditional on $\tau$, $\tau$ is updated via a traditional Gibbs sampling approach; that is, it is sampled from $p(\tau|u, z)$. In particular, consider
+\begin{align*}
+p(\tau|u, z) &\propto p(z|u, \tau)p(\tau|u) \\
+		 &= N_n(z|y^u, \tau^{-1}I_n)\pi_0(\tau) \\
+		 &= N_n(z|y^u, \tau^{-1}I_n)G(\tau|a, b) \\
+		 &\propto \tau^{n/2} \exp\left\{\frac{-\tau}{2} \norm{z - y^u}_2^2 \right\} \tau^{a - 1} e^{-b \tau} \\
+		 &= \tau^{n/2} \exp\left\{\frac{-\tau}{2} T(x, z, u) \right\} \tau^{a - 1} e^{-b \tau} \\
+		 &= \tau^{a + n/2 - 1} \exp\left\{-(b + T(x, z, u)/2)\tau \right\} \\
+		 &= G\left(\tau|a + n/2, b + T(x, z, u)/2\right)
+\end{align*}
+Once again, we utilize the GP approximation so that $\tau$ is updated by sampling from the approximate conditional 
+\[\tau \sim G\left(a + n/2, b + \hat{T}(x, z, u)/2\right) \]
+where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution at the current value of $u$. 
 
 
 
@@ -230,14 +243,15 @@ given in the algorithm box below. Also, the ``Future Directions'' section later 
 	Sample $u^{(t)} \sim N(u^{(t - 1)}, \Sigma)$ \\
 	Sample $T^{(t - 1)} \sim \hat{T}(x, z, u^{(t - 1)})$, $T^{(t)} \sim \hat{T}(x, z, u^{(t)})$ \\
 	Calculate approximate likelihoods: \\
-	 $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t - 1)}) \right\}$ \\ 
-	 $\hat{\mathcal{L}}^{(t)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t)}) \right\}$  \\
-	Accept $u^{(t)}$ with probability $\min\left\{1, \frac{\hat{\mathcal{L}}^{(t)}p_0(u^{(t)}, \tau^{(t - 1)})}{\hat{\mathcal{L}}^{(t - 1)} p_0(u^{(t - 1)}, \tau^{(t - 1)})}\right\}$
+	 $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} T^{(t - 1)}  \right\}$ \\ 
+	 $\hat{\mathcal{L}}^{(t)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} T^{(t)} \right\}$  \\
+	Accept $u^{(t)}$ with probability $\min\left\{1, \frac{\hat{\mathcal{L}}^{(t)}\pi_0(u^{(t)}) N(u^{(t - 1)}|u^{(t)}, \Sigma)}{\hat{\mathcal{L}}^{(t - 1)} \pi_0(u^{(t - 1)}) N(u^{(t)}|u^{(t - 1)}, \Sigma)} \right\}$ \\
+	If accepted, also update sampled sufficient statistic $T^{(t)} := T^{(t - 1)}$
 	
 	\bigskip
 	
-	\textit{Gibbs step for statistical parameters}: \\[.2cm]
-	Sample $\tau^{(t)} \sim p(\tau|u^{(t)})$
+	\textit{Gibbs step for statistical parameters with GP approximation}: \\[.2cm]
+	Sample $\tau^{(t)} \sim p(\tau|u^{(t)}, z) = G\left(a + n/2, b + T^{(t)}/2\right)$
 	
 	}
 
