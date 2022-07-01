@@ -222,9 +222,7 @@ Once again, we utilize the GP approximation so that $\tau$ is updated by samplin
 \[\tau \sim G\left(a + n/2, b + \hat{T}(x, z, u)/2\right) \]
 where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution at the current value of $u$. 
 
-
-
-\bigskip
+\subsubsection{Complete Algorithm}
 
  \begin{algorithm}[H]
 	\SetAlgoLined
@@ -251,7 +249,7 @@ where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution 
 	\bigskip
 	
 	\textit{Gibbs step for statistical parameters with GP approximation}: \\[.2cm]
-	Sample $\tau^{(t)} \sim p(\tau|u^{(t)}, z) = G\left(a + n/2, b + T^{(t)}/2\right)$
+	Sample $\tau^{(t)} \sim G\left(a + n/2, b + T^{(t)}/2\right)$
 	
 	}
 
@@ -262,7 +260,9 @@ where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution 
 
 \subsubsection{Questions}
 \begin{itemize}
-\item What proposal distribution $q(\cdot, \cdot)$ are you using? Are you mimicking the Haario et al paper, which is basically random walk MH, but with an adaptively chosen proposal variance?
+\item The above algorithm is actually slightly different from the code. In the code, to define $\hat{\mathcal{L}}^{(t)}$ a new value of $\tau$ is first sampled from $G\left(a + n/2, b + T^{(t)}/2\right)$
+and then this sampled value is used in calculating $\hat{\mathcal{L}}^{(t)}$, instead of $\tau^{(t - 1)}$ as I have in the above algorithm. I'm wondering why this is done instead of just conditioning 
+on the current value $\tau^{(t - 1)}$. 
 \end{itemize}
 
 
