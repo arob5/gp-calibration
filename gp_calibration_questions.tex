@@ -154,7 +154,7 @@ Taking things a step further, we can emulate a sufficient statistic that allows 
 again defined on the domain $\mathcal{X}^n \times \mathcal{Z}^n \times \mathcal{U}$. Let $\hat{T}(\cdot, \cdot, \cdot)$ denote the fitted GP emulator. 
 This approach again allows cheaper (approximate) likelihood computations. Indeed, the likelihood of observed data $z \in \R^n$ (implicitly conditioned on $x \in \R^n$) is given by  
 \begin{align*}
-p(z|u, \tau) = N_n(z|y^u, \tau^2) &\propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \norm{z - y^u}^2_2 \right\} \\
+p(z|u, \tau) = N_n(z|y^u, \tau^{-1}I_n) &\propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \norm{z - y^u}^2_2 \right\} \\
 					         &= \tau^{n/2} \exp\left\{-\frac{\tau}{2} T(x, z, u) \right\} \\
 					         &\approx \tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u) \right\} \\
 \end{align*}
@@ -178,6 +178,13 @@ each have $n$ components.
 \textbf{Answer: } Yes. 
 \end{itemize}
 
+\subsection{Priors}
+In the above sections I have simply been writing $p(u, \tau)$ to indicate a joint prior distribution over the calibration parameters and the precision parameter. In the PEcAn implementation, 
+this prior is specified as
+\[p(u, \tau) = p(\tau|u)p(u) = p(\tau)p(u) = G(\tau|a, b)\pi_0(u)\]
+where $G(a, b)$ denotes the Gamma distribution with shape and rate hyperparameters $a$ and $b$, respectively. The prior $\pi_0$ over the calibration parameters is given by a meta-analysis
+of previous studies and expert opinion. 
+
 \subsection{Other methodological components of the analysis}
 I haven't thought about this too much in detail, but I'd be interested to hear more about some of the other methodological choices described in the Fer et al (2018) paper. 
 \begin{itemize}
@@ -186,14 +193,24 @@ I haven't thought about this too much in detail, but I'd be interested to hear m
 \end{itemize}
 
 \subsection{MCMC Algorithm}
-In the below algorithm, I consider a generic symmetric proposal density $q$. I don't know the specific proposal used in the paper, so I can adjust this if needed once this 
-is clarified. I also do not explicitly mention any interpolation uncertainty calculations (see questions section below). 
+The MCMC algorithm updates the calibration parameters $u$ and precision parameter $\tau$ iteratively. A Metropolis-within-Gibbs approach is used to sample from $p(u, \tau|z)$. The following sections
+provide the specifics as to how $u$ and $\tau$ are updated. 
 
-The algorithm is given in more detail below, but my main takeaways are as follows. At each MCMC iteration, the true likelihood calculation is replaced by an approximation calculated 
-using the GP. Therefore, the algorithm samples from an approximation to the true posterior. To quantify the uncertainty created by this GP approximation, the sufficient statistic values
-used to calculate the likelihoods are sampled from the GP at the current and proposed parameter values. The alternative to this would be to simply use the GP mean at the parameter value. 
-However, the sampling approach bakes the GP uncertainty directly into the samples, which allows for the calculation of confidence intervals, etc. that better reflect the true uncertainty. 
-This GP kernel also allows for the calculation of the variance at each point, which is what I'm assuming you mean by ``interpolation uncertainty''. 
+\subsubsection{Updating $u$}
+The first conditional distribution of $p(u, \tau|z)$ we consider is $p(u|\tau, z)$. Conditional on the current value of $\tau$, $u$ is updated via an adaptive Random Walk Metropolis-Hastings (MH) algorithm. The proposal 
+distribution for $u$ is given by a truncated Gaussian centered at the current value of $u$, with adaptive covariance matrix, and lower and upper bounds determined by the range for each calibration parameter taken over the design points. To simplify notation in the algorithm box, I simply denote the covariance matrix $\Sigma$ (even though it is not fixed), and suppress any notation indicating the distribution is truncated. 
+
+The conditional distribution of interest here is given by 
+\[p(u|\tau, z) \propto p(z|u, \tau)p(u|\tau) = N_n(z|y^u, \tau^{-1}I_n) \pi_0(u)\]
+The likelihood evaluations of $N_n(z|y^u, \tau^{-1}I_n)$ are approximated using the GP, as discussed in the previous sections. To quantify the uncertainty created by this GP approximation, the sufficient statistic values
+used to calculate the likelihoods are sampled from the GP at the current and proposed parameter values. The alternative to this would be to simply use the GP predictive mean at the parameter value. 
+However, the sampling approach bakes the GP uncertainty directly into the samples, which allows for the calculation of confidence intervals, etc. that better reflect the true uncertainty. The specifics of this approach are
+given in the algorithm box below. Also, the ``Future Directions'' section later in this paper considers integrating over the GP to account for this uncertainty as an alternative to sampling. 
+
+\subsubsection{Updating $\tau$}
+
+
+
 \bigskip
 
  \begin{algorithm}[H]
@@ -203,7 +220,6 @@ This GP kernel also allows for the calculation of the variance at each point, wh
 	\begin{itemize}
 	\item Initial parameter values $u^{(0)}, \tau^{(0)}$
 	\item Fit emulator $\hat{T}(\cdot, \cdot, \cdot) \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$
-	\item Proposal density $q(\cdot, \cdot)$ for process-model parameters $u$ 
 	\item Number iterations $N_{\text{MCMC}}$
 	\end{itemize}
 		
@@ -211,9 +227,11 @@ This GP kernel also allows for the calculation of the variance at each point, wh
 	
 	\For{$t = 1, \dots, N_{\text{MCMC}}$} {
 	\textit{MH step with GP approximation}: \\[.2cm]
-	Sample $u^{(t)} \sim q(u^{(t - 1)}, \cdot)$ \\
+	Sample $u^{(t)} \sim N(u^{(t - 1)}, \Sigma)$ \\
 	Sample $T^{(t - 1)} \sim \hat{T}(x, z, u^{(t - 1)})$, $T^{(t)} \sim \hat{T}(x, z, u^{(t)})$ \\
-	Calculate approximate likelihood $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t - 1)}) \right\}$, and similarly for $\hat{\mathcal{L}}^{(t)} $  \\
+	Calculate approximate likelihoods: \\
+	 $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t - 1)}) \right\}$ \\ 
+	 $\hat{\mathcal{L}}^{(t)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} \hat{T}(x, z, u^{(t)}) \right\}$  \\
 	Accept $u^{(t)}$ with probability $\min\left\{1, \frac{\hat{\mathcal{L}}^{(t)}p_0(u^{(t)}, \tau^{(t - 1)})}{\hat{\mathcal{L}}^{(t - 1)} p_0(u^{(t - 1)}, \tau^{(t - 1)})}\right\}$
 	
 	\bigskip
@@ -303,6 +321,10 @@ interpolation uncertainty. Noting that the below expectation is with respect to 
 where the final equality follows from the form of the Gaussian moment generating function (MGF). Therefore, an alternative to the re-sampling MCMC approach described above is to use the posterior approximation
 \[p(u, \tau|z) \propto \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8} k(u, u)\right\}p(u, \tau)\]
 where the righthand side may now be evaluated directly to calculate the MH ratio, as the interpolation uncertainty is now baked in to this closed-form expression. Note that based on my definition of the GP in earlier sections I should really be writing $\mu(x, z, u)$ and $k((x, z, u), (x, z, u))$, but I am essentially treating $x$ and $z$ as given above and focusing attention on $u$. 
+
+\subsubsection{Comparing to the ``fully Bayesian'' approach}
+It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
+the Laplace parameters. 
 
 \subsection{Targeting Specific Needs in Terrestrial Carbon Monitoring}
 I included this section as a longer-term goal of better understanding the current state of the terrestrial carbon monitoring field, and how a combination 
