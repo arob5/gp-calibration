@@ -238,13 +238,21 @@ where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution 
 	
 	\For{$t = 1, \dots, N_{\text{MCMC}}$} {
 	\textit{MH step with GP approximation}: \\[.2cm]
-	Sample $u^{(t)} \sim N(u^{(t - 1)}, \Sigma)$ \\
-	Sample $T^{(t - 1)} \sim \hat{T}(x, z, u^{(t - 1)})$, $T^{(t)} \sim \hat{T}(x, z, u^{(t)})$ \\
+	Sample $u^\prime \sim N(u^{(t - 1)}, \Sigma)$ \\
+	Sample $T^\prime \sim \hat{T}(x, z, u^\prime)$, $T \sim \hat{T}(x, z, u^{(t - 1)})$ \\
+	Sample $\tau^\prime \sim G(a + n/2, b + T^\prime / 2)$ \\
 	Calculate approximate likelihoods: \\
-	 $\hat{\mathcal{L}}^{(t - 1)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} T^{(t - 1)}  \right\}$ \\ 
-	 $\hat{\mathcal{L}}^{(t)} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} T^{(t)} \right\}$  \\
-	Accept $u^{(t)}$ with probability $\min\left\{1, \frac{\hat{\mathcal{L}}^{(t)}\pi_0(u^{(t)}) N(u^{(t - 1)}|u^{(t)}, \Sigma)}{\hat{\mathcal{L}}^{(t - 1)} \pi_0(u^{(t - 1)}) N(u^{(t)}|u^{(t - 1)}, \Sigma)} \right\}$ \\
-	If accepted, also update sampled sufficient statistic $T^{(t)} := T^{(t - 1)}$
+	 $\hat{\mathcal{L}} := \left(\tau^{(t - 1)}\right)^{n/2} \exp\left\{-\frac{\tau^{(t - 1)}}{2} T \right\}$ \\ 
+	 $\hat{\mathcal{L}}^\prime := \left(\tau^\prime \right)^{n/2} \exp\left\{-\frac{\tau^\prime}{2} T^\prime \right\}$  \\
+	 $\alpha(u^{(t - 1)}, u^\prime) := \frac{\hat{\mathcal{L}}^\prime \cdot \pi_0(u^\prime) N(u^{(t - 1)}|u^\prime, \Sigma)}{\hat{\mathcal{L}} \cdot \pi_0(u^{(t - 1)}) N(u^\prime|u^{(t - 1)}, \Sigma)}$ \\
+	 Sample $U \sim \mathcal{U}[0, 1]$ \\
+	 \If{$U < \alpha(u^{(t - 1)}, u^\prime)$} {
+	 	$u^{(t)} := u^\prime$ \\
+		$T^{(t)} := T^\prime$ \\
+	 } \Else {
+		$u^{(t)} := u^{(t - 1)}$ \\
+		$T^{(t)} := T$ \\
+	 }
 	
 	\bigskip
 	
@@ -260,9 +268,7 @@ where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution 
 
 \subsubsection{Questions}
 \begin{itemize}
-\item The above algorithm is actually slightly different from the code. In the code, to define $\hat{\mathcal{L}}^{(t)}$ a new value of $\tau$ is first sampled from $G\left(a + n/2, b + T^{(t)}/2\right)$
-and then this sampled value is used in calculating $\hat{\mathcal{L}}^{(t)}$, instead of $\tau^{(t - 1)}$ as I have in the above algorithm. I'm wondering why this is done instead of just conditioning 
-on the current value $\tau^{(t - 1)}$. 
+\item I'd like to clarify why $\tau^\prime$ is sampled for use in the MH acceptance ratio calculation, instead of just using $\tau^{(t - 1)}$ (i.e. just conditioning on the most up-to-date value of $\tau$). 
 \end{itemize}
 
 
