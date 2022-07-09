@@ -170,6 +170,13 @@ each have $n$ components.
 \[p(u, \tau|z) \propto \tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u) \right\}p(u, \tau)\]
 \end{itemize}
 
+\subsubsection{GP Specifications}
+Currently the PEcAn emulator package uses the R package \textit{mlegp} to fit the emulator. This package uses the standard Gaussian family of kernels, with a different lengthscale parameter for 
+each dimension in the input space. The PEcAn code specifies that the nugget term be set to 0, given that the process model is deterministic. Moreover, the mean function is assumed to be constant. 
+Therefore, the parameters that require estimation are: the vector of lengthscale parameters, the constant mean, and the overall GP variance. The \textit{mlegp} package proceeds by first finding
+the maximum likelihood estimates of the lengthscale parameters by numerical methods, and then given these values the MLE for the mean and GP variance can be calculated in closed form. 
+
+
 \subsubsection{Questions}
 \begin{itemize}
 \item What choices are you making for the GP parameters (mean function $\mu$ and kernel/covariance function $k$)? \\
@@ -218,9 +225,9 @@ p(\tau|u, z) &\propto p(z|u, \tau)p(\tau|u) \\
 		 &= \tau^{a + n/2 - 1} \exp\left\{-(b + T(x, z, u)/2)\tau \right\} \\
 		 &= G\left(\tau|a + n/2, b + T(x, z, u)/2\right)
 \end{align*}
-Once again, we utilize the GP approximation so that $\tau$ is updated by sampling from the approximate conditional 
-\[\tau \sim G\left(a + n/2, b + \hat{T}(x, z, u)/2\right) \]
-where $\hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution at the current value of $u$. 
+Once again, we utilize the GP approximation so that $\tau$ is updated by sampling from
+\[\tau \sim G\left(a + n/2, b + T/2\right) \]
+where $T \sim \hat{T}(x, z, u)$ is a value sampled from the predictive GP distribution at the current value of $u$. 
 
 \subsubsection{Complete Algorithm}
 
