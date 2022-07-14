@@ -345,7 +345,14 @@ To account for the uncertainty introduced by approximating $T$ with $\hat{T}$, t
 accept-reject step. An alternative approach to incorporating uncertainty that is more conducive to HMC implementation in Stan is to average the likelihood over the GP 
 interpolation uncertainty. Noting that the below expectation is with respect to the Gaussian distribution of $\hat{T}(x, z, u)$, we obtain 
 \[\E \left[\tau^{n/2} \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \E \left[ \exp\left\{-\frac{\tau}{2} \hat{T}(x, z, u)\right\} \right] = \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8} k(u, u)\right\}\]
-where the final equality follows from the form of the Gaussian moment generating function (MGF). Therefore, an alternative to the re-sampling MCMC approach described above is to use the posterior approximation
+where the final equality follows from the form of the Gaussian moment generating function (MGF). Alternatively, we can use the fact that 
+\[-\frac{\tau}{2} \hat{T}(u) \sim N\left(-\frac{\tau}{2}\mu(u), \frac{\tau^2}{4} k(u, u) \right)\]
+and hence, 
+\[\exp\left\{-\frac{\tau}{2} \hat{T}(u)\right\} \sim \text{Lognormal}\left(-\frac{\tau}{2}\mu(u), \frac{\tau^2}{4} k(u, u) \right)\]
+Using the expression for the mean of a lognormal distributed random variable, we then obtain the same result:
+\[\E\left[\exp\left\{-\frac{\tau}{2} \hat{T}(u)\right\}\right] = \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8}k(u, u)\right\}\]
+
+Therefore, an alternative to the re-sampling MCMC approach described above is to use the posterior approximation
 \begin{align*}
 p(u, \tau|z) &\propto \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2}{8} k(u, u)\right\}p(u, \tau) \\
 		 &=  \tau^{n/2} \exp\left\{-\frac{\tau}{2}\left[\mu(u) - \frac{\tau}{4} k(u, u) \right]\right\}p(u, \tau)
@@ -353,6 +360,12 @@ p(u, \tau|z) &\propto \tau^{n/2} \exp\left\{-\frac{\tau}{2}\mu(u) + \frac{\tau^2
 where the righthand side may now be evaluated directly to calculate the MH ratio, as the interpolation uncertainty is now baked into this closed-form expression. Note that based on my definition of the GP in earlier sections I should really be writing $\mu(x, z, u)$ and $k((x, z, u), (x, z, u))$, but I am essentially treating $x$ and $z$ as given above and focusing attention on $u$. Also note that when the variance is 0 ($k(u, u) = 0$) then 
 the likelihood is calculated using the predictive mean of the GP, which corresponds to parameter values $u$ in the design matrix; that is, parameters on which the full simulation was run. Moreover, if the precision $\tau$
 is low (i.e. the noise around the simulation predictions is high) then the $\frac{\tau^2}{8} k(u, u)$ term will be small, reflecting the fact that the GP approximation has more ``leeway'' given the underlying noisy process. 
+
+As a simple example, consider the case in which the predictive GP mean is constant: $\mu(u) \equiv 0$. If we were to just use the GP mean as an approximation to the sufficient statistic then we would be approximating the 
+true likelihood with a completely flat approximation. The likelihood evaluations in MCMC would then play no role, as the current and proposed values would always have the same density. However, suppose the predictive variance $k(u, u)$ is non-constant. To incorporate this uncertainty, we abandon the predictive mean approximation in favor of the above approximation that marginalizes over the GP: 
+\[ \tau^{n/2} \exp\left\{-\frac{\tau}{2} \mu(u) + \frac{\tau^2}{8} k(u, u) \right\} \]
+Now the $u$ that exhibit more predictive uncertainty (i.e. where $k(u, u)$ is large) will be given a larger density, due to the addition of the term $\frac{\tau^2}{8} k(u, u)$. This will mean that proposals at these more 
+uncertain parameter values will be accepted more often. This, in turn, means that the posterior over $u$ will be more diffuse, reflecting the uncertainty in the GP approximation. 
 
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
 It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
