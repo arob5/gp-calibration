@@ -1,0 +1,187 @@
+/**
+ * A generalization of the built-in Stan function 'squared_distance()'.
+ * Generalizes this function by allowing for scaling each dimension
+ * by provided weights. This is only currently defined for row_vectors
+ * given its use in 'cov_exp_quad_gen()'. 
+ *
+ * @param x First row_vector. 
+ * @param y Second row_vector. Must be of same length as x. 
+ * @param w Vector of weights. Must be of same length as x. 
+ * 
+ * @return The squared, weighted Euclidean distance between x and y. 
+ *         The ith dimension is weighted as w[i] * (x[i] - y[i])^2
+ */
+real squared_distance_weighted(row_vector x, row_vector y, vector w) {
+  real dist = 0.0; 
+  int N = num_elements(x);
+  
+  for(i in 1:N) {
+    dist += w[i] * (x[i] - y[i])^2; 
+  }
+  
+  return(dist); 
+}
+
+
+
+
+/**
+ * A generalization of the built-in Stan function 'cov_exp_quad()'.
+ * Generalizes this function by allowing for separate lengthscale
+ * parameters for each dimension and a (constant) nugget term. 
+ * Defines the squared exponential kernel/covariance  function
+ * and returns a square matrix formed by applying the covariance  
+ * function to pairs of input vectors. To apply the covariance 
+ * function to two separate matrices (e.g. train and test data)
+ * see the function cov_exp_quad_cross(). 
+ *
+ * @param X Matrix of input vectors. Each input is a row of the matrix.
+ * @param rho Vector of length scale parameters. Must have length equal to 
+ *            number of columns of X. Dimension k is scaled by 1/rho[k]. Note 
+ *            that this is different from 'cov_exp_quad()', which scales by 
+ *            1/rho[k]^2. This difference is due to the fact that rstan currently
+ *            doesn't support the elementwise power function. 
+ * @param alpha Marginal standard deviation of the GP. 
+ * @param sigma Nugget parameter. sigma^2 is added to each element on the 
+ *              diagonal of the resulting covariance matrix. 
+ * 
+ * @return The matrix formed by applying to covariance function 
+ *         to each pair of inputs. Has dimension (rows(X), rows(X))
+ *         and the (i, j) element of the returned matrix is the 
+ *         covariance between X[i] and X[j]. 
+ */
+matrix cov_exp_quad_same(matrix X, vector rho, real alpha, real sigma) {
+  int N = rows(X); 
+  int k = num_elements(rho); 
+  vector[k] weights = 1.0 ./ rho; // (rho .^ 2.0); Elementwise power not available in current rstan version
+    
+  matrix[N, N] K; 
+    
+  for (i in 1:(N - 1)) {
+    K[i, i] = alpha^2 + sigma^2 + sqrt(machine_precision());
+    for (j in (i + 1):N) {
+      K[i, j] = alpha^2 * exp(-0.5 * squared_distance_weighted(X[i], X[j], weights));
+      K[j, i] = K[i, j];
+    }
+  }
+  K[N, N] = alpha^2 + sigma^2 + sqrt(machine_precision());
+  
+  return(K); 
+}
+
+
+
+/**
+ * A generalization of the built-in Stan function 'cov_exp_quad()'.
+ * Generalizes this function by allowing for separate lengthscale
+ * parameters for each dimension. 
+ * Defines the squared exponential kernel/covariance  function
+ * and returns a potentially non-square matrix formed by applying the covariance  
+ * function to pairs of input vectors. To apply the covariance 
+ * function to a sigle matrix see cov_exp_quad_same(). This 
+ * function instead calculates the covariances between two separate matrices 
+ * (hence, "cross"). This version of the function does not require the nugget 
+ * parameter as this function implicitly assumes that X1 and X2 are "different"
+ * data, in which case the nugget does not apply. If producing a true covariance 
+ * matrix with diagonals corresponding variances, then 'cov_exp_quad_same()'
+ * should be used instead. 
+ *
+ * @param X1 Matrix of input vectors. Each input is a row of the matrix.
+ * @param X2 Matrix of input vectors. Each input is a row of the matrix. Must 
+ *           have same number of columns as X1, but number of rows can differ. 
+ * @param rho Vector of length scale parameters. Must have length equal to 
+ *            number of columns of X1. Dimension k is scaled by 1/rho[k]^2.
+ *            Note that this is different from 'cov_exp_quad()', which scales by 
+ *            1/rho[k]^2. This difference is due to the fact that rstan currently
+ *            doesn't support the elementwise power function. 
+ * @param alpha Marginal standard deviation of the GP. 
+ * 
+ * @return The matrix formed by applying to covariance function 
+ *         to each pair of inputs. Has dimension (rows(X1), rows(X2))
+ *         and the (i, j) element of the returned matrix is the 
+ *         covariance between X1[i] and X2[j]. 
+ */
+matrix cov_exp_quad_cross(matrix X1, matrix X2, vector rho, real alpha) {
+  int N1 = rows(X1); 
+  int N2 = rows(X2); 
+  int k = num_elements(rho); 
+  vector[k] weights = 1.0 ./ rho; // (rho .^ 2.0); Elementwise power not available in current rstan version
+  
+  matrix[N1, N2] K; 
+  
+  for (i in 1:N1) {
+    for (j in 1:N2) {
+      K[i, j] = alpha^2 * exp(-0.5 * squared_distance_weighted(X1[i], X2[j], weights));
+    }
+  }
+
+  return(K); 
+}
+
+real calc_gp_predictive_mean(vector k_xX, vector K_inv_y) {
+  
+  return dot_product(k_xX, K_inv_y);
+  
+}
+
+real calc_gp_predictive_var(matrix L, vector k_xX, matrix x_mat, int N, vector rho, real alpha, real sigma) {
+  
+  vector[N] v = L \ k_xX;
+  real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
+  
+  return(k_x);
+  
+}
+
+/**
+* Evaluates the approximate log-likelihood at a given parameter value. This is an approximation
+* to the Gaussian likelihood, where the sum of squares term (the sufficient statistic)
+* has been replaced by a fit Gaussian Process (GP) emulator, and then the GP is integrated
+* out in order to account for the approximation uncertainty. Additive constants in the 
+* log-likelihood are dropped.
+*-
+* @param L Cholesky factor of the covariance matrix of the design points. 
+* @param K_inv_y The vector inv( K(X, X) ) * y, where X is the design matrix and y the 
+*        observed response vector. Using the Cholesky factor, this can be calculated as 
+*        L' \ (L \ y). 
+* @param N The number of design points/knots. 
+* @param k The dimension of the parameter/input space; i.e. the number of calibration parameters.
+* @param tau The precision parameter in the Gaussian likelihood. 
+* @param x Vector, the parameter value at which to evaluate the log-likelihood. 
+* @param rho Vector of lengthscale parameters for the kernel. 
+* @param alpha Marginal standard deviation parameter for the kernel. 
+* @param sigma Nugget (standard deviation) parameter for the kernel. 
+*
+* @return The Gaussian log-likelihood (up to an additive constant), calculated using 
+*         the GP approximation to the sufficient statistic, and marginalized over the 
+*         GP. 
+*/
+real gp_approx_lpdf(matrix L, vector K_inv_y, matrix X, int N, int k, real tau, vector x, vector rho, real alpha, real sigma) {
+  
+  // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
+  matrix[1, k] x_mat = to_matrix(x, 1, k, 1); 
+  
+  // Predictive mean
+  vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
+  real mu_x = dot_product(k_xX, K_inv_y);
+  
+  // Predictive variance
+  vector[N] v = L \ k_xX;
+  real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
+  
+  
+  return(N/2.0 * log(tau) - (tau / 2.0) * (mu_x - (tau/4.0) * k_x)); 
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
