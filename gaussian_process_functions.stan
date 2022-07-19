@@ -146,17 +146,18 @@ real calc_gp_predictive_var(matrix L, vector k_xX, matrix x_mat, int N, vector r
 *        L' \ (L \ y). 
 * @param N The number of design points/knots. 
 * @param k The dimension of the parameter/input space; i.e. the number of calibration parameters.
-* @param tau The precision parameter in the Gaussian likelihood. 
-* @param x Vector, the parameter value at which to evaluate the log-likelihood. 
 * @param rho Vector of lengthscale parameters for the kernel. 
 * @param alpha Marginal standard deviation parameter for the kernel. 
 * @param sigma Nugget (standard deviation) parameter for the kernel. 
+* @param mu The GP (constant) mean. 
+* @param tau The precision parameter in the Gaussian likelihood. 
+* @param x Vector, the parameter value at which to evaluate the log-likelihood. 
 *
 * @return The Gaussian log-likelihood (up to an additive constant), calculated using 
 *         the GP approximation to the sufficient statistic, and marginalized over the 
 *         GP. 
 */
-real gp_approx_lpdf(matrix L, vector K_inv_y, matrix X, int N, int k, real tau, vector x, vector rho, real alpha, real sigma) {
+real gp_approx(matrix L, vector K_inv_y, matrix X, int N, int k, vector rho, real alpha, real sigma, real mu, real tau, vector x) {
   
   // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
   matrix[1, k] x_mat = to_matrix(x, 1, k, 1); 

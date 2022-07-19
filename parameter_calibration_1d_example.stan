@@ -1,6 +1,7 @@
 /**
 * parameter_calibration_1d_example.stan
 * Run MCMC for parameter calibration on toy example with simple scalar function. 
+* "Brute force" MCMC (no Gaussian Process approximation).
 *
 * Andrew Roberts
 *
@@ -10,13 +11,12 @@ functions {
   // This defines the stand-in for the process-based model/computer simulation 
   // that is used in this test. 
   real f(real u) {
-    return( sin(u) ); 
+    return( 10.0 + 4.0*u - u^3 ); 
   }
 }
 
 data {
   int<lower=1> n; // Number of observations
-  int<lower=1> k; // Number of calibration parameters
   vector[n] y;    // Observed data
   
   real<lower=0> a; // Shape parameter for Gamma hyperprior on tau
