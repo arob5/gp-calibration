@@ -118,9 +118,9 @@ matrix cov_exp_quad_cross(matrix X1, matrix X2, vector rho, real alpha) {
   return(K); 
 }
 
-real calc_gp_predictive_mean(vector k_xX, vector K_inv_y) {
+real calc_gp_predictive_mean(vector k_xX, vector K_inv_y, real mu) {
   
-  return dot_product(k_xX, K_inv_y);
+  return(mu + dot_product(k_xX, K_inv_y));
   
 }
 
@@ -164,7 +164,7 @@ real gp_approx(matrix L, vector K_inv_y, matrix X, int N, int k, vector rho, rea
   
   // Predictive mean
   vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
-  real mu_x = dot_product(k_xX, K_inv_y);
+  real mu_x = mu + dot_product(k_xX, K_inv_y);
   
   // Predictive variance
   vector[N] v = L \ k_xX;

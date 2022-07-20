@@ -57,14 +57,11 @@ tau <- rgamma(n, tau.shape, rate = tau.rate)
 y <- rnorm(n, f(u), 1/sqrt(tau))
 
 #
-# Temp: Alternative way to simulate data, fix u and tau
+# Alternative way to simulate data, fix u and tau at their prior means
 #
 
 u <- u.mean
-
-tau <- rgamma(10000, tau.shape, rate = tau.rate)
-tau <- mean(tau)
-
+tau <- tau.shape / tau.rate
 y <- rnorm(n, f(u), 1/sqrt(tau))
 
 
@@ -84,10 +81,10 @@ stan.list <- list(n = n,
                   u_mean = u.mean, 
                   u_sigma = u.sigma)
 
+# MCMC
 fit <- sampling(model, stan.list, iter = 50000, chains = 4)
 summary(fit)
-
-samples <- extract(fit)
+samples.brute.force <- extract(fit)
 
 #
 # Fit GP regression
@@ -118,22 +115,13 @@ gp_mle <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
 
 
 #
-# Parameter Calibration with Gaussian Process Approximation, evaluating at mean function.
-#
-
-
-
-
-
-
-#
-# Parameter Calibration with Gaussian Process Approximation, propogating uncertainty by 
+# Parameter Calibration with Gaussian Process Approximation, propagating uncertainty by 
 # integrating out GP.
 #
 
 # Compile Stan code
 stan.gp.model.path <- file.path(base.dir, 'parameter_calibration_gp_1d_example.stan')
-model <- stan_model(stan.gp.model.path)
+model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
 stan.gp.list <- list(N = N, 
@@ -146,10 +134,20 @@ stan.gp.list <- list(N = N,
                      gp_rho = array(gp_mle$beta, dim = 1),
                      gp_alpha = sqrt(gp_mle$sig2),
                      gp_sigma = sqrt(gp_mle$nugget), 
-                     gp_mean = 
+                     gp_mean = gp_mle$Bhat
                      )
 
+# MCMC
+fit <- sampling(model, stan.list, iter = 50000, chains = 4)
+summary(fit)
+samples.brute.force <- extract(fit)
 
+
+
+
+#
+# Parameter Calibration with Gaussian Process Approximation, evaluating at mean function.
+#
 
 
 

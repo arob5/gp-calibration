@@ -39,7 +39,7 @@ data {
 transformed data {
   matrix[N, N] K = cov_exp_quad_same(X, gp_rho, gp_alpha, gp_sigma); 
   matrix[N, N] L = cholesky_decompose(K);
-  vector[N] K_inv_y = L' \ (L \ y); 
+  vector[N] K_inv_y = L' \ (L \ (y - rep_vector(gp_mean, N))); 
 }
 
 parameters {
@@ -50,7 +50,7 @@ parameters {
 model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
-  target += gp_approx(L, K_inv_y, X, N, 1, gp_rho, gp_alpha, gp_sigma, tau, u);
+  target += gp_approx(L, K_inv_y, X, N, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
 }
 
 

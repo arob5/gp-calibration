@@ -21,7 +21,7 @@ define.stan.data.block <- function() {
     vector<lower=0>[k] gp_rho; // Vector of lengthscale parameters
     real<lower=0> gp_alpha; // Marginal standard deviation
     real<lower=0> gp_sigma; // Nugget (standard deviation)
-    vector[k] gp_beta; // Vector of regression coefficients for linear mean function
+    vector[k] gp_mean; // Contant GP mean
   }'
 }
 
@@ -116,12 +116,18 @@ convert.mlegp.params <- function(gp) {
     stop('convert.mlegp.params() does not support non-constant mean function.')
   }
   
-  gp.params <- list(gp_rho = gp$beta,
-                    gp_alpha = sqrt(gp$sig2), 
-                    gp_sigma = gp$nugget, 
-                    gp_beta = gp$Bhat)
-                    
+  # If vector of lengthscale parameters has length 1, must store as array to avoid
+  # type error when passing to Stan.
+  gp.beta <- gp$beta
+  if(length(gp.beta) == 1) {
+    gp.beta <- array(gp.beta, dim = 1)
+  }
   
+  gp.params <- list(gp_rho = gp.beta,
+                    gp_alpha = sqrt(gp$sig2), 
+                    gp_sigma = sqrt(gp$nugget), 
+                    gp_mean = gp$Bhat)
+                    
   return(gp.params)
   
 }
