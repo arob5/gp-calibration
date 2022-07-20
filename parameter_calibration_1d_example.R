@@ -9,7 +9,7 @@
 # approx MCMC, respectively, 
 #
 # Andrew Roberts
-# Working Directory: /projectnb2/dietzelab/arober/test_code
+# Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
 library(rstan)
 library(mlegp)
