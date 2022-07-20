@@ -124,7 +124,7 @@ stan.gp.model.path <- file.path(base.dir, 'parameter_calibration_gp_1d_example.s
 model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
-stan.gp.list <- list(N = N, 
+stan.list.gp <- list(N = N, 
                      y = as.vector(SS),
                      X = X, 
                      a = tau.shape, 
@@ -138,9 +138,9 @@ stan.gp.list <- list(N = N,
                      )
 
 # MCMC
-fit <- sampling(model, stan.list, iter = 50000, chains = 4)
-summary(fit)
-samples.brute.force <- extract(fit)
+fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4)
+summary(fit.gp)
+samples.gp <- extract(fit.gp)
 
 
 
