@@ -125,6 +125,7 @@ model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
 stan.list.gp <- list(N = N, 
+                     n = n,
                      y = as.vector(SS),
                      X = X, 
                      a = tau.shape, 
