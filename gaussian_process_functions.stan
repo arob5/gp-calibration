@@ -54,17 +54,24 @@ matrix cov_exp_quad_same(matrix X, vector rho, real alpha, real sigma) {
   int N = rows(X); 
   int k = num_elements(rho); 
   vector[k] weights = 1.0 ./ rho; // (rho .^ 2.0); Elementwise power not available in current rstan version
+  
+  real eps;
+  matrix[N, N] K;
     
-  matrix[N, N] K; 
+  if(sigma == 0.0) {
+    eps = sqrt(machine_precision()); 
+  } else{
+    eps = sigma^2; 
+  }
     
   for (i in 1:(N - 1)) {
-    K[i, i] = alpha^2 + sigma^2 + sqrt(machine_precision());
+    K[i, i] = alpha^2 + eps;
     for (j in (i + 1):N) {
       K[i, j] = alpha^2 * exp(-0.5 * squared_distance_weighted(X[i], X[j], weights));
       K[j, i] = K[i, j];
     }
   }
-  K[N, N] = alpha^2 + sigma^2 + sqrt(machine_precision());
+  K[N, N] = alpha^2 + eps;
   
   return(K); 
 }

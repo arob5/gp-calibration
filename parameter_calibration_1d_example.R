@@ -91,6 +91,8 @@ samples.brute.force <- extract(fit)
 #
 
 # Design matrix, evaluate model at design points
+# TODO: Extend quantiles farther into tails
+# Try using more extreme u values
 N <- 100
 X <- matrix(seq(qnorm(.025, u.mean, u.sigma), qnorm(.975, u.mean, u.sigma), length = N), ncol = 1)
 y_model <- f(X)

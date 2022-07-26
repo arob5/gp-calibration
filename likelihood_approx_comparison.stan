@@ -39,11 +39,27 @@ transformed data {
 
 generated quantities {
   vector[m] u_vals_llik; 
+  vector[m] mean_test; 
+  vector[m] var_test; 
+  vector[N] mean_design; 
+  vector[N] var_design; 
   
   for(i in 1:m) {
-    u_vals_llik[i] = gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u_vals[i]); 
+    matrix[1, 1] x_mat = to_matrix(u_vals[i], 1, 1, 1); 
+    vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, gp_rho, gp_alpha));
+    u_vals_llik[i] = gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u_vals[i]);
+    mean_test[i] = calc_gp_predictive_mean(k_xX, K_inv_y, gp_mean); 
+    var_test[i] = calc_gp_predictive_var(L, k_xX, x_mat, N, gp_rho, gp_alpha, gp_sigma);
+  }
+  
+  for(i in 1:N) {
+    matrix[1, 1] x_mat = to_matrix(X[i], 1, 1, 1); 
+    vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, gp_rho, gp_alpha));
+    mean_design[i] = calc_gp_predictive_mean(k_xX, K_inv_y, gp_mean); 
+    var_design[i] = calc_gp_predictive_var(L, k_xX, x_mat, N, gp_rho, gp_alpha, gp_sigma);
   }
   
 }
+
 
 
