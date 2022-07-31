@@ -19,7 +19,7 @@ rstan_options(auto_write = TRUE)
 # Squared Exponential (i.e. Gaussian) kernel
 K <- function(X1, X2 = NA, rho, alpha) {
   if(is.na(X2[1][1])) X2 <- X1
-  C <- matrix(, nrow = nrow(X1), ncol = nrow(X2))
+  C <- matrix(NA, nrow = nrow(X1), ncol = nrow(X2))
   
   for(i in 1:nrow(X1)) {
     for(j in 1:nrow(X2)) {

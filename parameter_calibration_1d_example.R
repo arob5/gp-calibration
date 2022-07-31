@@ -9,7 +9,7 @@
 # approx MCMC, respectively, 
 #
 # Andrew Roberts
-# Working Directory: /projectnb2/dietzelab/arober/test_code
+# Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
 library(rstan)
 library(mlegp)
@@ -91,6 +91,8 @@ samples.brute.force <- extract(fit)
 #
 
 # Design matrix, evaluate model at design points
+# TODO: Extend quantiles farther into tails
+# Try using more extreme u values
 N <- 100
 X <- matrix(seq(qnorm(.025, u.mean, u.sigma), qnorm(.975, u.mean, u.sigma), length = N), ncol = 1)
 y_model <- f(X)
@@ -126,6 +128,7 @@ model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
 stan.list.gp <- list(N = N, 
+                     n = n,
                      y = as.vector(SS),
                      X = X, 
                      a = tau.shape, 

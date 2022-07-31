@@ -20,6 +20,7 @@ functions {
 
 data {
   int<lower=1> N; // Number of design points (i.e. knots)
+  int<lower=1> n; // The number of observed data points (i.e. the dimension of the MVN likelihood)
   
   vector[N] y;    // Vector of sufficient statistics evaluated at design points
   matrix[N, 1] X; // Design matrix
@@ -50,7 +51,7 @@ parameters {
 model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
-  target += gp_approx(L, K_inv_y, X, N, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
+  target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
 }
 
 
