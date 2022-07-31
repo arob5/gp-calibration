@@ -109,6 +109,7 @@ SS.max <- max(SS)
 SS.min <- min(SS)
 SS <- 1 - (SS.max - SS) / (SS.max - SS.min)
 SS <- matrix(SS, ncol = 1)
+plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Statistic')
 
 # Fit GP
 gp_mle <- mlegp(X, SS, nugget.known = 0, constantMean = 1)

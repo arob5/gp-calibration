@@ -22,6 +22,7 @@ rstan_options(auto_write = TRUE)
 stan.model.path <- 'sample_gp_test.stan'
 model <- stan_model(stan.model.path)
 
+
 #
 # Test 1: simple 1D example
 #
