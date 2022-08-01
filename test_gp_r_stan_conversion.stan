@@ -44,9 +44,14 @@ generated quantities {
   vector[N] mean_design; 
   vector[N] var_design; 
   
+  matrix[N_pred, 1] X_pred_mat; 
+  for(i in 1:N_pred) {
+    X_pred_mat[i,1] = X_pred[i][1]; 
+  }
+  
   K_out = K; 
-  K_pred = cov_exp_quad_same(X_pred, gp_rho, gp_alpha, gp_sigma);
-  K_cross = cov_exp_quad_cross(X, X_pred, gp_rho, gp_alpha); 
+  K_pred = cov_exp_quad_same(X_pred_mat, gp_rho, gp_alpha, gp_sigma);
+  K_cross = cov_exp_quad_cross(X, X_pred_mat, gp_rho, gp_alpha); 
   
   for(i in 1:N_pred) {
     matrix[1, 1] x_mat = to_matrix(X_pred[i], 1, 1, 1); 
