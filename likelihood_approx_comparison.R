@@ -221,51 +221,6 @@ for(j in seq_along(tau.vals)) {
   gp.fits[[j]] <- mlegp(X, SS[,j], nugget.known = 0, constantMean = 1)
 }
 
-#
-# Tests 
-# TODO: Move these to a separate testing file
-
-# # 1.) Test that kernel gives same results
-# gp <- gp.fits[[1]]
-# rho <- 1 / (2 * gp$beta)
-# alpha <- sqrt(gp$sig2)
-# sigma <- sqrt(gp$nugget)
-# mu <- gp$Bhat
-# 
-# K.r <- K(X, rho = rho, alpha = alpha) + diag(rep(sigma^2, nrow(X)))
-# K.mlegp <- calcVarMatrix(X, gp$beta, gp$a, gp$nugget, gp$sig2, 0, gp$numObs)
-# print(paste0("Cov matrices K(X) equal: ", all.equal(K.r, K.mlegp)))
-# 
-# # 2.) Test that mean prediction gives same results
-# gp.mean.test <- predict_mean(X, X, SS[, 1],
-#                              rho = rho, 
-#                              alpha = alpha, 
-#                              sigma = sigma, 
-#                              mu = mu)
-# 
-# gp.pred <- predict(gp, se.fit = TRUE)
-# gp.mean <- gp.pred$fit
-# max(abs(as.vector(gp.mean.test) - as.vector(gp.mean)))
-# 
-# # 3.) Test that standard error prediction gives same results
-# c <- calcCorOneObs(X, gp$beta, gp$a, X[1,]) * alpha^2
-# c.test <- K(as.matrix(X[1,]), X, rho, alpha)
-# print(paste0("Covariance between design and one test point equal: ", all.equal(c, c.test)))
-# 
-# K.inv.test <- solve(K(X, X, rho, alpha) + diag(rep(sigma^2, nrow(X))))
-# print(paste0("Inverse cov matrices equal: ", all.equal(K.inv.test, gp.fits[[1]]$invVarMatrix)))
-# 
-# v <- calcPredictionError(gp, X[1,], nugget = gp$nugget)
-# v.test <- sqrt(predict_var(X[1,,drop=FALSE], X, SS[,1], rho, alpha, sigma))
-# print(paste0("Predictive standard errors equal (single test point): ", all.equal(v, v.test)))
-# 
-# gp.se.test <- sqrt(diag(predict_var(X, X, SS[, 1], rho, alpha, sigma)))
-# gp.se <- as.vector(gp.pred$se.fit)
-# max(abs(gp.se.test - gp.se))
-
-
-
-
 # True likelihood at design points
 llik.design <- matrix(NA, nrow = N, ncol = length(tau.vals))
 for(i in seq(1, N)) {

@@ -123,7 +123,7 @@ convert.mlegp.params <- function(gp) {
     gp.beta <- array(gp.beta, dim = 1)
   }
   
-  gp.params <- list(gp_rho = 1 / (2 * gp.beta),
+  gp.params <- list(gp_rho = array(1 / (2 * gp.beta), dim = 1),
                     gp_alpha = sqrt(gp$sig2), 
                     gp_sigma = sqrt(gp$nugget), 
                     gp_mean = gp$Bhat)
