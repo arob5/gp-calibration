@@ -128,7 +128,7 @@ sigma <- 1.0
 nx <- 20
 x <- seq(0, 2*pi, length = nx)
 X_df <- expand.grid(x, x)
-X <- as.matrix(X.df)
+X <- as.matrix(X_df)
 y <- sin(X[,1] + 4*X[,2])
 
 # Test data
