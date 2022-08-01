@@ -7,6 +7,10 @@
 #
 # Andrew Roberts
 
+# TODO:
+#   1.) Compare Stan function gp_approx() to function defined in R (as in likelihood comparison script).
+#   2.) Ensure model interpolates when nugget is zero and predictive variance is equal to nugget at design points.
+
 library(rstan)
 library(mlegp)
 

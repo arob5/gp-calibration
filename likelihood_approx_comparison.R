@@ -6,12 +6,6 @@
 # Andrew Roberts
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
-#
-# TODO: code up the covariance function in R (copy from other file) and try to 
-#       re-produce the MLE GP standard errors. 
-#
-
-
 library(mvtnorm)
 library(rstan)
 library(mlegp)
@@ -19,9 +13,11 @@ library(mlegp)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
-#
+source("stan.helper.functions.R")
+
+# -----------------------------------------------------------------------------
 # Settings
-#
+# -----------------------------------------------------------------------------
 
 # The function that is acting as the computer model. Should be equivalent to 
 # the function of the same name in the Stan file. 
@@ -33,7 +29,24 @@ f.string <- "(10.0 + 4.0*u + u^3) / 147"
 
 # Directories
 base.dir <- '.'
-base.out.dir <- file.path(base.dir, '..', 'test_output')
+# base.out.dir <- file.path(base.dir, '..', 'test_output')
+base.out.dir <- file.path(base.dir, 'output')
+
+# Create sub-directory in output directory
+tag <- '1'
+subdir.name <- paste0('llik_approx_comparison_', tag)
+out.dir <- file.path(base.out.dir, subdir.name)
+dir.create(out.dir)
+
+# Write text file with function f()
+file.con <- file(file.path(out.dir, "f.txt"))
+writeLines(f.string, file.con)
+close(file.con)
+
+
+# -----------------------------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------------------------
 
 # Log unnormalized isotropic multivariate normal density
 dmvnorm.log.unnorm <- function(y, u, tau) {
@@ -114,22 +127,11 @@ predict_var<- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
 }
 
 
-# Create sub-directory in output directory
-tag <- 'extrap'
-subdir.name <- paste0('llik_approx_comparison_', tag)
-out.dir <- file.path(base.out.dir, subdir.name)
-dir.create(out.dir)
-
-# Write text file with function f()
-file.con <- file(file.path(out.dir, "f.txt"))
-writeLines(f.string, file.con)
-close(file.con)
-
-
-#
-# Define support of calibration parameter u and consider set of fixed values of 
-# precision parameter tau for Gaussian likelihood.
-#
+# -----------------------------------------------------------------------------
+# Simulate data
+#   Fixing "true" values of calibration parameter u and precision parameter 
+#   tau, then simulating observed data using these values.
+# -----------------------------------------------------------------------------
 
 # True calibration parameter value
 u <- 4
@@ -137,7 +139,7 @@ u <- 4
 # Support of calibration parameter
 u.min <- -2
 u.max <- 10
-u.extrapolation.width <- 5
+u.extrapolation.width <- 1
 
 n.u <- 1000
 u.vals <- seq(u.min - u.extrapolation.width, u.max + u.extrapolation.width, length = n.u)
@@ -145,11 +147,6 @@ u.vals <- seq(u.min - u.extrapolation.width, u.max + u.extrapolation.width, leng
 # Precision parameter values.
 sigma.vals <- c(.1, .2)
 tau.vals <- 1/sigma.vals^2
-
-
-#
-# Simulate observed data.
-#
 
 # Simulate observed data
 n <- 1000
@@ -160,30 +157,38 @@ for(j in seq_along(sigma.vals)) {
 }
 
 
-#
-# Plot likelihood
-#
+# -----------------------------------------------------------------------------
+# Calculate true values of log-likelihood at design points and test points.
+# -----------------------------------------------------------------------------
 
-likelihood.exact <- matrix(NA, nrow = n.u, ncol = length(sigma.vals))
+# True log-likelihood at design points
+llik.design <- matrix(NA, nrow = N, ncol = length(tau.vals))
+for(i in seq(1, N)) {
+  for(j in seq_along(tau.vals)) {
+    llik.design[i,j] <- dmvnorm.log.unnorm(y.obs[,j], X[i,1], tau.vals[j])
+  }
+}
 
+# True log-likelihood at test points
+llik.pred <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
 for(i in seq(1, n.u)) {
   for(j in seq_along(tau.vals)) {
-    likelihood.exact[i, j] <- dmvnorm.log.unnorm(y.obs[,j], u.vals[i], tau.vals[j])
+    llik.pred[i, j] <- dmvnorm.log.unnorm(y.obs[,j], u.vals[i], tau.vals[j])
   }
 }
 
 png(file.path(out.dir, 'exact_llik.png'), width=600, height=350)
 par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
-matplot(matrix(u.vals, ncol = 1), likelihood.exact, type = 'l', 
+matplot(matrix(u.vals, ncol = 1), llik.pred, type = 'l', 
         lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", main = "Exact Log-Likelihood")
 legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
        col=seq_along(tau.vals), 
        fill=seq_along(tau.vals), title="tau")
 dev.off()
 
-#
+# -----------------------------------------------------------------------------
 # Fit GP regression
-#
+# -----------------------------------------------------------------------------
 
 # Design matrix, evaluate model at design points
 N <- 10
@@ -204,6 +209,14 @@ for(i in seq(1, N)) {
   }
 }
 
+# Similarly calculate true SS at test points for reference in subsequent plots
+SS.pred <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+for(i in seq(1, n.u)) {
+  for(j in seq_along(tau.vals)) {
+    SS.pred[i, j] <- sum((f(u.vals[i]) - y.obs[,j])^2)
+  }
+}
+
 # Scale to unit interval
 # max.SS <- apply(SS, 2, max)
 # min.SS <- apply(SS, 2, min)
@@ -221,13 +234,12 @@ for(j in seq_along(tau.vals)) {
   gp.fits[[j]] <- mlegp(X, SS[,j], nugget.known = 0, constantMean = 1)
 }
 
-# True likelihood at design points
-llik.design <- matrix(NA, nrow = N, ncol = length(tau.vals))
-for(i in seq(1, N)) {
-  for(j in seq_along(tau.vals)) {
-    llik.design[i,j] <- dmvnorm.log.unnorm(y.obs[,j], X[i,1], tau.vals[j])
-  }
-}
+
+# -----------------------------------------------------------------------------
+# GP predictive mean plots: 
+#   - Predictive mean of sufficient statistic with confidence interval
+#   - Log-likelihood evaluated at sufficient statistic with confidence interval
+# -----------------------------------------------------------------------------
 
 # GP predictive mean and standard error at test points
 interval.pct <- .8
@@ -251,34 +263,47 @@ matplot(matrix(u.vals, ncol=1), gp.pred.means, xlab = 'u', type = 'l',
         lty = 1, ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% interval'),
         main = 'GP Predictive Mean of SS', 
         ylim = c(min(gp.pred.lower), max(gp.pred.upper)))
+legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
+       col=seq_along(tau.vals), 
+       fill=seq_along(tau.vals), title="tau")
 matpoints(X, SS, pch = 16)
-matlines(matrix(u.vals, ncol=1), gp.pred.upper)
-matlines(matrix(u.vals, ncol=1), gp.pred.lower)
+matlines(matrix(u.vals, ncol=1), gp.pred.upper, lty=3)
+matlines(matrix(u.vals, ncol=1), gp.pred.lower, lty=3)
+matlines(matrix(u.vals, ncol=1), SS.pred, lty=5)
 dev.off()
 
+# Likelihood using GP mean approximation
 likelihood.gp.mean <- matrix(NA, nrow = n.u, ncol = length(sigma.vals))
+likelihood.gp.upper <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+likelihood.gp.lower <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
 
 for(i in seq(1, n.u)) {
   for(j in seq_along(tau.vals)) {
     likelihood.gp.mean[i, j] <- dmvnorm.log.unnorm.SS(gp.pred.means[i, j], tau.vals[j], n)
+    likelihood.gp.upper[i, j] <- dmvnorm.log.unnorm.SS(gp.pred.upper[i, j], tau.vals[j], n)
+    likelihood.gp.lower[i, j] <- dmvnorm.log.unnorm.SS(gp.pred.lower[i, j], tau.vals[j], n)
   }
 }
 
 png(file.path(out.dir, 'gp_mean_llik.png'), width=600, height=350)
 par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
 matplot(matrix(u.vals, ncol = 1), likelihood.gp.mean, type = 'l', 
-        lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", 
+        lty=1, xlab="u", 
+        ylab=paste0("Unnormalized Log-Likelihood and ", 100*interval.pct, "% interval"), 
         main = "GP Mean Approx Log-Likelihood")
-# points(u, 0, col="blue", pch=16)
-matpoints(X, llik.design, pch=16)
 legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
        col=seq_along(tau.vals), 
        fill=seq_along(tau.vals), title="tau")
+matlines(matrix(u.vals, ncol=1), likelihood.gp.upper, lty=3)
+matlines(matrix(u.vals, ncol=1), likelihood.gp.lower, lty=3)
+matlines(matrix(u.vals, ncol=1), llik.pred, lty=5)
+matpoints(X, llik.design, pch=16)
 dev.off()
 
-#
-# Now incorporate uncertainty via "GP integrated out" log-likelihood
-#
+
+# -----------------------------------------------------------------------------
+# Incorporate uncertainty via "GP integrated out" log-likelihood
+# -----------------------------------------------------------------------------
 
 # Compile Stan code
 stan.model.path <- file.path(base.dir, 'likelihood_approx_comparison.stan')
@@ -288,18 +313,18 @@ model <- stan_model(stan.model.path)
 likelihood.gp.uq <- matrix(NA, nrow = n.u, ncol = length(sigma.vals))
 stan.output <- vector(mode = 'list', length = length(tau.vals))
 for(j in seq_along(tau.vals)) {
-  stan.list <- list(N = N,
-                    n = n, 
-                    m = n.u, 
-                    tau = tau.vals[j],
-                    X = X,
-                    y = SS[,j],
-                    u_vals = matrix(u.vals, ncol=1),
-                    gp_rho = array(1 / (2*gp.fits[[j]]$beta), dim = 1),
-                    gp_alpha = sqrt(gp.fits[[j]]$sig2),
-                    gp_sigma = sqrt(gp.fits[[j]]$nugget), 
-                    gp_mean = gp.fits[[j]]$Bhat
-                   )
+  gp.stan.params <- create.gp.params.list(gp.fits[[j]], "mlegp")
+  stan.list <- as.list(c(gp.stan.params, 
+                         list(N = N,
+                              n = n, 
+                              N_pred = n.u, 
+                              tau = tau.vals[j],
+                              X = X,
+                              y = SS[,j],
+                              u_vals = matrix(u.vals, ncol=1)
+                             )
+                         )
+                        )
   
   stan.fit <- sampling(model, data = stan.list, warmup = 0, iter = 1, chains = 1, 
                        seed = 494838, refresh = 4000, algorithm = "Fixed_param")
@@ -312,17 +337,54 @@ par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
 matplot(matrix(u.vals, ncol = 1), likelihood.gp.uq, type = 'l', 
         lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", 
         main = "GP Integrated Out Approx Log-Likelihood")
-# points(u, 0, col="blue", pch=16)
 matpoints(X, llik.design, pch=16)
 legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
        col=seq_along(tau.vals), 
        fill=seq_along(tau.vals), title="tau")
+matlines(matrix(u.vals, ncol=1), llik.pred, lty=5)
+dev.off()
+
+
+# -----------------------------------------------------------------------------
+# Tests/Validation: 
+# -----------------------------------------------------------------------------
+
+#
+# Re-produce predictive means plot using Stan functionality instead of R
+#
+
+interval.pct <- .8
+p <- 1 - (1 - interval.pct)/2
+
+gp.pred.means.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+gp.pred.se.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+gp.pred.upper.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+gp.pred.lower.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+for(j in seq_along(tau.vals)) {
+  gp.pred.means.stan[,j] <- stan.output[[j]]$mean_test
+  gp.pred.se.stan[,j] <- sqrt(stan.output[[j]]$var_test)
+  gp.pred.upper.stan[,j] <- qnorm(p, gp.pred.means.stan[,j], gp.pred.se.stan[,j])
+  gp.pred.lower.stan[,j] <- qnorm(p, gp.pred.means.stan[,j], gp.pred.se.stan[,j], lower.tail = FALSE)
+}
+
+png(file.path(out.dir, 'gp_pred_mean_SS_stan.png'), width=600, height=350)
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+matplot(matrix(u.vals, ncol=1), gp.pred.means.stan, xlab = 'u', type = 'l', 
+        lty = 1, ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% interval'),
+        main = 'GP Predictive Mean of SS', 
+        ylim = c(min(gp.pred.lower.stan), max(gp.pred.upper.stan)))
+legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
+       col=seq_along(tau.vals), 
+       fill=seq_along(tau.vals), title="tau")
+matpoints(X, SS, pch = 16)
+matlines(matrix(u.vals, ncol=1), gp.pred.upper.stan, lty=3)
+matlines(matrix(u.vals, ncol=1), gp.pred.lower.stan, lty=3)
+matlines(matrix(u.vals, ncol=1), SS.pred, lty=5)
 dev.off()
 
 
 #
-# Validating GP integrated out Stan calculations by producing the same plot using 
-# R code. 
+# Re-produce GP integrated out plot using R instead of Stan
 #
 
 likelihood.gp.uq.test <- matrix(NA, nrow = n.u, ncol = length(sigma.vals))
@@ -346,44 +408,11 @@ matpoints(X, llik.design, pch=16)
 legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
        col=seq_along(tau.vals), 
        fill=seq_along(tau.vals), title="tau")
+matlines(matrix(u.vals, ncol=1), llik.pred, lty=5)
 dev.off()
 
-#
-# Tests
-#
-
-# GP Interpolates (predictive mean at design points)
-for(j in seq_along(tau.vals)) {
-  print(paste0("GP Interpolates: ", all.equal(stan.output[[j]]$mean_design[1,], SS[,j])))
-}
-
-# Predictive variance at design points
-head(sqrt(stan.output[[1]]$var_design[1,]))
 
 
-interval.pct <- .8
-p <- 1 - (1 - interval.pct)/2
 
-gp.pred.means.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.se.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.upper.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.lower.stan <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-for(j in seq_along(tau.vals)) {
-  gp.pred.means.stan[,j] <- stan.output[[j]]$mean_test
-  gp.pred.se.stan[,j] <- sqrt(stan.output[[j]]$var_test)
-  gp.pred.upper.stan[,j] <- qnorm(p, gp.pred.means.stan[,j], gp.pred.se.stan[,j])
-  gp.pred.lower.stan[,j] <- qnorm(p, gp.pred.means.stan[,j], gp.pred.se.stan[,j], lower.tail = FALSE)
-}
-
-png(file.path(out.dir, 'gp_pred_mean_SS_stan.png'), width=600, height=350)
-par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
-matplot(matrix(u.vals, ncol=1), gp.pred.means.stan, xlab = 'u', type = 'l', 
-        lty = 1, ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% interval'),
-        main = 'GP Predictive Mean of SS', 
-        ylim = c(min(gp.pred.lower.stan), max(gp.pred.upper.stan)))
-matpoints(X, SS, pch = 16)
-matlines(matrix(u.vals, ncol=1), gp.pred.upper.stan)
-matlines(matrix(u.vals, ncol=1), gp.pred.lower.stan)
-dev.off()
 
 

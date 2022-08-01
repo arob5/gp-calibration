@@ -14,12 +14,12 @@ functions {
 data {
   int<lower=1> N; // Number of locations at which to sample
   int<lower=1> n; // The number of observed data points (i.e. the dimension of the MVN likelihood)
-  int<lower=1> m; // The number of prediction points (i.e. points at which to evaluate gp_approx())
+  int<lower=1> N_pred; // The number of prediction points (i.e. points at which to evaluate gp_approx())
   
   real<lower=0> tau; // Precision parameter to use for Gaussian likelihood
   matrix[N, 1] X; // Design matrix
   vector[N] y;    // Vector of sufficient statistics evaluated at design points
-  vector[1] u_vals[m]; // Vector of 1D prediction points
+  vector[1] u_vals[N_pred]; // Vector of 1D prediction points
   
   vector<lower=0>[1] gp_rho; // Vector of lengthscale parameters
   real<lower=0> gp_alpha; // Marginal standard deviation
@@ -38,25 +38,16 @@ transformed data {
 }
 
 generated quantities {
-  vector[m] u_vals_llik; 
-  vector[m] mean_test; 
-  vector[m] var_test; 
-  vector[N] mean_design; 
-  vector[N] var_design; 
+  vector[N_pred] u_vals_llik; 
+  vector[N_pred] mean_test; 
+  vector[N_pred] var_test; 
   
-  for(i in 1:m) {
+  for(i in 1:N_pred) {
     matrix[1, 1] x_mat = to_matrix(u_vals[i], 1, 1, 1); 
     vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, gp_rho, gp_alpha));
     u_vals_llik[i] = gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u_vals[i]);
     mean_test[i] = calc_gp_predictive_mean(k_xX, K_inv_y, gp_mean); 
     var_test[i] = calc_gp_predictive_var(L, k_xX, x_mat, N, gp_rho, gp_alpha, gp_sigma);
-  }
-  
-  for(i in 1:N) {
-    matrix[1, 1] x_mat = to_matrix(X[i], 1, 1, 1); 
-    vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, gp_rho, gp_alpha));
-    mean_design[i] = calc_gp_predictive_mean(k_xX, K_inv_y, gp_mean); 
-    var_design[i] = calc_gp_predictive_var(L, k_xX, x_mat, N, gp_rho, gp_alpha, gp_sigma);
   }
   
 }
