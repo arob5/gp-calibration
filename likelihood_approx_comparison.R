@@ -6,6 +6,13 @@
 # Andrew Roberts
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
+#
+# TODO:
+#   - Re-write code to only run with one tau value at a time, and clean up plots/create new legends
+#   - Think about GP uncertainty; why does GP seem more confident than I would expect?
+#   - Run some actual parameter calibration examples.
+
+
 library(mvtnorm)
 library(rstan)
 library(mlegp)
@@ -22,10 +29,10 @@ source("stan.helper.functions.R")
 # The function that is acting as the computer model. Should be equivalent to 
 # the function of the same name in the Stan file. 
 f <- function(u) {
-  return( (7.0 + 4.0*u + u^2)/147 )
+  return(u)
 }
 
-f.string <- "(10.0 + 4.0*u + u^3) / 147"
+f.string <- "u"
 
 # Directories
 base.dir <- '.'
@@ -33,7 +40,7 @@ base.dir <- '.'
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- '1'
+tag <- '2'
 subdir.name <- paste0('llik_approx_comparison_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -134,27 +141,33 @@ predict_var<- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
 # -----------------------------------------------------------------------------
 
 # True calibration parameter value
-u <- 4
+u <- .5
 
 # Support of calibration parameter
-u.min <- -2
-u.max <- 10
-u.extrapolation.width <- 1
+u.min <- 0
+u.max <- 1
+u.extrapolation.width <- .01
 
 n.u <- 1000
 u.vals <- seq(u.min - u.extrapolation.width, u.max + u.extrapolation.width, length = n.u)
+X.pred <- matrix(u.vals, ncol=1)
 
 # Precision parameter values.
-sigma.vals <- c(.1, .2)
-tau.vals <- 1/sigma.vals^2
+sigma <- .3
+tau <- 1/sigma^2
 
 # Simulate observed data
 n <- 1000
-y.obs <- matrix(NA, nrow = n, ncol = length(sigma.vals))
+y.obs <- matrix(NA, nrow = n, ncol = 1)
+y.obs[,1] <- rnorm(n, f(u), sigma)
 
-for(j in seq_along(sigma.vals)) {
-  y.obs[,j] <- rnorm(n, f(u), sigma.vals[j])
-}
+
+# Design matrix, evaluate model at design points
+N <- 10
+design.points <- c(0, .05, .07, .08, .1, .2, .25, .3, 1)
+N <- length(design.points)
+X <- matrix(design.points, ncol = 1)
+y_model <- f(X)
 
 
 # -----------------------------------------------------------------------------
@@ -162,59 +175,41 @@ for(j in seq_along(sigma.vals)) {
 # -----------------------------------------------------------------------------
 
 # True log-likelihood at design points
-llik.design <- matrix(NA, nrow = N, ncol = length(tau.vals))
+llik.design <- matrix(NA, nrow = N, ncol = 1)
 for(i in seq(1, N)) {
-  for(j in seq_along(tau.vals)) {
-    llik.design[i,j] <- dmvnorm.log.unnorm(y.obs[,j], X[i,1], tau.vals[j])
-  }
+  llik.design[i,1] <- dmvnorm.log.unnorm(y.obs[,1], X[i,1], tau)
 }
 
 # True log-likelihood at test points
-llik.pred <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+llik.pred <- matrix(NA, nrow = n.u, ncol = 1)
 for(i in seq(1, n.u)) {
-  for(j in seq_along(tau.vals)) {
-    llik.pred[i, j] <- dmvnorm.log.unnorm(y.obs[,j], u.vals[i], tau.vals[j])
-  }
+  llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs[,1], u.vals[i], tau)
 }
 
 png(file.path(out.dir, 'exact_llik.png'), width=600, height=350)
 par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
 matplot(matrix(u.vals, ncol = 1), llik.pred, type = 'l', 
-        lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", main = "Exact Log-Likelihood")
-legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
-       col=seq_along(tau.vals), 
-       fill=seq_along(tau.vals), title="tau")
+        lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", 
+        main = "Exact Log-Likelihood", col="red")
 dev.off()
 
 # -----------------------------------------------------------------------------
 # Fit GP regression
 # -----------------------------------------------------------------------------
 
-# Design matrix, evaluate model at design points
-N <- 10
-design.points <- c(seq(-2, 0, length=4), seq(0.5, 2, length=7), 
-                   seq(2.5, 5, length=3), seq(5.5, 8, length=3), seq(8.5, 10, length=10))
-N <- length(design.points)
-X <- matrix(design.points, ncol = 1)
-y_model <- f(X)
-
 # Define the sufficient statistic (SS). For simplicity here, I'm not considering any other explanatory variables
 # x that are being conditioned on. If there were, we would have to make sure we were lining up the observed data
 # and the process model data correctly conditional on x. So in this case, y_model[1] is just a constant predictor
 # of the output variable given the first calibration parameter (design point) X[1,1]. 
-SS <- matrix(NA, nrow = N, ncol = length(tau.vals))
+SS <- matrix(NA, nrow = N, ncol = 1)
 for(i in seq(1, N)) {
-  for(j in seq_along(tau.vals)) {
-    SS[i, j] <- sum((y_model[i] - y.obs[,j])^2)
-  }
+  SS[i, 1] <- sum((y_model[i] - y.obs[,1])^2)
 }
 
 # Similarly calculate true SS at test points for reference in subsequent plots
-SS.pred <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
+SS.pred <- matrix(NA, nrow = n.u, ncol = 1)
 for(i in seq(1, n.u)) {
-  for(j in seq_along(tau.vals)) {
-    SS.pred[i, j] <- sum((f(u.vals[i]) - y.obs[,j])^2)
-  }
+  SS.pred[i, 1] <- sum((f(u.vals[i]) - y.obs[,1])^2)
 }
 
 # Scale to unit interval
@@ -229,11 +224,7 @@ for(i in seq(1, n.u)) {
 matplot(X, SS, xlab = 'Design Point', pch = 16, ylab = 'Sufficient Statistic')
 
 # Fit GP
-gp.fits <- vector(mode = 'list', length = length(tau.vals))
-for(j in seq_along(tau.vals)) {
-  gp.fits[[j]] <- mlegp(X, SS[,j], nugget.known = 0, constantMean = 1)
-}
-
+gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
 
 # -----------------------------------------------------------------------------
 # GP predictive mean plots: 
@@ -242,35 +233,38 @@ for(j in seq_along(tau.vals)) {
 # -----------------------------------------------------------------------------
 
 # GP predictive mean and standard error at test points
-interval.pct <- .8
+interval.pct <- .95
 p <- 1 - (1 - interval.pct)/2
 
-gp.pred.means <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.se <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.upper <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-gp.pred.lower <- matrix(NA, nrow = n.u, ncol = length(tau.vals))
-for(j in seq_along(tau.vals)) {
-  gp.pred <- predict.gp(gp.fits[[j]], matrix(u.vals, ncol=1), se.fit = TRUE)
-  gp.pred.means[,j] <- gp.pred$fit
-  gp.pred.se[,j] <- sqrt((gp.pred$se.fit)^2 + gp.fits[[j]]$nugget)
-  gp.pred.upper[,j] <- qnorm(p, gp.pred.means[,j], gp.pred.se[,j])
-  gp.pred.lower[,j] <- qnorm(p, gp.pred.means[,j], gp.pred.se[,j], lower.tail = FALSE)
-}
+gp.pred <- predict.gp(gp.fit, X.pred, se.fit = TRUE)
+gp.pred.means <- gp.pred$fit
+gp.pred.se <- sqrt((gp.pred$se.fit)^2 + gp.fit$nugget)
+gp.pred.upper <- qnorm(p, gp.pred.means, gp.pred.se)
+gp.pred.lower <- qnorm(p, gp.pred.means, gp.pred.se, lower.tail = FALSE)
 
 png(file.path(out.dir, 'gp_pred_mean_SS.png'), width=600, height=350)
 par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+plot(X.pred, gp.pred.means, xlab = 'u', type = 'l', lty = 1, 
+     ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% CI'),
+     main = 'GP Predictive Mean of SS', 
+     ylim = c(min(gp.pred.lower), max(gp.pred.upper)),
+     col = 'blue')
+points(X, SS, pch = 16)
+matlines(X.pred, gp.pred.upper, lty=5, col="gray")
+matlines(X.pred, gp.pred.lower, lty=5, col="gray")
+dev.off()
+
+
 matplot(matrix(u.vals, ncol=1), gp.pred.means, xlab = 'u', type = 'l', 
         lty = 1, ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% interval'),
         main = 'GP Predictive Mean of SS', 
-        ylim = c(min(gp.pred.lower), max(gp.pred.upper)))
-legend("right", inset=c(-0.2,-0.3), legend=tau.vals, 
-       col=seq_along(tau.vals), 
-       fill=seq_along(tau.vals), title="tau")
+        ylim = c(min(gp.pred.lower), max(gp.pred.upper)), 
+        col = "red")
 matpoints(X, SS, pch = 16)
-matlines(matrix(u.vals, ncol=1), gp.pred.upper, lty=3)
-matlines(matrix(u.vals, ncol=1), gp.pred.lower, lty=3)
-matlines(matrix(u.vals, ncol=1), SS.pred, lty=5)
-dev.off()
+matlines(matrix(u.vals, ncol=1), gp.pred.upper, lty=5, col="gray")
+matlines(matrix(u.vals, ncol=1), gp.pred.lower, lty=5, col="gray")
+matlines(matrix(u.vals, ncol=1), SS.pred, col="blue")
+
 
 # Likelihood using GP mean approximation
 likelihood.gp.mean <- matrix(NA, nrow = n.u, ncol = length(sigma.vals))
