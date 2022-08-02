@@ -11,7 +11,7 @@ functions {
   // This defines the stand-in for the process-based model/computer simulation 
   // that is used in this test. 
   real f(real u) {
-    return( 10.0 + 4.0*u - u^3 ); 
+    return(u); 
   }
 }
 

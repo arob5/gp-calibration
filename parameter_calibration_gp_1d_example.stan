@@ -9,13 +9,6 @@
 
 functions {
 #include gaussian_process_functions.stan
-  
-  
-  // This defines the stand-in for the process-based model/computer simulation 
-  // that is used in this test. 
-  real f(real u) {
-    return( 10.0 + 4.0*u - u^3 ); 
-  }
 }
 
 data {
@@ -53,6 +46,7 @@ model {
   tau ~ gamma(a, b);
   target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
 }
+
 
 
 

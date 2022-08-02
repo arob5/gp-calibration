@@ -17,6 +17,8 @@ library(mlegp)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
+source("stan.helper.functions.R")
+
 #
 # Settings
 #
@@ -24,42 +26,28 @@ rstan_options(auto_write = TRUE)
 # The function that is acting as the computer model. Should be equivalent to 
 # the function of the same name in the Stan file. 
 f <- function(u) {
-  return( 10.0 + 4.0*u - u^3 )
+  return(u)
 }
 
 # Hyperparameters (shape and rate) for Gamma hyperprior on tau (precision parameter). Using values 
 # taken from an actual PEcAn run. 
-tau.shape <- 7.5
+tau.shape <- 16
 tau.rate <- 1.0
 
 # Number of observations to simulate
 n <- 1000
 
 # Gaussian prior parameters on calibration parameter
-u.mean <- 10.0
-u.sigma <- 5.0
+u.mean <- 0.5
+u.sigma <- 0.25
 
 # Directories
 base.dir <- '.'
 out.dir <- file.path(base.dir, 'output')
 
 #
-# Simulate Data
+# Simulate Data, fixing u and tau at their prior means
 #
-
-# Independent draws from calibration parameter prior
-u <- rnorm(n, u.mean, u.sigma)
-
-# Independent draws from tau prior
-tau <- rgamma(n, tau.shape, rate = tau.rate)
-
-# Vector of observed values
-y <- rnorm(n, f(u), 1/sqrt(tau))
-
-#
-# Alternative way to simulate data, fix u and tau at their prior means
-#
-
 u <- u.mean
 tau <- tau.shape / tau.rate
 y <- rnorm(n, f(u), 1/sqrt(tau))
@@ -91,11 +79,10 @@ samples.brute.force <- extract(fit)
 #
 
 # Design matrix, evaluate model at design points
-# TODO: Extend quantiles farther into tails
-# Try using more extreme u values
-N <- 100
-X <- matrix(seq(qnorm(.025, u.mean, u.sigma), qnorm(.975, u.mean, u.sigma), length = N), ncol = 1)
-y_model <- f(X)
+# TODO: Try using more extreme u values
+N <- 10
+X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
+y.model <- f(X)
 
 # Define the sufficient statistic (SS). For simplicity here, I'm not considering any other explanatory variables
 # x that are being conditioned on. If there were, we would have to make sure we were lining up the observed data
@@ -103,7 +90,7 @@ y_model <- f(X)
 # of the output variable given the first calibration parameter (design point) X[1,1]. 
 SS <- rep(0, N)
 for(i in seq(1, N)) {
-  SS[i] <- sum((y_model[i] - y)^2)
+  SS[i] <- sum((y.model[i] - y)^2)
 }
 
 # Scale SS to unit interval
@@ -114,7 +101,7 @@ SS <- matrix(SS, ncol = 1)
 plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Statistic')
 
 # Fit GP
-gp_mle <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
 
 
 #
@@ -127,25 +114,25 @@ stan.gp.model.path <- file.path(base.dir, 'parameter_calibration_gp_1d_example.s
 model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
-stan.list.gp <- list(N = N, 
-                     n = n,
-                     y = as.vector(SS),
-                     X = X, 
-                     a = tau.shape, 
-                     b = tau.rate, 
-                     u_mean = u.mean, 
-                     u_sigma = u.sigma, 
-                     gp_rho = array(gp_mle$beta, dim = 1),
-                     gp_alpha = sqrt(gp_mle$sig2),
-                     gp_sigma = sqrt(gp_mle$nugget), 
-                     gp_mean = gp_mle$Bhat
-                     )
+stan.list.gp.params <- create.gp.params.list(gp.fit, "mlegp")
+stan.list.other <- list(N = N, 
+                        n = n,
+                        y = as.vector(SS),
+                        X = X, 
+                        a = tau.shape, 
+                        b = tau.rate, 
+                        u_mean = u.mean, 
+                        u_sigma = u.sigma)
+stan.list.gp <- as.list(c(stan.list.gp.params, stan.list.other))
 
 # MCMC
 fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4)
 summary(fit.gp)
 samples.gp <- extract(fit.gp)
+sampler.params <- get_sampler_params(fit.gp, inc_warmup = TRUE)
+chain1 <- sampler.params[[1]]
 
+tau.samples <- extract(fit.gp, inc_warmup = TRUE)[["tau"]]
 
 
 
