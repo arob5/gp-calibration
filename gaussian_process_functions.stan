@@ -179,11 +179,21 @@ real gp_approx(matrix L, vector K_inv_y, matrix X, int N, int n, int k, vector r
   real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
   
   
-  return(n/2.0 * log(tau) - (tau / 2.0) * (mu_x - (tau/4.0) * k_x)); 
+  return(0.5 * n * log(tau) - 0.5 * tau * mu_x + 0.125 * square(tau) * k_x); 
   
 }
 
 
+real gp_mean_gaussian_llik(vector x, matrix X, vector K_inv_y, int N, int n, int k, vector rho, real alpha, real mu, real tau) {
+  // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
+  matrix[1, k] x_mat = to_matrix(x, 1, k, 1);
+  
+  // Predictive mean
+  vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
+  real gp_pred_mean = calc_gp_predictive_mean(k_xX, K_inv_y, mu); 
+  
+  return(0.5 * n * log(tau) - 0.5 * tau * gp_pred_mean);
+}
 
 
 

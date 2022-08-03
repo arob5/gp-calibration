@@ -1,7 +1,7 @@
 /**
-* parameter_calibration_gp_1d_example.stan
+* parameter_calibration_gp_mean_1d_example.stan
 * Run MCMC for parameter calibration on toy example with simple scalar function. 
-* Uses "GP integrated out"" approximation of sufficient statistic in Gaussian likelihood. 
+* Uses GP mean approximation of sufficient statistic in Gaussian likelihood. 
 *
 * Andrew Roberts
 *
@@ -44,8 +44,15 @@ parameters {
 model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
-  target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
+  
+  // Increment log target density
+  // target += 0.5 * n * log(tau) - 0.5 * tau * calc_gp_predictive_mean(to_vector(cov_exp_quad_cross(to_matrix(u, 1, 1, 1), X, gp_rho, gp_alpha)), K_inv_y, gp_mean);  
+                                                                     
+  
+  target += gp_mean_gaussian_llik(u, X, K_inv_y, N, n, 1, gp_rho, gp_alpha, gp_mean, tau); 
 }
+
+
 
 
 

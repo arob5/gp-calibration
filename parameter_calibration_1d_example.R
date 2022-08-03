@@ -94,10 +94,10 @@ for(i in seq(1, N)) {
 }
 
 # Scale SS to unit interval
-SS.max <- max(SS)
-SS.min <- min(SS)
-SS <- 1 - (SS.max - SS) / (SS.max - SS.min)
-SS <- matrix(SS, ncol = 1)
+# SS.max <- max(SS)
+# SS.min <- min(SS)
+# SS <- 1 - (SS.max - SS) / (SS.max - SS.min)
+# SS <- matrix(SS, ncol = 1)
 plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Statistic')
 
 # Fit GP
@@ -137,10 +137,16 @@ tau.samples <- extract(fit.gp, inc_warmup = TRUE)[["tau"]]
 
 
 #
-# Parameter Calibration with Gaussian Process Approximation, evaluating at mean function.
+# Parameter Calibration with Gaussian Process Approximation, evaluating at predictive mean function.
 #
 
+# Compile Stan code
+stan.gp.mean.model.path <- file.path(base.dir, 'parameter_calibration_gp_mean_1d_example.stan')
+model.gp.mean <- stan_model(stan.gp.mean.model.path)
 
+# MCMC
+fit.gp.mean <- sampling(model.gp.mean, stan.list.gp, iter = 50000, chains = 4)
+summary(fit.gp.mean)
 
 
 
