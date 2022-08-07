@@ -41,8 +41,9 @@ X.pred.df <- expand.grid(x.pred, x.pred)
 X.pred <- as.matrix(X.pred.df)
 N.pred <- nrow(X.pred)
 
-# Plot test data
+# Plot test data (will only work if k = 1)
 # matplot(X, y, pch = 20, cex = 2, xlab = 'Design Points', ylab = 'Model Value')
+
 
 # -----------------------------------------------------------------------------
 # R package: mlegp
@@ -99,5 +100,30 @@ print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.mlegp -
 gp.var.mlegp <- predict(gp.mlegp, X.pred, se.fit = TRUE)$se.fit^2 + gp.mlegp$nugget
 gp.var.stan <- t(stan.output$var_pred)
 print(paste0("Max absolute error in variance predictions: ", max(abs(gp.var.mlegp - gp.var.stan))))
+
+
+# -----------------------------------------------------------------------------
+# General Stan tests
+# -----------------------------------------------------------------------------
+
+# Compare user defined covariance function to Stan's internal cov_exp_quad()
+K.stan.test <- stan.output$K_stan_test[1,,]
+K.test <- stan.output$K_out_test[1,,]
+print(paste0("Cov matrix agrees with Stan's cov_exp_quad(): ", all.equal(K.test, K.stan.test)))
+
+# Test that predictive mean interpolates observed data (when nugget is 0). If nugget is not 0, then 
+# the predictive mean will not exactly equal the observed value. 
+mean.design.stan <- as.vector(stan.output$mean_design)
+print(paste0("Max absolute error of mean at design points: ", max(abs(mean.design.stan - y))))
+
+# Test that predictive variance is equal to the nugget at observed data points
+var.design.stan <- as.vector(stan.output$var_design)
+print(paste0("Max absolute error of variance at design points: ", max(abs(var.design.stan - gp.mlegp$nugget))))
+
+
+
+
+
+
 
 

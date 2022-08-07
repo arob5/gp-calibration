@@ -37,10 +37,7 @@ real squared_distance_weighted(row_vector x, row_vector y, vector w) {
  *
  * @param X Matrix of input vectors. Each input is a row of the matrix.
  * @param rho Vector of length scale parameters. Must have length equal to 
- *            number of columns of X. Dimension k is scaled by 1/rho[k]. Note 
- *            that this is different from 'cov_exp_quad()', which scales by 
- *            1/rho[k]^2. This difference is due to the fact that rstan currently
- *            doesn't support the elementwise power function. 
+ *            number of columns of X. Dimension k is scaled by 1/rho[k]^2. 
  * @param alpha Marginal standard deviation of the GP. 
  * @param sigma Nugget parameter. sigma^2 is added to each element on the 
  *              diagonal of the resulting covariance matrix. 
@@ -53,7 +50,7 @@ real squared_distance_weighted(row_vector x, row_vector y, vector w) {
 matrix cov_exp_quad_same(matrix X, vector rho, real alpha, real sigma) {
   int N = rows(X); 
   int k = num_elements(rho); 
-  vector[k] weights = 1.0 ./ rho; // (rho .^ 2.0); Elementwise power not available in current rstan version
+  vector[k] weights = 1.0 ./ square(rho);
   
   real eps;
   matrix[N, N] K;
@@ -112,7 +109,7 @@ matrix cov_exp_quad_cross(matrix X1, matrix X2, vector rho, real alpha) {
   int N1 = rows(X1); 
   int N2 = rows(X2); 
   int k = num_elements(rho); 
-  vector[k] weights = 1.0 ./ rho; // (rho .^ 2.0); Elementwise power not available in current rstan version
+  vector[k] weights = 1.0 ./ square(rho);
   
   matrix[N1, N2] K; 
   

@@ -40,7 +40,7 @@ base.dir <- '.'
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- '2'
+tag <- 'pres_1'
 subdir.name <- paste0('llik_approx_comparison_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -334,6 +334,28 @@ lines(X.pred, gp.pred.lower.stan, lty=1, col="gray")
 lines(X.pred, SS.pred, lty=1, col="red")
 legend("right", inset=c(-0.2,-0.3), 
        legend = c("GP pred mean", "Design points", paste0(100*interval.pct, "% CI"), "True SS"), 
+       col = c("blue", "black", "gray", "red"), lty = c(1, NA, 1, 1), pch = c(NA, 16, NA, NA))
+dev.off()
+
+#
+# Re-produce predictive means likelihood plot using Stan functionality instead of R
+#
+
+llik.gp.mean.stan <- dmvnorm.log.unnorm.SS(gp.pred.means.stan, tau, n)
+llik.gp.upper.stan <- dmvnorm.log.unnorm.SS(gp.pred.upper.stan, tau, n)
+llik.gp.lower.stan <- dmvnorm.log.unnorm.SS(gp.pred.lower.stan, tau, n)
+
+png(file.path(out.dir, 'gp_mean_llik_stan.png'), width=600, height=350)
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+plot(X.pred, llik.gp.mean.stan, type="l", lty=1, xlab="u", 
+     ylab=paste0("Unnormalized Log-Likelihood and ", 100*interval.pct, "% CI"),
+     main = "GP Mean Approx Log-Likelihood", col="blue")
+points(X, llik.design, pch=16, col="black")
+lines(X.pred, llik.gp.upper.stan, lty=1, col="gray")
+lines(X.pred, llik.gp.lower.stan, lty=1, col="gray")
+lines(X.pred, llik.pred, lty=1, col="red")
+legend("right", inset=c(-0.2,-0.3), 
+       legend = c("GP pred mean", "Design points", paste0(100*interval.pct, "% CI"), "True llik"), 
        col = c("blue", "black", "gray", "red"), lty = c(1, NA, 1, 1), pch = c(NA, 16, NA, NA))
 dev.off()
 
