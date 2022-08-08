@@ -81,7 +81,7 @@ K <- function(X1, X2 = NA, rho, alpha) {
   
   for(i in 1:nrow(X1)) {
     for(j in 1:nrow(X2)) {
-      C[i, j] <- sum((1 / rho) * (X1[i, ] - X2[j, ])^2)
+      C[i, j] <- sum((1 / rho^2) * (X1[i, ] - X2[j, ])^2)
     }
   }
   
@@ -95,7 +95,7 @@ C <- function(X1, X2 = NA, rho, alpha) {
   
   for(i in 1:nrow(X1)) {
     for(j in 1:nrow(X2)) {
-      cor.mat[i, j] <- sum((1 / rho) * (X1[i, ] - X2[j, ])^2)
+      cor.mat[i, j] <- sum((1 / rho^2) * (X1[i, ] - X2[j, ])^2)
     }
   }
   
@@ -114,7 +114,7 @@ predict_mean <- function(X_pred, X_obs, y_obs, rho, alpha, sigma, mu) {
   return(mu + cross_cov %*% solve(data_cov) %*% (y_obs - mu))
 }
 
-predict_var<- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
+predict_var <- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
   if(sigma == 0) {
     eps <- sqrt(.Machine$double.eps) # "Jitter" to ensure positive definite matrices
   } else {
@@ -131,6 +131,27 @@ predict_var<- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
   diag(var.mat) <- vars
   
   return(var.mat)
+}
+
+predict_var_chol <- function(X_pred, X_obs, y_obs, rho, alpha, sigma) {
+
+  # Nugget
+  if(sigma == 0) {
+    eps <- sqrt(.Machine$double.eps)
+  } else {
+    eps <- sigma^2
+  }
+  
+  L <- t(chol(K(X_obs, X_obs, rho, alpha) + diag(rep(eps, nrow(X_obs)))))
+  pred.vars <- vector("numeric", nrow(X_pred))
+  for(i in seq_along(pred.vars)) {
+    k_x <- K(X_pred[i,,drop=FALSE], X_pred[i,,drop=FALSE], rho, alpha) + eps
+    k_Xx <- K(X_obs, X_pred[i,,drop=FALSE], rho, alpha)
+    v <- solve(L, k_Xx)
+    pred.vars[i] <- k_x - sum(v^2)
+  }
+  
+  return(pred.vars)
 }
 
 
@@ -310,9 +331,18 @@ dev.off()
 
 # Plot showing the standard errors
 gp.se.stan <- sqrt(as.vector(stan.output$var_test))
+gp.se.r <- sqrt(diag(predict_var(X.pred, X, SS, stan.params.gp$gp_rho, stan.params.gp$gp_alpha, stan.params.gp$gp_sigma)))
+gp.se.r.chol <- sqrt(predict_var_chol(X.pred, X, SS, stan.params.gp$gp_rho, stan.params.gp$gp_alpha, stan.params.gp$gp_sigma))
 png(file.path(out.dir, 'gp_pred_std_err.png'), width=600, height=350)
-plot(X.pred, gp.se.stan, type = "l", lty = 1, xlab = "u", ylab = "GP Predictive Std Err", 
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+plot(X.pred, gp.pred.se, type = "l", lty = 1, xlab = "u", ylab = "GP Predictive Std Err", 
      main = "GP Predictive Std Err at Test Points", col = "blue")
+lines(X.pred, gp.se.stan, lty = 1, col = "black")
+lines(X.pred, gp.se.r, lty = 1, col = "red")
+lines(X.pred, gp.se.r.chol, lty = 1, col = "green")
+legend("right", inset=c(-0.2,-0.3), 
+       legend = c("mlegp", "Stan", "R", "R chol"), 
+       col = c("blue", "black", "red", "green"), lty = c(1, 1))
 dev.off()
 
 

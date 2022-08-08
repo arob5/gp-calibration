@@ -54,6 +54,8 @@ generated quantities {
   vector[N] var_design; 
   matrix[N, N] K_out_test; // Uses single lengthscale parameter for comparison with cov_exp_quad()
   matrix[N, N] K_stan_test; 
+  vector[N] KxX; 
+  vector[N] KXx;
   
   K_out = K; 
   K_pred = cov_exp_quad_same(X_pred, gp_rho, gp_alpha, gp_sigma);
@@ -79,4 +81,9 @@ generated quantities {
   // Test user-defined function against cov_exp_quad()
   K_out_test = cov_exp_quad_same(X, rep_vector(gp_rho[1], k), gp_alpha, 0.0);
   K_stan_test = cov_exp_quad(X_arr, gp_alpha, gp_rho[1]) + diag_matrix(rep_vector(sqrt(machine_precision()), N)); 
+  
+  KxX = to_vector(cov_exp_quad_cross(to_matrix(X_pred[1], 1, k, 1), X, gp_rho, gp_alpha));
+  KXx = to_vector(cov_exp_quad_cross(X, to_matrix(X_pred[1], 1, k, 1), gp_rho, gp_alpha));
+  
+  
 }

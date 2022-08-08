@@ -25,65 +25,25 @@ source("stan.helper.functions.R")
 # -----------------------------------------------------------------------------
 
 # # Dimension of input space
-# k <- 2
-# 
-# # Design points
-# nx <- 20
-# x <- seq(0, 2*pi, length = nx)
-# X.df <- expand.grid(x, x)
-# X <- as.matrix(X.df)
-# y <- sin(X[,1] + 4*X[,2])
-# N <- length(y)
-# 
-# # Test points
-# N.pred.x <- 30
-# x.pred <- seq(-0.5, 2*pi + 0.5, length = N.pred.x)
-# X.pred.df <- expand.grid(x.pred, x.pred)
-# X.pred <- as.matrix(X.pred.df)
-# N.pred <- nrow(X.pred)
+k <- 2
 
+# Design points
+nx <- 20
+x <- seq(0, 2*pi, length = nx)
+X.df <- expand.grid(x, x)
+X <- as.matrix(X.df)
+y <- sin(X[,1] + 4*X[,2])
+N <- length(y)
 
-k <- 1
-f <- function(u) {u}
-
-# True calibration parameter value
-u <- .5
-
-# Support of calibration parameter
-u.min <- 0
-u.max <- 1
-u.extrapolation.width <- .01
-
-n.u <- 1000
-u.vals <- seq(u.min - u.extrapolation.width, u.max + u.extrapolation.width, length = n.u)
-X.pred <- matrix(u.vals, ncol=1)
-N.pred <- n.u
-
-# Precision parameter values.
-sigma <- .3
-tau <- 1/sigma^2
-
-# Simulate observed data
-n <- 1000
-y.obs <- matrix(NA, nrow = n, ncol = 1)
-y.obs[,1] <- rnorm(n, f(u), sigma)
-
-# Design matrix, evaluate model at design points
-N <- 10
-design.points <- c(0, .05, .07, .08, .1, .2, .25, .3, 1)
-N <- length(design.points)
-X <- matrix(design.points, ncol = 1)
-y_model <- f(X)
-
-SS <- matrix(NA, nrow = N, ncol = 1)
-for(i in seq(1, N)) {
-  SS[i, 1] <- sum((y_model[i] - y.obs[,1])^2)
-}
-y <- SS
-
+# Test points
+N.pred.x <- 30
+x.pred <- seq(-0.5, 2*pi + 0.5, length = N.pred.x)
+X.pred.df <- expand.grid(x.pred, x.pred)
+X.pred <- as.matrix(X.pred.df)
+N.pred <- nrow(X.pred)
 
 # Plot test data (will only work if k = 1)
-matplot(X, y, pch = 20, cex = 2, xlab = 'Design Points', ylab = 'Model Value')
+# matplot(X, y, pch = 20, cex = 2, xlab = 'Design Points', ylab = 'Model Value')
 
 
 # -----------------------------------------------------------------------------
