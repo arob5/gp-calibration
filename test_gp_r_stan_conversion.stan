@@ -47,6 +47,7 @@ generated quantities {
   matrix[N, N] K_out;
   matrix[N_pred, N_pred] K_pred; 
   matrix[N, N_pred] K_cross; 
+  vector[N] K_inv_y_out;
   vector[N_pred] mean_pred; 
   vector[N_pred] var_pred; 
   vector[N] mean_design; 
@@ -57,6 +58,7 @@ generated quantities {
   K_out = K; 
   K_pred = cov_exp_quad_same(X_pred, gp_rho, gp_alpha, gp_sigma);
   K_cross = cov_exp_quad_cross(X, X_pred, gp_rho, gp_alpha); 
+  K_inv_y_out = K_inv_y; 
   
   // Calculate predictive quantities for test points
   for(i in 1:N_pred) {

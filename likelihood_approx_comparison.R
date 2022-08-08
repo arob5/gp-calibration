@@ -308,6 +308,22 @@ legend("right", inset=c(-0.2,-0.3),
        col = c("blue", "black", "red"), lty = c(1, NA, 1), pch = c(NA, 16, NA))
 dev.off()
 
+# Plot showing the standard errors
+gp.se.stan <- sqrt(as.vector(stan.output$var_test))
+png(file.path(out.dir, 'gp_pred_std_err.png'), width=600, height=350)
+plot(X.pred, gp.se.stan, type = "l", lty = 1, xlab = "u", ylab = "GP Predictive Std Err", 
+     main = "GP Predictive Std Err at Test Points", col = "blue")
+dev.off()
+
+
+# Plot showing the "penalty term": e^(tau^2/8 * k(u,u))
+gp.penalty.term <- (tau^2 / 8) * gp.se.stan^2
+png(file.path(out.dir, 'gp_penalty_term.png'), width=600, height=350)
+plot(X.pred, gp.penalty.term, type = "l", lty = 1, xlab = "u", ylab = "tau^2/8 * k(u,u)", 
+     main = "Log-Likelihood Pentalty Term at Test Points", col = "blue")
+dev.off()
+
+
 
 # -----------------------------------------------------------------------------
 # Tests/Validation: 
@@ -317,8 +333,8 @@ dev.off()
 # Re-produce predictive means plot using Stan functionality instead of R
 #
 
-gp.pred.means.stan <- stan.output$mean_test
-gp.pred.se.stan <- sqrt(stan.output$var_test)
+gp.pred.means.stan <- as.vector(stan.output$mean_test)
+gp.pred.se.stan <- sqrt(as.vector(stan.output$var_test))
 gp.pred.upper.stan <- qnorm(p, gp.pred.means.stan, gp.pred.se.stan)
 gp.pred.lower.stan <- qnorm(p, gp.pred.means.stan, gp.pred.se.stan, lower.tail = FALSE)
 
