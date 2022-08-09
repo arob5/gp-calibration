@@ -44,7 +44,7 @@ generated quantities {
   
   for(i in 1:N_pred) {
     matrix[1, 1] x_mat = to_matrix(u_vals[i], 1, 1, 1); 
-    vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, gp_rho, gp_alpha));
+    vector[N] k_xX = to_vector(cov_exp_quad_cross(X, x_mat, gp_rho, gp_alpha)); // Test
     u_vals_llik[i] = gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u_vals[i]);
     mean_test[i] = calc_gp_predictive_mean(k_xX, K_inv_y, gp_mean); 
     var_test[i] = calc_gp_predictive_var(L, k_xX, x_mat, N, gp_rho, gp_alpha, gp_sigma);
