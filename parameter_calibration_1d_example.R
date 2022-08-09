@@ -19,9 +19,13 @@ rstan_options(auto_write = TRUE)
 
 source("stan.helper.functions.R")
 
-#
+# -----------------------------------------------------------------------------
 # Settings
-#
+# -----------------------------------------------------------------------------
+
+# Random seed (for generating random data)
+seed <- 10
+set.seed(seed)
 
 # The function that is acting as the computer model. Should be equivalent to 
 # the function of the same name in the Stan file. 
@@ -29,8 +33,9 @@ f <- function(u) {
   return(u)
 }
 
-# Hyperparameters (shape and rate) for Gamma hyperprior on tau (precision parameter). Using values 
-# taken from an actual PEcAn run. 
+f.string <- "u"
+
+# Hyperparameters (shape and rate) for Gamma hyperprior on tau (precision parameter). 
 tau.shape <- 16
 tau.rate <- 1.0
 
@@ -41,21 +46,37 @@ n <- 1000
 u.mean <- 0.5
 u.sigma <- 0.25
 
+# If TRUE, sets default GP params instead of fitting the params via mlegp
+use.default.gp.params <- FALSE
+gp.param.defaults <- list(gp_rho = array(0.5), 
+                          gp_alpha = 300, 
+                          gp_sigma = sqrt(.Machine$double.eps), 
+                          gp_mean = 0.0)
+
 # Directories
 base.dir <- '.'
-out.dir <- file.path(base.dir, 'output')
+# base.out.dir <- file.path(base.dir, '..', 'test_output')
+base.out.dir <- file.path(base.dir, 'output')
 
-#
+# Create sub-directory in output directory
+tag <- 'pres_1'
+subdir.name <- paste0('param_cal_1d_test_', tag)
+out.dir <- file.path(base.out.dir, subdir.name)
+dir.create(out.dir)
+
+
+# -----------------------------------------------------------------------------
 # Simulate Data, fixing u and tau at their prior means
-#
+# -----------------------------------------------------------------------------
 u <- u.mean
 tau <- tau.shape / tau.rate
 y <- rnorm(n, f(u), 1/sqrt(tau))
 
 
-#
-# Brute Force parameter calibration: try to recover parameters by running MCMC in Stan
-#
+# -----------------------------------------------------------------------------
+# Brute Force parameter calibration: 
+#   Try to recover parameters by running MCMC in Stan
+# -----------------------------------------------------------------------------
 
 # Compile Stan code
 stan.model.path <- file.path(base.dir, 'parameter_calibration_1d_example.stan')
@@ -74,9 +95,9 @@ fit <- sampling(model, stan.list, iter = 50000, chains = 4)
 summary(fit)
 samples.brute.force <- extract(fit)
 
-#
+# -----------------------------------------------------------------------------
 # Fit GP regression
-#
+# -----------------------------------------------------------------------------
 
 # Design matrix, evaluate model at design points
 # TODO: Try using more extreme u values
@@ -104,10 +125,10 @@ plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Stat
 gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
 
 
-#
-# Parameter Calibration with Gaussian Process Approximation, propagating uncertainty by 
-# integrating out GP.
-#
+# -----------------------------------------------------------------------------
+# Parameter Calibration with Gaussian Process Approximation,  
+# propagating uncertainty by integrating out GP.
+# -----------------------------------------------------------------------------
 
 # Compile Stan code
 stan.gp.model.path <- file.path(base.dir, 'parameter_calibration_gp_1d_example.stan')
@@ -136,9 +157,9 @@ tau.samples <- extract(fit.gp, inc_warmup = TRUE)[["tau"]]
 
 
 
-#
+# -----------------------------------------------------------------------------
 # Parameter Calibration with Gaussian Process Approximation, evaluating at predictive mean function.
-#
+# -----------------------------------------------------------------------------
 
 # Compile Stan code
 stan.gp.mean.model.path <- file.path(base.dir, 'parameter_calibration_gp_mean_1d_example.stan')
