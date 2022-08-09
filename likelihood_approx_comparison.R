@@ -5,7 +5,6 @@
 #
 # Andrew Roberts
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
-
 #
 # TODO:
 #   - Try running example that fixed GP params instead of fitting them
@@ -27,7 +26,7 @@ source("stan.helper.functions.R")
 # -----------------------------------------------------------------------------
 
 # Random seed (for generating random data)
-seed <- 5
+seed <- 10
 set.seed(seed)
 
 # The function that is acting as the computer model. Should be equivalent to 
@@ -38,13 +37,20 @@ f <- function(u) {
 
 f.string <- "u"
 
+# If TRUE, sets default GP params instead of fitting the params via mlegp
+use.default.gp.params <- TRUE
+gp.param.defaults <- list(gp_rho = array(0.5), 
+                          gp_alpha = 300, 
+                          gp_sigma = sqrt(.Machine$double.eps), 
+                          gp_mean = 0.0)
+
 # Directories
 base.dir <- '.'
 # base.out.dir <- file.path(base.dir, '..', 'test_output')
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- 'pres_1'
+tag <- 'pres_7'
 subdir.name <- paste0('llik_approx_comparison_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -184,25 +190,26 @@ u <- .5
 # Support of calibration parameter
 u.min <- 0
 u.max <- 1
-u.extrapolation.width <- .01
+u.extrapolation.width <- .1
 
 n.u <- 1000
 u.vals <- seq(u.min - u.extrapolation.width, u.max + u.extrapolation.width, length = n.u)
 X.pred <- matrix(u.vals, ncol=1)
 
 # Precision parameter values.
-sigma <- .3
+sigma <- 0.3
 tau <- 1/sigma^2
 
 # Simulate observed data
 n <- 1000
 y.obs <- matrix(NA, nrow = n, ncol = 1)
-y.obs[,1] <- rnorm(n, f(u), sigma, )
+y.obs[,1] <- rnorm(n, f(u), sigma)
 
 
 # Design matrix, evaluate model at design points
-N <- 10
-design.points <- c(0, .05, .07, .08, .1, .2, .25, .3, 1)
+N <- 4
+design.points <- seq(u.min, u.max, length.out = N)
+# design.points <- c(0, .05, .07, .08, .1, .2, .25, .3, 1)
 N <- length(design.points)
 X <- matrix(design.points, ncol = 1)
 y_model <- f(X)
@@ -261,13 +268,15 @@ for(i in seq(1, n.u)) {
 
 matplot(X, SS, xlab = 'Design Point', pch = 16, ylab = 'Sufficient Statistic')
 
-# Fit GP
-gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
-
-# Predictive means and standard errors
-gp.pred.mlegp <- predict.gp(gp.fit, X.pred, se.fit = TRUE)
-gp.means.mlegp <- gp.pred.mlegp$fit
-gp.se.mlegp <- sqrt((gp.pred.mlegp$se.fit)^2 + gp.fit$nugget)
+if(!use.default.gp.params) {
+  # Fit GP
+  gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+  
+  # Predictive means and standard errors
+  gp.pred.mlegp <- predict.gp(gp.fit, X.pred, se.fit = TRUE)
+  gp.means.mlegp <- gp.pred.mlegp$fit
+  gp.se.mlegp <- sqrt((gp.pred.mlegp$se.fit)^2 + gp.fit$nugget)
+}
 
 # -----------------------------------------------------------------------------
 # Run Stan code
@@ -278,7 +287,12 @@ stan.model.path <- file.path(base.dir, 'likelihood_approx_comparison.stan')
 model <- stan_model(stan.model.path)
 
 # Run Stan code
-stan.params.gp <- create.gp.params.list(gp.fit, "mlegp")
+if(use.default.gp.params) {
+  stan.params.gp <- gp.param.defaults
+} else {
+  stan.params.gp <- create.gp.params.list(gp.fit, "mlegp")
+}
+
 stan.params.other <- list(N = N, n = n, N_pred = n.u, tau = tau, X = X, y = SS[,1], u_vals = X.pred)
 stan.params <- as.list(c(stan.params.gp, stan.params.other))
 stan.fit <- sampling(model, data = stan.params, warmup = 0, iter = 1, chains = 1, 
@@ -295,9 +309,12 @@ gp.means.chol <- predict_mean_chol(X.pred, X, SS, stan.params.gp$gp_rho,
                                    stan.params.gp$gp_alpha, stan.params.gp$gp_sigma, stan.params.gp$gp_mean)
 gp.se.chol <- sqrt(predict_var_chol(X.pred, X, SS, stan.params.gp$gp_rho, stan.params.gp$gp_alpha, stan.params.gp$gp_sigma))
 print(paste0("Max abs difference in pred means (R, chol) vs pred means (Stan, chol): ", max(abs(gp.means.chol - gp.means.stan))))
-print(paste0("Max abs difference in pred means (R, chol) vs pred means (mlegp): ", max(abs(gp.means.chol - gp.means.mlegp))))
 print(paste0("Max abs difference in pred SEs (R, chol) vs pred SEs (Stan, chol): ", max(abs(gp.se.chol - gp.se.stan))))
-print(paste0("Max abs difference in pred SEs (R, chol) vs pred SEs (mlegp): ", max(abs(gp.se.chol - gp.se.mlegp))))
+
+if(!use.default.gp.params) {
+  print(paste0("Max abs difference in pred means (R, chol) vs pred means (mlegp): ", max(abs(gp.means.chol - gp.means.mlegp))))
+  print(paste0("Max abs difference in pred SEs (R, chol) vs pred SEs (mlegp): ", max(abs(gp.se.chol - gp.se.mlegp))))
+}
 
 # -----------------------------------------------------------------------------
 # GP predictive mean plots: 
@@ -369,10 +386,10 @@ png(file.path(out.dir, 'gp_pred_std_err.png'), width=600, height=350)
 par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
 plot(X.pred, gp.se.stan, type = "l", lty = 1, xlab = "u", ylab = "GP Predictive Std Err", 
      main = "GP Predictive Std Err at Test Points", col = "blue")
-lines(X.pred, gp.pred.se, lty = 1, col = "red")
-legend("right", inset=c(-0.2,-0.3), 
-       legend = c("Cholesky (Stan)", "Inverse (mlegp)"), 
-       col = c("blue", "red"), lty = c(1, 1))
+# lines(X.pred, gp.se.mlegp, lty = 1, col = "red")
+# legend("right", inset=c(-0.2,-0.3), 
+#        legend = c("Cholesky (Stan)", "Inverse (mlegp)"), 
+#        col = c("blue", "red"), lty = c(1, 1))
 dev.off()
 
 # Plot showing the "penalty term": e^(tau^2/8 * k(u,u))
@@ -390,7 +407,8 @@ dev.off()
 file.con <- file(file.path(out.dir, "run_info.txt"))
 file.text <- c(paste0("Random seed: ", seed), paste0("Model: f(u) = ", f.string), paste0("True u value: ", u),  
                paste0("tau: ", tau), paste0("n: ", n), paste0("Design points: ", paste0(design.points, collapse = ", ")), 
-               "Fitted GP params:", paste0(names(stan.params.gp), collapse = ", "), 
+               paste0("use.default.gp.params: ", use.default.gp.params),
+               "GP params:", paste0(names(stan.params.gp), collapse = ", "), 
                paste0(stan.params.gp, collapse = ", "))
 writeLines(file.text, file.con)
 close(file.con)
