@@ -11,6 +11,13 @@
 # Andrew Roberts
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
+# TODO: 
+# - Define bounds on u and tau
+# - 0 < sigma^2 < var(data)
+# - Bounds on u given by bounds on design points (don't extrapolate)
+# Consider scaling response and design prior to fitting GP
+
+
 library(bayesplot)
 library(ggplot2)
 library(rstan)
@@ -77,7 +84,7 @@ base.dir <- '.'
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- 'pres_2'
+tag <- 'pres_3'
 subdir.name <- paste0('param_cal_1d_test_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -224,7 +231,9 @@ stan.list.other <- list(N = N,
                         a = tau.shape, 
                         b = tau.rate, 
                         u_mean = u.mean, 
-                        u_sigma = u.sigma)
+                        u_sigma = u.sigma, 
+                        u_lower = min(X), 
+                        u_upper = max(X))
 stan.list.gp <- as.list(c(stan.params.gp, stan.list.other))
 
 # MCMC
@@ -232,6 +241,28 @@ fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4)
 summary(fit.gp)
 samples.gp <- extract(fit.gp)
 posterior.gp<- as.array(fit.gp)
+
+# Posterior uncertainty intervals
+color_scheme_set("red")
+mcmc_intervals(posterior.gp, 
+               pars = c("tau", "u[1]"), 
+               prob = int.prob, 
+               prob_outer = int.outer.prob, 
+               point_est = "median") + 
+  ggtitle("Posterior Intervals: GP approx param calibration") + 
+  ylab("Parameter") + 
+  xlab(paste0("Inner ", 100*int.prob, "%; Outer ", 100*int.outer.prob, "%"))
+ggsave(file.path(out.dir, "intervals.gp.png"), bg = "white")
+
+# Posterior histogram
+mcmc_hist(posterior.gp, pars = c("tau", "u[1]")) + 
+  ggtitle("Posterior Histogram: GP approx param calibration")
+ggsave(file.path(out.dir, "hist.gp.png"), bg = "white")
+
+# Posterior kernel density estimates
+mcmc_dens(posterior.gp, pars = c("tau", "u[1]")) + 
+  ggtitle("Posterior Kernel Density Estimates: GP approx param calibration")
+ggsave(file.path(out.dir, "dens.gp.png"), bg = "white")
 
 # Trace plots
 color_scheme_set("mix-blue-red")
