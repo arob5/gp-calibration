@@ -117,7 +117,7 @@ stan.list <- list(n = n,
                   u_sigma = u.sigma)
 
 # MCMC
-fit.brute.force <- sampling(model, stan.list, iter = 50000, chains = 4)
+fit.brute.force <- sampling(model, stan.list, iter = 50000, chains = 4, seed = seed)
 summary(fit.brute.force)
 posterior.brute.force <- as.array(fit.brute.force)
 samples.brute.force <- extract(fit.brute.force)
@@ -237,7 +237,7 @@ stan.list.other <- list(N = N,
 stan.list.gp <- as.list(c(stan.params.gp, stan.list.other))
 
 # MCMC
-fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4)
+fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4, seed = seed)
 summary(fit.gp)
 samples.gp <- extract(fit.gp)
 posterior.gp<- as.array(fit.gp)
@@ -282,7 +282,7 @@ stan.gp.mean.model.path <- file.path(base.dir, 'parameter_calibration_gp_mean_1d
 model.gp.mean <- stan_model(stan.gp.mean.model.path)
 
 # MCMC
-fit.gp.mean <- sampling(model.gp.mean, stan.list.gp, iter = 50000, chains = 4)
+fit.gp.mean <- sampling(model.gp.mean, stan.list.gp, iter = 50000, chains = 4, seed = seed)
 summary(fit.gp.mean)
 posterior.gp.mean <- as.array(fit.gp.mean)
 
