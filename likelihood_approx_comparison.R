@@ -403,7 +403,6 @@ dev.off()
 # Print information to file
 # -----------------------------------------------------------------------------
 
-# Write text file with function f()
 file.con <- file(file.path(out.dir, "run_info.txt"))
 file.text <- c(paste0("Random seed: ", seed), paste0("Model: f(u) = ", f.string), paste0("True u value: ", u),  
                paste0("tau: ", tau), paste0("n: ", n), paste0("Design points: ", paste0(design.points, collapse = ", ")), 

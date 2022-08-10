@@ -11,6 +11,8 @@
 # Andrew Roberts
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
+library(bayesplot)
+library(ggplot2)
 library(rstan)
 library(mlegp)
 
@@ -18,13 +20,14 @@ options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
 source("stan.helper.functions.R")
+source("helper.functions.R")
 
 # -----------------------------------------------------------------------------
 # Settings
 # -----------------------------------------------------------------------------
 
 # Random seed (for generating random data)
-seed <- 10
+seed <- 5
 set.seed(seed)
 
 # The function that is acting as the computer model. Should be equivalent to 
@@ -35,8 +38,11 @@ f <- function(u) {
 
 f.string <- "u"
 
+# Desired standard deviation in the Gaussian model
+sigma <- .3
+
 # Hyperparameters (shape and rate) for Gamma hyperprior on tau (precision parameter). 
-tau.shape <- 16
+tau.shape <- 1 / sigma^2
 tau.rate <- 1.0
 
 # Number of observations to simulate
@@ -52,6 +58,19 @@ gp.param.defaults <- list(gp_rho = array(0.5),
                           gp_alpha = 300, 
                           gp_sigma = sqrt(.Machine$double.eps), 
                           gp_mean = 0.0)
+
+# Design matrix, evaluate model at design points for GP regression
+# TODO: Try using more extreme u values
+N <- 10
+X <- matrix(c(0, 0.05, 0.07, 0.08, 0.1, 0.2, 0.25, 0.3, 1), ncol = 1)
+N <- nrow(X)
+# X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
+y.model <- f(X)
+
+# Test points at which to evaluate GP predictions to investigate likelihood approximation
+N.pred <- 1000
+u.pred <- seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N.pred)
+X.pred <- matrix(u.pred, ncol=1)
 
 # Directories
 base.dir <- '.'
@@ -71,6 +90,7 @@ dir.create(out.dir)
 u <- u.mean
 tau <- tau.shape / tau.rate
 y <- rnorm(n, f(u), 1/sqrt(tau))
+save.gaussian.llik.plot(y, X.pred, out.dir, "exact_llik.png", f)
 
 
 # -----------------------------------------------------------------------------
@@ -91,19 +111,46 @@ stan.list <- list(n = n,
                   u_sigma = u.sigma)
 
 # MCMC
-fit <- sampling(model, stan.list, iter = 50000, chains = 4)
-summary(fit)
+fit.brute.force <- sampling(model, stan.list, iter = 50000, chains = 4)
+summary(fit.brute.force)
+posterior.brute.force <- as.array(fit.brute.force)
 samples.brute.force <- extract(fit)
+
+# Posterior uncertainty intervals
+color_scheme_set("red")
+int.prob <- 0.5
+int.outer.prob <- 0.9
+mcmc_intervals(posterior.brute.force, 
+               pars = c("tau", "u"), 
+               prob = int.prob, 
+               prob_outer = int.outer.prob, 
+               point_est = "median") + 
+  ggtitle("Posterior Intervals: Brute force param calibration") + 
+  ylab("Parameter") + 
+  xlab(paste0("Inner ", 100*int.prob, "%; Outer ", 100*int.outer.prob, "%"))
+ggsave(file.path(out.dir, "intervals.brute.force.png"), bg = "white")
+
+# Posterior histogram
+mcmc_hist(posterior.brute.force, pars = c("tau", "u")) + 
+  ggtitle("Posterior Histogram: Brute force param calibration")
+ggsave(file.path(out.dir, "hist.brute.force.png"), bg = "white")
+
+# Posterior kernel density estimates
+mcmc_dens(posterior.brute.force, pars = c("tau", "u")) + 
+  ggtitle("Posterior Kernel Density Estimates: Brute force param calibration")
+ggsave(file.path(out.dir, "dens.brute.force.png"), bg = "white")
+
+# Trace plots
+color_scheme_set("mix-blue-red")
+mcmc_trace(posterior.brute.force, pars = c("tau", "u"),
+           facet_args = list(ncol = 1, strip.position = "left")) + 
+  ggtitle("Trace Plots: Brute force param calibration")
+ggsave(file.path(out.dir, "trace.brute.force.png"), bg = "white")
+
 
 # -----------------------------------------------------------------------------
 # Fit GP regression
 # -----------------------------------------------------------------------------
-
-# Design matrix, evaluate model at design points
-# TODO: Try using more extreme u values
-N <- 10
-X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
-y.model <- f(X)
 
 # Define the sufficient statistic (SS). For simplicity here, I'm not considering any other explanatory variables
 # x that are being conditioned on. If there were, we would have to make sure we were lining up the observed data
@@ -119,7 +166,7 @@ for(i in seq(1, N)) {
 # SS.min <- min(SS)
 # SS <- 1 - (SS.max - SS) / (SS.max - SS.min)
 # SS <- matrix(SS, ncol = 1)
-plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Statistic')
+# plot(as.vector(X), as.vector(SS), xlab = 'Design Point', ylab = 'Sufficient Statistic')
 
 # Fit GP
 gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
@@ -156,9 +203,9 @@ chain1 <- sampler.params[[1]]
 tau.samples <- extract(fit.gp, inc_warmup = TRUE)[["tau"]]
 
 
-
 # -----------------------------------------------------------------------------
-# Parameter Calibration with Gaussian Process Approximation, evaluating at predictive mean function.
+# Parameter Calibration with Gaussian Process Approximation, 
+# evaluating at predictive mean function.
 # -----------------------------------------------------------------------------
 
 # Compile Stan code
@@ -170,6 +217,20 @@ fit.gp.mean <- sampling(model.gp.mean, stan.list.gp, iter = 50000, chains = 4)
 summary(fit.gp.mean)
 
 
+# -----------------------------------------------------------------------------
+# Print information to file
+# -----------------------------------------------------------------------------
+
+file.con <- file(file.path(out.dir, "run_info.txt"))
+file.text <- c(paste0("Random seed: ", seed), paste0("Model: f(u) = ", f.string), paste0("True u value: ", u),  
+               paste0("tau: ", tau), paste0("n: ", n), paste0("Design points: ", paste0(as.vector(X), collapse = ", ")),
+               paste0("tau.shape: ", tau.shape), paste0("tau.rate: ", tau.rate), paste0("u.mean: ", u.mean), 
+               paste0("u.sigma: ", u.sigma), 
+               paste0("use.default.gp.params: ", use.default.gp.params),
+               "GP params:", paste0(names(stan.params.gp), collapse = ", "), 
+               paste0(stan.params.gp, collapse = ", "))
+writeLines(file.text, file.con)
+close(file.con)
 
 
 
