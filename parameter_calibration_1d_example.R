@@ -27,7 +27,7 @@ source("helper.functions.R")
 # -----------------------------------------------------------------------------
 
 # Random seed (for generating random data)
-seed <- 5
+seed <- 10
 set.seed(seed)
 
 # The function that is acting as the computer model. Should be equivalent to 
@@ -62,9 +62,8 @@ gp.param.defaults <- list(gp_rho = array(0.5),
 # Design matrix, evaluate model at design points for GP regression
 # TODO: Try using more extreme u values
 N <- 10
-X <- matrix(c(0, 0.05, 0.07, 0.08, 0.1, 0.2, 0.25, 0.3, 1), ncol = 1)
+X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
 N <- nrow(X)
-# X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
 y.model <- f(X)
 
 # Test points at which to evaluate GP predictions to investigate likelihood approximation
@@ -78,7 +77,7 @@ base.dir <- '.'
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- 'pres_1'
+tag <- 'pres_2'
 subdir.name <- paste0('param_cal_1d_test_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -114,7 +113,7 @@ stan.list <- list(n = n,
 fit.brute.force <- sampling(model, stan.list, iter = 50000, chains = 4)
 summary(fit.brute.force)
 posterior.brute.force <- as.array(fit.brute.force)
-samples.brute.force <- extract(fit)
+samples.brute.force <- extract(fit.brute.force)
 
 # Posterior uncertainty intervals
 color_scheme_set("red")
