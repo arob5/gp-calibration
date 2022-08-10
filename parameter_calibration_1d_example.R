@@ -206,7 +206,7 @@ gp.se.stan <- sqrt(as.vector(stan.llik.approx.output$var_test))
 # Save plots visualizing GP approximation
 interval.pct <- .95
 save.gp.pred.mean.plot(interval.pct, tau, y, X, X.pred, SS, SS.pred, 
-                       gp.means.stan, gp.se.stan, out.dir, "gp_pred_mean", f)
+                       gp.means.stan, gp.se.stan, llik.gp.uq, out.dir, "gp_pred_mean", f)
 
 # -----------------------------------------------------------------------------
 # Parameter Calibration with Gaussian Process Approximation,  
@@ -218,7 +218,6 @@ stan.gp.model.path <- file.path(base.dir, 'parameter_calibration_gp_1d_example.s
 model.gp <- stan_model(stan.gp.model.path)
 
 # Data to pass to Stan
-stan.list.gp.params <- create.gp.params.list(gp.fit, "mlegp")
 stan.list.other <- list(N = N, 
                         n = n,
                         y = as.vector(SS),
@@ -227,16 +226,20 @@ stan.list.other <- list(N = N,
                         b = tau.rate, 
                         u_mean = u.mean, 
                         u_sigma = u.sigma)
-stan.list.gp <- as.list(c(stan.list.gp.params, stan.list.other))
+stan.list.gp <- as.list(c(stan.params.gp, stan.list.other))
 
 # MCMC
 fit.gp <- sampling(model.gp, stan.list.gp, iter = 50000, chains = 4)
 summary(fit.gp)
 samples.gp <- extract(fit.gp)
-sampler.params <- get_sampler_params(fit.gp, inc_warmup = TRUE)
-chain1 <- sampler.params[[1]]
+posterior.gp<- as.array(fit.gp)
 
-tau.samples <- extract(fit.gp, inc_warmup = TRUE)[["tau"]]
+# Trace plots
+color_scheme_set("mix-blue-red")
+mcmc_trace(posterior.gp, pars = c("tau", "u[1]"),
+           facet_args = list(ncol = 1, strip.position = "left")) + 
+  ggtitle("Trace Plots: GP approx param calibration")
+ggsave(file.path(out.dir, "trace.gp.png"), bg = "white")
 
 
 # -----------------------------------------------------------------------------
@@ -251,6 +254,38 @@ model.gp.mean <- stan_model(stan.gp.mean.model.path)
 # MCMC
 fit.gp.mean <- sampling(model.gp.mean, stan.list.gp, iter = 50000, chains = 4)
 summary(fit.gp.mean)
+posterior.gp.mean <- as.array(fit.gp.mean)
+
+# Posterior uncertainty intervals
+color_scheme_set("red")
+mcmc_intervals(posterior.gp.mean, 
+               pars = c("tau", "u[1]"), 
+               prob = int.prob, 
+               prob_outer = int.outer.prob, 
+               point_est = "median") + 
+  ggtitle("Posterior Intervals: GP mean approx param calibration") + 
+  ylab("Parameter") + 
+  xlab(paste0("Inner ", 100*int.prob, "%; Outer ", 100*int.outer.prob, "%"))
+ggsave(file.path(out.dir, "intervals.gp.mean.png"), bg = "white")
+
+# Posterior histogram
+mcmc_hist(posterior.gp.mean, pars = c("tau", "u[1]")) + 
+  ggtitle("Posterior Histogram: GP mean approx param calibration")
+ggsave(file.path(out.dir, "hist.gp.mean.png"), bg = "white")
+
+# Posterior kernel density estimates
+mcmc_dens(posterior.gp.mean, pars = c("tau", "u[1]")) + 
+  ggtitle("Posterior Kernel Density Estimates: GP mean approx param calibration")
+ggsave(file.path(out.dir, "dens.gp.mean.png"), bg = "white")
+
+# Trace plots
+color_scheme_set("mix-blue-red")
+mcmc_trace(posterior.gp.mean, pars = c("tau", "u[1]"),
+           facet_args = list(ncol = 1, strip.position = "left")) + 
+  ggtitle("Trace Plots: GP mean approx param calibration")
+ggsave(file.path(out.dir, "trace.gp.mean.png"), bg = "white")
+
+
 
 
 # -----------------------------------------------------------------------------
