@@ -296,7 +296,7 @@ if(use.default.gp.params) {
 stan.params.other <- list(N = N, n = n, N_pred = n.u, tau = tau, X = X, y = SS[,1], u_vals = X.pred)
 stan.params <- as.list(c(stan.params.gp, stan.params.other))
 stan.fit <- sampling(model, data = stan.params, warmup = 0, iter = 1, chains = 1, 
-                     seed = 494838, refresh = 4000, algorithm = "Fixed_param")
+                     seed = seed, refresh = 4000, algorithm = "Fixed_param")
 
 # Save Stan data
 stan.output <- extract(stan.fit)

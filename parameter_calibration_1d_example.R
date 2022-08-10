@@ -161,6 +161,12 @@ for(i in seq(1, N)) {
   SS[i] <- sum((y.model[i] - y)^2)
 }
 
+# Similarly calculate true SS at test points for reference in subsequent plots
+SS.pred <- matrix(NA, nrow = N.pred, ncol = 1)
+for(i in seq(1, N.pred)) {
+  SS.pred[i, 1] <- sum((f(X.pred[i,1]) - y)^2)
+}
+
 # Scale SS to unit interval
 # SS.max <- max(SS)
 # SS.min <- min(SS)
@@ -171,6 +177,36 @@ for(i in seq(1, N)) {
 # Fit GP
 gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
 
+# -----------------------------------------------------------------------------
+# Obtain GP predictions at test points for visualizing likelihood approximation
+# -----------------------------------------------------------------------------
+
+if(use.default.gp.params) {
+  stan.params.gp <- gp.param.defaults
+} else {
+  stan.params.gp <- create.gp.params.list(gp.fit, "mlegp")
+}
+
+# Compile Stan code
+stan.llik.approx.path <- file.path(base.dir, 'likelihood_approx_comparison.stan')
+stan.llik.approx.model <- stan_model(stan.llik.approx.path)
+
+# Run Stan code
+stan.params.other.llik.approx <- list(N = N, n = n, N_pred = N.pred, tau = tau, X = X, y = SS, u_vals = X.pred)
+stan.params.llik.approx <- as.list(c(stan.params.gp, stan.params.other.llik.approx))
+stan.llik.approx.fit <- sampling(stan.llik.approx.model, data = stan.params.llik.approx, warmup = 0, 
+                                 iter = 1, chains = 1, seed = seed, refresh = 4000, algorithm = "Fixed_param")
+
+# Save Stan results
+stan.llik.approx.output <- extract(stan.llik.approx.fit)
+llik.gp.uq <- as.vector(stan.llik.approx.output$u_vals_llik) # GP integrated out likelihood in Stan (uq = uncertainty quantification)
+gp.means.stan <- as.vector(stan.llik.approx.output$mean_test)
+gp.se.stan <- sqrt(as.vector(stan.llik.approx.output$var_test))
+
+# Save plots visualizing GP approximation
+interval.pct <- .95
+save.gp.pred.mean.plot(interval.pct, tau, y, X, X.pred, SS, SS.pred, 
+                       gp.means.stan, gp.se.stan, out.dir, "gp_pred_mean", f)
 
 # -----------------------------------------------------------------------------
 # Parameter Calibration with Gaussian Process Approximation,  
