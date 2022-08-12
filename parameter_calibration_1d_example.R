@@ -94,7 +94,7 @@ dir.create(out.dir)
 u <- u.mean
 tau <- tau.shape / tau.rate
 y <- rnorm(n, f(u), 1/sqrt(tau))
-save.gaussian.llik.plot(y, X.pred, out.dir, "exact_llik.png", f)
+save.gaussian.llik.plot(y, X.pred, out.dir, "exact_llik.png", f, tau)
 
 
 # -----------------------------------------------------------------------------

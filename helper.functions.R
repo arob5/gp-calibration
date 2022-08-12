@@ -13,7 +13,7 @@ dmvnorm.log.unnorm.SS <- function(SS, tau, n) {
   (n/2)*log(tau) - (tau/2)*SS
 }
 
-save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f) {
+save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau) {
   
   N.pred <- nrow(X.pred)
   llik.pred <- matrix(NA, nrow = N.pred, ncol = 1)

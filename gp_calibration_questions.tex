@@ -47,6 +47,9 @@
 % Specifically for paper formatting 
 \renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
 
+% For embedding images
+\graphicspath{ {./images/} }
+
 % Formatting definitions, propositions, etc. 
 \newtheorem{definition}{Definition}
 \newtheorem{prop}{Proposition}
@@ -401,12 +404,27 @@ for future reading.
 &\tau^* := 100/9 \implies \sigma^* = 0.3
 \end{align*}
 \item Choose a simple function $f(u) = u$ as a stand-in for the computer model, with the assumption that $f(u^*)$ gives the mean of the quantity of interest.
-\item Simulate synthetic observed dataset: $y_i \overset{iid}{\sim} N(f(u^*), \sigma^*)$, $0 \leq i \leq 1000$.
+\item Simulate synthetic observed dataset: $y_i \overset{iid}{\sim} N(f(u^*), \sigma^*)$, $0 \leq i \leq n$, $n = 1000$.
+\begin{center}
+	\includegraphics[scale=.5]{{exact_llik}.png}
+\end{center}
 
+\item GP approximation:
+\begin{itemize}
+\item Choose design $X \in \R^{N \times 1}$ and evaluate model at design points: $y^{\text{m}} := f(X) \in \R^{N \times 1}$.
+\item Calculate vector of sufficient statistics $T \in \R^{N \times 1}$, where $T_i := \sum_{j = 1}^{n} (y^{\text{m}}_i - y_j)^2$
+\item Fit GP on training data $(X, T)$ using \textit{mlegp}. Let $\hat{T}$ denote the fitted GP model. 
 \end{itemize}
 
+\item MCMC over parameters $(u, \tau)$:
+\begin{enumerate}
+\item Brute force: using true Gaussian likelihood
+\item GP: using ``GP integrated out'' approximate likelihood
+\item GP Mean: GP approximate likelihood evaluated at the predictive mean (no uncertainty quantification)
+\end{enumerate}
 
 
+\end{itemize}
 
 
 \end{document} 

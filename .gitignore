@@ -5,3 +5,4 @@
 *.gz
 *.rds
 output/
+images/
