@@ -442,6 +442,51 @@ for future reading.
 	\includegraphics[scale=.5]{{gp_pred_mean_llik_6design}.png}
 \end{center}
 
+\subsection{Some Results}
+\begin{enumerate}
+\item Evenly spaced design points
+\item Below plots calculated using the true $\tau^*$ value. Using more extreme $\tau$ values would make the bulges even larger.
+
+\begin{center}
+	\includegraphics[scale=.5]{{gp_pred_mean_SS_5design}.png}
+\end{center}
+
+\begin{center}
+	\includegraphics[scale=.5]{{gp_integrated_out_llik_5design}.png}
+\end{center}
+
+
+\item Why is the uncertainty penalty term so extreme? 
+\begin{itemize}
+\item Log penalty term: $\frac{\tau^2}{8}k(u, u)$
+\item $\tau \approx 11$ so $\tau^2 \approx 121$. The values of the sufficient statistic $T$ vary in the $[100, 400]$ range or so, so even a very modest predictive 
+variance $k(u, u)$ multiplied by 121 is going to make this term blow up. In this case, a reasonable predictive standard error of 19 would lead to the approximate penalty
+$\frac{11^2}{8}19^2 \approx 5000$, which is why we see values above 5000 on this graph. 
+\item Observation: The GP uncertainty estimates are very reasonable, yet averaging the likelihood over these uncertainty estimates leads to these unreasonable results. 
+This expectation is very sensitive to both the GP uncertainty estimates and $\tau$. 
+\end{itemize}
+\item Given the above plots, the MCMC behavior is unsurprising. 
+
+\begin{center}
+	\includegraphics[scale=.2]{{trace.gp_5design}.png}
+\end{center}
+\end{enumerate}
+
+\subsection{Next Steps}
+\begin{itemize}
+\item GP/MCMC work
+\begin{enumerate}
+\item Not as principled of an approach since you have to choose $p$, but I was looking at using quantiles of the likelihood instead of expectation
+\[\frac{n}{2}\log \tau - \frac{\tau}{2}\mu(u) + \frac{\tau}{\sqrt{2}}\sqrt{k(u, u)} \cdot \text{erf}^{-1}(2p - 1)\]
+\item Investigate potential bug in current PEcAn MCMC code
+\item Experimental design
+\end{enumerate}
+\item How to close out last month of summer
+\item Interested in continuing to collaborate in the Fall
+\end{itemize}
+
+
+
 
 
 \end{itemize}
