@@ -422,9 +422,37 @@ for future reading.
 \item GP: using ``GP integrated out'' approximate likelihood
 \item GP Mean: GP approximate likelihood evaluated at the predictive mean (no uncertainty quantification)
 \end{enumerate}
+\end{itemize}
+
+\subsection{Some General Notes}
+\subsubsection{Numerical instability of \textit{mlegp}}
+\begin{itemize}
+\item Haven't investigated in detail, but seems to mainly be a problem in 1d, when design points are close together
+\item \textit{mlegp}'s \textit{predict} function directly inverts the covariance matrix; does not use Cholesky decomposition
+
+\begin{center}
+	\includegraphics[scale=.5]{{gp_pred_std_err}.png}
+\end{center}
+\item In addition, the optimize routine seems to be highly sensitive the design.
+\begin{center}
+	\includegraphics[scale=.5]{{gp_pred_mean_llik_5design}.png}
+\end{center}
+
+\begin{center}
+	\includegraphics[scale=.5]{{gp_pred_mean_llik_6design}.png}
+\end{center}
+
 
 
 \end{itemize}
+
+
+
+
+
+
+
+
 
 
 \end{document} 
