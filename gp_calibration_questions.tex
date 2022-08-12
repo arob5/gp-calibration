@@ -380,12 +380,34 @@ for future reading.
 \item \href{https://centaur.reading.ac.uk/28464/1/Fox_etal.REFLEX.AFM.2009.pdf}{The REFLEX project: Comparing different algorithms and implementations for the inversion of a terrestrial ecosystem model against eddy covariance data}
 \end{itemize}
 
-
 \section{PEcAn Code}
 \subsection{Suggestions/Updates}
 \begin{enumerate}
 \item Add a config file to specify file paths that will be read by makefile, rather than having file paths embedded in makefile itself. 
 \end{enumerate}
+
+\section{Meeting: 8/12/2022}
+\subsection{1D Parameter Calibration Tests}
+\subsubsection{Testing Framework}
+\begin{itemize}
+\item Priors on precision parameter $\tau$ and calibration parameter $u$: 
+\begin{align*}
+&\tau \sim \text{G}(100/9, 1) \\
+&u \sim N(.5, .25)
+\end{align*}
+\item Set ``true'' parameters to the means of their priors:
+\begin{align*}
+&u^* := 0.5 \\
+&\tau^* := 100/9 \implies \sigma^* = 0.3
+\end{align*}
+\item Choose a simple function $f(u) = u$ as a stand-in for the computer model, with the assumption that $f(u^*)$ gives the mean of the quantity of interest.
+\item Simulate synthetic observed dataset: $y_i \overset{iid}{\sim} N(f(u^*), \sigma^*)$, $0 \leq i \leq 1000$.
+
+\end{itemize}
+
+
+
+
 
 \end{document} 
 

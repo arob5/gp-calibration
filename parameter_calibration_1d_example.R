@@ -12,9 +12,7 @@
 # Working Directory: /projectnb2/dietzelab/arober/pecan_personal
 
 # TODO: 
-# - Define bounds on u and tau
-# - 0 < sigma^2 < var(data)
-# - Bounds on u given by bounds on design points (don't extrapolate)
+# Reduce number of design points to add more uncertainty
 # Consider scaling response and design prior to fitting GP
 
 
@@ -34,7 +32,7 @@ source("helper.functions.R")
 # -----------------------------------------------------------------------------
 
 # Random seed (for generating random data)
-seed <- 10
+seed <- 20
 set.seed(seed)
 
 # The function that is acting as the computer model. Should be equivalent to 
@@ -68,7 +66,7 @@ gp.param.defaults <- list(gp_rho = array(0.5),
 
 # Design matrix, evaluate model at design points for GP regression
 # TODO: Try using more extreme u values
-N <- 10
+N <- 6
 X <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N), ncol = 1)
 N <- nrow(X)
 y.model <- f(X)
@@ -84,7 +82,7 @@ base.dir <- '.'
 base.out.dir <- file.path(base.dir, 'output')
 
 # Create sub-directory in output directory
-tag <- 'pres_3'
+tag <- 'pres_8'
 subdir.name <- paste0('param_cal_1d_test_', tag)
 out.dir <- file.path(base.out.dir, subdir.name)
 dir.create(out.dir)
@@ -182,6 +180,30 @@ for(i in seq(1, N.pred)) {
 
 # Fit GP
 gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+
+# TEMP
+N1 <- 5
+X1 <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N1), ncol = 1)
+y.model1 <- f(X1)
+SS1 <- rep(0, N1)
+for(i in seq(1, N1)) {
+  SS1[i] <- sum((y.model1[i] - y)^2)
+}
+
+
+
+N2 <- 6
+X2 <- matrix(seq(qnorm(.01, u.mean, u.sigma), qnorm(.99, u.mean, u.sigma), length = N2), ncol = 1)
+y.model2 <- f(X2)
+SS2 <- rep(0, N2)
+for(i in seq(1, N2)) {
+  SS2[i] <- sum((y.model2[i] - y)^2)
+}
+
+gp.fit1 <- mlegp(X1, SS1, nugget.known = 0, constantMean = 1)
+gp.fit2 <- mlegp(X2, SS2, nugget.known = 0, constantMean = 1)
+
+
 
 # -----------------------------------------------------------------------------
 # Obtain GP predictions at test points for visualizing likelihood approximation
@@ -326,13 +348,12 @@ file.con <- file(file.path(out.dir, "run_info.txt"))
 file.text <- c(paste0("Random seed: ", seed), paste0("Model: f(u) = ", f.string), paste0("True u value: ", u),  
                paste0("tau: ", tau), paste0("n: ", n), paste0("Design points: ", paste0(as.vector(X), collapse = ", ")),
                paste0("tau.shape: ", tau.shape), paste0("tau.rate: ", tau.rate), paste0("u.mean: ", u.mean), 
-               paste0("u.sigma: ", u.sigma), 
+               paste0("u.sigma: ", u.sigma),
                paste0("use.default.gp.params: ", use.default.gp.params),
                "GP params:", paste0(names(stan.params.gp), collapse = ", "), 
                paste0(stan.params.gp, collapse = ", "))
 writeLines(file.text, file.con)
 close(file.con)
-
 
 
 

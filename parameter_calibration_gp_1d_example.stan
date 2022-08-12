@@ -40,7 +40,7 @@ transformed data {
 }
 
 parameters {
-  vector[1] u;        // Calibration parameters
+  vector<lower=u_lower, upper=u_upper>[1] u; // Calibration parameters
   real<lower=0> tau; // Precision parameter for Gaussian likelihood
 }
 

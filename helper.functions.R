@@ -98,11 +98,12 @@ save.gp.pred.mean.plot <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.p
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
   plot(X.pred, llik.gp.uq, type = "l", lty = 1, xlab = "u", ylab="Unnormalized Log-Likelihood",
        main = "GP Integrated Out Approx Log-Likelihood", col = "blue")
+  lines(X.pred, llik.gp.mean, lty=1, col="green")
   points(X, llik.design, pch=16, col="black")
   lines(X.pred, llik.pred, lty=1, col="red")
   legend("right", inset=c(-0.2,-0.3), 
-         legend = c("GP integrated out llik", "Design points", "True llik"), 
-         col = c("blue", "black", "red"), lty = c(1, NA, 1), pch = c(NA, 16, NA))
+         legend = c("GP integrated out llik", "GP pred mean llik","Design points", "True llik"), 
+         col = c("blue", "green", "black", "red"), lty = c(1, 1, NA, 1), pch = c(NA, NA, 16, NA))
   dev.off()
   
   

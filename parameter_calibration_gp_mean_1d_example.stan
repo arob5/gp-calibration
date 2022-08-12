@@ -24,6 +24,9 @@ data {
   real u_mean;            // Mean for Gaussian prior on calibration parameter u
   real<lower=0> u_sigma; // Standard deviation for Gaussian prior on calibration parameter u
   
+  real u_lower; // Lower bound on u
+  real u_upper; // Upper bound on u
+  
   vector<lower=0>[1] gp_rho; // Vector of lengthscale parameters
   real<lower=0> gp_alpha;    // Marginal standard deviation
   real<lower=0> gp_sigma;    // Nugget (standard deviation)
@@ -37,7 +40,7 @@ transformed data {
 }
 
 parameters {
-  vector[1] u;        // Calibration parameters
+  vector<lower=u_lower, upper=u_upper>[1] u; // Calibration parameters
   real<lower=0> tau; // Precision parameter for Gaussian likelihood
 }
 
