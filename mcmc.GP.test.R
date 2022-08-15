@@ -5,20 +5,31 @@
 #
 # Andrew Roberts
 
+library(TruncatedNormal)
 library(mvtnorm)
 
-mcmc.GP.test <- function(gp.obj) {
-  
+# TODO: generalize so that each dimension can be updated independently 
+mcmc.GP.test <- function(gp.obj, n.itr) {
+  for(itr in seq(1, n.itr)) {
+    # TODO: adapt proposal variance
+    
+    # Propose new calibration parameters
+    # TODO: define rng
+    u.new <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = rng[,1], ub = rng[,2])
+    
+    
+  }
   
 }
 
 
-sample.SS <- function(gp.obj, x.pred, x.curr = NULL) {
-  gp.pred <- predict_gp(as.matrix(x.pred), gp.obj)
-  
+sample.SS <- function(gp.obj, X.pred) {
+
+  gp.pred <- predict_gp(X.pred, gp.obj, pred.cov = TRUE)
+
   repeat {
-    SS <- rnorm(1, gp.pred$mean, sqrt(gp.pred$var))
-    if(SS >= 0) break
+    SS <- rmvnorm(1, mean = gp.pred$mean, sigma = gp.pred$cov)
+    if(all(SS >= 0)) break
   }
   
   return(SS)
