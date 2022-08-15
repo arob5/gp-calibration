@@ -51,11 +51,16 @@ create.gp.obj <- function(gp, library, X.obs, y.obs) {
 }
 
 
-predict_gp <- function(X.pred, gp.obj) {
+predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE) {
   k.Xx <- cov_exp_quad(gp.obj$X.obs, X.pred, gp.obj$gp_rho, gp.obj$gp_alpha)
   pred.list <- list()
   pred.list[["mean"]] <- predict_mean(k.Xx, gp.obj$K.inv.y, gp.obj$gp_mean)
-  pred.list[["var"]] <- predict_var(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget)
+  
+  if(pred.cov) {
+    pred.list[["cov"]] <- predict_cov_mat(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget)
+  } else {
+    pred.list[["var"]] <- predict_var(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget)
+  }
   
   return(pred.list)
 }
@@ -80,6 +85,12 @@ predict_var<- function(X.pred, k.Xx, L, rho, alpha, nugget) {
   return(pred.vars)
 }
 
+predict_cov_mat <- function(X.pred, K.Xx, L, rho, alpha, nugget) {
+  V <- solve(L, K.Xx)
+  K.x <- cov_exp_quad(X.pred, NULL, rho, alpha) + diag(rep(nugget, nrow(X.pred)))
+  
+  return(K.x - crossprod(V))
+}
 
 
 

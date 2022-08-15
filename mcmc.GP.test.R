@@ -5,22 +5,23 @@
 #
 # Andrew Roberts
 
+library(mvtnorm)
 
 mcmc.GP.test <- function(gp.obj) {
   
-  L <- t(chol(K(X_obs, X_obs, rho, alpha) + diag(rep(eps, nrow(X_obs)))))
   
-  # Add nugget
-  if(add.nugget) {
-    if(sigma == 0) {
-      eps <- sqrt(.Machine$double.eps)
-    } else {
-      eps <- sigma^2
-    }
-    
-    K <- K + diag(rep(eps, nrow(X1)))
+}
+
+
+sample.SS <- function(gp.obj, x.pred, x.curr = NULL) {
+  gp.pred <- predict_gp(as.matrix(x.pred), gp.obj)
+  
+  repeat {
+    SS <- rnorm(1, gp.pred$mean, sqrt(gp.pred$var))
+    if(SS >= 0) break
   }
   
+  return(SS)
   
 }
 

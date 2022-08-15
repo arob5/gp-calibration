@@ -139,6 +139,11 @@ print(paste0("Stan and R predictive means equal: ", all.equal(as.vector(gp.pred.
 # Test the predictive variances
 print(paste0("Stan and R predictive variances equal: ", all.equal(as.vector(gp.pred.r$var), as.vector(gp.var.stan))))
 
+# Test that R predictive covariance matrix recovers the predictive variances calculated above
+pred.cov.r<- predict_gp(X.pred, gp.obj, pred.cov = TRUE)$cov
+print(paste0("R predictive variances equal to diagonal of predictive covariance matrix: ", 
+             all.equal(as.vector(gp.pred.r$var), diag(pred.cov.r))))
+
 
 # -----------------------------------------------------------------------------
 # General Stan tests
