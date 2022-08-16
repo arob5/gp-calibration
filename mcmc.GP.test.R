@@ -15,13 +15,25 @@ library(mvtnorm)
 #   - Generalize u prior function to allow for multivariate u
 
 mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau, tau.gamma.shape, tau.gamma.rate, 
-                         u.prior.mean, u.prior.sd) {
+                         u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency) {
   accept.count <- 0
   tau.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X.obs))
   
+  # Initial parameter values
+  SS0 <- sample.SS(gp.obj, u0)
+  tau.curr <- sample.tau(n, SS0, tau.gamma.shape, tau.gamma.rate)
+  u.curr <- u0
+  
+  # Initial proposal covariance matrix
+  cov.proposal <- diag(proposal.vars)
+  
   for(itr in seq(1, n.itr)) {
-    # TODO: adapt proposal variance
+    
+    # Adapt proposal covariance matrix
+    if((itr > 2) && ((itr - 1) %% adapt.frequency) == 0) {
+      cov.proposal <- adapt.cov.proposal()
+    }
     
     # Propose new calibration parameters
     u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[,1], ub = u.rng[,2])
@@ -58,8 +70,24 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     # Gibbs step: sample tau conditional on current value of u
     tau.curr <- sample.tau(n, SS.curr, tau.gamma.shape, tau.gamma.rate)
     tau.samples[itr, 1] <- tau.curr
-     
   }
+  
+  samples.list <- list(u = u.samples, tau = tau.samples)
+  output.list <- list(samples = samples.list, 
+                      u.init = u0, 
+                      n.itr = n.itr,
+                      accept.count = accept.count, 
+                      accept.rate = accept.count / n.itr,
+                      n = n, 
+                      u.rng = u.rng, 
+                      SS.joint.sample = SS.joint.sample, 
+                      resample.tau = resample.tau, 
+                      tau.gamma.shape = tau.gamma.shape, 
+                      tau.gamma.rate = tau.gamma.rate, 
+                      u.prior.mean = u.prior.mean, 
+                      u.prior.sd = u.prior.sd)
+  
+  return(output.list)
   
 }
 

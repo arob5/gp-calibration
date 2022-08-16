@@ -275,6 +275,20 @@ where $T \sim \hat{T}(x, z, u)$ is a value sampled from the predictive GP distri
 \caption{MCMC for Parameter Calibration}
 \end{algorithm}
 
+\subsubsection{Adapting the Proposal Covariance Matrix}
+\textbf{Joint Update.} First consider the case where the Metropolis updates are conducted jointly for all dimensions at once. The covariance matrix for the Gaussian
+proposal is initialized as $\Sigma_0 := \sigma_0^2 I_d$ for some chosen parameter $\sigma_0$. This covariance is then adapted at all iterations $t$ satisfying 
+$t > 2$ and only when $t$ is a multiple of some chosen update frequency $U$. At iteration $t $ the previous $H$ samples are used to inform the adaptation of the covariance, 
+where $H$ is a \textit{history} parameter that also must be chosen in advance. Let $a$ be the number of accepted samples since the previous iteration at which the 
+covariance was adapted (this counter is re-set to $0$ each time the covariance is adapted). If $a = 0$ then we set $\Sigma_{t} := \gamma^2 \Sigma_{t - 1}$, where 
+$\gamma > 0$ is fixed scaling factor. If $a \neq 0$ then the following update is conducted. Let $\hat{\sigma}_1, \dots, \hat{\sigma}_d$ be the empirical standard deviations
+taken over the respective dimensions of the previous $H$ samples $u^{(t - H)}, \dots, u^{(t - 1)}$. Let $\hat{C}_{t - H:t-1}$ be the empirical correlation matrix calculated using
+the previous $H$ samples. Letting $a^*$ denote the target acceptance rate, $\gamma^\prime := \max\left\{\frac{a}{a^*}, \gamma \right\}$, and
+$R:= \gamma^\prime \text{diag}(\hat{\sigma}_1, \dots, \hat{\sigma}_d)$. The covariance matrix is then updated as $\Sigma_t := R\hat{C}_{t - H:t-1}R$. Note that the result is simply
+a scaling of the empirical covariance matrix $R\hat{C}_{t - H:t-1}R = \left(\lambda^\prime\right)^2 \hat{\Sigma}_{t - H:t-1}$
+
+
+
 
 \subsubsection{Questions}
 \begin{itemize}
