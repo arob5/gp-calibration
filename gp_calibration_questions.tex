@@ -285,7 +285,7 @@ $\gamma > 0$ is fixed scaling factor. If $a \neq 0$ then the following update is
 taken over the respective dimensions of the previous $H$ samples $u^{(t - H)}, \dots, u^{(t - 1)}$. Let $\hat{C}_{t - H:t-1}$ be the empirical correlation matrix calculated using
 the previous $H$ samples. Letting $a^*$ denote the target acceptance rate, $\gamma^\prime := \max\left\{\frac{a}{a^*}, \gamma \right\}$, and
 $R:= \gamma^\prime \text{diag}(\hat{\sigma}_1, \dots, \hat{\sigma}_d)$. The covariance matrix is then updated as $\Sigma_t := R\hat{C}_{t - H:t-1}R$. Note that the result is simply
-a scaling of the empirical covariance matrix $R\hat{C}_{t - H:t-1}R = \left(\lambda^\prime\right)^2 \hat{\Sigma}_{t - H:t-1}$
+a scaling of the empirical covariance matrix $R\hat{C}_{t - H:t-1}R = \left(\lambda^\prime\right)^2 \hat{\Sigma}_{t - H:t-1}$.
 
 
 
