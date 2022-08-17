@@ -20,6 +20,10 @@ source("mcmc.GP.test.R")
 
 # -----------------------------------------------------------------------------
 # Settings
+#   - All paths should be relative to base.dir$output.dir. Paths will be 
+#     automatically expanded to their full paths in preprocess.settings()
+#   - Some fields can be set to NULL and will be automatically filled by 
+#     preprocess.settings()
 # -----------------------------------------------------------------------------
 
 settings <- list(
@@ -28,19 +32,19 @@ settings <- list(
   seed = 5, 
   k = 1, # Dimension of u
   base.dir = getwd(),
-  output.dir = file.path(base.dir, "output"),
+  output.dir = "output",
   run.id = Sys.time(), 
-  run.description = "",
+  run.description = "Test",
   n.mcmc.chains = 4, 
   
   # Algorithms
-  mcmc.brute.force.stan = FALSE, 
+  mcmc.brute.force.stan = TRUE, 
   mcmc.gp.stan = FALSE, 
   mcmc.gp.mean.stan = FALSE, 
   mcmc.pecan = FALSE,
-  mcmc.brute.force.stan.file = "parameter_calibration_1d_example.stan",
-  mcmc.gp.stan.file = "parameter_calibration_gp_1d_example.stan", 
-  mcmc.gp.mean.stan = "parameter_calibration_gp_mean_1d_example.stan",
+  mcmc.brute.force.stan.path = "parameter_calibration_1d_example.stan",
+  mcmc.gp.stan.path = "parameter_calibration_gp_1d_example.stan", 
+  mcmc.gp.mean.path = "parameter_calibration_gp_mean_1d_example.stan",
   
   # Likelihood (used to generate synthetic dataset)
   n = 1000,
@@ -65,18 +69,18 @@ settings <- list(
   # Brute Force algorithm settings
   n.itr.mcmc.brute.force <- 50000
   
-  # pecan algorithm settings
-  
 )
+
+settings <- preprocess.settings(settings)
 
 
 # -----------------------------------------------------------------------------
 # Create output directory for current run
 # -----------------------------------------------------------------------------
 
-run.dir <- paste0("param_cal_", settings$run.id)
-dir.create(file.path(settings$output.dir, run.dir))
-save(settings, file = file.path(run.dir, "settings.RData"))
+run.dir <- file.path(settings$output.dir, paste0("param_cal_", settings$run.id))
+dir.create(run.dir)
+saveRDS(settings, file = file.path(run.dir, "settings.RData"))
 
 
 # -----------------------------------------------------------------------------
@@ -100,7 +104,7 @@ save.gaussian.llik.plot(y.obs, X.pred, run.dir, "exact_llik.png", f, settings$ta
 # Fit Gaussian Process Regression
 # -----------------------------------------------------------------------------
 
-if(any(settings["mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan"])) {
+if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]))) {
   X <- settings$X
   N <- settings$N
   y.model <- apply(X, 1, f)
@@ -113,7 +117,7 @@ if(any(settings["mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan"])) {
 # -----------------------------------------------------------------------------
 
 # Compile Stan code
-model.brute.force <- stan_model(settings$mcmc.brute.force.stan.file)
+model.brute.force <- stan_model(settings$mcmc.brute.force.stan.path)
 
 # Data to pass to Stan
 stan.list.brute.force <- list(n = settings$n, 
@@ -124,7 +128,7 @@ stan.list.brute.force <- list(n = settings$n,
                               u_sigma = settings$u.gaussian.sd)
 
 # MCMC
-fit.brute.force <- sampling(model, stan.list, iter = settings$n.itr.mcmc.brute.force, 
+fit.brute.force <- sampling(model.brute.force, stan.list.brute.force, iter = settings$n.itr.mcmc.brute.force, 
                             chains = settings$n.mcmc.chains, seed = settings$seed)
 posterior.brute.force <- as.array(fit.brute.force)
 

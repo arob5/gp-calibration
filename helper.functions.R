@@ -1,6 +1,12 @@
 
 preprocess.settings <- function(settings) {
   
+  # Expand relative directories into full paths
+  settings$output.dir <- file.path(settings$base.dir, settings$output.dir)
+  settings$mcmc.brute.force.stan.path <- file.path(settings$base.dir, settings$mcmc.brute.force.stan.path)
+  settings$mcmc.gp.stan.path <- file.path(settings$base.dir, settings$mcmc.gp.stan.path)
+  settings$mcmc.gp.mean.path <- file.path(settings$base.dir, settings$mcmc.gp.mean.path)
+  
   if(is.null(settings$tau.true)) {
     settings$tau.true <- 1 / settings$sigma.true^2
   }
@@ -19,21 +25,24 @@ preprocess.settings <- function(settings) {
     settings$u.gaussian.mean <- settings$u.true
   }
   
-  if(any(settings["mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan"]) && is.null(X)) {
+  if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(X)) {
     settings$X <- matrix(seq(qnorm(.01, settings$u.true, settings$sigma.true), 
                              qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N), ncol = settings$k)
   }
   
+  return(settings)
+  
 }
 
 
-
-
 # Log unnormalized isotropic multivariate normal density
-dmvnorm.log.unnorm <- function(y, u, tau, f) {
+log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
   n <- length(y)
   mu.vec <- rep(f(u), n)
-  (n/2)*log(tau) - (tau/2)*sum((y - mu.vec)^2)
+  log.dens <- 0.5*n*log(tau) - 0.5*tau*sum((y - mu.vec)^2)
+  
+  if(normalize) return(log.dens - 0.5*n*log(2*pi))
+  return(log.dens)
 }
 
 # Log unnormalized isotropic multivariate normal density, as function of 
@@ -42,18 +51,24 @@ dmvnorm.log.unnorm.SS <- function(SS, tau, n) {
   (n/2)*log(tau) - (tau/2)*SS
 }
 
-save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau) {
+save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, normalize = TRUE) {
   
   N.pred <- nrow(X.pred)
   llik.pred <- matrix(NA, nrow = N.pred, ncol = 1)
   for(i in seq(1, N.pred)) {
-    llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs, X.pred[i,1], tau, f)
+    llik.pred[i, 1] <- log.dmvnorm(y.obs, X.pred[i,1], tau, f, normalize)
+  }
+  
+  if(normalize) {
+    y.lab <- "Log-Likelihood"
+  } else {
+    y.lab <- "Unnormalized Log-Likelihood"
   }
   
   png(file.path(out.dir, file.name), width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
   matplot(X.pred, llik.pred, type = 'l', 
-          lty=1, xlab="u", ylab="Unnormalized Log-Likelihood", 
+          lty=1, xlab="u", ylab=y.lab, 
           main = "Exact Log-Likelihood", col="red")
   dev.off()
   
