@@ -1,4 +1,33 @@
 
+preprocess.settings <- function(settings) {
+  
+  if(is.null(settings$tau.true)) {
+    settings$tau.true <- 1 / settings$sigma.true^2
+  }
+  
+  if(is.null(settings$sigma.true)) {
+    settings$sigma.true <- 1 / sqrt(settings$tau.true)
+  }
+  
+  # Init tau.gamma.shape so that the hyperprior mean of tau equals the true tau value
+  if(is.null(settings$tau.gamma.shape) & (settings$tau.gamma.rate == 1.0)) {
+    settings$tau.gamma.shape <- settings$tau.true
+  }
+  
+  # Init u.gaussian.mean so that hyperprior mean of u equals the true u value
+  if(is.null(settings$u.gaussian.mean)) {
+    settings$u.gaussian.mean <- settings$u.true
+  }
+  
+  if(any(settings["mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan"]) && is.null(X)) {
+    settings$X <- matrix(seq(qnorm(.01, settings$u.true, settings$sigma.true), 
+                             qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N), ncol = settings$k)
+  }
+  
+}
+
+
+
 
 # Log unnormalized isotropic multivariate normal density
 dmvnorm.log.unnorm <- function(y, u, tau, f) {

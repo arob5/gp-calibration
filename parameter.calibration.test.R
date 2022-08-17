@@ -31,12 +31,16 @@ settings <- list(
   output.dir = file.path(base.dir, "output"),
   run.id = Sys.time(), 
   run.description = "",
+  n.mcmc.chains = 4, 
   
   # Algorithms
   mcmc.brute.force.stan = FALSE, 
   mcmc.gp.stan = FALSE, 
   mcmc.gp.mean.stan = FALSE, 
   mcmc.pecan = FALSE,
+  mcmc.brute.force.stan.file = "parameter_calibration_1d_example.stan",
+  mcmc.gp.stan.file = "parameter_calibration_gp_1d_example.stan", 
+  mcmc.gp.mean.stan = "parameter_calibration_gp_mean_1d_example.stan",
   
   # Likelihood (used to generate synthetic dataset)
   n = 1000,
@@ -45,18 +49,21 @@ settings <- list(
   model = function(u) {u},
   u.true = 0.5,
   sigma.true = 0.3, 
-  tau.true = 1 / sigma.true^2, 
+  tau.true = NULL, 
   
   # Priors
-  tau.gamma.shape = tau.true,
+  tau.gamma.shape = NULL,
   tau.gamma.rate = 1.0,
-  u.guassian.mean = u.true,
+  u.gaussian.mean = NULL,
   u.gaussian.sd = 0.25,
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
   N = 5, 
   library = "mlegp", 
+  
+  # Brute Force algorithm settings
+  n.itr.mcmc.brute.force <- 50000
   
   # pecan algorithm settings
   
@@ -89,10 +96,37 @@ X.pred <- matrix(u.pred, ncol=1)
 save.gaussian.llik.plot(y.obs, X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
 
 
+# -----------------------------------------------------------------------------
+# Fit Gaussian Process Regression
+# -----------------------------------------------------------------------------
+
+if(any(settings["mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan"])) {
+  X <- settings$X
+  N <- settings$N
+  y.model <- apply(X, 1, f)
+}
 
 
+# -----------------------------------------------------------------------------
+# Brute Force parameter calibration: 
+#   Try to recover parameters by running MCMC in Stan
+# -----------------------------------------------------------------------------
 
+# Compile Stan code
+model.brute.force <- stan_model(settings$mcmc.brute.force.stan.file)
 
+# Data to pass to Stan
+stan.list.brute.force <- list(n = settings$n, 
+                              y = y.obs, 
+                              a = settings$tau.gamma.shape, 
+                              b = settings$tau.gamma.rate, 
+                              u_mean = settings$u.gaussian.mean, 
+                              u_sigma = settings$u.gaussian.sd)
+
+# MCMC
+fit.brute.force <- sampling(model, stan.list, iter = settings$n.itr.mcmc.brute.force, 
+                            chains = settings$n.mcmc.chains, seed = settings$seed)
+posterior.brute.force <- as.array(fit.brute.force)
 
 
 
