@@ -4,5 +4,6 @@
 *.pdf
 *.gz
 *.rds
+*.Rhistory
 output/
 images/
