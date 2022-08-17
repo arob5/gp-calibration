@@ -15,7 +15,7 @@ library(mvtnorm)
 #   - Generalize u prior function to allow for multivariate u
 
 mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau, tau.gamma.shape, tau.gamma.rate, 
-                         u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency) {
+                         u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency, adapt.min.scale, accept.rate.target) {
   accept.count <- 0
   tau.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X.obs))
@@ -32,7 +32,9 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     
     # Adapt proposal covariance matrix
     if((itr > 2) && ((itr - 1) %% adapt.frequency) == 0) {
-      cov.proposal <- adapt.cov.proposal()
+      cov.proposal <- adapt.cov.proposal(cov.proposal, u.samples[(itr - adapt.frequency):(itr - 1),], 
+                                         adapt.min.scale, accept.count / adapt.frequency, accept.rate.target)
+      accept.count <- 0
     }
     
     # Propose new calibration parameters
@@ -76,8 +78,6 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
   output.list <- list(samples = samples.list, 
                       u.init = u0, 
                       n.itr = n.itr,
-                      accept.count = accept.count, 
-                      accept.rate = accept.count / n.itr,
                       n = n, 
                       u.rng = u.rng, 
                       SS.joint.sample = SS.joint.sample, 
@@ -129,10 +129,17 @@ accept.u.proposal <- function(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.
 }
 
 
-
-
-
-
+adapt.cov.proposal <- function(cov.proposal, sample.history, min.scale, accept.rate, accept.rate.target) {
+  if(accept.rate == 0) {
+    return(min.scale * cov.proposal)
+  } else {
+    cor.estimate <- stats::cor(sample.history)
+    scale.factor <- max(accept.rate / accept.rate.target, min.scale)
+    stdev <- apply(sample.history, 2, stats::sd)
+    scale.mat <- scale.factor * diag(stdev)
+    return(scale.mat %*% cor.estimate %*% scale.mat)
+  }
+}
 
 
 
