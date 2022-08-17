@@ -44,8 +44,8 @@ transformed parameters {
 model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
-  target += 0.5 * n * log(tau) - 0.5*tau*squared_distance_weighted(y', rep_row_vector(f_u, n), rep_vector(1.0, n)); 
-  // y ~ normal(f_u, y_sigma); 
+  // target += 0.5 * n * log(tau) - 0.5*tau*squared_distance_weighted(y', rep_row_vector(f_u, n), rep_vector(1.0, n)); 
+  y ~ normal(f_u, y_sigma); 
 }
 
 

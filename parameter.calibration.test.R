@@ -35,7 +35,12 @@ settings <- list(
   output.dir = "output",
   run.id = Sys.time(), 
   run.description = "Test",
+  
+  # General MCMC
   n.mcmc.chains = 4, 
+  interval.prob = 0.5, 
+  interval.prob.outer = 0.9,
+  interval.point.est = "median",
   
   # Algorithms
   mcmc.brute.force.stan = TRUE, 
@@ -64,10 +69,10 @@ settings <- list(
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
   N = 5, 
-  library = "mlegp", 
+  gp.library = "mlegp", 
   
   # Brute Force algorithm settings
-  n.itr.mcmc.brute.force <- 50000
+  n.itr.mcmc.brute.force = 50000
   
 )
 
@@ -88,6 +93,7 @@ saveRDS(settings, file = file.path(run.dir, "settings.RData"))
 # -----------------------------------------------------------------------------
 
 set.seed(settings$seed)
+pars <- c("tau", "u")
 
 # Generate observed data
 f <- settings$model
@@ -130,8 +136,12 @@ stan.list.brute.force <- list(n = settings$n,
 # MCMC
 fit.brute.force <- sampling(model.brute.force, stan.list.brute.force, iter = settings$n.itr.mcmc.brute.force, 
                             chains = settings$n.mcmc.chains, seed = settings$seed)
-posterior.brute.force <- as.array(fit.brute.force)
+saveRDS(summary(fit.brute.force), file = file.path(run.dir, "summary.brute.force.RData"))
 
+save.posterior.intervals.plot(as.array(fit.brute.force), pars, 
+                              file.path(run.dir, "post.int.brute.force.png"), 
+                              int.prob = interval.prob, int.outer.prob = interval.prob.outer,
+                              point.est = interval.point.est, append.title = "Brute force parameter calibration")
 
 
 

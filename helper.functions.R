@@ -154,4 +154,40 @@ save.gp.pred.mean.plot <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.p
 }
 
 
+save.posterior.intervals.plot <- function(posterior.samples, pars, out.path, int.prob = 0.5, 
+                                          int.outer.prob = 0.9, point.est = "median", append.title = NULL) {
+  color_scheme_set("red")
+  if(is.null(append.title)) {
+    append.title <- ""
+  } else {
+    append.title <- paste0(": ", append.title)
+  }
+  
+  mcmc_intervals(posterior.samples, 
+                 pars = pars, 
+                 prob = int.prob, 
+                 prob_outer = int.outer.prob, 
+                 point_est = point.est) + 
+    ggtitle(paste0("Posterior Intervals", append.title)) + 
+    ylab("Parameter") + 
+    xlab(paste0("Inner ", 100*int.prob, "%; Outer ", 100*int.outer.prob, "%"))
+  ggsave(out.path, bg = "white")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
