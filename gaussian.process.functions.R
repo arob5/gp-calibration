@@ -87,8 +87,9 @@ predict_var<- function(X.pred, k.Xx, L, rho, alpha, nugget) {
 }
 
 predict_cov_mat <- function(X.pred, K.Xx, L, rho, alpha, nugget) {
+  N.pred <- nrow(X.pred)
   V <- solve(L, K.Xx)
-  K.x <- cov_exp_quad(X.pred, NULL, rho, alpha) + diag(rep(nugget, nrow(X.pred)))
+  K.x <- cov_exp_quad(X.pred, NULL, rho, alpha) + diag(rep(nugget, N.pred), nrow = N.pred)
   
   return(K.x - crossprod(V))
 }

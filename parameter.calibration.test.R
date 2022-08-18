@@ -204,9 +204,9 @@ if(settings$mcmc.pecan) {
   
   # Set initial proposal variances and initial parameter values
   proposal.vars <- vector(mode = "list", length = settings$n.mcmc.chains)
-  u.init <- vector(model = "list", length = settings$n.mcmc.chains)
+  u.init <- vector(mode = "list", length = settings$n.mcmc.chains)
   for(i in seq_len(settings$n.mcmc.chains)) {
-    proposal.vars[[i]] <- 0.1 * qnorm(c(0.05, 0.95), settings$u.gaussian.mean, settings$u.gaussian.sd)
+    proposal.vars[[i]] <- 0.1 * diff(qnorm(c(0.05, 0.95), settings$u.gaussian.mean, settings$u.gaussian.sd))
     u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
   }
   
@@ -220,8 +220,8 @@ if(settings$mcmc.pecan) {
                                      tau.gamma.rate = settings$tau.gamma.rate, 
                                      u.prior.mean = settings$u.gaussian.mean, 
                                      u.prior.sd = settings$u.gaussian.sd, 
-                                     u0 = u.init, # TODO: This should be a vector corresponding to different chains
-                                     proposal.vars = proposal.vars,
+                                     u0 = u.init[[1]], # TODO: This should be a vector corresponding to different chains
+                                     proposal.vars = proposal.vars[[1]],
                                      adapt.frequency = settings$adapt.frequency, 
                                      adapt.min.scale = settings$adapt.min.scale, 
                                      accept.rate.target = settings$accept.rate.target)

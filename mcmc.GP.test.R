@@ -16,9 +16,10 @@ library(mvtnorm)
 
 mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau, tau.gamma.shape, tau.gamma.rate, 
                          u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency, adapt.min.scale, accept.rate.target) {
+
   accept.count <- 0
   tau.samples <- matrix(NA, nrow = n.itr, ncol = 1)
-  u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X.obs))
+  u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X))
   
   # Initial parameter values
   SS0 <- sample.SS(gp.obj, u0)
@@ -26,7 +27,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
   u.curr <- u0
   
   # Initial proposal covariance matrix
-  cov.proposal <- diag(proposal.vars)
+  cov.proposal <- diag(proposal.vars, nrow = length(proposal.vars))
   
   for(itr in seq(1, n.itr)) {
     
@@ -38,7 +39,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     }
     
     # Propose new calibration parameters
-    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[,1], ub = u.rng[,2])
+    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[1], ub = u.rng[2])
     
     # Sample sufficient statistics corresponding to current and proposed values of the calibration parameter
     if(SS.joint.sample) {
@@ -47,7 +48,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
       SS.proposal <- SS.samples[2]
     } else {
       SS.curr <- sample.SS(gp.obj, u.curr)
-      SS.proposal <- sample.SS(gp.obj, u.proposal)
+      SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1))
     }
     
     # Re-sample precision parameter tau
@@ -62,7 +63,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     u.proposal.cond.dens <- calc.u.log.conditional.density(u.proposal, n, tau.proposal, SS.proposal, u.prior.mean, u.prior.sd)
     
     # Accept or reject proposed u value
-    if(accept.u.proposal(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.proposal, cov.proposal)) {
+    if(accept.u.proposal(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.proposal, cov.proposal, u.rng)) {
       u.curr <- u.proposal
       SS.curr <- SS.proposal
       accept.count <- accept.count + 1
@@ -75,19 +76,8 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
   }
   
   samples.list <- list(u = u.samples, tau = tau.samples)
-  output.list <- list(samples = samples.list, 
-                      u.init = u0, 
-                      n.itr = n.itr,
-                      n = n, 
-                      u.rng = u.rng, 
-                      SS.joint.sample = SS.joint.sample, 
-                      resample.tau = resample.tau, 
-                      tau.gamma.shape = tau.gamma.shape, 
-                      tau.gamma.rate = tau.gamma.rate, 
-                      u.prior.mean = u.prior.mean, 
-                      u.prior.sd = u.prior.sd)
   
-  return(output.list)
+  return(samples.list)
   
 }
 
@@ -112,19 +102,19 @@ sample.tau <- function(n, SS, gamma.shape, gamma.rate) {
 
 
 calc.u.log.conditional.density <- function(u, n, tau, SS, u.prior.mean, u.prior.sd, rng) {
-  0.5*log(tau) - 0.5*tau*SS - log(dnorm(u, u.prior.mean, u.prior.sd))
+  0.5*n*log(tau) - 0.5*tau*SS + log(dnorm(u, u.prior.mean, u.prior.sd))
 }
 
 
-accept.u.proposal <- function(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.proposal, cov.proposal) {
+accept.u.proposal <- function(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.proposal, cov.proposal, rng) {
   # Proposal adjustment for detailed balance
-  log.dens.proposal <- u.proposal.cond.dens + TruncatedNormal::dtmvnorm(u.curr, u.proposal, cov.proposal, lb = rng[,1], 
-                                                                        ub = rng[,2], log = TRUE, B = 100)
-  log.dens.curr <- u.curr.cond.dens + TruncatedNormal::dtmvnorm(u.proposal, u.curr, cov.proposal, lb = rng[,1], 
-                                                                ub = rng[,2], log = TRUE, B = 100)
+  log.dens.proposal <- u.proposal.cond.dens + TruncatedNormal::dtmvnorm(u.curr, u.proposal, cov.proposal, lb = rng[1], 
+                                                                        ub = rng[2], log = TRUE, B = 100)
+  log.dens.curr <- u.curr.cond.dens + TruncatedNormal::dtmvnorm(u.proposal, u.curr, cov.proposal, lb = rng[1], 
+                                                                ub = rng[2], log = TRUE, B = 100)
   
   # Determine acceptance
-  return(exp(log.dens.proposal - log.dens.curr) > runif(1))
+  return(as.logical(exp(log.dens.proposal - log.dens.curr) > runif(1)))
   
 }
 
