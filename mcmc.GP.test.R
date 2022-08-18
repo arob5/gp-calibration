@@ -33,7 +33,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     
     # Adapt proposal covariance matrix
     if((itr > 2) && ((itr - 1) %% adapt.frequency) == 0) {
-      cov.proposal <- adapt.cov.proposal(cov.proposal, u.samples[(itr - adapt.frequency):(itr - 1),], 
+      cov.proposal <- adapt.cov.proposal(cov.proposal, u.samples[(itr - adapt.frequency):(itr - 1),,drop=FALSE], 
                                          adapt.min.scale, accept.count / adapt.frequency, accept.rate.target)
       accept.count <- 0
     }
@@ -47,7 +47,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
       SS.curr <- SS.samples[1]
       SS.proposal <- SS.samples[2]
     } else {
-      SS.curr <- sample.SS(gp.obj, u.curr)
+      SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1))
       SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1))
     }
     
@@ -126,7 +126,7 @@ adapt.cov.proposal <- function(cov.proposal, sample.history, min.scale, accept.r
     cor.estimate <- stats::cor(sample.history)
     scale.factor <- max(accept.rate / accept.rate.target, min.scale)
     stdev <- apply(sample.history, 2, stats::sd)
-    scale.mat <- scale.factor * diag(stdev)
+    scale.mat <- scale.factor * diag(stdev, nrow = length(stdev))
     return(scale.mat %*% cor.estimate %*% scale.mat)
   }
 }
