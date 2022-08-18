@@ -4,6 +4,9 @@
 #
 # Andrew Roberts
 
+# TODO: 
+#   - Add functionality to time runs
+
 library(bayesplot)
 library(ggplot2)
 library(rstan)
@@ -25,6 +28,10 @@ source("mcmc.GP.test.R")
 #   - Some fields can be set to NULL and will be automatically filled by 
 #     preprocess.settings()
 # -----------------------------------------------------------------------------
+
+# PEcAn MCMC settings:
+# - n.itr: 350000
+
 
 settings <- list(
   
@@ -65,6 +72,7 @@ settings <- list(
   tau.gamma.rate = 1.0,
   u.gaussian.mean = NULL,
   u.gaussian.sd = 0.25,
+  u.rng = c(-Inf, Inf),
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
@@ -72,7 +80,15 @@ settings <- list(
   gp.library = "mlegp", 
   
   # Brute Force algorithm settings
-  n.itr.mcmc.brute.force = 50000
+  n.itr.mcmc.brute.force = 50000,
+  
+  # pecan algorithm settings
+  n.itr.mcmc.pecan = 10000,
+  SS.joint.sample = FALSE, 
+  resample.tau = TRUE, 
+  adapt.frequency = NULL, 
+  adapt.min.scale = NULL, 
+  accept.rate.target = 0.234
   
 )
 
@@ -119,7 +135,7 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
 
 # -----------------------------------------------------------------------------
 # Brute Force parameter calibration: 
-#   Try to recover parameters by running MCMC in Stan
+#   HMC using exact likelihood (no GP approximation)
 # -----------------------------------------------------------------------------
 
 if(settings$mcmc.brute.force.stan) {
@@ -141,4 +157,51 @@ if(settings$mcmc.brute.force.stan) {
   save.posterior.plots(as.array(fit.brute.force), pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
                        settings$interval.point.est, ".brute.force", "Brute Force")
 }
+
+
+# -----------------------------------------------------------------------------
+# PEcAn parameter calibration: 
+#   Adaptive Metropolis-within-Gibbs with re-sampling of sufficient statistic
+# -----------------------------------------------------------------------------
+
+if(settings$mcmc.pecan) {
+  
+  # For each chain, randomly choose one of the design points as the initial parameter for MCMC. 
+  u.init.indices <- sample(seq_len(settings$N), settings$n.mcmc.chains)
+  
+  # Set initial proposal variances and initial parameter values
+  proposal.vars <- vector(mode = "list", length = settings$n.mcmc.chains)
+  u.init <- vector(model = "list", length = settings$n.mcmc.chains)
+  for(i in seq_len(settings$n.mcmc.chains)) {
+    proposal.vars[[i]] <- 0.1 * qnorm(c(0.05, 0.95), settings$u.gaussian.mean, settings$u.gaussian.sd)
+    u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
+  }
+  
+  mcmc.pecan.results <- mcmc.GP.test(gp.obj = gp.obj, 
+                                     n = settings$n, 
+                                     n.itr = settings$n.itr.mcmc.pecan, 
+                                     u.rng = settings$u.rng, 
+                                     SS.joint.sample = settings$SS.joint.sample, 
+                                     resample.tau = settings$resample.tau, 
+                                     tau.gamma.shape = settings$tau.gamma.shape, 
+                                     tau.gamma.rate = settings$tau.gamma.rate, 
+                                     u.prior.mean = settings$u.gaussian.mean, 
+                                     u.prior.sd = settings$u.gaussian.sd, 
+                                     u0 = u.init, # TODO: This should be a vector corresponding to different chains
+                                     proposal.vars = proposal.vars,
+                                     adapt.frequency = settings$adapt.frequency, 
+                                     adapt.min.scale = settings$adapt.min.scale, 
+                                     accept.rate.target = settings$accept.rate.target)
+  
+}
+
+
+
+
+
+
+
+
+
+
 
