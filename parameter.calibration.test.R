@@ -31,6 +31,9 @@ source("mcmc.GP.test.R")
 
 # PEcAn MCMC settings:
 # - n.itr: 350000
+# - adapt frequency: 250
+# - Min scale factor: 0.1
+# - AR target: 0.3
 
 
 settings <- list(
@@ -78,6 +81,7 @@ settings <- list(
   X = NULL, # Manually input design matrix; will override below settings
   N = 5, 
   gp.library = "mlegp", 
+  gp.plot.interval.pct = .95, 
   
   # Brute Force algorithm settings
   n.itr.mcmc.brute.force = 50000,
@@ -86,9 +90,9 @@ settings <- list(
   n.itr.mcmc.pecan = 10000,
   SS.joint.sample = FALSE, 
   resample.tau = TRUE, 
-  adapt.frequency = NULL, 
-  adapt.min.scale = NULL, 
-  accept.rate.target = 0.234
+  adapt.frequency = 250, 
+  adapt.min.scale = 0.1, 
+  accept.rate.target = 0.3
   
 )
 
@@ -123,13 +127,41 @@ save.gaussian.llik.plot(y.obs, X.pred, run.dir, "exact_llik.png", f, settings$ta
 
 
 # -----------------------------------------------------------------------------
-# Fit Gaussian Process Regression
+# Gaussian Process Regression
 # -----------------------------------------------------------------------------
 
 if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]))) {
+  # Design points
   X <- settings$X
   N <- settings$N
   y.model <- apply(X, 1, f)
+  
+  # Sufficient statistic that will be emulated
+  SS <- rep(0, N)
+  for(i in seq(1, N)) {
+    SS[i] <- sum((y.model[i] - y.obs)^2)
+  }
+  
+  # Similarly calculate true SS at test points for reference in subsequent plots
+  SS.pred <- matrix(NA, nrow = settings$N.pred, ncol = 1)
+  for(i in seq(1, settings$N.pred)) {
+    SS.pred[i, 1] <- sum((f(X.pred[i,1]) - y.obs)^2)
+  }
+  
+  # Fit GP regression
+  if(settings$gp.library == "mlegp") {
+    gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+  }
+  
+  # Map kernel parameters to Stan parameterization
+  gp.stan.params <- create.gp.params.list(gp.fit, settings$gp.library)
+  gp.obj <- create.gp.obj(gp.fit, settings$gp.library, X, y.obs)
+  
+  # Save plots demonstrating GP fit
+  if(settings$k == 1) {
+    save.gp.pred.mean.plot(gp.obj, X, X.pred, SS, SS.pred, f, settings$gp.plot.interval.pct, run.dir)
+  }
+  
 }
 
 

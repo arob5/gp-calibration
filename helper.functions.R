@@ -74,8 +74,44 @@ save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, n
   
 }
 
+
+save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.dir) {
+  # Determine size of confidence interval to plot
+  p <- 1 - (1 - interval.pct)/2
+  
+  # Number of design and test points
+  N <- nrow(X)
+  N.pred <- nrow(X.pred)
+  
+  # Calculate predictive means, standard errors, and confidence intervals
+  gp.pred <- predict_gp(X.pred, gp.obj)
+  gp.pred.mean <- gp.pred$mean
+  gp.pred.se <- sqrt(gp.pred$var)
+  gp.pred.upper <- qnorm(p, gp.pred.mean, gp.pred.se)
+  gp.pred.lower <- qnorm(p, gp.pred.mean, gp.pred.se, lower.tail = FALSE)
+  
+  # Sufficient statistic plot
+  png(file.path(out.dir, "gp_pred_SS.png"), width=600, height=350)
+  par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+  plot(X.pred, gp.pred.mean, xlab = 'u', type = 'l', lty = 1, 
+       ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% CI'),
+       main = 'GP Predictive Mean of SS', 
+       ylim = c(min(gp.pred.lower), max(gp.pred.upper)),
+       col = 'blue')
+  points(X, SS, pch = 16, col="black")
+  lines(X.pred, gp.pred.upper, lty=1, col="gray")
+  lines(X.pred, gp.pred.lower, lty=1, col="gray")
+  lines(X.pred, SS.pred, lty=1, col="red")
+  legend("right", inset=c(-0.2,-0.3), 
+         legend = c("GP pred mean", "Design points", paste0(100*interval.pct, "% CI"), "True SS"), 
+         col = c("blue", "black", "gray", "red"), lty = c(1, NA, 1, 1), pch = c(NA, 16, NA, NA))
+  dev.off()
+  
+}
+
+
 # GP predictive mean and interval estimates at test points
-save.gp.pred.mean.plot <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.pred, 
+save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.pred, 
                                    gp.means, gp.se, llik.gp.uq, out.dir, base.file.name, f) {
   p <- 1 - (1 - interval.pct)/2
   N <- nrow(X)
@@ -84,6 +120,7 @@ save.gp.pred.mean.plot <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.p
   gp.pred.upper <- qnorm(p, gp.means, gp.se)
   gp.pred.lower <- qnorm(p, gp.means, gp.se, lower.tail = FALSE)
   
+
   #
   # Plot 1: Sufficient statistic plot (GP means)
   #
