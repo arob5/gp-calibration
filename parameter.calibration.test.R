@@ -122,27 +122,23 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
 #   Try to recover parameters by running MCMC in Stan
 # -----------------------------------------------------------------------------
 
-# Compile Stan code
-model.brute.force <- stan_model(settings$mcmc.brute.force.stan.path)
-
-# Data to pass to Stan
-stan.list.brute.force <- list(n = settings$n, 
-                              y = y.obs, 
-                              a = settings$tau.gamma.shape, 
-                              b = settings$tau.gamma.rate, 
-                              u_mean = settings$u.gaussian.mean, 
-                              u_sigma = settings$u.gaussian.sd)
-
-# MCMC
-fit.brute.force <- sampling(model.brute.force, stan.list.brute.force, iter = settings$n.itr.mcmc.brute.force, 
-                            chains = settings$n.mcmc.chains, seed = settings$seed)
-saveRDS(summary(fit.brute.force), file = file.path(run.dir, "summary.brute.force.RData"))
-
-save.posterior.intervals.plot(as.array(fit.brute.force), pars, 
-                              file.path(run.dir, "post.int.brute.force.png"), 
-                              int.prob = interval.prob, int.outer.prob = interval.prob.outer,
-                              point.est = interval.point.est, append.title = "Brute force parameter calibration")
-
-
-
+if(settings$mcmc.brute.force.stan) {
+  # Compile Stan code
+  model.brute.force <- stan_model(settings$mcmc.brute.force.stan.path)
+  
+  # Data to pass to Stan
+  stan.list.brute.force <- list(n = settings$n, 
+                                y = y.obs, 
+                                a = settings$tau.gamma.shape, 
+                                b = settings$tau.gamma.rate, 
+                                u_mean = settings$u.gaussian.mean, 
+                                u_sigma = settings$u.gaussian.sd)
+  
+  # MCMC
+  fit.brute.force <- sampling(model.brute.force, stan.list.brute.force, iter = settings$n.itr.mcmc.brute.force, 
+                              chains = settings$n.mcmc.chains, seed = settings$seed)
+  saveRDS(summary(fit.brute.force), file = file.path(run.dir, "summary.brute.force.RData"))
+  save.posterior.plots(as.array(fit.brute.force), pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
+                       settings$interval.point.est, ".brute.force", "Brute Force")
+}
 

@@ -175,12 +175,71 @@ save.posterior.intervals.plot <- function(posterior.samples, pars, out.path, int
 }
 
 
+save.posterior.hist.plot <- function(posterior.samples, pars, out.path, append.title = NULL) {
+  color_scheme_set("red")
+  if(is.null(append.title)) {
+    append.title <- ""
+  } else {
+    append.title <- paste0(": ", append.title)
+  }
+  
+  mcmc_hist(posterior.samples, pars = pars) + 
+    ggtitle(paste0("Posterior Histogram", append.title))
+  ggsave(out.path, bg = "white")
+}
 
 
+save.posterior.kernel.dens.plot <- function(posterior.samples, pars, out.path, append.title = NULL) {
+  color_scheme_set("red")
+  if(is.null(append.title)) {
+    append.title <- ""
+  } else {
+    append.title <- paste0(": ", append.title)
+  }
+  
+  mcmc_dens(posterior.samples, pars = pars) + 
+    ggtitle(paste0("Posterior Kernel Density Estimates", append.title))
+  ggsave(out.path, bg = "white")
+}
+
+save.trace.plot <- function(posterior.samples, pars, out.path, append.title = NULL) {
+  color_scheme_set("mix-blue-red")
+  if(is.null(append.title)) {
+    append.title <- ""
+  } else {
+    append.title <- paste0(": ", append.title)
+  }
+  
+  mcmc_trace(posterior.samples, pars = pars,
+             facet_args = list(ncol = 1, strip.position = "left")) + 
+    ggtitle(paste0("Trace Plots", append.title))
+  ggsave(out.path, bg = "white")
+  
+}
 
 
+save.posterior.plots <- function(posterior.samples, pars, out.dir, int.prob = 0.5, int.outer.prob = 0.9,
+                                 point.est = "median", append.filename = NULL, append.title = NULL) {
+  color_scheme_set("red")                
 
-
+  # Intervals plot
+  plot.path <- file.path(out.dir, paste0("post.int", append.filename, ".png"))
+  save.posterior.intervals.plot(posterior.samples, pars, plot.path, int.prob, 
+                                int.outer.prob, point.est, append.title)
+  
+  # Histogram
+  plot.path <- file.path(out.dir, paste0("post.hist", append.filename, ".png"))
+  save.posterior.hist.plot(posterior.samples, pars, plot.path, append.title)
+  
+  # Kernel Density
+  plot.path <- file.path(out.dir, paste0("post.kern.dens", append.filename, ".png"))
+  save.posterior.kernel.dens.plot(posterior.samples, pars, plot.path, append.title)
+  
+  # Trace Plot
+  plot.path <- file.path(out.dir, paste0("trace.plot", append.filename, ".png"))
+  save.trace.plot(posterior.samples, pars, plot.path, append.title)
+  
+}
 
 
 
