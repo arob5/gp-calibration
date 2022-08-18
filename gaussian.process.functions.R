@@ -24,7 +24,7 @@ cov_exp_quad <- function(X1, X2 = NULL, rho, alpha) {
   
 }
 
-create.gp.obj <- function(gp, library, X.obs, y.obs) {
+create.gp.obj <- function(gp, library, X, y) {
   
   # Map GP parameters to common parameterization
   gp.obj <- create.gp.params.list(gp, library)
@@ -37,14 +37,15 @@ create.gp.obj <- function(gp, library, X.obs, y.obs) {
   }
   
   # Design matrix/knots
-  gp.obj$X.obs <- X.obs
-  gp.obj$N <- nrow(X.obs)
+  gp.obj$X <- X
+  gp.obj$N <- nrow(X)
   
   # Cholesky Factor
-  gp.obj$L <- t(chol(cov_exp_quad(gp.obj$X.obs, NULL, gp.obj$gp_rho, gp.obj$gp_alpha) + diag(rep(gp.obj$nugget, gp.obj$N))))
+  gp.obj$L <- t(chol(cov_exp_quad(gp.obj$X, NULL, gp.obj$gp_rho, gp.obj$gp_alpha) + diag(rep(gp.obj$nugget, gp.obj$N))))
   
   # Pre-computed term used in predictive mean calculation
-  gp.obj$K.inv.y <- solve(t(gp.obj$L), solve(gp.obj$L, y.obs - gp.obj$gp_mean))
+  y <- as.matrix(y, ncol = 1)
+  gp.obj$K.inv.y <- solve(t(gp.obj$L), solve(gp.obj$L, y - gp.obj$gp_mean))
   
   return(gp.obj)
   
@@ -52,7 +53,7 @@ create.gp.obj <- function(gp, library, X.obs, y.obs) {
 
 
 predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE) {
-  k.Xx <- cov_exp_quad(gp.obj$X.obs, X.pred, gp.obj$gp_rho, gp.obj$gp_alpha)
+  k.Xx <- cov_exp_quad(gp.obj$X, X.pred, gp.obj$gp_rho, gp.obj$gp_alpha)
   pred.list <- list()
   pred.list[["mean"]] <- predict_mean(k.Xx, gp.obj$K.inv.y, gp.obj$gp_mean)
   

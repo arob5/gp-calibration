@@ -25,7 +25,7 @@ preprocess.settings <- function(settings) {
     settings$u.gaussian.mean <- settings$u.true
   }
   
-  if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(X)) {
+  if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(settings$X)) {
     settings$X <- matrix(seq(qnorm(.01, settings$u.true, settings$sigma.true), 
                              qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N), ncol = settings$k)
   }

@@ -56,7 +56,7 @@ settings <- list(
   mcmc.brute.force.stan = TRUE, 
   mcmc.gp.stan = FALSE, 
   mcmc.gp.mean.stan = FALSE, 
-  mcmc.pecan = FALSE,
+  mcmc.pecan = TRUE,
   mcmc.brute.force.stan.path = "parameter_calibration_1d_example.stan",
   mcmc.gp.stan.path = "parameter_calibration_gp_1d_example.stan", 
   mcmc.gp.mean.path = "parameter_calibration_gp_mean_1d_example.stan",
@@ -143,9 +143,9 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   }
   
   # Similarly calculate true SS at test points for reference in subsequent plots
-  SS.pred <- matrix(NA, nrow = settings$N.pred, ncol = 1)
+  SS.pred <- rep(0, settings$N.pred)
   for(i in seq(1, settings$N.pred)) {
-    SS.pred[i, 1] <- sum((f(X.pred[i,1]) - y.obs)^2)
+    SS.pred[i] <- sum((f(X.pred[i]) - y.obs)^2)
   }
   
   # Fit GP regression
@@ -155,7 +155,8 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   
   # Map kernel parameters to Stan parameterization
   gp.stan.params <- create.gp.params.list(gp.fit, settings$gp.library)
-  gp.obj <- create.gp.obj(gp.fit, settings$gp.library, X, y.obs)
+  gp.obj <- create.gp.obj(gp.fit, settings$gp.library, X, SS)
+  saveRDS(gp.obj, file = file.path(run.dir, "gp.obj.RData"))
   
   # Save plots demonstrating GP fit
   if(settings$k == 1) {
