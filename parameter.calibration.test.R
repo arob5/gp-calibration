@@ -244,6 +244,8 @@ if(settings$mcmc.pecan) {
   stopCluster(clust)
   samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
   saveRDS(mcmc.summary(samples.pecan, pars), file = file.path(run.dir, "summary.pecan.RData"))
+  save.posterior.plots(samples.pecan, pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
+                       settings$interval.point.est, ".pecan", "PEcAn")
   
 }
 
