@@ -45,7 +45,7 @@ settings <- list(
   base.dir = getwd(),
   output.dir = "output",
   run.id = Sys.time(), 
-  run.description = "Test",
+  run.description = "Compare brute force to pecan, basic example. No resampling tau. Joint sample SS.",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -89,9 +89,9 @@ settings <- list(
   n.itr.mcmc.brute.force = 50000,
   
   # pecan algorithm settings
-  n.itr.mcmc.pecan = 10000,
-  SS.joint.sample = FALSE, 
-  resample.tau = TRUE, 
+  n.itr.mcmc.pecan = 50000,
+  SS.joint.sample = TRUE, 
+  resample.tau = FALSE, 
   adapt.frequency = 250, 
   adapt.min.scale = 0.1, 
   accept.rate.target = 0.3
@@ -115,7 +115,7 @@ saveRDS(settings, file = file.path(run.dir, "settings.RData"))
 # -----------------------------------------------------------------------------
 
 set.seed(settings$seed)
-pars <- c("tau", "u")
+pars <- c("u", "tau")
 
 # Generate observed data
 f <- settings$model
@@ -241,7 +241,7 @@ if(settings$mcmc.pecan) {
                                                                adapt.min.scale = settings$adapt.min.scale, 
                                                                accept.rate.target = settings$accept.rate.target))
 
-  stopCluster(clust)
+  stopCluster(cl)
   samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
   saveRDS(mcmc.summary(samples.pecan, pars), file = file.path(run.dir, "summary.pecan.RData"))
   save.posterior.plots(samples.pecan, pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
