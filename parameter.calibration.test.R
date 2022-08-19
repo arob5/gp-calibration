@@ -8,8 +8,6 @@
 #   - Add functionality to time runs
 
 library(parallel)
-clust <- makeCluster(4) # Putting this here for now to avoid complications with exportCluster()
-
 library(bayesplot)
 library(ggplot2)
 library(rstan)
@@ -215,8 +213,9 @@ if(settings$mcmc.pecan) {
   }
   
   # Set up parallel computation
-  clusterExport(clust, ls())
-  clusterEvalQ(clust, {
+  cl <- makeCluster(settings$n.mcmc.chains)
+  clusterExport(cl, ls())
+  clusterEvalQ(cl, {
     library(bayesplot)
     library(ggplot2)
     library(rstan)
@@ -225,7 +224,7 @@ if(settings$mcmc.pecan) {
     library(mvtnorm)
   })
   
-  mcmc.pecan.results <- parLapply(clust, seq(1, settings$n.mcmc.chains), 
+  mcmc.pecan.results <- parLapply(cl, seq(1, settings$n.mcmc.chains), 
                                   function(chain) mcmc.GP.test(gp.obj = gp.obj, 
                                                                n = settings$n, 
                                                                n.itr = settings$n.itr.mcmc.pecan, 
@@ -244,6 +243,7 @@ if(settings$mcmc.pecan) {
 
   stopCluster(clust)
   samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
+  saveRDS(mcmc.summary(samples.pecan, pars), file = file.path(run.dir, "summary.pecan.RData"))
   
 }
 

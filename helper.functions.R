@@ -299,6 +299,39 @@ par.mcmc.results.to.arr <- function(mcmc.results, pars, n.mcmc, warmup.frac) {
 }
 
 
+mcmc.summary <- function(samples, pars) {
+  
+  summary.list <- list(summary = create.mcmc.summary.table(samples, pars), 
+                       c_summary = lapply(seq_len(dim(samples)[2]), 
+                                          function(chain) create.mcmc.summary.table(samples, pars, chain)))
+  
+  return(summary.list)  
+
+}
+
+create.mcmc.summary.table <- function(samples, pars, chain = NULL) {
+  
+  # If chain is NULL, calculate statistics using samples from all chains
+  if(is.null(chain)) {
+    chain <- seq_len(dim(samples)[2])
+  }
+  
+  summary.table <- matrix(NA, nrow = length(pars), ncol = 4, 
+                          dimnames = list(pars, c("mean", "sd", "n_eff", "Rhat")))
+  summary.table[,"mean"] <- apply(samples[,chain, pars, drop=FALSE], 3, mean)
+  summary.table[,"sd"] <- apply(samples[,chain, pars, drop=FALSE], 3, sd)
+  summary.table[,"n_eff"] <- apply(samples[,chain, pars, drop=FALSE], 3, ess_bulk)
+  summary.table[,"Rhat"] <- apply(samples[,chain, pars, drop=FALSE], 3, Rhat)
+  
+  return(summary.table)
+  
+}
+
+
+
+
+
+
 
 
 
