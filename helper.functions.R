@@ -279,6 +279,24 @@ save.posterior.plots <- function(posterior.samples, pars, out.dir, int.prob = 0.
 }
 
 
+par.mcmc.results.to.arr <- function(mcmc.results, pars, n.mcmc, warmup.frac) {
+  n.warmup <- ceiling(warmup.frac * n.mcmc)
+  warmup.sel <- seq(1, n.warmup)
+  n.samples <- n.mcmc - n.warmup
+  samples <- array(NA, c(n.samples, length(mcmc.results), length(pars)))
+  
+  for(chain in seq_along(mcmc.results)) {
+    for(p in seq_along(pars)) {
+      samples[,chain,p] <- mcmc.results[[chain]][[pars[p]]][-warmup.sel]
+    }
+  }
+  
+  dimnames(samples)[[2]] <- paste0("chain:", seq_along(mcmc.results))
+  dimnames(samples)[[3]] <- pars
+  
+  return(samples)
+  
+}
 
 
 

@@ -7,6 +7,9 @@
 # TODO: 
 #   - Add functionality to time runs
 
+library(parallel)
+clust <- makeCluster(4) # Putting this here for now to avoid complications with exportCluster()
+
 library(bayesplot)
 library(ggplot2)
 library(rstan)
@@ -48,6 +51,7 @@ settings <- list(
   
   # General MCMC
   n.mcmc.chains = 4, 
+  warmup.frac = 0.5, 
   interval.prob = 0.5, 
   interval.prob.outer = 0.9,
   interval.point.est = "median",
@@ -210,21 +214,36 @@ if(settings$mcmc.pecan) {
     u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
   }
   
-  mcmc.pecan.results <- mcmc.GP.test(gp.obj = gp.obj, 
-                                     n = settings$n, 
-                                     n.itr = settings$n.itr.mcmc.pecan, 
-                                     u.rng = settings$u.rng, 
-                                     SS.joint.sample = settings$SS.joint.sample, 
-                                     resample.tau = settings$resample.tau, 
-                                     tau.gamma.shape = settings$tau.gamma.shape, 
-                                     tau.gamma.rate = settings$tau.gamma.rate, 
-                                     u.prior.mean = settings$u.gaussian.mean, 
-                                     u.prior.sd = settings$u.gaussian.sd, 
-                                     u0 = u.init[[1]], # TODO: This should be a vector corresponding to different chains
-                                     proposal.vars = proposal.vars[[1]],
-                                     adapt.frequency = settings$adapt.frequency, 
-                                     adapt.min.scale = settings$adapt.min.scale, 
-                                     accept.rate.target = settings$accept.rate.target)
+  # Set up parallel computation
+  clusterExport(clust, ls())
+  clusterEvalQ(clust, {
+    library(bayesplot)
+    library(ggplot2)
+    library(rstan)
+    library(mlegp)
+    library(TruncatedNormal)
+    library(mvtnorm)
+  })
+  
+  mcmc.pecan.results <- parLapply(clust, seq(1, settings$n.mcmc.chains), 
+                                  function(chain) mcmc.GP.test(gp.obj = gp.obj, 
+                                                               n = settings$n, 
+                                                               n.itr = settings$n.itr.mcmc.pecan, 
+                                                               u.rng = settings$u.rng, 
+                                                               SS.joint.sample = settings$SS.joint.sample, 
+                                                               resample.tau = settings$resample.tau, 
+                                                               tau.gamma.shape = settings$tau.gamma.shape, 
+                                                               tau.gamma.rate = settings$tau.gamma.rate, 
+                                                               u.prior.mean = settings$u.gaussian.mean, 
+                                                               u.prior.sd = settings$u.gaussian.sd, 
+                                                               u0 = u.init[[chain]],
+                                                               proposal.vars = proposal.vars[[chain]],
+                                                               adapt.frequency = settings$adapt.frequency, 
+                                                               adapt.min.scale = settings$adapt.min.scale, 
+                                                               accept.rate.target = settings$accept.rate.target))
+
+  stopCluster(clust)
+  samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
   
 }
 
