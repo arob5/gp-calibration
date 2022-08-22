@@ -84,6 +84,8 @@ generated quantities {
   
   KxX = to_vector(cov_exp_quad_cross(to_matrix(X_pred[1], 1, k, 1), X, gp_rho, gp_alpha));
   KXx = to_vector(cov_exp_quad_cross(X, to_matrix(X_pred[1], 1, k, 1), gp_rho, gp_alpha));
-  
-  
+
 }
+
+
+

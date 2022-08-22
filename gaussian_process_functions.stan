@@ -192,8 +192,41 @@ real gp_mean_gaussian_llik(vector x, matrix X, vector K_inv_y, int N, int n, int
   return(0.5 * n * log(tau) - 0.5 * tau * gp_pred_mean);
 }
 
+vector seq_fun(real start, real end, int N_by) {
+ 
+  real h;
+  vector[N_by] out;
+  h = (end-start) / (N_by-1);
+  for (i in 1:N_by) {
+    out[i]=start + (i-1)*h; 
+  }
+  
+  return(out);
+  
+ }
 
 
+
+/**
+ * A numerical approximation of the Laplace transform of the log-normal 
+ * density function L(s), which is related to the log-normal Moment 
+ * Generating Function (MGF) M via L(s) = M(-s). This approximation first cuts
+ * of the integrand (which is supported on the entire real line) at calculated
+ * cut points, and then applies the trapezoidal rule on the now finite support.
+ *
+ * @param s Value at which to evaluate the Laplace transform. 
+ */
+real lognormal_mgf_numerical_approx(real s, real mu, real sigma, int num_eval, real tol, real M) {
+  real eps = 0.5 * tol;   
+  real cut_lower = mu - sigma * sqrt2() * sqrt(log(M/eps));
+  real cut_upper = log(1/s) + log(log(M/eps));
+  real dx = (cut_upper - cut_lower) / num_eval; 
+  vector[num_eval] x = seq_fun(cut_lower, cut_upper, num_eval); 
+  vector[num_eval] integrand_x = exp(-1.0 * (s * exp(x) + 0.5 * (1 / square(sigma)) * square(x - mu))); 
+  
+  return(dx / (sigma * sqrt2() * sqrt(pi())) * (0.5 * (integrand_x[1] + integrand_x[num_eval]) + sum(integrand_x[2:(num_eval - 1)]))); 
+  
+}
 
 
 
