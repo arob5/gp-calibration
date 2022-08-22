@@ -198,6 +198,3 @@ real gp_mean_gaussian_llik(vector x, matrix X, vector K_inv_y, int N, int n, int
 
 
 
-
-
-
