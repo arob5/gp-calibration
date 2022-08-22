@@ -189,9 +189,23 @@ data {
 
 generated quantities {
   vector[N_mgf_test] mgf_test_out; 
+  vector[N_mgf_test] a; 
+  vector[N_mgf_test] b; 
+  vector[N_mgf_test] dx; 
+  vector[mgf_num_eval] x;
+  vector[mgf_num_eval] fx;  
+  
+  real eps; 
+  eps = mgf_tol / 2; 
+  
   for(i in 1:N_mgf_test) {
     mgf_test_out[i] = lognormal_mgf_numerical_approx(mgf_test_vals[i], log_norm_mu, log_norm_sigma, mgf_num_eval, mgf_tol, mgf_M);
+    a[i] = log_norm_mu - log_norm_sigma * sqrt2() * sqrt(log(mgf_M/eps));
+    b[i] = log(1/mgf_test_vals[i]) + log(log(mgf_M/eps));
+    dx[i] = (b[i] - a[i]) / mgf_num_eval; 
   }
+  x = seq_fun(a[2], b[2], mgf_num_eval); 
+  fx = exp(-mgf_test_vals[2] * exp(x) - 0.5 * square(x - log_norm_mu) / square(log_norm_sigma));
 }
 
 "
@@ -218,5 +232,19 @@ lnorm.mgf.estimate <- function(s, mu, sigma, N = 100000) {
 }
 
 mgf.mc <- sapply(test.vals, function(s) lnorm.mgf.estimate(s, stan.mgf.list$log_norm_mu, stan.mgf.list$log_norm_sigma))
+
+print("Absolute difference between numerical and Monte Carlo Log-normal MGF approximations:")
+print(abs(stan.mgf.output - mgf.mc))
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -198,7 +198,7 @@ vector seq_fun(real start, real end, int N_by) {
   vector[N_by] out;
   h = (end-start) / (N_by-1);
   for (i in 1:N_by) {
-    out[i]=start + (i-1)*h; 
+    out[i] = start + (i-1)*h; 
   }
   
   return(out);
@@ -222,9 +222,11 @@ real lognormal_mgf_numerical_approx(real s, real mu, real sigma, int num_eval, r
   real cut_upper = log(1/s) + log(log(M/eps));
   real dx = (cut_upper - cut_lower) / num_eval; 
   vector[num_eval] x = seq_fun(cut_lower, cut_upper, num_eval); 
-  vector[num_eval] integrand_x = exp(-1.0 * (s * exp(x) + 0.5 * (1 / square(sigma)) * square(x - mu))); 
+  vector[num_eval] fx = exp(-s * exp(x) - 0.5 * square(x - mu) / square(sigma)); 
+  // vector[num_eval] integrand_x = exp(-1.0 * (s * exp(x) + 0.5 * (1 / square(sigma)) * square(x - mu))); 
+  // return(dx / (sigma * sqrt2() * sqrt(pi())) * (0.5 * (fx[1] + fx[num_eval]) + sum(fx[2:(num_eval - 1)]))); 
   
-  return(dx / (sigma * sqrt2() * sqrt(pi())) * (0.5 * (integrand_x[1] + integrand_x[num_eval]) + sum(integrand_x[2:(num_eval - 1)]))); 
+  return(0.5 * dx * (1 / sqrt(2.0 * pi())) * (1 / sigma) * (fx[1] + fx[num_eval] + 2.0*sum(fx[2:(num_eval-1)]))); 
   
 }
 
