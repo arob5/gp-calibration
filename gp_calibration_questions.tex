@@ -384,6 +384,24 @@ true likelihood with a completely flat approximation. The likelihood evaluations
 Now the $u$ that exhibit more predictive uncertainty (i.e. where $k(u, u)$ is large) will be given a larger density, due to the addition of the term $\frac{\tau^2}{8} k(u, u)$. This will mean that proposals at these more 
 uncertain parameter values will be accepted more often. This, in turn, means that the posterior over $u$ will be more diffuse, reflecting the uncertainty in the GP approximation. 
 
+\subsubsection{Modeling the log of the sufficient statistic}
+The above approach suffers from the issue that the sum of squared errors is a non-negative quantity, yet it is unconstrained in the GP regression model. Thus, predictive quantities for the 
+sufficient statistic $T$ can be negative, which can then lead to invalid likelihood evaluations outside of the unit interval. To get around this issue we consider here modeling $L := \log(T)$ in place 
+of $T$. We now fit the GP on the dataset $(X, L)$ and denote this fit GP by $\hat{L} \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$. Note that the sufficient statistic on the original scale now follows
+a log-normal process $\hat{T} = e^{\hat{L}} \sim \mathcal{LN}(\mu(\cdot), k(\cdot, \cdot))$. The likelihood approximation now takes the form
+\[\tau^{n/2}\exp\left\{-\frac{\tau}{2}\hat{T} \right\} = \tau^{n/2}\exp\left\{-\frac{\tau}{2}e^{\hat{L}} \right\} \]
+To integrate out the GP we must now calculate
+\[\E_{\hat{T}}\left[\exp\left\{-\frac{\tau}{2}\hat{T} \right\}  \right] = \int_{0}^{\infty} \exp\left\{-\frac{\tau}{2}t \right\} \cdot LN(t; \mu, k) dt = \int_{-\infty}^{\infty} \exp\left(-\frac{\tau}{2}e^t \right) \varphi_{\mu, k}(t) dt\]
+The second and third expressions are equivalent by a simple change of variable, but shows that this integral can be thought of as either a normal or log-normal expectation. In any case, there is no analytical 
+solution to this integral. However, this integral is just the log-normal MGF (evaluated at $-\tau/2$) or the Laplace transform of the log-normal density (evaluated at $\tau/2$), so numerical and analytical approximations
+have been well-studied. For notation, I will write 
+$\mathcal{M}(s) := \E_{\hat{T}}\left[\exp\left\{-s\hat{T} \right\}  \right]$, using the MGF notation for convenience but instead opting for the Laplace transform parameterization. $\mathcal{M}(s)$ only exists 
+for $s > 0$. Asmussen et al (2013) studies an analytical approximation
+\[\hat{M}_{\mu, \sigma^2}(s) = \frac{\exp\left\{-\frac{W^2(se^\mu \sigma^2) + 2W(se^\mu \sigma^2)}{2\sigma^2}\right\}}{\sqrt{1 + W(se^\mu \sigma^2)}}, s \in \R^+\]
+where $M_{\mu, \sigma^2}$ is the Laplace transform of a $LN(\mu, \sigma^2)$ density. Given this, the approximation of the (unnormalized) likelihood $p(z|\tau, u)$ can now be written
+\[p(z|\tau, u) \propto \tau^{n/2} \hat{M}_{\mu(u), k(u,u)}(\tau/2)\]
+
+
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
 It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
 the Laplace parameters. 
