@@ -15,7 +15,7 @@ data {
   int<lower=1> N; // Number of design points (i.e. knots)
   int<lower=1> n; // The number of observed data points (i.e. the dimension of the MVN likelihood)
   
-  vector[N] y;    // Vector of sufficient statistics evaluated at design points
+  vector[N] y;    // Vector of log of sufficient statistics evaluated at design points
   matrix[N, 1] X; // Design matrix
 
   real<lower=0> a; // Shape parameter for Gamma hyperprior on tau
@@ -31,6 +31,11 @@ data {
   real<lower=0> gp_alpha;    // Marginal standard deviation
   real<lower=0> gp_sigma;    // Nugget (standard deviation)
   real gp_mean;              // Constant GP mean
+  
+  // Parameters for log-normal MGF approximation
+  int<lower=1> mgf_num_eval; 
+  real<lower=0> mgf_tol; 
+  real<lower=0> mgf_M; 
 }
 
 transformed data {
@@ -47,7 +52,8 @@ parameters {
 model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
-  target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
+  target += gp_log_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u, mgf_num_eval, mgf_tol, mgf_M); 
+  # target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
 }
 
 

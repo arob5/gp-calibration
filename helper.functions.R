@@ -75,7 +75,7 @@ save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, n
 }
 
 
-save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.dir) {
+save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
   # Determine size of confidence interval to plot
   p <- 1 - (1 - interval.pct)/2
   
@@ -90,8 +90,23 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
   gp.pred.upper <- qnorm(p, gp.pred.mean, gp.pred.se)
   gp.pred.lower <- qnorm(p, gp.pred.mean, gp.pred.se, lower.tail = FALSE)
   
+  # If specified, exponentiate the predictions (used if the response variable was the log of the sufficient 
+  # statistic but want to save plot on the original scale). The sufficient statistic now follows
+  # a log-normal process. 
+  if(exp.pred) {
+    gp.pred.mean.lnorm <- exp(gp.pred.mean + 0.5 * gp.pred.se^2)
+    gp.pred.se.lnorm <- sqrt((exp(gp.pred.se^2) - 1) * exp(2*gp.pred.mean + gp.pred.se^2))
+    gp.pred.upper <- qlnorm(p, gp.pred.mean, gp.pred.se)
+    gp.pred.lower <- qlnorm(p, gp.pred.mean, gp.pred.se, lower.tail = FALSE)
+    
+    SS <- exp(SS)
+    SS.pred <- exp(SS.pred)
+    gp.pred.mean <- gp.pred.mean.lnorm
+    gp.pred.se <- gp.pred.se.lnorm
+  }
+  
   # Sufficient statistic plot
-  png(file.path(out.dir, "gp_pred_SS.png"), width=600, height=350)
+  png(out.path, width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
   plot(X.pred, gp.pred.mean, xlab = 'u', type = 'l', lty = 1, 
        ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% CI'),
