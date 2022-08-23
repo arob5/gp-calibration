@@ -53,7 +53,7 @@ model {
   u ~ normal(u_mean, u_sigma); 
   tau ~ gamma(a, b);
   target += gp_log_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u, mgf_num_eval, mgf_tol, mgf_M); 
-  # target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
+  // target += gp_approx(L, K_inv_y, X, N, n, 1, gp_rho, gp_alpha, gp_sigma, gp_mean, tau, u);
 }
 
 

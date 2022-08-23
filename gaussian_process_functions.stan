@@ -180,27 +180,6 @@ real gp_approx(matrix L, vector K_inv_y, matrix X, int N, int n, int k, vector r
   
 }
 
-real gp_log_approx(matrix L, vector K_inv_y, matrix X, int N, int n, int k, vector rho, 
-                   real alpha, real sigma, real mu, real tau, vector x, int num_eval, real tol, real M) {
-  
-  // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
-  matrix[1, k] x_mat = to_matrix(x, 1, k, 1); 
-  
-  // Predictive mean
-  vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
-  real mu_x = mu + dot_product(k_xX, K_inv_y);
-  
-  // Predictive variance
-  vector[N] v = L \ k_xX;
-  real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
-  
-  // Approximate expectation over GP
-  real gp_exp = lognormal_mgf_numerical_approx(0.5 * tau, mu_x, sqrt(k_x), num_eval, tol, M); 
-  
-  return(0.5 * n * log(tau) + log(gp_exp)); 
-  
-}
-
 
 real gp_mean_gaussian_llik(vector x, matrix X, vector K_inv_y, int N, int n, int k, vector rho, real alpha, real mu, real tau) {
   // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
@@ -226,7 +205,6 @@ vector seq_fun(real start, real end, int N_by) {
   
  }
 
-
 /**
  * A numerical approximation of the Laplace transform of the log-normal 
  * density function L(s), which is related to the log-normal Moment 
@@ -251,5 +229,25 @@ real lognormal_mgf_numerical_approx(real s, real mu, real sigma, int num_eval, r
 }
 
 
+real gp_log_approx(matrix L, vector K_inv_y, matrix X, int N, int n, int k, vector rho, 
+                   real alpha, real sigma, real mu, real tau, vector x, int num_eval, real tol, real M) {
+  
+  // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
+  matrix[1, k] x_mat = to_matrix(x, 1, k, 1); 
+  
+  // Predictive mean
+  vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
+  real mu_x = mu + dot_product(k_xX, K_inv_y);
+  
+  // Predictive variance
+  vector[N] v = L \ k_xX;
+  real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
+  
+  // Approximate expectation over GP
+  real gp_exp = lognormal_mgf_numerical_approx(0.5 * tau, mu_x, sqrt(k_x), num_eval, tol, M); 
+  
+  return(0.5 * n * log(tau) + log(gp_exp)); 
+  
+}
 
 

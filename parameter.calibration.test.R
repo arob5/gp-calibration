@@ -12,6 +12,7 @@ library(bayesplot)
 library(ggplot2)
 library(rstan)
 library(mlegp)
+library(pracma)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -55,7 +56,7 @@ settings <- list(
   interval.point.est = "median",
   
   # Algorithms
-  mcmc.brute.force.stan = FALSE, 
+  mcmc.brute.force.stan = TRUE, 
   mcmc.gp.stan = TRUE, 
   mcmc.gp.mean.stan = FALSE, 
   mcmc.pecan = FALSE,
@@ -89,7 +90,7 @@ settings <- list(
   n.itr.mcmc.brute.force = 50000,
   
   # GP Stan algorithm settings
-  n.itr.mcmc.gp.stan = 50000,
+  n.itr.mcmc.gp.stan = 1000,
   mgf_num_eval = 1000, 
   mgf_tol = 1e-9, 
   mgf_M = 1,
@@ -191,6 +192,10 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
       save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_exp_log_SS.png"), exp.pred = TRUE)
     }
+    
+    save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
+                           file.path(run.dir, "gp_pred_log_SS_llik.png"))
+    
   }
   
 }
@@ -227,6 +232,7 @@ if(settings$mcmc.brute.force.stan) {
 # -----------------------------------------------------------------------------
 
 if(settings$mcmc.gp.stan) {
+  pars.gp.stan <- c("u[1]", "tau")
   
   # Compile Stan code
   model.gp.stan <- stan_model(settings$mcmc.gp.stan.path)
@@ -249,6 +255,14 @@ if(settings$mcmc.gp.stan) {
                             mgf_num_eval = settings$mgf_num_eval, 
                             mgf_tol = settings$mgf_tol, 
                             mgf_M = settings$mgf_M)
+  
+  # MCMC
+  fit.gp.stan <- sampling(model.gp.stan, stan.list.gp.stan, iter = settings$n.itr.mcmc.gp.stan, 
+                          chains = settings$n.mcmc.chains, seed = settings$seed)
+  saveRDS(summary(fit.gp.stan), file = file.path(run.dir, "summary.gp.stan.RData"))
+  save.posterior.plots(as.array(fit.gp.stan), pars.gp.stan, run.dir, settings$interval.prob, settings$interval.prob.outer,
+                       settings$interval.point.est, ".gp.stan", "GP Stan")
+  
   
 }
 
@@ -283,6 +297,7 @@ if(settings$mcmc.pecan) {
     library(mlegp)
     library(TruncatedNormal)
     library(mvtnorm)
+    library(pracma)
   })
   
   mcmc.pecan.results <- parLapply(cl, seq(1, settings$n.mcmc.chains), 

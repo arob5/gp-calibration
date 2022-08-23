@@ -35,7 +35,7 @@ preprocess.settings <- function(settings) {
 }
 
 
-# Log unnormalized isotropic multivariate normal density
+# Log isotropic multivariate normal density
 log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
   n <- length(y)
   mu.vec <- rep(f(u), n)
@@ -47,8 +47,10 @@ log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
 
 # Log unnormalized isotropic multivariate normal density, as function of 
 # sufficient statistic
-dmvnorm.log.unnorm.SS <- function(SS, tau, n) {
-  (n/2)*log(tau) - (tau/2)*SS
+dmvnorm.log.unnorm.SS <- function(SS, tau, n, normalize = TRUE) {
+  log.dens <- (n/2)*log(tau) - (tau/2)*SS
+  if(normalize) return(log.dens - 0.5*n*log(2*pi))
+  return(log.dens)
 }
 
 save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, normalize = TRUE) {
@@ -125,6 +127,40 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
 }
 
 
+save.gp.pred.llik.plot <- function(gp.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+  # Calculate predictive means and standard errors
+  gp.pred <- predict_gp(X.pred, gp.obj)
+  gp.pred.mean <- gp.pred$mean
+  gp.pred.se <- sqrt(gp.pred$var)
+  
+  # Calculate likelihood approximations
+  M <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean, gp.pred.se)
+  logM <- log(M)
+  logM[is.infinite(logM)] <- log(1e-16)
+  
+  # Likelihood evaluations to plot
+  llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi)
+  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
+  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
+  
+  # Log-likelihood plot
+  png(out.path, width=600, height=350)
+  par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+  plot(X.pred, llik.gp.approx, xlab = 'u', type = 'l', lty = 1, 
+       ylim = range(c(llik.gp.approx, llik.exact.design, llik.exact.pred)),
+       ylab = "Log-Likelihood",
+       main = 'GP Approx Log-Likelihood', 
+       col = 'blue')
+  points(X, llik.exact.design, pch = 16, col="black")
+  lines(X.pred, llik.exact.pred, lty=1, col="red")
+  legend("right", inset=c(-0.2,-0.3), 
+         legend = c("GP Approx", "Design points", "True llik"), col = c("blue", "black", "red"),
+         lty = c(1, NA, 1), pch = c(NA, 16, NA))
+  dev.off()
+  
+}
+
+
 # GP predictive mean and interval estimates at test points
 save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, SS.pred, 
                                    gp.means, gp.se, llik.gp.uq, out.dir, base.file.name, f) {
@@ -171,9 +207,9 @@ save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, 
     llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs, X.pred[i,1], tau, f)
   }
   
-  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n)
-  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n)
-  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n)
+  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n, FALSE)
+  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n, FALSE)
+  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n, FALSE)
   
   png(file.path(out.dir, paste0(base.file.name, "_llik.png")), width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
@@ -342,9 +378,10 @@ create.mcmc.summary.table <- function(samples, pars, chain = NULL) {
   
 }
 
-
-
-
+lnorm.mgf.estimate.analytic <- function(s, mu, sigma) {
+  W <- lambertWp(s * exp(mu) * sigma^2)
+  exp(-0.5 * (1 / sigma^2) * (W^2 + 2*W)) / sqrt(1 + W)
+}
 
 
 

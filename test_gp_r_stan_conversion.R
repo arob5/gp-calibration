@@ -19,6 +19,7 @@ library(mlegp)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
+source("helper.functions.R")
 source("stan.helper.functions.R")
 source("gaussian.process.functions.R")
 
@@ -225,18 +226,21 @@ stan.mgf.fit <- stan.fit <- sampling(stan.mgf.model, data = stan.mgf.list, warmu
                                      seed = 494838, refresh = 4000, algorithm = "Fixed_param")
 stan.mgf.output <- as.vector(extract(stan.mgf.fit)$mgf_test_out)
 
-# To check approximation, estimate MGF via Monte Carlo
+# To check approximation, also estimate MGF via Monte Carlo and analytic approximation
 lnorm.mgf.estimate <- function(s, mu, sigma, N = 100000) {
   lnorm.samples <- rlnorm(N, meanlog = mu, sdlog = sigma)
   return(mean(exp(-s * lnorm.samples)))
 }
 
 mgf.mc <- sapply(test.vals, function(s) lnorm.mgf.estimate(s, stan.mgf.list$log_norm_mu, stan.mgf.list$log_norm_sigma))
+mgf.analytic <- sapply(test.vals, function(s) lnorm.mgf.estimate.analytic(s, stan.mgf.list$log_norm_mu, stan.mgf.list$log_norm_sigma))
+
 
 print("Absolute difference between numerical and Monte Carlo Log-normal MGF approximations:")
 print(abs(stan.mgf.output - mgf.mc))
 
-
+print("Absolute difference between analytic and Monte Carlo Log-normal MGF approximations:")
+print(abs(mgf.analytic - mgf.mc))
 
 
 
