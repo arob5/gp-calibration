@@ -140,7 +140,9 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
   scale.factors <- rep(NA, length(gp.pred.mean))
   for(i in seq_along(M)) {
     # mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
-    mgf.results <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    # mgf.results <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    mgf.results <- lognormal_mgf_numerical_approx(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], 
+                                                  1000, 1e-10, 1, scale = TRUE)
     M[i] <- mgf.results$mgf
     scale.factors[i] <- mgf.results$scale.factor
   }
@@ -426,6 +428,33 @@ lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.fac
   list.out <- list(mgf = mean(exp(scale.factor - s * lnorm.samples)), 
                    scale.factor = scale.factor)
 
+  return(list.out)
+  
+}
+
+
+lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale = FALSE, scale.factor = NULL) {
+  eps <- 0.5 * tol  
+  cut_lower <-  mu - sigma * sqrt(2) * sqrt(log(M/eps))
+  cut_upper <- log(1/s) + log(log(M/eps))
+  dx <- (cut_upper - cut_lower) / num_eval
+  x <- seq(cut_lower, cut_upper, length.out = num_eval) 
+  fx_arg <- s * exp(x) + 0.5 * (x - mu)^2 / sigma^2
+  
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- median(fx_arg)
+    }
+  } else {
+    scale.factor <- 0
+  }
+
+  fx <- exp(scale.factor - fx_arg) 
+  browser()
+  
+  list.out <- list(mgf = 0.5 * dx * (1 / sqrt(2.0 * pi)) * (1 / sigma) * (fx[1] + fx[num_eval] + 2.0*sum(fx[2:(num_eval-1)])), 
+                   scale.factor = scale.factor)
+  
   return(list.out)
   
 }
