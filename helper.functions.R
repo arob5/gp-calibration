@@ -127,16 +127,26 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
 }
 
 
-save.gp.pred.llik.plot <- function(gp.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+  
   # Calculate predictive means and standard errors
-  gp.pred <- predict_gp(X.pred, gp.obj)
+  gp.pred <- predict_gp(X.pred, gp.log.obj)
   gp.pred.mean <- gp.pred$mean
   gp.pred.se <- sqrt(gp.pred$var)
   
   # Calculate likelihood approximations
-  M <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean, gp.pred.se)
+  # M <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean, gp.pred.se)
+  M <- rep(NA, length(gp.pred.mean))
+  scale.factors <- rep(NA, length(gp.pred.mean))
+  for(i in seq_along(M)) {
+    mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    M[i] <- mgf.results$mgf
+    scale.factors <- mgf.results$scale.factor
+  }
+  
+  universal.scale <- max(scale.factors)
+  M <- exp(universal.scale - scale.factors) * M
   logM <- log(M)
-  logM[is.infinite(logM)] <- log(1e-16)
   
   # Likelihood evaluations to plot
   llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi)
@@ -383,7 +393,23 @@ lnorm.mgf.estimate.analytic <- function(s, mu, sigma) {
   exp(-0.5 * (1 / sigma^2) * (W^2 + 2*W)) / sqrt(1 + W)
 }
 
+# To check approximation, also estimate MGF via Monte Carlo and analytic approximation
+lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.factor = NULL) {
+  lnorm.samples <- rlnorm(N, meanlog = mu, sdlog = sigma)
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- mean(s * lnorm.samples)
+    }
+  } else {
+    scale.factor <- 1.0
+  }
+  
+  list.out <- list(mgf = mean(exp(scale.factor - s * lnorm.samples)), 
+                   scale.factor = scale.factor)
 
+  return(list.out)
+  
+}
 
 
 
