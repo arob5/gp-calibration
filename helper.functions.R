@@ -128,7 +128,7 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
 
 
 save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
-  
+
   # Calculate predictive means and standard errors
   gp.pred <- predict_gp(X.pred, gp.log.obj)
   gp.pred.mean <- gp.pred$mean
@@ -141,32 +141,35 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
   for(i in seq_along(M)) {
     mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
     M[i] <- mgf.results$mgf
-    scale.factors <- mgf.results$scale.factor
+    scale.factors[i] <- mgf.results$scale.factor
   }
-  
-  universal.scale <- max(scale.factors)
+
+  universal.scale <- median(scale.factors)
   M <- exp(universal.scale - scale.factors) * M
   logM <- log(M)
   
   # Likelihood evaluations to plot
   llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi)
-  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
-  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
+  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n) + universal.scale
+  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n) + universal.scale
   
   # Log-likelihood plot
+  range.values <- c(llik.gp.approx, llik.exact.design, llik.exact.pred)
   png(out.path, width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
   plot(X.pred, llik.gp.approx, xlab = 'u', type = 'l', lty = 1, 
-       ylim = range(c(llik.gp.approx, llik.exact.design, llik.exact.pred)),
-       ylab = "Log-Likelihood",
-       main = 'GP Approx Log-Likelihood', 
-       col = 'blue')
+      ylim = range(range.values[!is.infinite(range.values)]),
+      ylab = "Log-Likelihood",
+      main = 'GP Approx Log-Likelihood', 
+      col = 'blue')
   points(X, llik.exact.design, pch = 16, col="black")
   lines(X.pred, llik.exact.pred, lty=1, col="red")
-  legend("right", inset=c(-0.2,-0.3), 
+  legend("right", inset=c(-0.2,-0.3),
          legend = c("GP Approx", "Design points", "True llik"), col = c("blue", "black", "red"),
          lty = c(1, NA, 1), pch = c(NA, 16, NA))
   dev.off()
+  
+  return(invisible(list(M = M, scale.factor = universal.scale)))
   
 }
 
