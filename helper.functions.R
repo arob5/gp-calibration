@@ -139,19 +139,18 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
   M <- rep(NA, length(gp.pred.mean))
   scale.factors <- rep(NA, length(gp.pred.mean))
   for(i in seq_along(M)) {
-    mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    # mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    mgf.results <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
     M[i] <- mgf.results$mgf
     scale.factors[i] <- mgf.results$scale.factor
   }
 
-  universal.scale <- median(scale.factors)
-  M <- exp(universal.scale - scale.factors) * M
   logM <- log(M)
   
   # Likelihood evaluations to plot
-  llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi)
-  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n) + universal.scale
-  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n) + universal.scale
+  llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi) - scale.factors
+  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
+  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
   
   # Log-likelihood plot
   range.values <- c(llik.gp.approx, llik.exact.design, llik.exact.pred)
@@ -169,7 +168,7 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
          lty = c(1, NA, 1), pch = c(NA, 16, NA))
   dev.off()
   
-  return(invisible(list(M = M, scale.factor = universal.scale)))
+  return(invisible(M))
   
 }
 
@@ -391,10 +390,27 @@ create.mcmc.summary.table <- function(samples, pars, chain = NULL) {
   
 }
 
-lnorm.mgf.estimate.analytic <- function(s, mu, sigma) {
+lnorm.mgf.estimate.analytic <- function(s, mu, sigma, scale = FALSE, scale.factor = NULL) {
+  
   W <- lambertWp(s * exp(mu) * sigma^2)
-  exp(-0.5 * (1 / sigma^2) * (W^2 + 2*W)) / sqrt(1 + W)
+  exp.arg <- 0.5 * (1 / sigma^2) * (W^2 + 2*W)
+  
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- exp.arg
+    }
+  } else {
+    scale.factor <- 0
+  }
+  
+  
+  list.out <- list(mgf = exp(scale.factor - exp.arg) / sqrt(1 + W), 
+                   scale.factor = scale.factor)
+  
+  return(list.out)
+  
 }
+
 
 # To check approximation, also estimate MGF via Monte Carlo and analytic approximation
 lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.factor = NULL) {
@@ -404,7 +420,7 @@ lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.fac
       scale.factor <- mean(s * lnorm.samples)
     }
   } else {
-    scale.factor <- 1.0
+    scale.factor <- 0
   }
   
   list.out <- list(mgf = mean(exp(scale.factor - s * lnorm.samples)), 
