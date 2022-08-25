@@ -35,7 +35,7 @@ preprocess.settings <- function(settings) {
 }
 
 
-# Log unnormalized isotropic multivariate normal density
+# Log isotropic multivariate normal density
 log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
   n <- length(y)
   mu.vec <- rep(f(u), n)
@@ -47,8 +47,10 @@ log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
 
 # Log unnormalized isotropic multivariate normal density, as function of 
 # sufficient statistic
-dmvnorm.log.unnorm.SS <- function(SS, tau, n) {
-  (n/2)*log(tau) - (tau/2)*SS
+dmvnorm.log.unnorm.SS <- function(SS, tau, n, normalize = TRUE) {
+  log.dens <- (n/2)*log(tau) - (tau/2)*SS
+  if(normalize) return(log.dens - 0.5*n*log(2*pi))
+  return(log.dens)
 }
 
 save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, normalize = TRUE) {
@@ -75,7 +77,7 @@ save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, n
 }
 
 
-save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.dir) {
+save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
   # Determine size of confidence interval to plot
   p <- 1 - (1 - interval.pct)/2
   
@@ -90,8 +92,23 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
   gp.pred.upper <- qnorm(p, gp.pred.mean, gp.pred.se)
   gp.pred.lower <- qnorm(p, gp.pred.mean, gp.pred.se, lower.tail = FALSE)
   
+  # If specified, exponentiate the predictions (used if the response variable was the log of the sufficient 
+  # statistic but want to save plot on the original scale). The sufficient statistic now follows
+  # a log-normal process. 
+  if(exp.pred) {
+    gp.pred.mean.lnorm <- exp(gp.pred.mean + 0.5 * gp.pred.se^2)
+    gp.pred.se.lnorm <- sqrt((exp(gp.pred.se^2) - 1) * exp(2*gp.pred.mean + gp.pred.se^2))
+    gp.pred.upper <- qlnorm(p, gp.pred.mean, gp.pred.se)
+    gp.pred.lower <- qlnorm(p, gp.pred.mean, gp.pred.se, lower.tail = FALSE)
+    
+    SS <- exp(SS)
+    SS.pred <- exp(SS.pred)
+    gp.pred.mean <- gp.pred.mean.lnorm
+    gp.pred.se <- gp.pred.se.lnorm
+  }
+  
   # Sufficient statistic plot
-  png(file.path(out.dir, "gp_pred_SS.png"), width=600, height=350)
+  png(out.path, width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
   plot(X.pred, gp.pred.mean, xlab = 'u', type = 'l', lty = 1, 
        ylab = paste0('GP Predictive Mean and ', 100*interval.pct, '% CI'),
@@ -106,6 +123,54 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
          legend = c("GP pred mean", "Design points", paste0(100*interval.pct, "% CI"), "True SS"), 
          col = c("blue", "black", "gray", "red"), lty = c(1, NA, 1, 1), pch = c(NA, 16, NA, NA))
   dev.off()
+  
+}
+
+
+save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+
+  # Calculate predictive means and standard errors
+  gp.pred <- predict_gp(X.pred, gp.log.obj)
+  gp.pred.mean <- gp.pred$mean
+  gp.pred.se <- sqrt(gp.pred$var)
+  
+  # Calculate likelihood approximations
+  # M <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean, gp.pred.se)
+  M <- rep(NA, length(gp.pred.mean))
+  scale.factors <- rep(NA, length(gp.pred.mean))
+  for(i in seq_along(M)) {
+    mgf.results <- lnorm.mgf.estimate(0.5*tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    # mgf.results <- lnorm.mgf.estimate.analytic(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], scale = TRUE)
+    # mgf.results <- lognormal_mgf_numerical_approx(0.5 * tau, gp.pred.mean[i], gp.pred.se[i], 
+    #                                               1000, 1e-10, 1, scale = TRUE)
+    M[i] <- mgf.results$mgf
+    scale.factors[i] <- mgf.results$scale.factor
+  }
+
+  logM <- log(M)
+  
+  # Likelihood evaluations to plot
+  llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi) - scale.factors
+  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
+  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
+  
+  # Log-likelihood plot
+  range.values <- c(llik.gp.approx, llik.exact.design, llik.exact.pred)
+  png(out.path, width=600, height=350)
+  par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+  plot(X.pred, llik.gp.approx, xlab = 'u', type = 'l', lty = 1, 
+      ylim = range(range.values[!is.infinite(range.values)]),
+      ylab = "Log-Likelihood",
+      main = 'GP Approx Log-Likelihood', 
+      col = 'blue')
+  points(X, llik.exact.design, pch = 16, col="black")
+  lines(X.pred, llik.exact.pred, lty=1, col="red")
+  legend("right", inset=c(-0.2,-0.3),
+         legend = c("GP Approx", "Design points", "True llik"), col = c("blue", "black", "red"),
+         lty = c(1, NA, 1), pch = c(NA, 16, NA))
+  dev.off()
+  
+  return(invisible(M))
   
 }
 
@@ -156,9 +221,9 @@ save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, 
     llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs, X.pred[i,1], tau, f)
   }
   
-  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n)
-  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n)
-  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n)
+  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n, FALSE)
+  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n, FALSE)
+  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n, FALSE)
   
   png(file.path(out.dir, paste0(base.file.name, "_llik.png")), width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
@@ -327,11 +392,71 @@ create.mcmc.summary.table <- function(samples, pars, chain = NULL) {
   
 }
 
+lnorm.mgf.estimate.analytic <- function(s, mu, sigma, scale = FALSE, scale.factor = NULL) {
+  
+  W <- lambertWp(s * exp(mu) * sigma^2)
+  exp.arg <- 0.5 * (1 / sigma^2) * (W^2 + 2*W)
+  
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- exp.arg
+    }
+  } else {
+    scale.factor <- 0
+  }
+  
+  
+  list.out <- list(mgf = exp(scale.factor - exp.arg) / sqrt(1 + W), 
+                   scale.factor = scale.factor)
+  
+  return(list.out)
+  
+}
 
 
+# To check approximation, also estimate MGF via Monte Carlo and analytic approximation
+lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.factor = NULL) {
+  lnorm.samples <- rlnorm(N, meanlog = mu, sdlog = sigma)
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- mean(s * lnorm.samples)
+    }
+  } else {
+    scale.factor <- 0
+  }
+  
+  list.out <- list(mgf = mean(exp(scale.factor - s * lnorm.samples)), 
+                   scale.factor = scale.factor)
+
+  return(list.out)
+  
+}
 
 
+lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale = FALSE, scale.factor = NULL) {
+  eps <- 0.5 * tol  
+  cut_lower <-  mu - sigma * sqrt(2) * sqrt(log(M/eps))
+  cut_upper <- log(1/s) + log(log(M/eps))
+  dx <- (cut_upper - cut_lower) / num_eval
+  x <- seq(cut_lower, cut_upper, length.out = num_eval) 
+  fx_arg <- s * exp(x) + 0.5 * (x - mu)^2 / sigma^2
+  
+  if(scale) {
+    if(is.null(scale.factor)) {
+      scale.factor <- median(fx_arg)
+    }
+  } else {
+    scale.factor <- 0
+  }
 
+  fx <- exp(scale.factor - fx_arg) 
+  
+  list.out <- list(mgf = 0.5 * dx * (1 / sqrt(2.0 * pi)) * (1 / sigma) * (fx[1] + fx[num_eval] + 2.0*sum(fx[2:(num_eval-1)])), 
+                   scale.factor = scale.factor)
+  
+  return(list.out)
+  
+}
 
 
 

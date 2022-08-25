@@ -12,12 +12,14 @@
 #   2.) 3-way comparison: predictive means/variances using Stan code, R implementation, and mlegp functions. 
 #       Can help diagonose why mlegp results are choppy. 
 
+library(cmdstanr)
 library(rstan)
 library(mlegp)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
+source("helper.functions.R")
 source("stan.helper.functions.R")
 source("gaussian.process.functions.R")
 
@@ -61,6 +63,7 @@ gp.obj <- create.gp.obj(gp.mlegp, "mlegp", X, y)
 # Compile and run Stan code
 stan.model.path <- "test_gp_r_stan_conversion.stan"
 model <- stan_model(stan.model.path)
+# model <- cmdstan_model(stan.model.path)
 
 stan.list <- as.list(c(gp.stan.params, 
                        list(N = N, 
@@ -162,6 +165,85 @@ print(paste0("Max absolute error of mean at design points: ", max(abs(mean.desig
 # Test that predictive variance is equal to the nugget at observed data points
 var.design.stan <- as.vector(stan.output$var_design)
 print(paste0("Max absolute error of variance at design points: ", max(abs(var.design.stan - gp.mlegp$nugget))))
+
+
+# -----------------------------------------------------------------------------
+# Log-normal MGF approximations (user-defined Stan functions)
+# -----------------------------------------------------------------------------
+
+stan.model.code <- 
+"
+
+functions {
+#include gaussian_process_functions.stan
+}
+
+data {
+  int N_mgf_test;
+  vector[N_mgf_test] mgf_test_vals;
+  int mgf_num_eval; 
+  real mgf_tol; 
+  real mgf_M; 
+  real log_norm_mu; 
+  real log_norm_sigma; 
+}
+
+generated quantities {
+  vector[N_mgf_test] mgf_test_out; 
+  vector[N_mgf_test] a; 
+  vector[N_mgf_test] b; 
+  vector[N_mgf_test] dx; 
+  vector[mgf_num_eval] x;
+  vector[mgf_num_eval] fx;  
+  
+  real eps; 
+  eps = mgf_tol / 2; 
+  
+  for(i in 1:N_mgf_test) {
+    mgf_test_out[i] = lognormal_mgf_numerical_approx(mgf_test_vals[i], log_norm_mu, log_norm_sigma, mgf_num_eval, mgf_tol, mgf_M);
+    a[i] = log_norm_mu - log_norm_sigma * sqrt2() * sqrt(log(mgf_M/eps));
+    b[i] = log(1/mgf_test_vals[i]) + log(log(mgf_M/eps));
+    dx[i] = (b[i] - a[i]) / mgf_num_eval; 
+  }
+  x = seq_fun(a[2], b[2], mgf_num_eval); 
+  fx = exp(-mgf_test_vals[2] * exp(x) - 0.5 * square(x - log_norm_mu) / square(log_norm_sigma));
+}
+
+"
+
+# Run Stan code to approximate log-normal MGF
+test.vals <- c(.0001, .001, .01, .1, 1, 10, 100, 1000)
+stan.mgf.list <- list(N_mgf_test = length(test.vals), 
+                      mgf_test_vals = test.vals, 
+                      mgf_num_eval = 100000, 
+                      mgf_tol = 1e-10, 
+                      mgf_M = 1, 
+                      log_norm_mu = log(200),
+                      log_norm_sigma = log(20))
+
+stan.mgf.model <- stan_model(model_code = stan.model.code)
+stan.mgf.fit <- stan.fit <- sampling(stan.mgf.model, data = stan.mgf.list, warmup = 0, iter = 1, chains = 1, 
+                                     seed = 494838, refresh = 4000, algorithm = "Fixed_param")
+stan.mgf.output <- as.vector(extract(stan.mgf.fit)$mgf_test_out)
+
+# To check approximation, also estimate MGF via Monte Carlo and analytic approximation
+lnorm.mgf.estimate <- function(s, mu, sigma, N = 100000) {
+  lnorm.samples <- rlnorm(N, meanlog = mu, sdlog = sigma)
+  return(mean(exp(-s * lnorm.samples)))
+}
+
+mgf.mc <- sapply(test.vals, function(s) lnorm.mgf.estimate(s, stan.mgf.list$log_norm_mu, stan.mgf.list$log_norm_sigma))
+mgf.analytic <- sapply(test.vals, function(s) lnorm.mgf.estimate.analytic(s, stan.mgf.list$log_norm_mu, stan.mgf.list$log_norm_sigma))
+
+
+print("Absolute difference between numerical and Monte Carlo Log-normal MGF approximations:")
+print(abs(stan.mgf.output - mgf.mc))
+
+print("Absolute difference between analytic and Monte Carlo Log-normal MGF approximations:")
+print(abs(mgf.analytic - mgf.mc))
+
+
+
 
 
 

@@ -12,6 +12,7 @@ library(bayesplot)
 library(ggplot2)
 library(rstan)
 library(mlegp)
+library(pracma)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -45,7 +46,7 @@ settings <- list(
   base.dir = getwd(),
   output.dir = "output",
   run.id = Sys.time(), 
-  run.description = "Compare brute force to pecan, basic example. No resampling tau. Joint sample SS.",
+  run.description = "Testing GP Stan algorithm and log GP modeling",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -56,9 +57,9 @@ settings <- list(
   
   # Algorithms
   mcmc.brute.force.stan = TRUE, 
-  mcmc.gp.stan = FALSE, 
+  mcmc.gp.stan = TRUE, 
   mcmc.gp.mean.stan = FALSE, 
-  mcmc.pecan = TRUE,
+  mcmc.pecan = FALSE,
   mcmc.brute.force.stan.path = "parameter_calibration_1d_example.stan",
   mcmc.gp.stan.path = "parameter_calibration_gp_1d_example.stan", 
   mcmc.gp.mean.path = "parameter_calibration_gp_mean_1d_example.stan",
@@ -87,6 +88,12 @@ settings <- list(
   
   # Brute Force algorithm settings
   n.itr.mcmc.brute.force = 50000,
+  
+  # GP Stan algorithm settings
+  n.itr.mcmc.gp.stan = 1000,
+  mgf_num_eval = 1000, 
+  mgf_tol = 1e-9, 
+  mgf_M = 1,
   
   # pecan algorithm settings
   n.itr.mcmc.pecan = 50000,
@@ -162,7 +169,33 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   
   # Save plots demonstrating GP fit
   if(settings$k == 1) {
-    save.gp.pred.mean.plot(gp.obj, X, X.pred, SS, SS.pred, f, settings$gp.plot.interval.pct, run.dir)
+    save.gp.pred.mean.plot(gp.obj, X, X.pred, SS, SS.pred, f, 
+                           settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
+  }
+  
+  # If running "mcmc.gp.stan", response variable in GP regression is log sufficient statistic
+  if(settings$mcmc.gp.stan) {
+    log.SS <- log(SS)
+    log.SS.pred <- log(SS.pred)
+    
+    if(settings$gp.library == "mlegp") {
+      gp.log.fit <- mlegp(X, log.SS, nugget.known = 0, constantMean = 1)
+    }
+    
+    gp.log.stan.params <- create.gp.params.list(gp.log.fit, settings$gp.library)
+    gp.log.obj <- create.gp.obj(gp.log.fit, settings$gp.library, X, log.SS)
+    saveRDS(gp.log.obj, file = file.path(run.dir, "gp.log.obj.RData"))
+    
+    if(settings$k == 1) {
+      save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
+                             settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_log_SS.png"))
+      save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
+                             settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_exp_log_SS.png"), exp.pred = TRUE)
+    }
+    
+    save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
+                           file.path(run.dir, "gp_pred_log_SS_llik.png"))
+    
   }
   
 }
@@ -193,6 +226,48 @@ if(settings$mcmc.brute.force.stan) {
                        settings$interval.point.est, ".brute.force", "Brute Force")
 }
 
+# -----------------------------------------------------------------------------
+# GP Stan parameter calibration: 
+#   HMC using integrated out GP log approximation
+# -----------------------------------------------------------------------------
+
+if(settings$mcmc.gp.stan) {
+  pars.gp.stan <- c("u[1]", "tau")
+  
+  # Compile Stan code
+  model.gp.stan <- stan_model(settings$mcmc.gp.stan.path)
+  
+  # Data to pass to Stan
+  stan.list.gp.stan <- list(N = N,
+                            n = settings$n, 
+                            y = log.SS, 
+                            X = X,
+                            a = settings$tau.gamma.shape, 
+                            b = settings$tau.gamma.rate, 
+                            u_mean = settings$u.gaussian.mean, 
+                            u_sigma = settings$u.gaussian.sd, 
+                            u_lower = min(X), 
+                            u_upper = max(X), 
+                            gp_rho = gp.log.obj$gp_rho, 
+                            gp_alpha = gp.log.obj$gp_alpha, 
+                            gp_sigma = gp.log.obj$gp_sigma, 
+                            gp_mean = gp.log.obj$gp_mean, 
+                            mgf_num_eval = settings$mgf_num_eval, 
+                            mgf_tol = settings$mgf_tol, 
+                            mgf_M = settings$mgf_M)
+  
+  # MCMC
+  fit.gp.stan <- sampling(model.gp.stan, stan.list.gp.stan, iter = settings$n.itr.mcmc.gp.stan, 
+                          chains = settings$n.mcmc.chains, seed = settings$seed)
+  saveRDS(summary(fit.gp.stan), file = file.path(run.dir, "summary.gp.stan.RData"))
+  save.posterior.plots(as.array(fit.gp.stan), pars.gp.stan, run.dir, settings$interval.prob, settings$interval.prob.outer,
+                       settings$interval.point.est, ".gp.stan", "GP Stan")
+  
+  
+}
+
+
+
 
 # -----------------------------------------------------------------------------
 # PEcAn parameter calibration: 
@@ -222,6 +297,7 @@ if(settings$mcmc.pecan) {
     library(mlegp)
     library(TruncatedNormal)
     library(mvtnorm)
+    library(pracma)
   })
   
   mcmc.pecan.results <- parLapply(cl, seq(1, settings$n.mcmc.chains), 

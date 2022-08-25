@@ -192,9 +192,62 @@ real gp_mean_gaussian_llik(vector x, matrix X, vector K_inv_y, int N, int n, int
   return(0.5 * n * log(tau) - 0.5 * tau * gp_pred_mean);
 }
 
+vector seq_fun(real start, real end, int N_by) {
+ 
+  real h;
+  vector[N_by] out;
+  h = (end-start) / (N_by-1);
+  for (i in 1:N_by) {
+    out[i] = start + (i-1)*h; 
+  }
+  
+  return(out);
+  
+ }
+
+/**
+ * A numerical approximation of the Laplace transform of the log-normal 
+ * density function L(s), which is related to the log-normal Moment 
+ * Generating Function (MGF) M via L(s) = M(-s). This approximation first cuts
+ * of the integrand (which is supported on the entire real line) at calculated
+ * cut points, and then applies the trapezoidal rule on the now finite support.
+ *
+ * @param s Value at which to evaluate the Laplace transform. 
+ */
+real lognormal_mgf_numerical_approx(real s, real mu, real sigma, int num_eval, real tol, real M) {
+  real eps = 0.5 * tol;   
+  real cut_lower = mu - sigma * sqrt2() * sqrt(log(M/eps));
+  real cut_upper = log(1/s) + log(log(M/eps));
+  real dx = (cut_upper - cut_lower) / num_eval; 
+  vector[num_eval] x = seq_fun(cut_lower, cut_upper, num_eval); 
+  vector[num_eval] fx = exp(-s * exp(x) - 0.5 * square(x - mu) / square(sigma)); 
+  // vector[num_eval] integrand_x = exp(-1.0 * (s * exp(x) + 0.5 * (1 / square(sigma)) * square(x - mu))); 
+  // return(dx / (sigma * sqrt2() * sqrt(pi())) * (0.5 * (fx[1] + fx[num_eval]) + sum(fx[2:(num_eval - 1)]))); 
+  
+  return(0.5 * dx * (1 / sqrt(2.0 * pi())) * (1 / sigma) * (fx[1] + fx[num_eval] + 2.0*sum(fx[2:(num_eval-1)]))); 
+  
+}
 
 
-
-
+real gp_log_approx(matrix L, vector K_inv_y, matrix X, int N, int n, int k, vector rho, 
+                   real alpha, real sigma, real mu, real tau, vector x, int num_eval, real tol, real M) {
+  
+  // Temporary: should remove this once I upgrade to cmdstanr and can use argument overloading
+  matrix[1, k] x_mat = to_matrix(x, 1, k, 1); 
+  
+  // Predictive mean
+  vector[N] k_xX = to_vector(cov_exp_quad_cross(x_mat, X, rho, alpha));
+  real mu_x = mu + dot_product(k_xX, K_inv_y);
+  
+  // Predictive variance
+  vector[N] v = L \ k_xX;
+  real k_x = cov_exp_quad_same(x_mat, rho, alpha, sigma)[1, 1] - dot_self(v); 
+  
+  // Approximate expectation over GP
+  real gp_exp = lognormal_mgf_numerical_approx(0.5 * tau, mu_x, sqrt(k_x), num_eval, tol, M); 
+  
+  return(0.5 * n * log(tau) + log(gp_exp)); 
+  
+}
 
 
