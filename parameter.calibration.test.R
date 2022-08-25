@@ -45,8 +45,8 @@ settings <- list(
   k = 1, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = Sys.time(), 
-  run.description = "Testing GP Stan algorithm and log GP modeling",
+  run.id = paste0("lg_mgf_test_N4_", Sys.time()), 
+  run.description = "Log-normal approx test, N=4.",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -56,7 +56,7 @@ settings <- list(
   interval.point.est = "median",
   
   # Algorithms
-  mcmc.brute.force.stan = TRUE, 
+  mcmc.brute.force.stan = FALSE, 
   mcmc.gp.stan = TRUE, 
   mcmc.gp.mean.stan = FALSE, 
   mcmc.pecan = FALSE,
@@ -82,7 +82,7 @@ settings <- list(
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
-  N = 5, 
+  N = 4, 
   gp.library = "mlegp", 
   gp.plot.interval.pct = .95, 
   

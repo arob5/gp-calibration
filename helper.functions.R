@@ -148,7 +148,7 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
   }
 
   logM <- log(M)
-  
+
   # Likelihood evaluations to plot
   llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi) - scale.factors
   llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
@@ -419,7 +419,7 @@ lnorm.mgf.estimate <- function(s, mu, sigma, N = 10000, scale = FALSE, scale.fac
   lnorm.samples <- rlnorm(N, meanlog = mu, sdlog = sigma)
   if(scale) {
     if(is.null(scale.factor)) {
-      scale.factor <- mean(s * lnorm.samples)
+      scale.factor <- min(s * lnorm.samples)
     }
   } else {
     scale.factor <- 0

@@ -275,6 +275,21 @@ where $T \sim \hat{T}(x, z, u)$ is a value sampled from the predictive GP distri
 \caption{MCMC for Parameter Calibration}
 \end{algorithm}
 
+\subsection{Effect of Re-sampling $\tau$}
+For a quick back-of-the-envelope calculation consider an example with $n = 1000$ observations and Gamma hyperparameters $a = 11, b = 1$. I've run 1d examples with this 
+setup and found the GP predictive means ranging from about 90 to 580 across the parameter space, with predictive standard deviations ranging from .0001 to 28. If $tau$ is 
+re-sampled in the algorithm then the current and re-sampled $\tau$ values used in the accept-reject step are sampled from: 
+\begin{align*}
+\tau^{(t - 1)} \sim G(a + n/2, b + T^{(t-1)}/2) = G(511, 1 + T^{(t-1)}/2) \\
+\tau^\prime \sim G(a + n/2, b + T^\prime/2) = G(511, 1 + T^\prime/2) \\
+\end{align*}
+The difference in these distribution depends on a lot of factors: the hyperparameters (which I have fixed here), the current and proposed values of $u$, the samples for the 
+current and propose sufficient statistics (which in turn depend on the predictive GP mean, variance, and possibly covariance). Given the above numbers, let's first assume a pretty 
+large difference of 100 between $T$ and $T^\prime$. If the sufficient statistic values are very large (the sampler if far from the optimal u value), then the resulting Gamma distributions
+will be quite close, their expectations differing by 1 or 2. For sufficient statistic values found close to the optimal $u$ value this difference can increase to 5 or 6. Instead considering 
+a difference in sufficient statistic values of around 20, these numbers shrink quite a bit: the difference in the Gamma mean near the optimal $u$ being around 1. 
+
+
 \subsubsection{Adapting the Proposal Covariance Matrix}
 \textbf{Joint Update.} First consider the case where the Metropolis updates are conducted jointly for all dimensions at once. The covariance matrix for the Gaussian
 proposal is initialized as $\Sigma_0 := \sigma_0^2 I_d$ for some chosen parameter $\sigma_0$. This covariance is then adapted at all iterations $t$ satisfying 
