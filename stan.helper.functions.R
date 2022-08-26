@@ -95,10 +95,14 @@ convert.prior.to.stan <- function(prior.info) {
 ##' @param library String specifying the library used to fit the GP. 
 ##' 
 ##' @author Andrew Roberts
-create.gp.params.list <- function(gp, library) {
+create.gp.params.list <- function(gp, gp.library) {
 
-  if(library == 'mlegp') {
+  if(gp.library == "mlegp") {
     gp.params <- convert.mlegp.params(gp)
+  } else if(gp.library == "hetGP") {
+    gp.params <- convert.hetGP.params(gp)
+  } else {
+    stop(paste0("Library ", gp.library, " not supported."))
   }
   
   return(gp.params)
@@ -109,21 +113,14 @@ create.gp.params.list <- function(gp, library) {
 convert.mlegp.params <- function(gp) {
   
   if(length(gp$nugget) > 1) {
-    stop('convert.mlegp.params() does not support non-constant nugget.')
+    stop("convert.mlegp.params() does not support non-constant nugget.")
   }
   
   if(length(gp$Bhat) > 1) {
     stop('convert.mlegp.params() does not support non-constant mean function.')
   }
   
-  # If vector of lengthscale parameters has length 1, must store as array to avoid
-  # type error when passing to Stan.
-  gp.beta <- gp$beta
-  if(length(gp.beta) == 1) {
-    gp.beta <- array(gp.beta, dim = 1)
-  }
-  
-  gp.params <- list(gp_rho = array(1 / (sqrt(2 * gp.beta))),
+  gp.params <- list(gp_rho = array(1 / (sqrt(2 * gp$beta))),
                     gp_alpha = sqrt(gp$sig2), 
                     gp_sigma = sqrt(gp$nugget), 
                     gp_mean = gp$Bhat)
@@ -133,7 +130,15 @@ convert.mlegp.params <- function(gp) {
 }
 
 
+convert.hetGP.params <- function(gp) {
 
+  gp.params <- list(gp_rho = array(sqrt(gp$theta / 2)),
+                    gp_alpha = sqrt(gp$nu_hat), 
+                    gp_sigma = sqrt(gp$nu_hat * gp$g), 
+                    gp_mean = gp$beta0)
+  
+  return(gp.params)
+}
 
 
 
