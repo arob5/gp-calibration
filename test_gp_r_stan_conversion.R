@@ -198,8 +198,21 @@ K.cross.hetGP <- gp.hetGP$nu_hat * C.cross.hetGP
 K.cross.stan <- stan.output$K_cross[1,,]
 print(paste0("Cov matrices K(X, X_pred) equal: ", all.equal(K.cross.hetGP, K.cross.stan)))
 
+# Test that mean prediction gives same results
+gp.pred.hetGP <- predict(gp.hetGP, X.pred, xprime = X.pred)
+gp.pred.mean.stan <- as.vector(stan.output$mean_pred)
+print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - gp.pred.mean.stan))))
+
+kx <- gp.hetGP$nu_hat * cov_gen(X.pred, X, theta = gp.hetGP$theta)
+K.inv <- solve(K.hetGP)
+K.inv.nonug <- solve(gp.hetGP$nu_hat * C.hetGP)
+mu.pred <- gp.hetGP$beta0 + kx %*% K.inv %*% (y - gp.hetGP$beta0)
 
 
+# Test variance predictions
+gp.var.mlegp <- predict(gp.mlegp, X.pred, se.fit = TRUE)$se.fit^2 + gp.mlegp$nugget
+gp.var.stan <- t(stan.output$var_pred)
+print(paste0("Max absolute error in variance predictions: ", max(abs(gp.var.mlegp - gp.var.stan))))
 
 
 # -----------------------------------------------------------------------------
