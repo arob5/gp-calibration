@@ -459,6 +459,62 @@ lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale
 }
 
 
+# Mimics output format of rstan::extract
+# Source: https://discourse.mc-stan.org/t/code-to-read-reshape-draws-to-match-rstan-extract/18819
+make_posterior <- function(files, num_warmup = -1){
+  
+  # read first line to get parameter (column) names
+  params <- names(data.table::fread(files[1], skip = 38, nrow = 0))
+  
+  # skip warmup draws if they were saved
+  skip <- ifelse(num_warmup > 0, num_warmup + 40, 38)
+  
+  # bind together all the chains, skipping warm-up if necessary
+  chains <- lapply(files, function(file){
+    chain <- suppressWarnings(data.table::fread(file, skip = skip))
+    names(chain) <- params
+    chain
+  }) %>%
+    bind_rows()
+  
+  iter <- nrow(chains)
+  
+  # figure out highest dimension in parameters
+  max_dim <- max(str_count(params, "\\."))
+  
+  # extract parameter names and indices
+  param_dims <- data.frame(param = params) %>%
+    separate(param, into = c('param', paste0('dim', 1:max_dim)), 
+             sep = "\\.", convert = TRUE, fill = "right") %>%
+    group_by(param) %>%
+    summarize_all(max)
+  
+  posterior <- list()
+  
+  # loop over parameters
+  for(i in 1:nrow(param_dims)){
+    
+    param <- param_dims %>%
+      slice(i) %>%
+      pull(param)
+    
+    dims <- param_dims %>%
+      slice(i) %>%
+      select(-param) %>%
+      as.numeric()
+    
+    # reshape draws into array defined by dims
+    draws <- chains %>%
+      select(which(str_detect(names(.), param))) %>%
+      as.matrix() %>%
+      array(c(iter, dims[!is.na(dims)]))
+    
+    posterior[[param]] <- draws
+  }
+  
+  posterior
+}
+
 
 
 
