@@ -24,16 +24,20 @@ cov_exp_quad <- function(X1, X2 = NULL, rho, alpha) {
   
 }
 
-create.gp.obj <- function(gp, library, X, y) {
+create.gp.obj <- function(gp, library, X, y, nugget.override = NULL) {
   
   # Map GP parameters to common parameterization
   gp.obj <- create.gp.params.list(gp, library)
   
   # Define nugget
-  if(gp.obj$gp_sigma == 0) {
-    gp.obj$nugget <- sqrt(.Machine$double.eps)
+  if(is.null(nugget.override)) {
+    if(gp.obj$gp_sigma == 0) {
+      gp.obj$nugget <- sqrt(.Machine$double.eps)
+    } else {
+      gp.obj$nugget <- gp.obj$gp_sigma^2
+    }
   } else {
-    gp.obj$nugget <- gp.obj$gp_sigma^2
+    gp.obj$nugget <- nugget.override
   }
   
   # Design matrix/knots
@@ -60,7 +64,7 @@ predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE) {
   if(pred.cov) {
     pred.list[["cov"]] <- predict_cov_mat(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget)
   } else {
-    pred.list[["var"]] <- predict_var(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget)
+    pred.list[["var"]] <- predict_var(X.pred, k.Xx, gp.obj$L, gp.obj$gp_alpha, gp.obj$nugget)
   }
   
   return(pred.list)
@@ -74,13 +78,12 @@ predict_mean <- function(k.Xx, K.inv.y, mu) {
 }
 
 
-predict_var<- function(X.pred, k.Xx, L, rho, alpha, nugget) {
+predict_var<- function(X.pred, k.Xx, L, alpha, nugget) {
   
   pred.vars <- vector("numeric", nrow(X.pred))
   for(i in seq_along(pred.vars)) {
-    k.x <- cov_exp_quad(X.pred[i,,drop=FALSE], NULL, rho, alpha) + nugget
     v <- solve(L, k.Xx[,i,drop=FALSE])
-    pred.vars[i] <- k.x - sum(v^2)
+    pred.vars[i] <- alpha^2 + nugget - sum(v^2)
   }
   
   return(pred.vars)

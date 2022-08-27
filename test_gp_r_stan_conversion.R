@@ -199,20 +199,35 @@ K.cross.stan <- stan.output$K_cross[1,,]
 print(paste0("Cov matrices K(X, X_pred) equal: ", all.equal(K.cross.hetGP, K.cross.stan)))
 
 # Test that mean prediction gives same results
+# NOTE: these slight differences are due to 2 factors:
+# 1.) hetGP adds on a "jitter" epsilon in addition to the nugget. I only add a jitter when nugget is 0. 
+# 2.) Slight numerical differences due to the method of calculation
 gp.pred.hetGP <- predict(gp.hetGP, X.pred, xprime = X.pred)
 gp.pred.mean.stan <- as.vector(stan.output$mean_pred)
 print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - gp.pred.mean.stan))))
 
-kx <- gp.hetGP$nu_hat * cov_gen(X.pred, X, theta = gp.hetGP$theta)
-K.inv <- solve(K.hetGP)
-K.inv.nonug <- solve(gp.hetGP$nu_hat * C.hetGP)
-mu.pred <- gp.hetGP$beta0 + kx %*% K.inv %*% (y - gp.hetGP$beta0)
+# Verifying how hetGP calculates predictive mean (includes both nugget and jitter)
+K.inv <- chol2inv(chol(cov_gen(X, theta = gp.hetGP$theta, type = "Gaussian") + 
+                         diag(gp.hetGP$g + gp.hetGP$eps, nrow = N))) / gp.hetGP$nu_hat
+kx <- gp.hetGP$nu_hat * cov_gen(X.pred, X, theta = gp.hetGP$theta, type = "Gaussian")
+mu.pred <- gp.hetGP$beta0 + kx %*% (K.inv %*% (y - gp.hetGP$beta0))
+print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - mu.pred))))
 
+# Adding jitter to my R function: slight numerical difference remains from method of calculation
+gp.obj.with.jitter <- create.gp.obj(gp.hetGP, "hetGP", X, y, nugget.override = gp.hetGP$nu_hat * (gp.hetGP$g + gp.hetGP$eps))
+pred.r.with.jitter <- predict_gp(X.pred, gp.obj.with.jitter)
+print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - pred.r.with.jitter$mean))))
 
 # Test variance predictions
-gp.var.mlegp <- predict(gp.mlegp, X.pred, se.fit = TRUE)$se.fit^2 + gp.mlegp$nugget
-gp.var.stan <- t(stan.output$var_pred)
-print(paste0("Max absolute error in variance predictions: ", max(abs(gp.var.mlegp - gp.var.stan))))
+# Note: hetGP does not include the nugget (intrinsic variance) in predictive variances; need to add them on here 
+#       for comparison
+gp.var.stan <- as.vector(stan.output$var_pred)
+pred.var.hetGP <- gp.pred.hetGP$sd2 + gp.pred.hetGP$nugs
+pred.var.with.jitter <- pred.r.with.jitter$var - (gp.hetGP$nu_hat * gp.hetGP$eps) # Jitter only included on diagonal of K, need to subtract it out here
+
+print(paste0("Max absolute error in variance predictions: ", max(abs(pred.var.hetGP - gp.var.stan))))
+print(paste0("Max absolute error in variance predictions (adjusting for jitter): ", 
+             max(abs(pred.var.hetGP - pred.var.with.jitter))))
 
 
 # -----------------------------------------------------------------------------
