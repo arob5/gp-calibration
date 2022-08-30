@@ -120,7 +120,7 @@ predict_cov_mat <- function(X.pred, K.Xx, L, rho, alpha, nugget, ordinary.krigin
   K.x <- cov_exp_quad(X.pred, NULL, rho, alpha) + diag(rep(nugget, N.pred), nrow = N.pred)
   
   if(ordinary.kriging) {
-    return(K.x - crossprod(V) + crossprod(1 - crossprod(V, h)) / K.inv.sum)
+    return(K.x - crossprod(V) + tcrossprod(1 - crossprod(V, L.inv.1)) / K.inv.sum)
   }
   
   return(K.x - crossprod(V))

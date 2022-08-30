@@ -230,6 +230,15 @@ print(paste0("Max absolute error in variance predictions: ", max(abs(pred.var.he
 print(paste0("Max absolute error in variance predictions (adjusting for jitter): ", 
              max(abs(pred.var.hetGP - pred.var.with.jitter))))
 
+# Test covariance matrix predictions
+# Note: hetGP does not include the nugget (intrinsic variance) in predictive variances; need to add them on here 
+#       for comparison.
+
+pred.cov.hetGP <- gp.pred.hetGP$cov
+diag(pred.cov.hetGP) <- diag(pred.cov.hetGP + gp.pred.hetGP$nugs - (gp.hetGP$nu_hat * gp.hetGP$eps))
+pred.cov.with.jitter <- predict_gp(X.pred, gp.obj.with.jitter, pred.cov = TRUE)$cov
+print(paste0("Max absolute error in cov matrix predictions (adjusting for jitter): ", 
+             max(abs(pred.cov.hetGP - pred.cov.with.jitter))))
 
 # -----------------------------------------------------------------------------
 # General Stan tests
