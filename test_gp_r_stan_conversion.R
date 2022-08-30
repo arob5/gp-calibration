@@ -214,13 +214,14 @@ mu.pred <- gp.hetGP$beta0 + kx %*% (K.inv %*% (y - gp.hetGP$beta0))
 print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - mu.pred))))
 
 # Adding jitter to my R function: slight numerical difference remains from method of calculation
-gp.obj.with.jitter <- create.gp.obj(gp.hetGP, "hetGP", X, y, nugget.override = gp.hetGP$nu_hat * (gp.hetGP$g + gp.hetGP$eps))
+gp.obj.with.jitter <- create.gp.obj(gp.hetGP, "hetGP", X, y, 
+                                    nugget.override = gp.hetGP$nu_hat * (gp.hetGP$g + gp.hetGP$eps))
 pred.r.with.jitter <- predict_gp(X.pred, gp.obj.with.jitter)
 print(paste0("Max absolute error in mean predictions: ", max(abs(gp.pred.hetGP$mean - pred.r.with.jitter$mean))))
 
 # Test variance predictions
 # Note: hetGP does not include the nugget (intrinsic variance) in predictive variances; need to add them on here 
-#       for comparison
+#       for comparison.
 gp.var.stan <- as.vector(stan.output$var_pred)
 pred.var.hetGP <- gp.pred.hetGP$sd2 + gp.pred.hetGP$nugs
 pred.var.with.jitter <- pred.r.with.jitter$var - (gp.hetGP$nu_hat * gp.hetGP$eps) # Jitter only included on diagonal of K, need to subtract it out here
