@@ -275,6 +275,21 @@ where $T \sim \hat{T}(x, z, u)$ is a value sampled from the predictive GP distri
 \caption{MCMC for Parameter Calibration}
 \end{algorithm}
 
+\subsection{Effect of Re-sampling $\tau$}
+For a quick back-of-the-envelope calculation consider an example with $n = 1000$ observations and Gamma hyperparameters $a = 11, b = 1$. I've run 1d examples with this 
+setup and found the GP predictive means ranging from about 90 to 580 across the parameter space, with predictive standard deviations ranging from .0001 to 28. If $tau$ is 
+re-sampled in the algorithm then the current and re-sampled $\tau$ values used in the accept-reject step are sampled from: 
+\begin{align*}
+\tau^{(t - 1)} \sim G(a + n/2, b + T^{(t-1)}/2) = G(511, 1 + T^{(t-1)}/2) \\
+\tau^\prime \sim G(a + n/2, b + T^\prime/2) = G(511, 1 + T^\prime/2) \\
+\end{align*}
+The difference in these distribution depends on a lot of factors: the hyperparameters (which I have fixed here), the current and proposed values of $u$, the samples for the 
+current and propose sufficient statistics (which in turn depend on the predictive GP mean, variance, and possibly covariance). Given the above numbers, let's first assume a pretty 
+large difference of 100 between $T$ and $T^\prime$. If the sufficient statistic values are very large (the sampler if far from the optimal u value), then the resulting Gamma distributions
+will be quite close, their expectations differing by 1 or 2. For sufficient statistic values found close to the optimal $u$ value this difference can increase to 5 or 6. Instead considering 
+a difference in sufficient statistic values of around 20, these numbers shrink quite a bit: the difference in the Gamma mean near the optimal $u$ being around 1. 
+
+
 \subsubsection{Adapting the Proposal Covariance Matrix}
 \textbf{Joint Update.} First consider the case where the Metropolis updates are conducted jointly for all dimensions at once. The covariance matrix for the Gaussian
 proposal is initialized as $\Sigma_0 := \sigma_0^2 I_d$ for some chosen parameter $\sigma_0$. This covariance is then adapted at all iterations $t$ satisfying 
@@ -383,6 +398,24 @@ true likelihood with a completely flat approximation. The likelihood evaluations
 \[ \tau^{n/2} \exp\left\{-\frac{\tau}{2} \mu(u) + \frac{\tau^2}{8} k(u, u) \right\} \]
 Now the $u$ that exhibit more predictive uncertainty (i.e. where $k(u, u)$ is large) will be given a larger density, due to the addition of the term $\frac{\tau^2}{8} k(u, u)$. This will mean that proposals at these more 
 uncertain parameter values will be accepted more often. This, in turn, means that the posterior over $u$ will be more diffuse, reflecting the uncertainty in the GP approximation. 
+
+\subsubsection{Modeling the log of the sufficient statistic}
+The above approach suffers from the issue that the sum of squared errors is a non-negative quantity, yet it is unconstrained in the GP regression model. Thus, predictive quantities for the 
+sufficient statistic $T$ can be negative, which can then lead to invalid likelihood evaluations outside of the unit interval. To get around this issue we consider here modeling $L := \log(T)$ in place 
+of $T$. We now fit the GP on the dataset $(X, L)$ and denote this fit GP by $\hat{L} \sim \mathcal{GP}(\mu(\cdot), k(\cdot, \cdot))$. Note that the sufficient statistic on the original scale now follows
+a log-normal process $\hat{T} = e^{\hat{L}} \sim \mathcal{LN}(\mu(\cdot), k(\cdot, \cdot))$. The likelihood approximation now takes the form
+\[\tau^{n/2}\exp\left\{-\frac{\tau}{2}\hat{T} \right\} = \tau^{n/2}\exp\left\{-\frac{\tau}{2}e^{\hat{L}} \right\} \]
+To integrate out the GP we must now calculate
+\[\E_{\hat{T}}\left[\exp\left\{-\frac{\tau}{2}\hat{T} \right\}  \right] = \int_{0}^{\infty} \exp\left\{-\frac{\tau}{2}t \right\} \cdot LN(t; \mu, k) dt = \int_{-\infty}^{\infty} \exp\left(-\frac{\tau}{2}e^t \right) \varphi_{\mu, k}(t) dt\]
+The second and third expressions are equivalent by a simple change of variable, but shows that this integral can be thought of as either a normal or log-normal expectation. In any case, there is no analytical 
+solution to this integral. However, this integral is just the log-normal MGF (evaluated at $-\tau/2$) or the Laplace transform of the log-normal density (evaluated at $\tau/2$), so numerical and analytical approximations
+have been well-studied. For notation, I will write 
+$\mathcal{M}(s) := \E_{\hat{T}}\left[\exp\left\{-s\hat{T} \right\}  \right]$, using the MGF notation for convenience but instead opting for the Laplace transform parameterization. $\mathcal{M}(s)$ only exists 
+for $s > 0$. Asmussen et al (2013) studies an analytical approximation
+\[\hat{M}_{\mu, \sigma^2}(s) = \frac{\exp\left\{-\frac{W^2(se^\mu \sigma^2) + 2W(se^\mu \sigma^2)}{2\sigma^2}\right\}}{\sqrt{1 + W(se^\mu \sigma^2)}}, s \in \R^+\]
+where $M_{\mu, \sigma^2}$ is the Laplace transform of a $LN(\mu, \sigma^2)$ density. Given this, the approximation of the (unnormalized) likelihood $p(z|\tau, u)$ can now be written
+\[p(z|\tau, u) \propto \tau^{n/2} \hat{M}_{\mu(u), k(u,u)}(\tau/2)\]
+
 
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
 It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
