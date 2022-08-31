@@ -4,9 +4,6 @@
 #
 # Andrew Roberts
 
-# TODO: 
-#   - Add functionality to time runs
-
 library(parallel)
 library(bayesplot)
 library(ggplot2)
@@ -46,8 +43,8 @@ settings <- list(
   k = 1, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("hetGP_test_N4_logSS", Sys.time()), 
-  run.description = "Testing hetGP, setting nugget to 0. Log-Norm process. N=4.",
+  run.id = paste0("hetGP_test_N6_logSS", Sys.time()), 
+  run.description = "Testing hetGP, setting nugget to 0. Log-Norm process. N=6.",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -83,7 +80,7 @@ settings <- list(
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
-  N = 4, 
+  N = 6, 
   gp.library = "hetGP", 
   log.normal.process = TRUE,
   gp.plot.interval.pct = .95, 
@@ -300,7 +297,8 @@ if(settings$mcmc.pecan) {
     gp.obj.pecan <- gp.obj
   }
   
-  # TODO: add range for u
+  # Set range of u to prevent extrapolation
+  u.range.pecan <- range(X)
   
   # Set up parallel computation
   cl <- makeCluster(settings$n.mcmc.chains)
@@ -319,7 +317,7 @@ if(settings$mcmc.pecan) {
                                   function(chain) mcmc.GP.test(gp.obj = gp.obj.pecan, 
                                                                n = settings$n, 
                                                                n.itr = settings$n.itr.mcmc.pecan, 
-                                                               u.rng = settings$u.rng, 
+                                                               u.rng = u.range.pecan, 
                                                                SS.joint.sample = settings$SS.joint.sample, 
                                                                resample.tau = settings$resample.tau, 
                                                                tau.gamma.shape = settings$tau.gamma.shape, 
@@ -334,10 +332,11 @@ if(settings$mcmc.pecan) {
                                                                log.normal.process = settings$log.normal.process))
 
   stopCluster(cl)
-  samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
+  samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, c(pars, "SS"), settings$n.itr.mcmc.pecan, settings$warmup.frac)
   saveRDS(mcmc.summary(samples.pecan, pars), file = file.path(run.dir, "summary.pecan.RData"))
   save.posterior.plots(samples.pecan, pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
                        settings$interval.point.est, ".pecan", "PEcAn")
+  save.SS.tau.samples.plot(samples.pecan, file.path(run.dir, "SS_tau_samples_pecan.png"))
   
 }
 

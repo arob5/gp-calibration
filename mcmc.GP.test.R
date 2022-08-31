@@ -21,9 +21,10 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
   accept.count <- 0
   tau.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X))
+  SS.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   
   # Initial parameter values
-  SS0 <- sample.SS(gp.obj, u0)
+  SS0 <- sample.SS(gp.obj, u0, log.normal.process)
   tau.curr <- sample.tau(n, SS0, tau.gamma.shape, tau.gamma.rate)
   u.curr <- u0
   
@@ -44,12 +45,12 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     
     # Sample sufficient statistics corresponding to current and proposed values of the calibration parameter
     if(SS.joint.sample) {
-      SS.samples <- sample.SS(gp.obj, rbind(u.curr, u.proposal))
-      SS.curr <- SS.samples[1]
-      SS.proposal <- SS.samples[2]
+      SS.joint.samples <- sample.SS(gp.obj, rbind(u.curr, u.proposal), log.normal.process)
+      SS.curr <- SS.joint.samples[1]
+      SS.proposal <- SS.joint.samples[2]
     } else {
-      SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1))
-      SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1))
+      SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1), log.normal.process)
+      SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1), log.normal.process)
     }
     
     # Re-sample precision parameter tau
@@ -70,6 +71,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
       SS.curr <- SS.proposal
       accept.count <- accept.count + 1
     }
+    SS.samples[itr,] <- SS.curr
     u.samples[itr,] <- u.curr
    
     # Gibbs step: sample tau conditional on current value of u
@@ -77,14 +79,14 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     tau.samples[itr, 1] <- tau.curr
   }
   
-  samples.list <- list(u = u.samples, tau = tau.samples)
+  samples.list <- list(u = u.samples, tau = tau.samples, SS = SS.samples)
   
   return(samples.list)
   
 }
 
 
-sample.SS <- function(gp.obj, X.pred, log.normal.process = FALSE) {
+sample.SS <- function(gp.obj, X.pred, log.normal.process) {
 
   gp.pred <- predict_gp(X.pred, gp.obj, pred.cov = TRUE)
 
