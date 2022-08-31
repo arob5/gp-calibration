@@ -12,6 +12,7 @@ library(bayesplot)
 library(ggplot2)
 library(rstan)
 library(mlegp)
+library(hetGP)
 library(pracma)
 
 options(mc.cores = parallel::detectCores())
@@ -45,8 +46,8 @@ settings <- list(
   k = 1, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("lg_mgf_test_N4_", Sys.time()), 
-  run.description = "Log-normal approx test, N=4.",
+  run.id = paste0("hetGP_test_N4_logSS", Sys.time()), 
+  run.description = "Testing hetGP, setting nugget to 0. Log-Norm process. N=4.",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -57,9 +58,9 @@ settings <- list(
   
   # Algorithms
   mcmc.brute.force.stan = FALSE, 
-  mcmc.gp.stan = TRUE, 
+  mcmc.gp.stan = FALSE, 
   mcmc.gp.mean.stan = FALSE, 
-  mcmc.pecan = FALSE,
+  mcmc.pecan = TRUE,
   mcmc.brute.force.stan.path = "parameter_calibration_1d_example.stan",
   mcmc.gp.stan.path = "parameter_calibration_gp_1d_example.stan", 
   mcmc.gp.mean.path = "parameter_calibration_gp_mean_1d_example.stan",
@@ -83,7 +84,8 @@ settings <- list(
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
   N = 4, 
-  gp.library = "mlegp", 
+  gp.library = "hetGP", 
+  log.normal.process = TRUE,
   gp.plot.interval.pct = .95, 
   
   # Brute Force algorithm settings
@@ -160,6 +162,10 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   # Fit GP regression
   if(settings$gp.library == "mlegp") {
     gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+  } else if(settings$gp.library == "hetGP") {
+    gp.fit <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+  } else {
+    stop("Invalid GP library: ", settings$gp.library)
   }
   
   # Map kernel parameters to Stan parameterization
@@ -173,13 +179,15 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
                            settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
   }
   
-  # If running "mcmc.gp.stan", response variable in GP regression is log sufficient statistic
-  if(settings$mcmc.gp.stan) {
+  # If response variable in GP regression is log sufficient statistic
+  if(settings$mcmc.gp.stan || settings$log.normal.process) {
     log.SS <- log(SS)
     log.SS.pred <- log(SS.pred)
     
     if(settings$gp.library == "mlegp") {
       gp.log.fit <- mlegp(X, log.SS, nugget.known = 0, constantMean = 1)
+    } else if(settings$gp.library == "hetGP") {
+      gp.log.fit <- mleHomGP(X, log.SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
     }
     
     gp.log.stan.params <- create.gp.params.list(gp.log.fit, settings$gp.library)
@@ -267,8 +275,6 @@ if(settings$mcmc.gp.stan) {
 }
 
 
-
-
 # -----------------------------------------------------------------------------
 # PEcAn parameter calibration: 
 #   Adaptive Metropolis-within-Gibbs with re-sampling of sufficient statistic
@@ -287,6 +293,15 @@ if(settings$mcmc.pecan) {
     u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
   }
   
+  # Modeling the sufficient statistic either as Gaussian process or log-normal process.
+  if(settings$log.normal.process) {
+    gp.obj.pecan <- gp.log.obj
+  } else {
+    gp.obj.pecan <- gp.obj
+  }
+  
+  # TODO: add range for u
+  
   # Set up parallel computation
   cl <- makeCluster(settings$n.mcmc.chains)
   clusterExport(cl, ls())
@@ -301,7 +316,7 @@ if(settings$mcmc.pecan) {
   })
   
   mcmc.pecan.results <- parLapply(cl, seq(1, settings$n.mcmc.chains), 
-                                  function(chain) mcmc.GP.test(gp.obj = gp.obj, 
+                                  function(chain) mcmc.GP.test(gp.obj = gp.obj.pecan, 
                                                                n = settings$n, 
                                                                n.itr = settings$n.itr.mcmc.pecan, 
                                                                u.rng = settings$u.rng, 
@@ -315,7 +330,8 @@ if(settings$mcmc.pecan) {
                                                                proposal.vars = proposal.vars[[chain]],
                                                                adapt.frequency = settings$adapt.frequency, 
                                                                adapt.min.scale = settings$adapt.min.scale, 
-                                                               accept.rate.target = settings$accept.rate.target))
+                                                               accept.rate.target = settings$accept.rate.target, 
+                                                               log.normal.process = settings$log.normal.process))
 
   stopCluster(cl)
   samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
