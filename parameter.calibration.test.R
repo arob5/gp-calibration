@@ -11,6 +11,7 @@ library(rstan)
 library(mlegp)
 library(hetGP)
 library(pracma)
+library(lhs)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -40,11 +41,11 @@ settings <- list(
   
   # General 
   seed = 5, 
-  k = 1, # Dimension of u
+  k = 2, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("hetGP_test_N6_logSS", Sys.time()), 
-  run.description = "Testing hetGP, setting nugget to 0. Log-Norm process. N=6.",
+  run.id = paste0("hetGP_LNP_N6_", Sys.time()), 
+  run.description = "",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -67,20 +68,21 @@ settings <- list(
   N.pred = 1000, # Used for producing plots and as GP prediction test points
   lik.type = "gaussian",
   model = function(u) {u},
-  u.true = 0.5,
+  u.true = list(0.5, 1.0),
   sigma.true = 0.3, 
   tau.true = NULL, 
   
   # Priors
   tau.gamma.shape = NULL,
   tau.gamma.rate = 1.0,
+  u.prior.coef.var = list(0.5, 1.0),
   u.gaussian.mean = NULL,
-  u.gaussian.sd = 0.25,
-  u.rng = c(-Inf, Inf),
+  u.gaussian.sd = NULL,
+  u.rng = NULL,
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
-  N = 6, 
+  N = 10, 
   gp.library = "hetGP", 
   log.normal.process = TRUE,
   gp.plot.interval.pct = .95, 

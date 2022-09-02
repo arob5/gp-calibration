@@ -20,14 +20,38 @@ preprocess.settings <- function(settings) {
     settings$tau.gamma.shape <- settings$tau.true
   }
   
-  # Init u.gaussian.mean so that hyperprior mean of u equals the true u value
-  if(is.null(settings$u.gaussian.mean)) {
-    settings$u.gaussian.mean <- settings$u.true
+  for(j in seq_len(settings$k)) {
+    
+    # Init u.gaussian.mean so that hyperprior mean of u equals the true u value
+    if((length(settings$u.gaussian.mean) < j) || is.null(settings$u.gaussian.mean[[j]])) {
+      settings$u.gaussian.mean[[j]] <- settings$u.true[[j]]
+    }
+    
+    # If Gaussian std devs are NULL, initialize so that the priors have the specified
+    # coefficients of variation. 
+    if((length(settings$u.gaussian.sd) < j) || is.null(settings$u.gaussian.sd[[j]])) {
+      if(is.null(settings$u.prior.coef.var[[j]])) {
+        stop("Either <u.gaussian.sd> or <u.prior.coef.var> must be non-NULL for calibration parameter ", j)
+      }
+    
+      settings$u.gaussian.sd[[j]] <- settings$u.prior.coef.var[[j]] * settings$u.gaussian.mean[[j]]
+    }
+    
+    # If calibration parameter range is NULL, set to (-Inf, Inf).
+    if((length(settings$u.rng) < j) || is.null(settings$u.rng[[j]])) {
+      settings$u.rng[[j]] <- c(-Inf, Inf)
+    }
+    
   }
   
+  # If not explicitly passed, generate design via Latin Hypercube Sampling
   if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(settings$X)) {
-    settings$X <- matrix(seq(qnorm(.01, settings$u.true, settings$sigma.true), 
-                             qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N), ncol = settings$k)
+    settings$X <- randomLHS(settings$N, settings$k)
+    
+    # Apply inverse CDS transform using prior distributions.
+    for(j in seq_len(settings$k)) {
+      settings$X[,j] <- qnorm(settings$X[,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
+    }
   }
   
   return(settings)
