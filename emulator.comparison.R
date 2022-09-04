@@ -145,30 +145,89 @@ for(i in seq_along(gp.obj.list)) {
 #                          settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
 # }
   
-  # If response variable in GP regression is log sufficient statistic
-  if(settings$mcmc.gp.stan || settings$log.normal.process) {
-    log.SS <- log(SS)
-    log.SS.pred <- log(SS.pred)
-    
-    if(settings$gp.library == "mlegp") {
-      gp.log.fit <- mlegp(X, log.SS, nugget.known = 0, constantMean = 1)
-    } else if(settings$gp.library == "hetGP") {
-      gp.log.fit <- mleHomGP(X, log.SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
-    }
-    
-    gp.log.stan.params <- create.gp.params.list(gp.log.fit, settings$gp.library)
-    gp.log.obj <- create.gp.obj(gp.log.fit, settings$gp.library, X, log.SS)
-    saveRDS(gp.log.obj, file = file.path(run.dir, "gp.log.obj.RData"))
-    
-    if(settings$k == 1) {
-      save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
-                             settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_log_SS.png"))
-      save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
-                             settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_exp_log_SS.png"), exp.pred = TRUE)
-    }
-    
-    save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
-                           file.path(run.dir, "gp_pred_log_SS_llik.png"))
-    
+
+# -----------------------------------------------------------------------------
+# Cross Validation
+# -----------------------------------------------------------------------------
+
+X.list <- vector(mode = "list", length = settings$num.itr.cv)
+X.pred.list <- vector(mode = "list", length = settings$num.itr.cv)
+
+for(cv in seq_len(settings$num.itr.cv)) {
+
+  # Generate train and test sets
+  X.combined <- randomLHS(settings$N + settings$N.pred, settings$k)
+  X.list[[cv]] <- X.combined[1:settings$N,,drop=FALSE]
+  X.pred.list[[cv]] <- X.combined[-(1:settings$N),,drop=FALSE]
+
+  # Apply inverse CDS transform using prior distributions.
+  for(j in seq_len(settings$k)) {
+    X.list[[cv]][,j] <- qnorm(X.list[[cv]][,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
+    X.pred.list[[cv]][,j] <- qnorm(X.pred.list[[cv]][,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
   }
+  
+  # Run full model at training and test locations
+  y.model <- apply(X.list[[cv]], 1, f)
+  y.test <- apply(X.pred.list[[cv]], 1, f)
+  
+  # Calculate sufficient statistic at training and test locations
+  SS <- rep(0, N)
+  SS.test <- rep(0, settings$N.pred)
+  
+  for(i in seq(1, N)) {
+    SS[i] <- sum((y.model[i] - y.obs)^2)
+  }
+  for(i in seq(1, settings$N.pred)) {
+    SS.test[i] <- sum((y.test[i] - y.obs)^2)
+  }
+  
+  # If modeling log(SS)
+  if(settings$log.normal.process) {
+    SS <- log(SS)
+    SS.test <- log(SS.test)
+  }
+  
+  # Fit GP regressions
+  gp.fits <- vector(mode = "list", length = length(settings$gp.library))
+  gp.fits.index <- 1
+  if("mlegp" %in% settings$gp.library) {
+    gp.fits[[gp.fits.index]] <- mlegp(X.list[[cv]], SS, nugget.known = 0, constantMean = 1)
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if("hetGP" %in% settings$gp.library) {
+    gp.fits[[gp.fits.index]] <- mleHomGP(X.list[[cv]], SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if(gp.fits.index != length(gp.fits) + 1) {
+    stop("Invalid GP library detected.")
+  }
+  
+  # Map kernel parameters to Stan parameterization
+  gp.stan.params.list <- lapply(seq_along(gp.fits), function(i) create.gp.params.list(gp.fits[[i]], settings$gp.library[i]))
+  gp.obj.list <- lapply(seq_along(gp.fits), function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X.list[[cv]], SS))
+  
+  # Predict at test locations
+  gp.pred.list <- lapply(seq_along(gp.fits), function(i) predict_gp(X.pred.list[[cv]], gp.obj.list[[i]], pred.cov = FALSE))
+  if(settings$log.normal.process) {
+    gp.pred.list <- lapply(gp.pred.list, exp)
+  }
+  
+  # Prediction metrics
+  gp.rmse.vec <- sapply(seq_along(gp.fits), sqrt(sum((gp.pred.list[[i]] - SS.test)^2))) / settings$N.pred
+  gp.mae.vec <- sapply(seq_along(gp.fits), sum(abs(gp.pred.list[[i]] - SS.test))) / settings$N.pred
+  # TODO: likelihood difference metrics
+}
+  
+  
+
+
+
+
+
+
+
+
+
   
