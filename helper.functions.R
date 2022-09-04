@@ -41,18 +41,35 @@ preprocess.settings <- function(settings) {
     if((length(settings$u.rng) < j) || is.null(settings$u.rng[[j]])) {
       settings$u.rng[[j]] <- c(-Inf, Inf)
     }
-    
   }
   
   # If not explicitly passed, generate design via Latin Hypercube Sampling
   if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(settings$X)) {
-    settings$X <- randomLHS(settings$N, settings$k)
+    
+    LHS.X.pred <- is.null(settings$X.pred)
+    if(LHS.X.pred) {
+      X.combined <- randomLHS(settings$N + settings$N.pred, settings$k)
+      settings$X <- X.combined[1:settings$N,,drop=FALSE]
+      settings$X.pred <- X.combined[-(1:settings$N),,drop=FALSE]
+    } else {
+      settings$X <- randomLHS(settings$N, settings$k)
+    }
     
     # Apply inverse CDS transform using prior distributions.
     for(j in seq_len(settings$k)) {
       settings$X[,j] <- qnorm(settings$X[,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
+      if(LHS.X.pred) {
+        settings$X.pred[,j] <- qnorm(settings$X.pred[,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
+      }
     }
   }
+  
+  # Convert lists to more convenient types
+  settings$u.true <- as.vector(settings$u.true, mode = "numeric")
+  settings$u.gaussian.mean <- as.vector(settings$u.gaussian.mean, mode = "numeric")
+  settings$u.gaussian.sd <- as.vector(settings$u.gaussian.sd, mode = "numeric")
+  settings$u.prior.coef.var <- as.vector(settings$u.prior.coef.var, mode = "numeric")
+  settings$u.rng <- matrix(c(sapply(settings$u.rng, function(x) x)), nrow = settings$k, ncol = 2, byrow = TRUE)
   
   return(settings)
   

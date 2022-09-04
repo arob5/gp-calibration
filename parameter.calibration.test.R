@@ -67,7 +67,7 @@ settings <- list(
   n = 1000,
   N.pred = 1000, # Used for producing plots and as GP prediction test points
   lik.type = "gaussian",
-  model = function(u) {u},
+  model = function(u) {u[1] + u[2]},
   u.true = list(0.5, 1.0),
   sigma.true = 0.3, 
   tau.true = NULL, 
@@ -123,18 +123,16 @@ saveRDS(settings, file = file.path(run.dir, "settings.RData"))
 # -----------------------------------------------------------------------------
 
 set.seed(settings$seed)
-pars <- c("u", "tau")
+pars <- c(paste0("u[", seq(1, settings$k), "]"), "tau")
 
 # Generate observed data
 f <- settings$model
 y.obs <- rnorm(settings$n, f(settings$u.true), settings$sigma.true)
 
 # Save plot of true likelihood
-u.pred <- seq(qnorm(.01, settings$u.true, settings$sigma.true), 
-              qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N.pred)
-X.pred <- matrix(u.pred, ncol=1)
-save.gaussian.llik.plot(y.obs, X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
-
+if(settings$k == 1) {
+  save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
+}
 
 # -----------------------------------------------------------------------------
 # Gaussian Process Regression
@@ -155,7 +153,7 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   # Similarly calculate true SS at test points for reference in subsequent plots
   SS.pred <- rep(0, settings$N.pred)
   for(i in seq(1, settings$N.pred)) {
-    SS.pred[i] <- sum((f(X.pred[i]) - y.obs)^2)
+    SS.pred[i] <- sum((f(settings$X.pred[i]) - y.obs)^2)
   }
   
   # Fit GP regression
@@ -174,7 +172,7 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   
   # Save plots demonstrating GP fit
   if(settings$k == 1) {
-    save.gp.pred.mean.plot(gp.obj, X, X.pred, SS, SS.pred, f, 
+    save.gp.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, f, 
                            settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
   }
   
