@@ -129,21 +129,24 @@ for(cv in seq_len(settings$num.itr.cv)) {
   gp.pred.list <- lapply(seq_along(gp.fits), 
                          function(i) predict_gp(X.test, gp.obj.list[[i]], pred.cov = FALSE,
                                                 lognormal.adjustment = settings$log.normal.process))
+  
+  # Evaludating likelihood at predictions
+  llik.pred.test <- lapply(seq_along(gp.fits), 
+                           function(i) dmvnorm.log.SS(gp.pred.list[[i]]$mean, settings$tau.true, settings$n))
                                                                     
   # Prediction metrics
-  gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(sum((gp.pred.list[[i]] - SS.test)^2))) / settings$N.pred
-  gp.mae.vec <- sapply(seq_along(gp.fits), function(i) sum(abs(gp.pred.list[[i]] - SS.test))) / settings$N.pred
+  gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(sum((gp.pred.list[[i]]$mean - SS.test)^2))) / settings$N.pred
+  gp.mae.vec <- sapply(seq_along(gp.fits), function(i) sum(abs(gp.pred.list[[i]]$mean - SS.test))) / settings$N.pred
+  gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) sum(abs(exp(llik.pred.test[[i]]) - exp(llik.test)))) / settings$N.pred
   
   # Add GP fit and prediction data to CV object
-  # TODO: convert log-GP mean/var to original space?
   cv.obj[[cv]][["gp.list"]] <- vector(mode = "list", length = length(gp.fits))
   names(cv.obj[[cv]][["gp.list"]]) <- settings$gp.library
   for(gp in seq_along(gp.fits)) {
     gp.lib <- names(cv.obj[[cv]][["gp.list"]])[[gp]]
-    cv.obj[[cv]][[gp.lib]][["gp.obj"]] <- gp.fits[[gp]]
-    cv.obj[[cv]][[gp.lib]][["pred.mean"]] <- gp.pred.list[[gp]]$mean
-    cv.obj[[cv]][[gp.lib]][["pred.var"]] <- gp.pred.list[[gp]]$var
-    
+    gp.list.elems <- c("gp.obj", "pred.mean", "pred.var", "rmse", "mae", "llik.pred.test", "lik.l1.diff")
+    cv.obj[[cv]][["gp.list"]][[gp.lib]][gp.list.elems] <- list(gp.fits[[gp]], gp.pred.list[[gp]]$mean, gp.pred.list[[gp]]$var,  
+                                                               gp.rmse.vec[gp], gp.mae.vec[gp], llik.pred.test[[gp]], gp.lik.l1.diff[gp])
   }
   
 }
