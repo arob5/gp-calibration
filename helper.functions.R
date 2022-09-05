@@ -582,8 +582,10 @@ fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
 }
 
 
-
-
+save.cv.lik.plot <- function(cv.obj) {
+  X.test <- do.call(rbind, cv.obj$X.test)
+  
+}
 
 
 

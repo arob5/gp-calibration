@@ -31,38 +31,38 @@ settings <- list(
   
   # General 
   seed = 5, 
-  k = 2, # Dimension of input space
+  k = 1, # Dimension of input space
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("", Sys.time()), 
-  run.description = "",
+  run.id = paste0("test_1d_", Sys.time()), 
+  run.description = "1d test.",
   
   # Likelihood (used to generate synthetic dataset)
   n = 1000,
   lik.type = "gaussian",
-  model = function(u) {u[1] + u[2]},
-  u.true = list(0.5, 1.0),
+  model = function(u) {u},
+  u.true = list(0.5),
   sigma.true = 0.3, 
   tau.true = NULL, 
   
   # Priors
   tau.gamma.shape = NULL,
   tau.gamma.rate = 1.0,
-  u.prior.coef.var = list(0.5, 1.0),
+  u.prior.coef.var = 1.0,
   u.gaussian.mean = NULL,
   u.gaussian.sd = NULL,
   u.rng = NULL,
   
   # Gaussian Process Regression 
   X = NULL, # Manually input design matrix; will override below settings
-  N = 10, 
+  N = 5, 
   N.pred = 1000,
   gp.library = c("hetGP", "mlegp"), 
   log.normal.process = TRUE,
   gp.plot.interval.pct = .95,
   normalize.y = FALSE,
   scale.X = FALSE,
-  num.itr.cv = 1
+  num.itr.cv = 5
 )
 
 settings <- preprocess.settings(settings)
@@ -89,7 +89,9 @@ y.obs <- rnorm(settings$n, f(settings$u.true), settings$sigma.true)
 
 # Save plot of true likelihood
 if(settings$k == 1) {
-  save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
+  u.plot.rng <- qnorm(c(.01, .99), settings$u.gaussian.mean, settings$u.gaussian.sd)
+  save.gaussian.llik.plot(y.obs, matrix(seq(u.plot.rng[1], u.plot.rng[2], length.out = 1000), ncol = 1), 
+                          run.dir, "exact_llik.png", f, settings$tau.true)
 }
 
 
@@ -98,7 +100,13 @@ if(settings$k == 1) {
 # -----------------------------------------------------------------------------
 
 # Store cross validation output to be used in computation of metrics, etc.
-cv.obj <- vector(mode = "list", length = settings$num.itr.cv)
+cv.obj.names <- c(c("X", "X.test", "SS", "SS.test", "llik", "llik.test"), settings$gp.library)
+gp.list.names <- c("gp.obj", "pred.mean", "pred.var", "rmse", "mae", "llik.pred.test", "lik.l1.diff")
+cv.obj <- vector(mode = "list", length = length(cv.obj.names))
+for(gp.lib in settings$gp.library) {
+  cv.obj[[gp.lib]] <- vector(mode = "list", length = length(gp.list.names))
+  names(cv.obj[[gp.lib]]) <- gp.list.names
+}
 
 for(cv in seq_len(settings$num.itr.cv)) {
 
@@ -116,7 +124,12 @@ for(cv in seq_len(settings$num.itr.cv)) {
   llik.test <- dmvnorm.log.SS(SS.test, settings$tau.true, settings$n)
   
   # Add info to CV object
-  cv.obj[[cv]][c("X", "X.test", "SS", "SS.test", "llik", "llik.test")] <- list(X, X.test, SS, SS.test, llik, llik.test)
+  cv.obj[["X"]][[cv]] <- X
+  cv.obj[["X.test"]][[cv]] <- X.test
+  cv.obj[["SS"]][[cv]] <- SS
+  cv.obj[["SS.test"]][[cv]] <- SS.test
+  cv.obj[["llik"]][[cv]] <- llik
+  cv.obj[["llik.test"]][[cv]] <- llik.test
   
   # Fits GPs
   gp.fits <- fit.GPs(settings$gp.library, X, SS, log.SS = settings$log.normal.process)
@@ -140,13 +153,15 @@ for(cv in seq_len(settings$num.itr.cv)) {
   gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) sum(abs(exp(llik.pred.test[[i]]) - exp(llik.test)))) / settings$N.pred
   
   # Add GP fit and prediction data to CV object
-  cv.obj[[cv]][["gp.list"]] <- vector(mode = "list", length = length(gp.fits))
-  names(cv.obj[[cv]][["gp.list"]]) <- settings$gp.library
-  for(gp in seq_along(gp.fits)) {
-    gp.lib <- names(cv.obj[[cv]][["gp.list"]])[[gp]]
-    gp.list.elems <- c("gp.obj", "pred.mean", "pred.var", "rmse", "mae", "llik.pred.test", "lik.l1.diff")
-    cv.obj[[cv]][["gp.list"]][[gp.lib]][gp.list.elems] <- list(gp.fits[[gp]], gp.pred.list[[gp]]$mean, gp.pred.list[[gp]]$var,  
-                                                               gp.rmse.vec[gp], gp.mae.vec[gp], llik.pred.test[[gp]], gp.lik.l1.diff[gp])
+  for(gp in seq_along(settings$gp.library)) {
+    gp.lib <- settings$gp.library[[gp]]
+    cv.obj[[gp.lib]][["gp.obj"]][[cv]] <- gp.obj.list[[gp]]
+    cv.obj[[gp.lib]][["pred.mean"]][[cv]] <- gp.pred.list[[gp]]$mean
+    cv.obj[[gp.lib]][["pred.var"]][[cv]] <- gp.pred.list[[gp]]$var
+    cv.obj[[gp.lib]][["rmse"]][[cv]] <- gp.rmse.vec[gp]
+    cv.obj[[gp.lib]][["mae"]][[cv]] <- gp.mae.vec[gp]
+    cv.obj[[gp.lib]][["llik.pred.test"]][[cv]] <- llik.pred.test[[gp]]
+    cv.obj[[gp.lib]][["lik.l1.diff"]][[cv]] <- gp.lik.l1.diff[gp]
   }
   
 }
