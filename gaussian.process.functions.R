@@ -25,7 +25,11 @@ cov_exp_quad <- function(X1, X2 = NULL, rho, alpha) {
 }
 
 
-create.gp.obj <- function(gp, library, X, y, nugget.override = NULL) {
+create.gp.obj <- function(gp, library, X, y, nugget.override = NULL, log.y = FALSE) {
+  
+  if(log.y) {
+    y <- log(y)
+  }
   
   # Map GP parameters to common parameterization
   gp.obj <- create.gp.params.list(gp, library)

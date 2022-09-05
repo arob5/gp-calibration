@@ -92,63 +92,6 @@ if(settings$k == 1) {
   save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
 }
 
-# -----------------------------------------------------------------------------
-# Fit GPs
-# -----------------------------------------------------------------------------
-
-# Design points
-X <- settings$X
-N <- settings$N
-y.model <- apply(X, 1, f)
-  
-# Sufficient statistic that will be emulated
-SS <- rep(0, N)
-for(i in seq(1, N)) {
-  SS[i] <- sum((y.model[i] - y.obs)^2)
-}
-  
-# Similarly calculate true SS at test points
-SS.pred <- rep(0, settings$N.pred)
-for(i in seq(1, settings$N.pred)) {
-  SS.pred[i] <- sum((f(settings$X.pred[i]) - y.obs)^2)
-}
-
-# If modeling log(SS)
-if(settings$log.normal.process) {
-  SS <- log(SS)
-  SS.pred <- log(SS.pred)
-}
-  
-# Fit GP regression
-gp.fits <- vector(mode = "list", length = length(settings$gp.library))
-gp.fits.index <- 1
-if("mlegp" %in% settings$gp.library) {
-  gp.fits[[gp.fits.index]] <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
-  gp.fits.index <- gp.fits.index + 1
-}
-
-if("hetGP" %in% settings$gp.library) {
-  gp.fits[[gp.fits.index]] <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
-  gp.fits.index <- gp.fits.index + 1
-}
-  
-if(gp.fits.index != length(gp.fits) + 1) {
-  stop("Invalid GP library detected.")
-}
-
-# Map kernel parameters to Stan parameterization
-gp.stan.params.list <- lapply(seq_along(gp.fits), function(i) create.gp.params.list(gp.fits[[i]], settings$gp.library[i]))
-gp.obj.list <- lapply(seq_along(gp.fits), function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X, SS))
-for(i in seq_along(gp.obj.list)) {
-  saveRDS(gp.obj.list[[i]], file = file.path(run.dir, paste0("gp.obj.", settings$gp.library[i], ".RData")))
-}
-
-# Save plots demonstrating GP fit
-# if(settings$k == 1) {
-#   save.gp.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, f, 
-#                          settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
-# }
-  
 
 # -----------------------------------------------------------------------------
 # Main Cross Validation Loop
@@ -169,8 +112,8 @@ for(cv in seq_len(settings$num.itr.cv)) {
   SS.test <- calc.SS(X.test, f, y.obs)
 
   # Calculate true likelihood at training and test locations
-  llik <- dmvnorm.log.SS(SS, settings$tau.true, setings$n)
-  llik.test <- dmvnorm.log.SS(SS.test, settings$tau.true, setings$n)
+  llik <- dmvnorm.log.SS(SS, settings$tau.true, settings$n)
+  llik.test <- dmvnorm.log.SS(SS.test, settings$tau.true, settings$n)
   
   # Add info to CV object
   cv.obj[[cv]][c("X", "X.test", "SS", "SS.test", "llik", "llik.test")] <- list(X, X.test, SS, SS.test, llik, llik.test)
@@ -179,16 +122,14 @@ for(cv in seq_len(settings$num.itr.cv)) {
   gp.fits <- fit.GPs(settings$gp.library, X, SS, log.SS = settings$log.normal.process)
   
   # Map kernel parameters to Stan parameterization
-  gp.stan.params.list <- lapply(seq_along(gp.fits), function(i) create.gp.params.list(gp.fits[[i]], settings$gp.library[i]))
-  gp.obj.list <- lapply(seq_along(gp.fits), function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X, SS))
+  gp.obj.list <- lapply(seq_along(gp.fits), 
+                        function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X, SS, log.y = settings$log.normal.process))
   
   # Predict at test locations
-  gp.pred.list <- lapply(seq_along(gp.fits), function(i) predict_gp(X.test, gp.obj.list[[i]],
-                                                                    pred.cov = FALSE, exp.SS = settings$log.normal.process))
-  if(settings$log.normal.process) {
-    gp.pred.list <- lapply(gp.pred.list, exp)
-  }
-  
+  gp.pred.list <- lapply(seq_along(gp.fits), 
+                         function(i) predict_gp(X.test, gp.obj.list[[i]], pred.cov = FALSE,
+                                                lognormal.adjustment = settings$log.normal.process))
+                                                                    
   # Prediction metrics
   gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(sum((gp.pred.list[[i]] - SS.test)^2))) / settings$N.pred
   gp.mae.vec <- sapply(seq_along(gp.fits), function(i) sum(abs(gp.pred.list[[i]] - SS.test))) / settings$N.pred

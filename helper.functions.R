@@ -16,8 +16,8 @@ preprocess.settings <- function(settings) {
   }
   
   # Init tau.gamma.shape so that the hyperprior mean of tau equals the true tau value
-  if(is.null(settings$tau.gamma.shape) & (settings$tau.gamma.rate == 1.0)) {
-    settings$tau.gamma.shape <- settings$tau.true
+  if(is.null(settings$tau.gamma.shape)) {
+    settings$tau.gamma.shape <- settings$tau.true * settings$tau.gamma.rate
   }
   
   for(j in seq_len(settings$k)) {
@@ -44,23 +44,15 @@ preprocess.settings <- function(settings) {
   }
   
   # If not explicitly passed, generate design via Latin Hypercube Sampling
-  if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(settings$X)) {
-    
+  run.algs <- settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
+  if(!any(sapply(run.algs, is.null)) && any(as.logical(run.algs)) && is.null(settings$X)) {
     LHS.X.pred <- is.null(settings$X.pred)
     if(LHS.X.pred) {
-      X.combined <- randomLHS(settings$N + settings$N.pred, settings$k)
-      settings$X <- X.combined[1:settings$N,,drop=FALSE]
-      settings$X.pred <- X.combined[-(1:settings$N),,drop=FALSE]
+      X.LHS <- LHS.train.test(settings$N, settings$N.pred, settings$k, settings$u.gaussian.mean, settings$u.gaussian.sd)
+      settings$X <- X.LHS$X
+      settings$X.pred <- X.LHS$X.test
     } else {
       settings$X <- randomLHS(settings$N, settings$k)
-    }
-    
-    # Apply inverse CDS transform using prior distributions.
-    for(j in seq_len(settings$k)) {
-      settings$X[,j] <- qnorm(settings$X[,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
-      if(LHS.X.pred) {
-        settings$X.pred[,j] <- qnorm(settings$X.pred[,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
-      }
     }
   }
   
@@ -561,19 +553,22 @@ LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals) {
 fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
   
   # If modeling log(SS) instead of SS
-  SS <- log(SS)
+  if(log.SS) {
+    SS <- log(SS)
+  }
   
   # Fit GP regressions
   gp.fits <- vector(mode = "list", length = length(gp.libs))
-  names(gp.fits) <- gp.libs
   gp.fits.index <- 1
   if("mlegp" %in% gp.libs) {
     gp.fits[[gp.fits.index]] <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+    names(gp.fits)[[gp.fits.index]] <- "mlegp"
     gp.fits.index <- gp.fits.index + 1
   }
   
   if("hetGP" %in% settings$gp.library) {
     gp.fits[[gp.fits.index]] <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+    names(gp.fits)[[gp.fits.index]] <- "hetGP"
     gp.fits.index <- gp.fits.index + 1
   }
   
@@ -581,7 +576,8 @@ fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
     stop("Invalid GP library detected.")
   }
   
-  return(gp.fits)
+  # Order to match order of gp.libs
+  return(gp.fits[gp.libs])
   
 }
 
