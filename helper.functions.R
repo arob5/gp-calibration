@@ -88,7 +88,7 @@ log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
 
 # Log unnormalized isotropic multivariate normal density, as function of 
 # sufficient statistic
-dmvnorm.log.unnorm.SS <- function(SS, tau, n, normalize = TRUE) {
+dmvnorm.log.SS <- function(SS, tau, n, normalize = TRUE) {
   log.dens <- (n/2)*log(tau) - (tau/2)*SS
   if(normalize) return(log.dens - 0.5*n*log(2*pi))
   return(log.dens)
@@ -192,8 +192,8 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
 
   # Likelihood evaluations to plot
   llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi) - scale.factors
-  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
-  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
+  llik.exact.design <- dmvnorm.log.SS(exp(log.SS), tau, n)
+  llik.exact.pred <- dmvnorm.log.SS(exp(log.SS.pred), tau, n)
   
   # Log-likelihood plot
   range.values <- c(llik.gp.approx, llik.exact.design, llik.exact.pred)
@@ -262,9 +262,9 @@ save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, 
     llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs, X.pred[i,1], tau, f)
   }
   
-  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n, FALSE)
-  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n, FALSE)
-  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n, FALSE)
+  llik.gp.mean <- dmvnorm.log.SS(gp.means, tau, n, FALSE)
+  llik.gp.upper <- dmvnorm.log.SS(gp.pred.upper, tau, n, FALSE)
+  llik.gp.lower <- dmvnorm.log.SS(gp.pred.lower, tau, n, FALSE)
   
   png(file.path(out.dir, paste0(base.file.name, "_llik.png")), width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
@@ -521,6 +521,71 @@ lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale
   return(list.out)
   
 }
+
+
+calc.SS <- function(X, f, y.obs, log.SS = FALSE) {
+  # Run full model at given locations
+  y <- apply(X, 1, f)
+  
+  # Calculate sufficient statistic at training and test locations
+  N <- nrow(X)
+  SS <- rep(0, N)
+
+  for(i in seq(1, N)) {
+    SS[i] <- sum((y[i] - y.obs)^2)
+  }
+  
+  if(log.SS) return(log(SS))
+  return(SS)
+
+}
+
+
+LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals) {
+  # Generate train and test sets
+  X.combined <- randomLHS(N + N.test, k)
+  X <- X.combined[1:N,,drop=FALSE]
+  X.test <- X.combined[-(1:N),,drop=FALSE]
+  
+  # Apply inverse CDS transform using prior distributions.
+  for(j in seq_len(k)) {
+    X[,j] <- qnorm(X[,j], mu.vals[j], sd.vals[j])
+    X.test[,j] <- qnorm(X.test[,j], mu.vals[j], sd.vals[j])
+  }
+  
+  return(list(X = X, X.test = X.test))
+  
+}
+
+
+fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
+  
+  # If modeling log(SS) instead of SS
+  SS <- log(SS)
+  
+  # Fit GP regressions
+  gp.fits <- vector(mode = "list", length = length(gp.libs))
+  names(gp.fits) <- gp.libs
+  gp.fits.index <- 1
+  if("mlegp" %in% gp.libs) {
+    gp.fits[[gp.fits.index]] <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if("hetGP" %in% settings$gp.library) {
+    gp.fits[[gp.fits.index]] <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if(gp.fits.index != length(gp.fits) + 1) {
+    stop("Invalid GP library detected.")
+  }
+  
+  return(gp.fits)
+  
+}
+
+
 
 
 

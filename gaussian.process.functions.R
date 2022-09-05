@@ -66,7 +66,7 @@ create.gp.obj <- function(gp, library, X, y, nugget.override = NULL) {
 }
 
 
-predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE) {
+predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE, lognormal.adjustment = FALSE) {
   k.Xx <- cov_exp_quad(gp.obj$X, X.pred, gp.obj$gp_rho, gp.obj$gp_alpha)
   pred.list <- list()
   pred.list[["mean"]] <- predict_mean(k.Xx, gp.obj$K.inv.y, gp.obj$gp_mean)
@@ -75,6 +75,14 @@ predict_gp <- function(X.pred, gp.obj, pred.cov = FALSE) {
     pred.list[["cov"]] <- predict_cov_mat(X.pred, k.Xx, gp.obj$L, gp.obj$gp_rho, gp.obj$gp_alpha, gp.obj$nugget, gp.obj$ordinary.kriging)
   } else {
     pred.list[["var"]] <- predict_var(X.pred, k.Xx, gp.obj$L, gp.obj$gp_alpha, gp.obj$nugget, gp.obj$ordinary.kriging)
+  }
+  
+  # Adjust so that mean and variance correspond to SS rather than log(SS)
+  if(lognormal.adjustment) {
+    if(pred.cov) {
+      return(convert.gaussian.to.lnorm(mu = pred.list[["mean"]], cov.mat = pred.list[["cov"]]))
+    }
+    return(convert.gaussian.to.lnorm(mu = pred.list[["mean"]], sd2 = pred.list[["var"]]))
   }
   
   return(pred.list)
@@ -127,7 +135,25 @@ predict_cov_mat <- function(X.pred, K.Xx, L, rho, alpha, nugget, ordinary.krigin
 }
 
 
-
+convert.gaussian.to.lnorm <- function(mu, sd2 = NULL, cov.mat = NULL) {
+  
+  lnorm.list <- vector(mode = "list")
+  d <- length(mu)
+  
+  if(is.null(sd2)) {
+    sd2 <- diag(cov.mat)
+    mu.mat <- matrix(mu, nrow = d, ncol = d, byrow = TRUE)
+    sd2.mat <- matrix(sd2, nrow = d, ncol = d, byrow = TRUE)
+    lnorm.list[["cov"]] <- exp(mu.mat + t(mu.mat) + 0.5 * (sd2.mat + t(sd2.mat))) * (exp(cov.mat) - 1)
+  } else {
+    lnorm.list[["var"]] <- (exp(sd2) - 1) * exp(2 * mu + sd2)
+  }
+  
+  lnorm.list[["mean"]] <- exp(mu + 0.5 * sd2)
+  
+  return(lnorm.list)
+  
+}
 
 
 

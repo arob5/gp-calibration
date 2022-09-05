@@ -15,6 +15,10 @@ source("stan.helper.functions.R")
 source("gaussian.process.functions.R")
 source("mcmc.GP.test.R")
 
+# TODO:
+# Likelihood plots (lik vs pred lik) with horizontal error bars on pred like mimicking plot() method from hetGP
+
+
 # -----------------------------------------------------------------------------
 # Settings
 #   - All paths should be relative to base.dir$output.dir. Paths will be 
@@ -147,77 +151,60 @@ for(i in seq_along(gp.obj.list)) {
   
 
 # -----------------------------------------------------------------------------
-# Cross Validation
+# Main Cross Validation Loop
 # -----------------------------------------------------------------------------
 
-X.list <- vector(mode = "list", length = settings$num.itr.cv)
-X.pred.list <- vector(mode = "list", length = settings$num.itr.cv)
+# Store cross validation output to be used in computation of metrics, etc.
+cv.obj <- vector(mode = "list", length = settings$num.itr.cv)
 
 for(cv in seq_len(settings$num.itr.cv)) {
 
-  # Generate train and test sets
-  X.combined <- randomLHS(settings$N + settings$N.pred, settings$k)
-  X.list[[cv]] <- X.combined[1:settings$N,,drop=FALSE]
-  X.pred.list[[cv]] <- X.combined[-(1:settings$N),,drop=FALSE]
+  # Generate training and test sets
+  X.list <- LHS.train.test(settings$N, settings$N.pred, settings$k, settings$u.gaussian.mean, settings$u.gaussian.sd)
+  X <- X.list$X
+  X.test <- X.list$X.test
 
-  # Apply inverse CDS transform using prior distributions.
-  for(j in seq_len(settings$k)) {
-    X.list[[cv]][,j] <- qnorm(X.list[[cv]][,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
-    X.pred.list[[cv]][,j] <- qnorm(X.pred.list[[cv]][,j], settings$u.gaussian.mean[[j]], settings$u.gaussian.sd[[j]])
-  }
-  
-  # Run full model at training and test locations
-  y.model <- apply(X.list[[cv]], 1, f)
-  y.test <- apply(X.pred.list[[cv]], 1, f)
-  
   # Calculate sufficient statistic at training and test locations
-  SS <- rep(0, N)
-  SS.test <- rep(0, settings$N.pred)
+  SS <- calc.SS(X, f, y.obs)
+  SS.test <- calc.SS(X.test, f, y.obs)
+
+  # Calculate true likelihood at training and test locations
+  llik <- dmvnorm.log.SS(SS, settings$tau.true, setings$n)
+  llik.test <- dmvnorm.log.SS(SS.test, settings$tau.true, setings$n)
   
-  for(i in seq(1, N)) {
-    SS[i] <- sum((y.model[i] - y.obs)^2)
-  }
-  for(i in seq(1, settings$N.pred)) {
-    SS.test[i] <- sum((y.test[i] - y.obs)^2)
-  }
+  # Add info to CV object
+  cv.obj[[cv]][c("X", "X.test", "SS", "SS.test", "llik", "llik.test")] <- list(X, X.test, SS, SS.test, llik, llik.test)
   
-  # If modeling log(SS)
-  if(settings$log.normal.process) {
-    SS <- log(SS)
-    SS.test <- log(SS.test)
-  }
-  
-  # Fit GP regressions
-  gp.fits <- vector(mode = "list", length = length(settings$gp.library))
-  gp.fits.index <- 1
-  if("mlegp" %in% settings$gp.library) {
-    gp.fits[[gp.fits.index]] <- mlegp(X.list[[cv]], SS, nugget.known = 0, constantMean = 1)
-    gp.fits.index <- gp.fits.index + 1
-  }
-  
-  if("hetGP" %in% settings$gp.library) {
-    gp.fits[[gp.fits.index]] <- mleHomGP(X.list[[cv]], SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
-    gp.fits.index <- gp.fits.index + 1
-  }
-  
-  if(gp.fits.index != length(gp.fits) + 1) {
-    stop("Invalid GP library detected.")
-  }
+  # Fits GPs
+  gp.fits <- fit.GPs(settings$gp.library, X, SS, log.SS = settings$log.normal.process)
   
   # Map kernel parameters to Stan parameterization
   gp.stan.params.list <- lapply(seq_along(gp.fits), function(i) create.gp.params.list(gp.fits[[i]], settings$gp.library[i]))
-  gp.obj.list <- lapply(seq_along(gp.fits), function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X.list[[cv]], SS))
+  gp.obj.list <- lapply(seq_along(gp.fits), function(i) create.gp.obj(gp.fits[[i]], settings$gp.library[i], X, SS))
   
   # Predict at test locations
-  gp.pred.list <- lapply(seq_along(gp.fits), function(i) predict_gp(X.pred.list[[cv]], gp.obj.list[[i]], pred.cov = FALSE))
+  gp.pred.list <- lapply(seq_along(gp.fits), function(i) predict_gp(X.test, gp.obj.list[[i]],
+                                                                    pred.cov = FALSE, exp.SS = settings$log.normal.process))
   if(settings$log.normal.process) {
     gp.pred.list <- lapply(gp.pred.list, exp)
   }
   
   # Prediction metrics
-  gp.rmse.vec <- sapply(seq_along(gp.fits), sqrt(sum((gp.pred.list[[i]] - SS.test)^2))) / settings$N.pred
-  gp.mae.vec <- sapply(seq_along(gp.fits), sum(abs(gp.pred.list[[i]] - SS.test))) / settings$N.pred
-  # TODO: likelihood difference metrics
+  gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(sum((gp.pred.list[[i]] - SS.test)^2))) / settings$N.pred
+  gp.mae.vec <- sapply(seq_along(gp.fits), function(i) sum(abs(gp.pred.list[[i]] - SS.test))) / settings$N.pred
+  
+  # Add GP fit and prediction data to CV object
+  # TODO: convert log-GP mean/var to original space?
+  cv.obj[[cv]][["gp.list"]] <- vector(mode = "list", length = length(gp.fits))
+  names(cv.obj[[cv]][["gp.list"]]) <- settings$gp.library
+  for(gp in seq_along(gp.fits)) {
+    gp.lib <- names(cv.obj[[cv]][["gp.list"]])[[gp]]
+    cv.obj[[cv]][[gp.lib]][["gp.obj"]] <- gp.fits[[gp]]
+    cv.obj[[cv]][[gp.lib]][["pred.mean"]] <- gp.pred.list[[gp]]$mean
+    cv.obj[[cv]][[gp.lib]][["pred.var"]] <- gp.pred.list[[gp]]$var
+    
+  }
+  
 }
   
   
