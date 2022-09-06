@@ -170,7 +170,8 @@ for(cv in seq_len(settings$num.itr.cv)) {
 }
   
   
-
+# Save output
+save.cv.SS.plot(cv.obj, file.path(run.dir, "SS.cv.scatter.png")) 
 
 
 

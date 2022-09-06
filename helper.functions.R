@@ -596,10 +596,13 @@ save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE) {
   
   png(out.path, width=600, height=350)
   if(log.SS) {
-    plot(log(SS_true) ~ log(SS_pred), col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt)
+    plot(log(SS_true) ~ log(SS_pred), col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt,
+         main="", xlab="", ylab="")
   } else {
-    plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt)
+    plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt,
+         main="", xlab="", ylab="")
   }
+  title(xlab = "True", ylab = "Pred", main = paste0(ifelse(log.SS, "Log", ""), "Sufficient Statistic Predictions"))
   dev.off()
 
 }
