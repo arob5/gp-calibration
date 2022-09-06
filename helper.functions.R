@@ -608,5 +608,24 @@ save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE) {
 }
 
 
+cv.summary <- function(cv.obj) {
+  gp.cv.list <- vector(mode = "list", length = length(cv.obj$gp.libs))
+  for(gp in cv.obj$gp.libs) {
+    gp.cv.list[[gp]] <- data.table(gp_lib = gp,
+                                   cv_itr = seq_len(cv.obj$num.itr.cv),
+                                   rmse = cv.obj[[gp]]$rmse, 
+                                   mae = cv.obj[[gp]]$mae, 
+                                   lik.l1.diff = cv.obj[[gp]]$lik.l1.diff)
+  }
+  
+  return(rbindlist(gp.cv.list, use.names = TRUE))
+  
+}
+
+
+
+
+
+
 
 

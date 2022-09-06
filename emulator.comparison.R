@@ -110,6 +110,7 @@ for(gp.lib in settings$gp.library) {
   names(cv.obj[[gp.lib]]) <- gp.list.names
 }
 cv.obj[["num.itr.cv"]] <- settings$num.itr.cv
+cv.obj[["gp.libs"]] <- settings$gp.library
 
 for(cv in seq_len(settings$num.itr.cv)) {
 
@@ -151,9 +152,9 @@ for(cv in seq_len(settings$num.itr.cv)) {
                            function(i) dmvnorm.log.SS(gp.pred.list[[i]]$mean, settings$tau.true, settings$n))
                                                                     
   # Prediction metrics
-  gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(sum((gp.pred.list[[i]]$mean - SS.test)^2))) / settings$N.pred
-  gp.mae.vec <- sapply(seq_along(gp.fits), function(i) sum(abs(gp.pred.list[[i]]$mean - SS.test))) / settings$N.pred
-  gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) sum(abs(exp(llik.pred.test[[i]]) - exp(llik.test)))) / settings$N.pred
+  gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(mean((gp.pred.list[[i]]$mean - SS.test)^2)))
+  gp.mae.vec <- sapply(seq_along(gp.fits), function(i) mean(abs(gp.pred.list[[i]]$mean - SS.test)))
+  gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) mean(abs(exp(llik.pred.test[[i]]) - exp(llik.test))))
   
   # Add GP fit and prediction data to CV object
   for(gp in seq_along(settings$gp.library)) {
@@ -172,7 +173,7 @@ for(cv in seq_len(settings$num.itr.cv)) {
   
 # Save output
 save.cv.SS.plot(cv.obj, file.path(run.dir, "SS.cv.scatter.png")) 
-
+cv.summary <- cv.summary(cv.obj)
 
 
 
