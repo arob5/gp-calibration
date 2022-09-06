@@ -5,6 +5,8 @@
 #
 # Andrew Roberts
 
+library(data.table)
+library(colorspace)
 library(ggplot2)
 library(mlegp)
 library(hetGP)
@@ -107,6 +109,7 @@ for(gp.lib in settings$gp.library) {
   cv.obj[[gp.lib]] <- vector(mode = "list", length = length(gp.list.names))
   names(cv.obj[[gp.lib]]) <- gp.list.names
 }
+cv.obj[["num.itr.cv"]] <- settings$num.itr.cv
 
 for(cv in seq_len(settings$num.itr.cv)) {
 
