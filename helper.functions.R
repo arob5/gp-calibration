@@ -589,33 +589,19 @@ save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE) {
   
   SS.true <- c(sapply(cv.obj$SS.test, as.numeric))
   SS.pred <- c(sapply(cv.obj$hetGP$pred.mean, as.numeric))
-  cv.label <- rep(paste0("cv", seq(1, num.itr.cv)), rep(num.pred, num.itr.cv))
+  cv.num <- rep(seq(1, num.itr.cv), rep(num.pred, num.itr.cv))
   
   cv.colors <- colorspace::rainbow_hcl(num.itr.cv)
-  dt <- data.table(SS_pred = SS.pred, SS_true = SS.true, cv_itr = cv.label)
+  dt <- data.table(SS_pred = SS.pred, SS_true = SS.true, cv_itr = paste0("cv", cv.num))
   
   png(out.path, width=600, height=350)
   if(log.SS) {
-    plot(log(SS_true) ~ log(SS_pred), col = colorspace::rainbow_hcl(num.itr.cv), data = dt)
+    plot(log(SS_true) ~ log(SS_pred), col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt)
   } else {
-    plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv), data = dt)
+    plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt)
   }
   dev.off()
-  
-  
-  png(out.path, width=600, height=350)
-  for(i in seq_len(cv.obj$num.itr.cv)) {
-    if(log.SS) {
-      plot(log(cv.obj$SS.test[[i]]), log(cv.obj$hetGP$pred.mean[[i]]), col = cv.colors[i])
-    } else {
-      plot(cv.obj$SS.test[[i]], cv.obj$hetGP$pred.mean[[i]], col = cv.colors[i])
-    }
-  }
-  title(xlab = "SS True", ylab = "SS Pred", main = "Sufficient Statistic Predictions")
-  abline(0, 1, col = "red")
-  dev.off()
-  
-  
+
 }
 
 
