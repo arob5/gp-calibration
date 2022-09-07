@@ -57,14 +57,14 @@ settings <- list(
   
   # Gaussian Process Regression 
   X = NULL, # Manually input design matrix; will override below settings
-  N = 5, 
-  N.pred = 1000,
+  N = 10, 
+  N.pred = 100,
   gp.library = c("hetGP", "mlegp"), 
   log.normal.process = TRUE,
   gp.plot.interval.pct = .95,
   normalize.y = FALSE,
   scale.X = FALSE,
-  num.itr.cv = 5
+  num.itr.cv = 30
 )
 
 settings <- preprocess.settings(settings)
@@ -154,7 +154,7 @@ for(cv in seq_len(settings$num.itr.cv)) {
   # Prediction metrics
   gp.rmse.vec <- sapply(seq_along(gp.fits), function(i) sqrt(mean((gp.pred.list[[i]]$mean - SS.test)^2)))
   gp.mae.vec <- sapply(seq_along(gp.fits), function(i) mean(abs(gp.pred.list[[i]]$mean - SS.test)))
-  gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) mean(abs(exp(llik.pred.test[[i]]) - exp(llik.test))))
+  # gp.lik.l1.diff <- sapply(seq_along(gp.fits), function(i) mean(abs(exp(llik.pred.test[[i]]) - exp(llik.test))))
   
   # Add GP fit and prediction data to CV object
   for(gp in seq_along(settings$gp.library)) {
@@ -165,15 +165,14 @@ for(cv in seq_len(settings$num.itr.cv)) {
     cv.obj[[gp.lib]][["rmse"]][[cv]] <- gp.rmse.vec[gp]
     cv.obj[[gp.lib]][["mae"]][[cv]] <- gp.mae.vec[gp]
     cv.obj[[gp.lib]][["llik.pred.test"]][[cv]] <- llik.pred.test[[gp]]
-    cv.obj[[gp.lib]][["lik.l1.diff"]][[cv]] <- gp.lik.l1.diff[gp]
+    # cv.obj[[gp.lib]][["lik.l1.diff"]][[cv]] <- gp.lik.l1.diff[gp]
   }
   
 }
   
-  
 # Save output
-save.cv.SS.plot(cv.obj, file.path(run.dir, "SS.cv.scatter.png")) 
-cv.summary <- cv.summary(cv.obj)
+save.cv.SS.plot(cv.obj, file.path(run.dir, "SS.cv.scatter.png"), log.SS = TRUE) 
+cv.summary <- get.cv.summary(cv.obj)
 
 
 

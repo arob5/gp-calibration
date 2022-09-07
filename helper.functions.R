@@ -602,20 +602,21 @@ save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE) {
     plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt,
          main="", xlab="", ylab="")
   }
-  title(xlab = "True", ylab = "Pred", main = paste0(ifelse(log.SS, "Log", ""), "Sufficient Statistic Predictions"))
+  abline(0, 1, col = "red")
+  title(main = "Sufficient Statistic Predictions", 
+        xlab = paste0(ifelse(log.SS, "Log ", ""), "True"), ylab = paste0(ifelse(log.SS, "Log ", ""), "Pred"))
   dev.off()
 
 }
 
 
-cv.summary <- function(cv.obj) {
+get.cv.summary <- function(cv.obj) {
   gp.cv.list <- vector(mode = "list", length = length(cv.obj$gp.libs))
   for(gp in cv.obj$gp.libs) {
     gp.cv.list[[gp]] <- data.table(gp_lib = gp,
                                    cv_itr = seq_len(cv.obj$num.itr.cv),
-                                   rmse = cv.obj[[gp]]$rmse, 
-                                   mae = cv.obj[[gp]]$mae, 
-                                   lik.l1.diff = cv.obj[[gp]]$lik.l1.diff)
+                                   rmse = unlist(cv.obj[[gp]]$rmse), 
+                                   mae = unlist(cv.obj[[gp]]$mae))
   }
   
   return(rbindlist(gp.cv.list, use.names = TRUE))
@@ -623,7 +624,14 @@ cv.summary <- function(cv.obj) {
 }
 
 
+cv.box.plot <- function(cv.summary, metrics) {
+  cv.summary <- melt(cv.summary, id.vars = c("gp_lib", "cv_itr"), 
+                     measure.vars = metrics, variable.name = "metric", value.name = "metric_value")
+  
+  boxplot(rmse ~ gp_lib, data = cv.summary[, .(gp_lib, cv_itr, rmse)])
+  ggplot(cv.summary, aes(x=gp_lib, y=metric_value)) + geom_boxplot() + facet_wrap(~metric, scale="free")
 
+}
 
 
 
