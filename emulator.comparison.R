@@ -50,7 +50,7 @@ settings <- list(
   # Priors
   tau.gamma.shape = NULL,
   tau.gamma.rate = 1.0,
-  u.prior.coef.var = 1.0,
+  u.prior.coef.var = 5.0,
   u.gaussian.mean = NULL,
   u.gaussian.sd = NULL,
   u.rng = NULL,
@@ -115,7 +115,8 @@ cv.obj[["gp.libs"]] <- settings$gp.library
 for(cv in seq_len(settings$num.itr.cv)) {
 
   # Generate training and test sets
-  X.list <- LHS.train.test(settings$N, settings$N.pred, settings$k, settings$u.gaussian.mean, settings$u.gaussian.sd)
+  X.list <- LHS.train.test(settings$N, settings$N.pred, settings$k, 
+                           settings$u.gaussian.mean, settings$u.gaussian.sd, joint = FALSE)
   X <- X.list$X
   X.test <- X.list$X.test
 
@@ -136,7 +137,9 @@ for(cv in seq_len(settings$num.itr.cv)) {
   cv.obj[["llik.test"]][[cv]] <- llik.test
   
   # Fits GPs
-  gp.fits <- fit.GPs(settings$gp.library, X, SS, log.SS = settings$log.normal.process)
+  gp.fits.info <- fit.GPs(settings$gp.library, X, SS, log.SS = settings$log.normal.process)
+  gp.fits <- gp.fits.info$gp.list
+  gp.times <- gp.fits.info$times
   
   # Map kernel parameters to Stan parameterization
   gp.obj.list <- lapply(seq_along(gp.fits), 
@@ -162,6 +165,7 @@ for(cv in seq_len(settings$num.itr.cv)) {
     cv.obj[[gp.lib]][["gp.obj"]][[cv]] <- gp.obj.list[[gp]]
     cv.obj[[gp.lib]][["pred.mean"]][[cv]] <- gp.pred.list[[gp]]$mean
     cv.obj[[gp.lib]][["pred.var"]][[cv]] <- gp.pred.list[[gp]]$var
+    cv.obj[[gp.lib]][["fit.time"]][[cv]] <- gp.times[[gp]]
     cv.obj[[gp.lib]][["rmse"]][[cv]] <- gp.rmse.vec[gp]
     cv.obj[[gp.lib]][["mae"]][[cv]] <- gp.mae.vec[gp]
     cv.obj[[gp.lib]][["llik.pred.test"]][[cv]] <- llik.pred.test[[gp]]
@@ -173,7 +177,8 @@ for(cv in seq_len(settings$num.itr.cv)) {
 # Save output
 save.cv.SS.plot(cv.obj, file.path(run.dir, "SS.cv.scatter.png"), log.SS = TRUE) 
 cv.summary <- get.cv.summary(cv.obj)
-
+save.cv.box.plot(cv.summary, metrics = c("rmse", "mae", "fit_time"), 
+                 file.path(run.dir, "cv.box.plot.png"))
 
 
 

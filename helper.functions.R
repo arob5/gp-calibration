@@ -533,11 +533,17 @@ calc.SS <- function(X, f, y.obs, log.SS = FALSE) {
 }
 
 
-LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals) {
+LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals, joint = TRUE) {
+  
   # Generate train and test sets
-  X.combined <- randomLHS(N + N.test, k)
-  X <- X.combined[1:N,,drop=FALSE]
-  X.test <- X.combined[-(1:N),,drop=FALSE]
+  if(joint) {
+    X.combined <- randomLHS(N + N.test, k)
+    X <- X.combined[1:N,,drop=FALSE]
+    X.test <- X.combined[-(1:N),,drop=FALSE]
+  } else {
+    X <- randomLHS(N, k)
+    X.test <- randomLHS(N.test, k)
+  }
   
   # Apply inverse CDS transform using prior distributions.
   for(j in seq_len(k)) {
@@ -559,16 +565,25 @@ fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
   
   # Fit GP regressions
   gp.fits <- vector(mode = "list", length = length(gp.libs))
+  gp.fit.times <- vector(mode = "list", length = length(gp.libs))
   gp.fits.index <- 1
   if("mlegp" %in% gp.libs) {
+    tic <- proc.time()[3]
     gp.fits[[gp.fits.index]] <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+    toc <- proc.time()[3]
+    gp.fit.times[[gp.fits.index]] <- toc - tic
     names(gp.fits)[[gp.fits.index]] <- "mlegp"
+    names(gp.fit.times)[[gp.fits.index]] <- "mlegp"
     gp.fits.index <- gp.fits.index + 1
   }
   
   if("hetGP" %in% settings$gp.library) {
+    tic <- proc.time()[3]
     gp.fits[[gp.fits.index]] <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+    toc <- proc.time()[3]
+    gp.fit.times[[gp.fits.index]] <- toc - tic
     names(gp.fits)[[gp.fits.index]] <- "hetGP"
+    names(gp.fit.times)[[gp.fits.index]] <- "hetGP"
     gp.fits.index <- gp.fits.index + 1
   }
   
@@ -577,36 +592,46 @@ fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
   }
   
   # Order to match order of gp.libs
-  return(gp.fits[gp.libs])
+  return(list(gp.list = gp.fits[gp.libs], times = unlist(gp.fit.times)))
   
 }
 
 
-save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE) {
+save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE, gp.libs = NULL) {
   
   num.itr.cv <- cv.obj$num.itr.cv
   num.pred <- length(cv.obj$SS.test[[1]])
   
-  SS.true <- c(sapply(cv.obj$SS.test, as.numeric))
-  SS.pred <- c(sapply(cv.obj$hetGP$pred.mean, as.numeric))
-  cv.num <- rep(seq(1, num.itr.cv), rep(num.pred, num.itr.cv))
-  
-  cv.colors <- colorspace::rainbow_hcl(num.itr.cv)
-  dt <- data.table(SS_pred = SS.pred, SS_true = SS.true, cv_itr = paste0("cv", cv.num))
-  
-  png(out.path, width=600, height=350)
-  if(log.SS) {
-    plot(log(SS_true) ~ log(SS_pred), col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt,
-         main="", xlab="", ylab="")
-  } else {
-    plot(SS_true ~ SS_pred, col = colorspace::rainbow_hcl(num.itr.cv)[cv.num], data = dt,
-         main="", xlab="", ylab="")
+  if(is.null(gp.libs)) {
+    gp.libs <- cv.obj$gp.libs
   }
-  abline(0, 1, col = "red")
-  title(main = "Sufficient Statistic Predictions", 
-        xlab = paste0(ifelse(log.SS, "Log ", ""), "True"), ylab = paste0(ifelse(log.SS, "Log ", ""), "Pred"))
-  dev.off()
+  
+  # Preprocess data for ggplot
+  dt <- data.table(SS_true = c(sapply(cv.obj$SS.test, as.numeric)), 
+                   cv_itr = rep(seq(1, num.itr.cv), each = num.pred))
+  for(gp in gp.libs) {
+    dt[[gp]] <- c(sapply(cv.obj[[gp]]$pred.mean, as.numeric))
+  }
 
+  dt <- melt(dt, id.vars = c("SS_true", "cv_itr"), measure.vars = gp.libs,
+             variable.name = "gp_lib", value.name = "SS_pred")
+  dt[, cv_itr := as.factor(cv_itr)]
+  
+  if(log.SS) {
+    dt[, SS_true := log(SS_true)]
+    dt[, SS_pred := log(SS_pred)]
+  }
+  
+  ggplot(dt, aes(x=SS_true, y=SS_pred, color=cv_itr)) + 
+    geom_point() + 
+    facet_wrap(~gp_lib, scale="free") + 
+    xlab(paste0(ifelse(log.SS, "Log ", ""), "True")) + 
+    ylab(paste0(ifelse(log.SS, "Log ", ""), "Pred")) + 
+    ggtitle("Sufficient Statistic Predictions") + 
+    theme(legend.position = "none") + 
+    geom_abline(intercept = 0, slope = 1)
+  ggsave(out.path)
+  
 }
 
 
@@ -614,6 +639,7 @@ get.cv.summary <- function(cv.obj) {
   gp.cv.list <- vector(mode = "list", length = length(cv.obj$gp.libs))
   for(gp in cv.obj$gp.libs) {
     gp.cv.list[[gp]] <- data.table(gp_lib = gp,
+                                   fit_time = unlist(cv.obj[[gp]]$fit.time),
                                    cv_itr = seq_len(cv.obj$num.itr.cv),
                                    rmse = unlist(cv.obj[[gp]]$rmse), 
                                    mae = unlist(cv.obj[[gp]]$mae))
@@ -624,12 +650,16 @@ get.cv.summary <- function(cv.obj) {
 }
 
 
-cv.box.plot <- function(cv.summary, metrics) {
+save.cv.box.plot <- function(cv.summary, metrics, out.path) {
   cv.summary <- melt(cv.summary, id.vars = c("gp_lib", "cv_itr"), 
                      measure.vars = metrics, variable.name = "metric", value.name = "metric_value")
+  num.cv.itr <- max(cv.summary$cv_itr)
   
-  boxplot(rmse ~ gp_lib, data = cv.summary[, .(gp_lib, cv_itr, rmse)])
-  ggplot(cv.summary, aes(x=gp_lib, y=metric_value)) + geom_boxplot() + facet_wrap(~metric, scale="free")
+  ggplot(cv.summary, aes(x=gp_lib, y=metric_value)) + 
+  geom_boxplot() + 
+  facet_wrap(~metric, scale="free") + 
+  xlab("") + ylab("")
+  ggsave(out.path)
 
 }
 
