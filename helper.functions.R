@@ -43,19 +43,6 @@ preprocess.settings <- function(settings) {
     }
   }
   
-  # If not explicitly passed, generate design via Latin Hypercube Sampling
-  run.algs <- settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
-  if(!any(sapply(run.algs, is.null)) && any(as.logical(run.algs)) && is.null(settings$X)) {
-    LHS.X.pred <- is.null(settings$X.pred)
-    if(LHS.X.pred) {
-      X.LHS <- LHS.train.test(settings$N, settings$N.pred, settings$k, settings$u.gaussian.mean, settings$u.gaussian.sd)
-      settings$X <- X.LHS$X
-      settings$X.pred <- X.LHS$X.test
-    } else {
-      settings$X <- randomLHS(settings$N, settings$k)
-    }
-  }
-  
   # Convert lists to more convenient types
   settings$u.true <- as.vector(settings$u.true, mode = "numeric")
   settings$u.gaussian.mean <- as.vector(settings$u.gaussian.mean, mode = "numeric")
@@ -63,7 +50,39 @@ preprocess.settings <- function(settings) {
   settings$u.prior.coef.var <- as.vector(settings$u.prior.coef.var, mode = "numeric")
   settings$u.rng <- matrix(c(sapply(settings$u.rng, function(x) x)), nrow = settings$k, ncol = 2, byrow = TRUE)
   
+  # If not explicitly passed, generate design via Latin Hypercube Sampling
+  run.algs <- settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
+  if(!any(sapply(run.algs, is.null)) && any(as.logical(run.algs)) && is.null(settings$X)) {
+    LHS.X.pred <- is.null(settings$X.pred)
+    if(LHS.X.pred) {
+      X.LHS <- LHS.train.test(settings$N, settings$N.pred, settings$k, 
+                              settings$u.gaussian.mean, settings$u.gaussian.sd, joint = settings$joint.sample.train.test)
+      settings$X <- X.LHS$X
+      settings$X.pred <- X.LHS$X.test
+    } else {
+      settings$X <- randomLHS(settings$N, settings$k)
+    }
+  }
+  
   return(settings)
+  
+}
+
+generate.observed.data <- function(n, f, u, tau, lik.type) {
+  # In each case, f(u) gives the mean of the distribution. tau is either the 
+  # precision (Gaussian), rate parameter (Gamma), or log precision (log-normal)
+  
+  if(lik.type == "gaussian") {
+    y.obs <- rnorm(n, f(u), 1/sqrt(tau))
+  } else if(lik.type == "gamma") {
+    y.obs <- rgamma(n, shape = tau * f(u), rate = tau)
+  } else if(lik.type == "lnorm") {
+    y.obs <- rlnorm(n, meanlog = log(f(u)) - 0.5 * (1/tau), sdlog = 1 / sqrt(tau))
+  } else {
+    stop("Invalid likelihood type: ", lik.type)
+  }
+  
+  return(y.obs)
   
 }
 
@@ -110,7 +129,7 @@ save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, n
 }
 
 
-save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
+save.gp.1d.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
   # Determine size of confidence interval to plot
   p <- 1 - (1 - interval.pct)/2
   
@@ -160,7 +179,32 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
 }
 
 
-save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+save.gp.pred.mean.plot <- function(gp.obj, X, X.test, SS, SS.test, 
+                                   lognormal.adjustment = FALSE, log.log.plot = FALSE, out.path) {
+
+  gp.pred <- predict_gp(X.test, gp.obj, lognormal.adjustment = lognormal.adjustment)
+  gp.train.pred <- predict_gp(X, gp.obj, lognormal.adjustment = lognormal.adjustment)
+  dt <- data.table(SS_true = SS.test, SS_pred = as.vector(gp.pred$mean), data_type = "test")
+  dt.train <- data.table(SS_true = SS, SS_pred = as.vector(gp.train.pred$mean), data_type = "train")
+  dt <- rbindlist(list(dt, dt.train), use.names = TRUE)
+  
+  if(log.log.plot) {
+    dt[, SS_true := log(SS_true)]
+    dt[, SS_pred := log(SS_pred)]
+  }
+  
+  ggplot(dt, aes(x=SS_true, y=SS_pred, color=data_type)) + 
+    geom_point() + 
+    xlab(paste0(ifelse(log.log.plot, "Log ", ""), "True")) + 
+    ylab(paste0(ifelse(log.log.plot, "Log ", ""), "Pred")) + 
+    ggtitle("Sufficient Statistic GP Predictions") + 
+    # theme(legend.position = "none") + 
+    geom_abline(intercept = 0, slope = 1)
+  ggsave(out.path)
+}
+
+
+save.gp.1d.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
 
   # Calculate predictive means and standard errors
   gp.pred <- predict_gp(X.pred, gp.log.obj)
@@ -534,7 +578,7 @@ calc.SS <- function(X, f, y.obs, log.SS = FALSE) {
 
 
 LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals, joint = TRUE) {
-  
+
   # Generate train and test sets
   if(joint) {
     X.combined <- randomLHS(N + N.test, k)
@@ -662,6 +706,7 @@ save.cv.box.plot <- function(cv.summary, metrics, out.path) {
   ggsave(out.path)
 
 }
+
 
 
 

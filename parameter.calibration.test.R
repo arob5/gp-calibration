@@ -44,7 +44,7 @@ settings <- list(
   k = 2, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("hetGP_LNP_N6_", Sys.time()), 
+  run.id = paste0("2d test", Sys.time()), 
   run.description = "",
   
   # General MCMC
@@ -69,8 +69,8 @@ settings <- list(
   lik.type = "gaussian",
   model = function(u) {u[1] + u[2]},
   u.true = list(0.5, 1.0),
-  sigma.true = 0.3, 
-  tau.true = NULL, 
+  # sigma.true = 0.3, 
+  tau.true = 1 / 0.3^2, 
   
   # Priors
   tau.gamma.shape = NULL,
@@ -82,10 +82,11 @@ settings <- list(
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
-  N = 10, 
+  N = 20, 
   gp.library = "hetGP", 
   log.normal.process = TRUE,
   gp.plot.interval.pct = .95, 
+  joint.sample.train.test = FALSE, 
   
   # Brute Force algorithm settings
   n.itr.mcmc.brute.force = 50000,
@@ -127,7 +128,8 @@ pars <- c(paste0("u[", seq(1, settings$k), "]"), "tau")
 
 # Generate observed data
 f <- settings$model
-y.obs <- rnorm(settings$n, f(settings$u.true), settings$sigma.true)
+y.obs <- generate.observed.data(settings$n, f, settings$u.true, settings$tau.true, settings$lik.type)
+
 
 # Save plot of true likelihood
 if(settings$k == 1) {
@@ -145,17 +147,9 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   y.model <- apply(X, 1, f)
   
   # Sufficient statistic that will be emulated
-  SS <- rep(0, N)
-  for(i in seq(1, N)) {
-    SS[i] <- sum((y.model[i] - y.obs)^2)
-  }
-  
-  # Similarly calculate true SS at test points for reference in subsequent plots
-  SS.pred <- rep(0, settings$N.pred)
-  for(i in seq(1, settings$N.pred)) {
-    SS.pred[i] <- sum((f(settings$X.pred[i]) - y.obs)^2)
-  }
-  
+  SS <- calc.SS(X, f, y.obs)
+  SS.pred <- calc.SS(settings$X.pred, f, y.obs)
+
   # Fit GP regression
   if(settings$gp.library == "mlegp") {
     gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
@@ -172,9 +166,13 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   
   # Save plots demonstrating GP fit
   if(settings$k == 1) {
-    save.gp.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, f, 
-                           settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
+    save.gp.1d.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, f, 
+                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
   }
+  
+  save.gp.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, lognormal.adjustment = FALSE, 
+                         log.log.plot = TRUE, file.path(run.dir, "gp_pred_SS_scatter.png")) 
+
   
   # If response variable in GP regression is log sufficient statistic
   if(settings$mcmc.gp.stan || settings$log.normal.process) {
@@ -196,10 +194,15 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_log_SS.png"))
       save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_exp_log_SS.png"), exp.pred = TRUE)
+      save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
+                             file.path(run.dir, "gp_pred_log_SS_llik.png"))
     }
     
-    save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
-                           file.path(run.dir, "gp_pred_log_SS_llik.png"))
+    # TODO: Make sure plot dimensions/scale are the same for this plot and non-log plot
+    # Is the LNP really this much of a worse model in this case or is this a bug in the code?
+    save.gp.pred.mean.plot(gp.log.obj, X, settings$X.pred, SS, SS.pred, lognormal.adjustment = TRUE, 
+                           log.log.plot = TRUE, file.path(run.dir, "lnp_pred_SS_scatter.png")) 
+
     
   }
   
