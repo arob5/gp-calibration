@@ -41,7 +41,8 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     }
     
     # Propose new calibration parameters
-    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[1], ub = u.rng[2])
+    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[1,], ub = u.rng[2,])
+    u.proposal <- matrix(u.proposal, nrow = 1)
     
     # Sample sufficient statistics corresponding to current and proposed values of the calibration parameter
     if(SS.joint.sample) {
@@ -50,7 +51,7 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
       SS.proposal <- SS.joint.samples[2]
     } else {
       SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1), log.normal.process)
-      SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1), log.normal.process)
+      SS.proposal <- sample.SS(gp.obj, u.proposal, log.normal.process)
     }
     
     # Re-sample precision parameter tau
@@ -62,7 +63,6 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     
     # Calculate log-conditional density u given tau
     u.curr.cond.dens <- calc.u.log.conditional.density(u.curr, n, tau.curr, SS.curr, u.prior.mean, u.prior.sd)
-                                                       
     u.proposal.cond.dens <- calc.u.log.conditional.density(u.proposal, n, tau.proposal, SS.proposal, u.prior.mean, u.prior.sd)
                                                            
     # Accept or reject proposed u value
@@ -92,11 +92,11 @@ sample.SS <- function(gp.obj, X.pred, log.normal.process) {
 
   # Sampled value is log(SS), so exponentiate.
   if(log.normal.process) {
-    return(exp(as.vector(rmvnorm(1, mean = gp.pred$mean, sigma = gp.pred$cov))))
+    return(exp(as.vector(rmvnorm(1, mean = c(gp.pred$mean), sigma = gp.pred$cov))))
   }
   
   repeat {
-    SS <- rmvnorm(1, mean = gp.pred$mean, sigma = gp.pred$cov)
+    SS <- rmvnorm(1, mean = c(gp.pred$mean), sigma = gp.pred$cov)
     if(all(SS >= 0)) break
   }
   
@@ -112,7 +112,8 @@ sample.tau <- function(n, SS, gamma.shape, gamma.rate) {
 
 calc.u.log.conditional.density <- function(u, n, tau, SS, u.prior.mean, u.prior.sd, rng) {
   
-  0.5*n*log(tau) - 0.5*tau*SS + log(dnorm(u, u.prior.mean, u.prior.sd))
+  log.prior <- sum(sapply(seq_along(u.prior.mean), function(j) dnorm(u[,j], u.prior.mean[j], u.prior.sd[j], log = TRUE)))
+  0.5*n*log(tau) - 0.5*tau*SS + log.prior
   
 }
 

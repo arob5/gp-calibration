@@ -289,7 +289,10 @@ if(settings$mcmc.pecan) {
   proposal.vars <- vector(mode = "list", length = settings$n.mcmc.chains)
   u.init <- vector(mode = "list", length = settings$n.mcmc.chains)
   for(i in seq_len(settings$n.mcmc.chains)) {
-    proposal.vars[[i]] <- 0.1 * diff(qnorm(c(0.05, 0.95), settings$u.gaussian.mean, settings$u.gaussian.sd))
+    proposal.vars[[i]] <- 0.1 * sapply(seq_len(settings$k), 
+                                       function(j) diff(qnorm(c(0.05, 0.95), 
+                                                              settings$u.gaussian.mean[j], 
+                                                              settings$u.gaussian.sd[j])))
     u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
   }
   
@@ -301,7 +304,7 @@ if(settings$mcmc.pecan) {
   }
   
   # Set range of u to prevent extrapolation
-  u.range.pecan <- range(X)
+  u.range.pecan <- apply(X, 2, range)
   
   # Set up parallel computation
   cl <- makeCluster(settings$n.mcmc.chains)
