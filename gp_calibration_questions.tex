@@ -532,13 +532,64 @@ This expectation is very sensitive to both the GP uncertainty estimates and $\ta
 \item Interested in continuing to collaborate in the Fall
 \end{itemize}
 
-
-
-
-
 \end{itemize}
 
 
+\section{Meeting: 9/8/2022}
+\subsection{Updates}
+\begin{itemize}
+\item Updated code to allow for multiple parameter tests. Currently only allows independent Gaussian priors for each parameter. 
+\item Implemented interface for running GP emulator ``bakeoff''. 
+\item Implemented suite of functions for visualizing/summarizing emulator and MCMC results. 
+\end{itemize}
+
+\subsection{Emulator Testing and Validation}
+\begin{itemize}
+\item Model comparison: sampling train and test locations
+\item Metrics:
+	\begin{itemize}
+	\item RMSE, MAE
+	\item Metrics targeting likelihood or acceptance ratio
+	\end{itemize}
+\end{itemize}
+
+\subsection{Planned Parameter Calibration Tests}
+\subsubsection{1D Non-Gaussian Likelihood}
+\begin{itemize}
+\item Gamma: $z|u \sim G(\beta f(u), \beta)$
+\item Log-Normal: $z|u \sim LogNormal\left(\log(f(u)) - \frac{1}{2\tau}, \tau^{-1}\right)$
+\end{itemize}
+
+\subsubsection{Higher Dimensional Tests}
+\begin{itemize}
+\item Baseline Gaussian example: $z_i \overset{iid}{\sim} N(f(u), \tau^{-1})$
+\item Heteroskedastic and/or correlated Gaussian examples: $z \sim N_n(f(u)1_n, \Sigma)$
+\item Banana-shaped distribution (need to integrate $f(u)$ into this): 
+\begin{align*}
+&x_i \overset{iid}{\sim} N_2(0, \Sigma) \\
+&z_i^{(1)} := \eta x_i^{(1)} \\
+&z_i^{(2)} := \eta^{-1} x_i^{(2)} + \gamma((x_i^{(1)})^2 + \eta^2)
+\end{align*}
+\item Neal's Funnel
+\end{itemize}
+
+\subsubsection{Varying the model $f$}
+\begin{itemize}
+\item What kind of features to consider in tests?
+\end{itemize}
+
+\subsection{Calculating Posterior}
+The working model:
+\begin{align*}
+&z_1, \dots, z_n \overset{iid}{\sim} N(f(u), \tau^{-1}) \\
+&u_j \overset{ind}{\sim} N(\mu_j, \sigma_j^2) \\
+&\tau \sim G(a, b)
+\end{align*}
+I've been assuming $f: \R^k \to \R$, where $k$ is the dimension of the calibration parameter. 
+For $k = 1$, and with $f(u) = u$, this is just the typical Normal Inverse-Gamma model and the posterior 
+is well-known in closed form. In my understanding, in higher dimensions, an analytical solution is known 
+for the Bayesian inverse problem where $f$ is linear and injective. However, if $f$ in our example is a scalar-valued
+function than I don't see how to analytically derive the posterior. 
 
 
 
