@@ -417,6 +417,28 @@ where $M_{\mu, \sigma^2}$ is the Laplace transform of a $LN(\mu, \sigma^2)$ dens
 \[p(z|\tau, u) \propto \tau^{n/2} \hat{M}_{\mu(u), k(u,u)}(\tau/2)\]
 
 
+\subsubsection{Extending Model and Considering Model Misspecification}
+The first part of this section is basically just transcribing Jonathan's notes from the 9/9/2022 meeting. Begin by considering a slight generalization of the existing model: 
+\begin{align*}
+z_i &= y_i + \delta_i \\
+y_i &= f(u, i) \\
+\delta_i &\overset{iid}{\sim} N(0, \tau^{-1}) \\
+\end{align*}
+Equivalently, 
+\[z_i \overset{ind}{\sim} N(f(u, i), \tau^{-1})\]
+This has been the working model, except the additional input $i$ has been added to $f$. This term allows for things like time trends, and is key in dealing with some 
+identifiability issues discussed below. Up to this point we have been considering $f(u, i) = u$, but this new model allows for examples such as
+$f(u, i) = \sin(2\pi u i) + ci$
+
+To test for misspecification, we suppose our assumption of independent errors is incorrect and instead generate the data with errors given by a AR(1) process:
+\begin{align*}
+&z_i = y_i + \epsilon_i \\
+&y_i = f(u, i) \\
+&\epsilon_i \sim N(\alpha \epsilon_{i - 1}, \sigma^2), \ \alpha \in [-1, 1] \\
+\end{align*}
+Settings $\alpha = 0$ recovers the independent error model, and now we can vary $\alpha$ to investigate misspecification in terms of correlated errors. 
+
+
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
 It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
 the Laplace parameters. 
