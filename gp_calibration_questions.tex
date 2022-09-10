@@ -428,15 +428,35 @@ Equivalently,
 \[z_i \overset{ind}{\sim} N(f(u, i), \tau^{-1})\]
 This has been the working model, except the additional input $i$ has been added to $f$. This term allows for things like time trends, and is key in dealing with some 
 identifiability issues discussed below. Up to this point we have been considering $f(u, i) = u$, but this new model allows for examples such as
-$f(u, i) = \sin(2\pi u i) + ci$
+$f(u, i) = \sin(2\pi u i) + ci$. To test multiple dimensional input spaces we can consider example models such as $f(u, i) = u_1 \sin(2\pi u_2 i) + u_3 i$. 
 
 To test for misspecification, we suppose our assumption of independent errors is incorrect and instead generate the data with errors given by a AR(1) process:
 \begin{align*}
 &z_i = y_i + \epsilon_i \\
 &y_i = f(u, i) \\
-&\epsilon_i \sim N(\alpha \epsilon_{i - 1}, \sigma^2), \ \alpha \in [-1, 1] \\
+&\epsilon_i \sim N(\alpha \epsilon_{i - 1}, \sigma^2), \ \alpha \in (-1, 1) \\
 \end{align*}
 Settings $\alpha = 0$ recovers the independent error model, and now we can vary $\alpha$ to investigate misspecification in terms of correlated errors. 
+
+Finally, let's consider the conditions required to analytically derive the posterior $p(u|z)$ for testing purposes (if the posterior is Gaussian, then we can also analytically 
+derive $p(u, \tau|z)$ via the well-known closed-form solution of the normal inverse-gamma model). For observed data $z \in \R^n$ (and implicitly conditioning on a known 
+precision parameter $\tau$) we have posterior given by
+\[p(u|z) \propto p(z|u)\pi_0(u) = N_n(y, \tau^{-1}I_n)\pi_0(u)\]
+where $y := [f(u, 1), \dots, f(u, n)]^T \in \R^n$. I also assume a Gaussian prior on $u$: $\pi_0(u) = N_k(u|\mu, \Lambda)$. Also consider the vector-valued function
+$F: \R^k \to \R^n$ given by $F(u) = y = [f(u, 1), \dots, f(u, n)]^T$. We then can re-write the likelihood as $z \sim N_n(F(u), \tau^{-1}I_n)$. I assume that $F$ is injective 
+and linear, and slightly abuse notation by letting $F$ also denote the $n \times k$ matrix representing this linear operator: $F(u) = Fu$. Note that the injective constraint
+is equivalent to requiring $F$ to have linearly independent columns; thus we must have $n > k$. The Bayesian inverse problem can now be written:
+\begin{align*}
+&z|u \sim N_n(Fu, \tau^{-1}I_n) \\
+&u \sim N_k(\mu, \Lambda)
+\end{align*}
+
+Knapik et al (2011) give the closed-form posterior in this setting:
+\begin{align*}
+&u|z \sim N_k(Az + \mu, S) \\
+&A = \Lambda F^T(\tau^{-1}I_n + F \Lambda F^T)^{-1} \\
+&S = \Lambda - A(\tau^{-1}I_n + F \Lambda F^T)A^T
+\end{align*}
 
 
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
