@@ -72,12 +72,14 @@ generate.observed.data <- function(n, f, u, tau, lik.type) {
   # In each case, f(u) gives the mean of the distribution. tau is either the 
   # precision (Gaussian), rate parameter (Gamma), or log precision (log-normal)
   
+  f.vals <- sapply(1:n, function(i) f(u, i))
+  
   if(lik.type == "gaussian") {
-    y.obs <- rnorm(n, f(u), 1/sqrt(tau))
+    y.obs <- rnorm(n, f.vals, 1/sqrt(tau))
   } else if(lik.type == "gamma") {
-    y.obs <- rgamma(n, shape = tau * f(u), rate = tau)
+    y.obs <- rgamma(n, shape = tau * f.vals, rate = tau)
   } else if(lik.type == "lnorm") {
-    y.obs <- rlnorm(n, meanlog = log(f(u)) - 0.5 * (1/tau), sdlog = 1 / sqrt(tau))
+    y.obs <- rlnorm(n, meanlog = log(f.vals - 0.5 * (1/tau), sdlog = 1 / sqrt(tau)))
   } else {
     stop("Invalid likelihood type: ", lik.type)
   }

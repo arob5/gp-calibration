@@ -67,7 +67,7 @@ settings <- list(
   n = 1000,
   N.pred = 1000, # Used for producing plots and as GP prediction test points
   lik.type = "gaussian",
-  model = function(u) {u[1] + u[2]},
+  model = function(u, i) {u * i^2 + 2},
   u.true = list(0.5, 1.0),
   # sigma.true = 0.3, 
   tau.true = 1 / 0.3^2, 
