@@ -68,6 +68,23 @@ preprocess.settings <- function(settings) {
   
 }
 
+
+get.model.output <- function(f, X, i) {
+  # f: the model f(u, i)
+  # X: Nxk matrix with design points given by rows
+  # i: Inputs i to f(u, i).
+  
+  N <- nrow(X)
+  y <- vector("numeric", length = N)
+  for(j in 1:N) {
+    y[j] <- f(X[j,], i[j,])
+  }
+  
+  return(y)
+  
+}
+
+
 generate.observed.data <- function(n, f, u, tau, lik.type) {
   # In each case, f(u) gives the mean of the distribution. tau is either the 
   # precision (Gaussian), rate parameter (Gamma), or log precision (log-normal)
@@ -84,16 +101,15 @@ generate.observed.data <- function(n, f, u, tau, lik.type) {
     stop("Invalid likelihood type: ", lik.type)
   }
   
-  return(y.obs)
+  return(list(y = y.obs, f = f.vals))
   
 }
 
 
 # Log isotropic multivariate normal density
-log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
+log.dmvnorm <- function(y, u, tau, f.vals, normalize = TRUE) {
   n <- length(y)
-  mu.vec <- rep(f(u), n)
-  log.dens <- 0.5*n*log(tau) - 0.5*tau*sum((y - mu.vec)^2)
+  log.dens <- 0.5*n*log(tau) - 0.5*tau*sum((y - f.vals)^2)
   
   if(normalize) return(log.dens - 0.5*n*log(2*pi))
   return(log.dens)
@@ -107,7 +123,7 @@ dmvnorm.log.SS <- function(SS, tau, n, normalize = TRUE) {
   return(log.dens)
 }
 
-save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, normalize = TRUE) {
+save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f.vals, tau, normalize = TRUE) {
   
   N.pred <- nrow(X.pred)
   llik.pred <- matrix(NA, nrow = N.pred, ncol = 1)
@@ -561,9 +577,9 @@ lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale
 }
 
 
-calc.SS <- function(X, f, y.obs, log.SS = FALSE) {
+calc.SS <- function(X, i, f, y.obs, log.SS = FALSE) {
   # Run full model at given locations
-  y <- apply(X, 1, f)
+  y <- get.model.output(f, X, i)
   
   # Calculate sufficient statistic at training and test locations
   N <- nrow(X)

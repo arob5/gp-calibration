@@ -128,12 +128,13 @@ pars <- c(paste0("u[", seq(1, settings$k), "]"), "tau")
 
 # Generate observed data
 f <- settings$model
-y.obs <- generate.observed.data(settings$n, f, settings$u.true, settings$tau.true, settings$lik.type)
-
+data.obs <- generate.observed.data(settings$n, f, settings$u.true, settings$tau.true, settings$lik.type)
+y.obs <- data.obs$y
+f.vals <- data.obs$f
 
 # Save plot of true likelihood
 if(settings$k == 1) {
-  save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
+  save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f.vals, settings$tau.true)
 }
 
 # -----------------------------------------------------------------------------
@@ -144,10 +145,11 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   # Design points
   X <- settings$X
   N <- settings$N
-  y.model <- apply(X, 1, f)
+  i.design <- matrix(1:N, ncol=1)
+  y.model <- get.model.output(f, X, i.design)
   
   # Sufficient statistic that will be emulated
-  SS <- calc.SS(X, f, y.obs)
+  SS <- calc.SS(X, i.design, f, y.obs)
   SS.pred <- calc.SS(settings$X.pred, f, y.obs)
 
   # Fit GP regression
