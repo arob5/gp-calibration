@@ -637,7 +637,23 @@ for the Bayesian inverse problem where $f$ is linear and injective. However, if 
 function than I don't see how to analytically derive the posterior. 
 
 
+\section{Meeting: 9/13/2022}
+\subsection{Agenda}
+\begin{enumerate}
+\item Follow-up questions from last meeting
+\item Review fellowship application plan
+\item Question about directed study
+\end{enumerate}
 
+\subsection{Follow-up questions}
+\begin{itemize}
+\item Recall setup: observed data $z \in \R^n$, knots $u_1, \dots, u_N \in \R^k$. Sufficient statistic given by
+\[T(u) = \sum_{i = 1}^{n} [f(u, i) - z_i]^2\]
+The addition of $i$ to $f(u, i)$ (or more generally the addition of other ``observational parameters'') appears to now require running the model
+$N \times n$ times: $f(u_j, i)$, $1 \leq j \leq N$, $1 \leq i \leq n$. Am I understanding this correctly? 
+\item I think it'd be helpful for me to gain a better understanding of the actual data and the process model. 
+\item KS statistic/dependent data
+\end{itemize}
 
 
 
