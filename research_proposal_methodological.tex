@@ -95,8 +95,13 @@ the spatial dimension. Finally, I generalize to a full spatiotemporal model. The
 approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models used in ecology. 
  
  \textbf{1. Propagating Emulator Uncertainty.} The first stage of this research concerns the ramifications in uncertainty quantification due to approximating the computationally expensive model $f$ with the 
- cheaper Gaussian process emulator $\hat{f}$. The naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. This fails to account
- for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates and thus biasing any decisions made based on the 
+ cheaper Gaussian process emulator $\hat{f}$. The naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. However, this fails to account
+ for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the correct way to propagate the emulator uncertainty through 
+ the inference procedure? One option is to replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
+ where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$. A second reasonable option is to marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$. In the simple Gaussian error
+ model, this yields a closed-form likelihood approximation which averages over the Gaussian process uncertainty and produces the approximate posterior
+ \[\pi(\theta, \sigma^2|y) \propto \]
+ A rigorous study of uncertainty propagation in the baseline model is also essential when considering uncertainty quantification in the much more complicated models discussed below. 
  
  
 
