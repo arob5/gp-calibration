@@ -84,11 +84,17 @@ $y = (y_1, \dots, y_n)^T$. ``Solving'' this inverse problem is now interpreted a
 \[\pi(\theta, \tau|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
 or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on characteristics of this setup commonly found in scientific applications: 1.) $f(\theta)$ is
 costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. The first constraint typically precludes iterative inference 
-procedures like Markov Chain Monte Carlo (MCMC), instead demanding approximation techniques such as statistical emulation. The second point implies that optimizing $\theta$ is not enough; informed 
-decision-making based on the model requires summarizing the distribution of possible parameter values, which should incorporate all possible sources of uncertainty. Finally, while the above statistical model
-is static, the physical phenomenon of interest typically exhibits spatiotemporal variation, which should be included in the model if one hopes to draw general scientific conclusions and make predictions 
-in unobserved space and time. 
+procedures like Markov Chain Monte Carlo (MCMC), instead demanding approximation techniques such as statistical emulation. A common approach is to fit a Gaussian process emulator 
+$\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$ in place of $f$ in the inference algorithm. The second point implies that optimizing $\theta$ is not enough; informed  decision-making based on the model requires summarizing the distribution of possible parameter values, which should incorporate all possible sources of uncertainty. Finally, while the above statistical model is static, the physical phenomenon of interest often exhibits spatiotemporal variation, which should be included in the model if one hopes to draw general scientific conclusions and make predictions 
+across unobserved space and time. \\
 
+\noindent
+\textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest''
+uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for uncertainty to be analyzed across
+the spatial dimension. Finally, I generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing 
+approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models used in ecology. 
+ 
+ \textbf{1. Propagating Emulator Uncertainty.}
  
 
 
