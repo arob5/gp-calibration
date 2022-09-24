@@ -83,7 +83,13 @@ Here, the prior distribution $\pi_0$ encodes domain knowledge about the unknown 
 $y = (y_1, \dots, y_n)^T$. ``Solving'' this inverse problem is now interpreted as finding the joint posterior distribution
 \[\pi(\theta, \tau|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
 or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on characteristics of this setup commonly found in scientific applications: 1.) $f(\theta)$ is
-costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. 
+costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. The first constraint typically precludes iterative inference 
+procedures like Markov Chain Monte Carlo (MCMC), instead demanding approximation techniques such as statistical emulation. The second point implies that optimizing $\theta$ is not enough; informed 
+decision-making based on the model requires summarizing the distribution of possible parameter values, which should incorporate all possible sources of uncertainty. Finally, while the above statistical model
+is static, the physical phenomenon of interest typically exhibits spatiotemporal variation, which should be included in the model if one hopes to draw general scientific conclusions and make predictions 
+in unobserved space and time. 
+
+ 
 
 
 
