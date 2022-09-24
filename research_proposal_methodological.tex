@@ -1,0 +1,86 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage[margin=0.5in]{geometry}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Cor}{\mathrm{Corr}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\def\R{\mathbb{R}}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{condition}{Condition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{notation}{Notation}
+
+\begin{document}
+
+\begin{center}
+Scalable Bayesian Methods for Scientific Machine Learning
+\end{center}
+
+\begin{flushright}
+Andrew Roberts
+\end{flushright} 
+
+The effectiveness of combining physics and simulation-based models with statistical and machine learning methods is increasingly being recognized \cite{Willcox}. Physical models
+encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification. This interplay between domain 
+knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
+and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
+
+
+
+\begin{thebibliography}{20}
+\bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
+\bibitem{Livingstone} Livingstone, S., Zanella, G. (2022), The Barker Proposal: Combining robustness and efficiency in gradient-based MCMC, \textit{Journal of the Royal Statistical Society} 1-28.
+\bibitem{Qin} Qin, Q., Hobert, J., and Khare, K. (2019), Estimating the spectral gap of a trace-class Markov operator. \textit{Electronic Journal of Statistics} \textbf{13} 1790–1822.
+\bibitem{Roberts} Roberts, G. O. and Rosenthal, G. O. (2001), Optimal scaling for various Metropolis Hastings algorithms. Statistical Science, 16(4):351 – 367, 129.
+\end{thebibliography}
+
+
+
+\end{document}
+
+
+
