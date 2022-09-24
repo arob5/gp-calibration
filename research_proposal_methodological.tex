@@ -69,13 +69,26 @@ encapsulate prior scientific knowledge, while a Bayesian statistical framework a
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
+I will focus on the setting of a deterministic computer model $f: \R^d \to \R$ as a function of some unknown parameters $\theta \in \R^d$. [insert example here] In general, I will allow
+for these models to depend on additional covariates and produce multiple outputs (i.e. $f: (x, \theta) \to \R^k$), but I omit these complexities here for notational convenience. Suppose 
+we obtain observational data $y$ corresponding to the quantity that $f$ tries to predict; that is, we want $f(\theta) \approx y$. This is a standard \textit{inverse problem}, in which
+the un-observed quantity $\theta$ must be inferred from the observed data $y$. Typically, $f$ is highly non-linear, non-invertible, and direct numerical solution to this equation may be extremely sensitive
+to small perturbations of $y$ (i.e. this problem is ill-posed). It is therefore typically preferable to re-frame the inverse problem in a Bayesian statistical setting, as in the simple Gaussian error model below. 
+\begin{align*}
+y_i &= f(\theta) + \epsilon_i \\
+\epsilon_i &\overset{iid}{\sim} N(0, \sigma^2) \\
+(\theta, \sigma^2) &\sim \pi_0 \\
+\end{align*}
+Here, the prior distribution $\pi_0$ encodes domain knowledge about the unknown calibration parameters $\theta$ and statistical parameter $\sigma^2$, and we suppose the observed data is given by 
+$y = (y_1, \dots, y_n)^T$. ``Solving'' this inverse problem is now interpreted as finding the joint posterior distribution
+\[\pi(\theta, \tau|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
+or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on characteristics of this setup commonly found in scientific applications: 1.) $f(\theta)$ is
+costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. 
+
 
 
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
-\bibitem{Livingstone} Livingstone, S., Zanella, G. (2022), The Barker Proposal: Combining robustness and efficiency in gradient-based MCMC, \textit{Journal of the Royal Statistical Society} 1-28.
-\bibitem{Qin} Qin, Q., Hobert, J., and Khare, K. (2019), Estimating the spectral gap of a trace-class Markov operator. \textit{Electronic Journal of Statistics} \textbf{13} 1790–1822.
-\bibitem{Roberts} Roberts, G. O. and Rosenthal, G. O. (2001), Optimal scaling for various Metropolis Hastings algorithms. Statistical Science, 16(4):351 – 367, 129.
 \end{thebibliography}
 
 
