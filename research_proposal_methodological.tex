@@ -94,7 +94,10 @@ uncertainty quantification. I will then generalize the statistical model to expl
 the spatial dimension. Finally, I generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing 
 approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models used in ecology. 
  
- \textbf{1. Propagating Emulator Uncertainty.}
+ \textbf{1. Propagating Emulator Uncertainty.} The first stage of this research concerns the ramifications in uncertainty quantification due to approximating the computationally expensive model $f$ with the 
+ cheaper Gaussian process emulator $\hat{f}$. The naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. This fails to account
+ for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates and thus biasing any decisions made based on the 
+ 
  
 
 
