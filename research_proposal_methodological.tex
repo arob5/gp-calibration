@@ -79,7 +79,7 @@ y_i &= f(\theta) + \epsilon_i \\
 \epsilon_i &\overset{iid}{\sim} N(0, \sigma^2) \\
 (\theta, \sigma^2) &\sim \pi_0 \\
 \end{align*}
-Here, the prior distribution $\pi_0$ encodes domain knowledge about the unknown calibration parameters $\theta$ and statistical parameter $\sigma^2$, and we suppose the observed data is given by 
+Here, the prior distribution $\pi_0$ encodes domain knowledge about the unknown calibration parameters $\theta$ and data parameter $\sigma^2$, and we suppose the observed data is given by 
 $y = (y_1, \dots, y_n)^T$. ``Solving'' this inverse problem is now interpreted as finding the joint posterior distribution
 \[\pi(\theta, \tau|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
 or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on characteristics of this setup commonly found in scientific applications: 1.) $f(\theta)$ is
@@ -116,7 +116,19 @@ While all seemingly reasonable, these approaches have subtle differences and may
  &(\mu, \Sigma, \gamma, \tau^2) \sim \pi_0
  \end{align*}
  This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. 
+ To take advantage of the spatial information, I will explicitly model the parameters $\theta$ as a spatial process. I will begin with the natural step of putting a Gaussian process prior on $\theta$ (adopting
+ the \textit{kriging} model common in geostatistics),
+ \begin{align*}
+ &y|\theta, \sigma^2 \sim N(f(\theta), \sigma^2 I) \\
+ &\theta|\mu, \Sigma_\theta \sim N(\mu, \Sigma_\theta)
+ \end{align*}
+ where the remaining levels of the hierarchical model (i.e. defining priors on $\sigma^2, \mu$, and $\Sigma_\theta$) are suppressed for brevity. This hierarchical model is straightforward to define
+ but complicated by the fact that $f$ is a computationally expensive computer model that must be emulated and the Gaussian process introduces more parameters leading to a higher-dimensional 
+ posterior. I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme, developing the necessary computational approximations
+ in order to calibrate and predict with this model. 
  
+  \textbf{3. Complete Spatio-temporal Model}
+  
  
  
  
@@ -126,6 +138,7 @@ While all seemingly reasonable, these approaches have subtle differences and may
  \begin{itemize}
  \item I may want to give more motivation as to why uncertainty quantification is such a priority here, maybe through specific applied examples. 
  \item Similarly with the spatiotemporal stuff - I should probably move all of the motivation in the intro section, and then focus only on the concrete proposals in the research plan section. 
+ \item Clean up my use of the word ``model'' here to avoid confusion; maybe establish at the beginning that I will always refer to $f$ as the ``process model''
  \end{itemize}
 
 
