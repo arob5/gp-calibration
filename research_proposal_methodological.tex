@@ -112,7 +112,8 @@ While all seemingly reasonable, these approaches have subtle differences and may
  \begin{align*}
  &y^{(j)}_i|\theta_j, \sigma_j^2 \sim N(f(\theta_j), \sigma_j^2) \\
  &\theta_j \sim N(\mu, \Sigma) \\
- &(\mu, \Sigma) \sim \pi_0
+ &\sigma_j^2 \sim N(\gamma, \tau^2) \\
+ &(\mu, \Sigma, \gamma, \tau^2) \sim \pi_0
  \end{align*}
  This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. 
  
