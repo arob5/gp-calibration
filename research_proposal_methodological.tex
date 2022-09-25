@@ -123,12 +123,14 @@ While all seemingly reasonable, these approaches have subtle differences and may
  &\theta|\mu, \Sigma_\theta \sim N(\mu, \Sigma_\theta)
  \end{align*}
  where the remaining levels of the hierarchical model (i.e. defining priors on $\sigma^2, \mu$, and $\Sigma_\theta$) are suppressed for brevity. This hierarchical model is straightforward to define
- but complicated by the fact that $f$ is a computationally expensive computer model that must be emulated and the Gaussian process introduces more parameters leading to a higher-dimensional 
- posterior. I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme, developing the necessary computational approximations
- in order to calibrate and predict with this model. 
+ but complicated by the fact that $f$ is a computationally expensive computer model that must be emulated, data parameters like $\sigma^2$ may require spatial process priors as well,
+ and the addition of the spatial process parameters make for more difficult inference on a higher-dimensional posterior. I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
  
   \textbf{3. Complete Spatio-temporal Model}
-  
+  [intro sentence] The natural next step is to extend the model to incorporate temporal variation. The general data model is now
+  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
+  where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
+  To avoid the challenges associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cit{Arab}
  
  
  
@@ -148,6 +150,7 @@ While all seemingly reasonable, these approaches have subtle differences and may
 \bibitem{Cleary} Emmet Cleary, Alfredo Garbuno-Inigo, Shiwei Lan, Tapio Schneider, Andrew M. Stuart, “Calibrate, emulate, sample”, Journal of Computational Physics, Volume 424, 2021, 109716, ISSN 0021-9991, https://doi.org/10.1016/j.jcp.2020.109716.
 \bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
 \bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
+\bibitem{Arab} Arab, Ali & Hooten, Mevin & Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science. 10.1007/978-0-387-35973-1_564. 
 
 \end{thebibliography}
 
