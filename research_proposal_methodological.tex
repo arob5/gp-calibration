@@ -91,24 +91,50 @@ across unobserved space and time. \\
 \noindent
 \textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest''
 uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for uncertainty to be analyzed across
-the spatial dimension. Finally, I generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing 
-approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models used in ecology. 
+the spatial dimension. Finally, I will generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing 
+approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting. 
  
- \textbf{1. Propagating Emulator Uncertainty.} The first stage of this research concerns the ramifications in uncertainty quantification due to approximating the computationally expensive model $f$ with the 
- cheaper Gaussian process emulator $\hat{f}$. The naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. However, this fails to account
- for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the correct way to propagate the emulator uncertainty through 
- the inference procedure? One option is to replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
- where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$. A second reasonable option is to marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$. In the simple Gaussian error
- model, this yields a closed-form likelihood approximation which averages over the Gaussian process uncertainty and produces the approximate posterior
- \[\pi(\theta, \sigma^2|y) \propto \]
- A rigorous study of uncertainty propagation in the baseline model is also essential when considering uncertainty quantification in the much more complicated models discussed below. 
+ \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. 
+ The emulation introduces an additional source of uncertainty that is often ignored or accounted for in an ad hoc manner [cite]. 
+For example, the naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. However, this fails to account
+ for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through 
+ the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
+ where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
+ $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $\theta$ in the inference algorithm \cite{Fer}. 
+ 
+While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
+ 
+ \textbf{2. Spatial Variability} With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatially varying generalizations. 
+ In the terrestrial carbon modeling settings, existing studies typically focus on specific sites at which ecological data are collected [cite]. In theory, if the parameters $\theta$ correspond to universal physical 
+ processes then the site location should not play a significant role. In practice, this is far from the truth; the underlying physical processes are not fully understood and thus variability in the estimated values
+ and uncertainty of $\theta$ across space may reveal gaps in scientific knowledge and lead to future directions for research. The power of hierarchical Bayesian modeling has recently been recognized in 
+ formally studying this spatial variation (e.g. \cite{Fer2}). We can extend the simple Gaussian model to consider data collected at different spatial locations $j = 1, \dots, k$:
+ \begin{align*}
+ &y^{(j)}_i|\theta_j, \sigma_j^2 \sim N(f(\theta_j), \sigma_j^2) \\
+ &\theta_j \sim N(\mu, \Sigma) \\
+ &(\mu, \Sigma) \sim \pi_0
+ \end{align*}
+ This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. 
  
  
+ 
+ 
+
+ 
+ \textbf{TODO}:
+ \begin{itemize}
+ \item I may want to give more motivation as to why uncertainty quantification is such a priority here, maybe through specific applied examples. 
+ \item Similarly with the spatiotemporal stuff - I should probably move all of the motivation in the intro section, and then focus only on the concrete proposals in the research plan section. 
+ \end{itemize}
 
 
 
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
+\bibitem{Cleary} Emmet Cleary, Alfredo Garbuno-Inigo, Shiwei Lan, Tapio Schneider, Andrew M. Stuart, “Calibrate, emulate, sample”, Journal of Computational Physics, Volume 424, 2021, 109716, ISSN 0021-9991, https://doi.org/10.1016/j.jcp.2020.109716.
+\bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
+\bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
+
 \end{thebibliography}
 
 
