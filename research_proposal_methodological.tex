@@ -96,44 +96,34 @@ $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the
  Moreover, a thorough accounting of uncertainty has the potential to advance scientific theory by identifying missing or under-calibrated processes in $f$. 
  
  Second, I plan to address shortcomings of the static statistical model above by allowing parameters (potentially both process and data parameters) to vary across space 
- and time. In practice, the underlying physical processes are often dynamic, not fully understood, and exhibit spatio-temporal variability. The static model thus 
+ and time. In practice, the underlying physical process is often dynamic, not fully understood, and exhibits spatio-temporal variability. The static model thus 
  represents a convenient approximation, but this significantly limits its generalizability beyond observed data. The development of novel methodological and computational 
- methods to handle more complex dynamic models will increase generalizability and advance understanding of complex processes that vary across space and time. 
+ methods to handle more complex dynamic models will increase generalizability and advance understanding of complex processes that vary across the spatial and 
+ temporal dimensons. 
 
 \noindent
-\textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest''
-uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for uncertainty to be analyzed across
-the spatial dimension. Finally, I will generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing 
-approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting. 
+\textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest'' uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for spatially-indexed uncertainty estimates. Finally, I will generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting \cite{Dietze}. 
  
- \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. 
-For example, the naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. However, this fails to account
+ \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
  for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through 
  the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
  where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
- $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $\theta$ in the inference algorithm \cite{Fer}. 
+ $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $f(\theta)$ in the inference algorithm \cite{Fer}. 
  
-While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
+While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous study of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
  
- \textbf{2. Spatial Variability} With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatially varying generalizations. 
- In the terrestrial carbon modeling settings, existing studies typically focus on specific sites at which ecological data are collected [cite].  The power of hierarchical Bayesian modeling has recently been recognized in 
- formally studying this spatial variation (e.g. \cite{Fer2}). We can extend the simple Gaussian model to consider data collected at different spatial locations $j = 1, \dots, k$:
- \begin{align*}
- &y^{(j)}_i|\theta_j, \sigma_j^2 \sim N(f(\theta_j), \sigma_j^2) \\
- &\theta_j \sim N(\mu, \Sigma) \\
- &\sigma_j^2 \sim N(\gamma, \tau^2) \\
- &(\mu, \Sigma, \gamma, \tau^2) \sim \pi_0
- \end{align*}
- This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. 
- To take advantage of the spatial information, I will explicitly model the parameters $\theta$ as a spatial process. I will begin with the natural step of putting a Gaussian process prior on $\theta$ (adopting
- the \textit{kriging} model common in geostatistics),
- \begin{align*}
- &y|\theta, \sigma^2 \sim N(f(\theta), \sigma^2 I) \\
- &\theta|\mu, \Sigma_\theta \sim N(\mu, \Sigma_\theta)
- \end{align*}
- where the remaining levels of the hierarchical model (i.e. defining priors on $\sigma^2, \mu$, and $\Sigma_\theta$) are suppressed for brevity. This hierarchical model is straightforward to define
- but complicated by the fact that $f$ is a computationally expensive computer model that must be emulated, data parameters like $\sigma^2$ may require spatial process priors as well,
- and the addition of the spatial process parameters make for more difficult inference on a higher-dimensional posterior. I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
+ \textbf{2. Spatial Variability} With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatially varying generalizations. I will approach this problem by extending the Bayesian inverse problem to the full hierarchical model,
+\begin{align*}
+&y \sim N(f(\theta), \sigma^2 I_n) \\
+&\theta \sim N(\mu_\theta, \Sigma_\theta) \\
+&(\mu_\theta, \Sigma_\theta, \sigma^2) \sim \pi_0
+\end{align*}
+noting that this could be augmented to include hierarchical structure on $\sigma^2$ and to consider distributions other than Gaussian. As an example, recent studies in the terrestrial 
+carbon monitoring literature have taken $\Sigma_\theta = \sigma^2_\theta I$, allowing process parameters $\theta$ to exhibit Gaussian variability across different ecological data collection
+sites \cite{Fer2}. This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. I will extend this model to explicitly model $\theta$ as a spatial process, for example, by placing a Gaussian process prior on $\theta$ (that is, adopting the 
+\textit{kriging} model common in geostatistics). This hierarchical model is straightforward to define
+ but complicated by the fact that $f$ must be emulated and its uncertainty quantified, data parameters like $\sigma^2$ may require spatial process priors as well,
+and the introduction of new parameters makes inference more difficult in the resulting higher-dimensional space.  I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
  
   \textbf{3. Complete Spatio-temporal Model}
   [intro sentence] The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
