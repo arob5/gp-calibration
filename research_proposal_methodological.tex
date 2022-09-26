@@ -69,25 +69,36 @@ encapsulate prior scientific knowledge, while a Bayesian statistical framework a
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
-The traditional statistical approach to modeling a physical process is to assume a data model
-\[z = f(\theta) + \epsilon\]
-where observations $z$ of the true underlying process $f(\theta)$ are assumed to be corrupted by some random noise $\epsilon \sim N(0, \sigma^2)$. We are typically interested 
-in inferring the value of some unobserved parameters $\theta$ given the noisy observations of the process. 
-
-I will focus on the setting of a deterministic computer model $f: \R^d \to \R$ as a function of some unknown parameters $\theta \in \R^d$. [insert example here] In general, I will allow
-for these models to depend on additional covariates and produce multiple outputs (i.e. $f: (x, \theta) \to \R^k$), but I omit these complexities here for notational convenience. Suppose 
-we obtain observational data $y$ corresponding to the quantity that $f$ tries to predict; that is, we want $f(\theta) \approx y$. This is a standard \textit{inverse problem}, in which
-the un-observed quantity $\theta$ must be inferred from the observed data $y$. Typically, $f$ is highly non-linear, non-invertible, and direct numerical solution to this equation may be extremely sensitive
-to small perturbations of $y$ (i.e. this problem is ill-posed). It is therefore typically preferable to re-frame the inverse problem in a Bayesian statistical setting, as in the simple Gaussian error model below. 
+My research will adopt a Bayesian framework for the analysis of a deterministic, scientifically-informed model $f$ given observations $y$ of the true underlying physical process.
 \begin{align*}
-y_i &= f(\theta) + \epsilon_i \\
-\epsilon_i &\overset{iid}{\sim} N(0, \sigma^2) \\
-(\theta, \sigma^2) &\sim \pi_0 \\
+&y = f(\theta) + \epsilon \\
+&\epsilon \sim N(0, \sigma^2) \\
+&(\theta, \sigma^2) \sim \pi_0
 \end{align*}
-Here, the prior distribution $\pi_0$ encodes domain knowledge about the unknown calibration parameters $\theta$ and data parameter $\sigma^2$, and we suppose the observed data is given by 
-$y = (y_1, \dots, y_n)^T$. ``Solving'' this inverse problem is now interpreted as finding the joint posterior distribution
-\[\pi(\theta, \tau|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
-or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on characteristics of this setup commonly found in scientific applications: 1.) $f(\theta)$ is
+Here, $\theta$ represents unobserved parameters of interest, which we seek to calibrate so that the output of the process model $f(\theta)$ agrees with the observations 
+$y := (y_1, \dots, y_n)^T$. 
+The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
+while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
+\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). 
+The above formulation is a standard \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
+beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the joint posterior distribution
+\[\pi(\theta, \sigma^2|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
+or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on statistical and computational challenges 
+commonly faced in this setting when modeling complex processes.
+
+First, I assume throughout that $f(\theta)$ is very costly to compute, as is often the case with simulation-based computer models of physical phenomena (e.g. \cite{Fer}). 
+This constraint precludes iterative inference procedures like Markov Chain Monte Carlo (MCMC) in solving the Bayesian inverse problem, instead demanding 
+approximation techniques such as statistical emulation. I consider the popular and flexible approach of fitting a Gaussian process emulator 
+$\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$ in place of $f$ in the inference algorithm.
+ While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored or accounted for in an ad hoc manner [cite]. My research will emphasize
+ principled uncertainty quantification such that all quantifiable sources of uncertainty are meaningfully reflected in the posterior distribution. This is essential in many applications
+ where these models are used for forward-looking decision-making, as uncertainty in model estimates and predictions must be a key part of the decision-making process \cite{Dietze}.
+ Moreover, a thorough accounting of uncertainty has the potential to advance scientific theory by identifying missing or under-calibrated processes in $f$. 
+
+
+
+
+1.) $f(\theta)$ is
 costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. The first constraint typically precludes iterative inference 
 procedures like Markov Chain Monte Carlo (MCMC), instead demanding approximation techniques such as statistical emulation. A common approach is to fit a Gaussian process emulator 
 $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$ in place of $f$ in the inference algorithm. The second point implies that optimizing $\theta$ is not enough; informed  decision-making based on the model requires summarizing the distribution of possible parameter values, which should incorporate all possible sources of uncertainty. Finally, while the above statistical model is static, the physical phenomenon of interest often exhibits spatiotemporal variation, which should be included in the model if one hopes to draw general scientific conclusions and make predictions 
@@ -100,7 +111,6 @@ the spatial dimension. Finally, I will generalize to a full spatiotemporal model
 approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting. 
  
  \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. 
- The emulation introduces an additional source of uncertainty that is often ignored or accounted for in an ad hoc manner [cite]. 
 For example, the naive method is to modify the inference algorithm to replace an evaluation of $f(\theta)$ with the Gaussian process mean $m(\theta)$. However, this fails to account
  for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through 
  the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
@@ -159,6 +169,7 @@ While all seemingly reasonable, these approaches have subtle differences and may
 \bibitem{Arab} Arab, Ali \& Hooten, Mevin \& Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science.
 \bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
 \bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
+\bibitem{Dietze} Dietze et al, “Iterative near-term ecological forecasting: Needs, opportunities, and challenges”, Proceedings of the National Academy of Sciences, 115, 7, 1424-1432, 2018.
 
 \end{thebibliography}
 
