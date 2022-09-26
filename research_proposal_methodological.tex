@@ -126,24 +126,18 @@ sites \cite{Fer2}. This constitutes a first step towards understanding the spati
 and the introduction of new parameters makes inference more difficult in the resulting higher-dimensional space.  I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
  
   \textbf{3. Complete Spatio-temporal Model}
-  [intro sentence] The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
+   The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
   \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
   where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
-  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. I will develop dimensionality 
-  reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}) and recent advances in 
-  dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
- 
- 
- 
-
- 
- \textbf{TODO}:
- \begin{itemize}
- \item I may want to give more motivation as to why uncertainty quantification is such a priority here, maybe through specific applied examples. 
- \item Similarly with the spatiotemporal stuff - I should probably move all of the motivation in the intro section, and then focus only on the concrete proposals in the research plan section. 
- \item Clean up my use of the word ``model'' here to avoid confusion; maybe establish at the beginning that I will always refer to $f$ as the ``process model''
- \end{itemize}
-
+  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
+  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
+  via the Markovian linear model
+  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
+  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
+  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
+  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
+  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
+  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
 
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
@@ -154,6 +148,7 @@ and the introduction of new parameters makes inference more difficult in the res
 \bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
 \bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
 \bibitem{Dietze} Dietze et al, “Iterative near-term ecological forecasting: Needs, opportunities, and challenges”, Proceedings of the National Academy of Sciences, 115, 7, 1424-1432, 2018.
+\bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
 
 \end{thebibliography}
 
