@@ -64,10 +64,15 @@ Scalable Bayesian Methods for Scientific Machine Learning
 Andrew Roberts
 \end{flushright} 
 
-The effectiveness of combining physics and simulation-based models with statistical and machine learning methods is increasingly being recognized \cite{Willcox}. Physical models
+The effectiveness of formally combining scientific knowledge with statistical and machine learning methods is increasingly being recognized \cite{Willcox}. Physical models
 encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification. This interplay between domain 
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
+
+The traditional statistical approach to modeling a physical process is to assume a data model
+\[z = f(\theta) + \epsilon\]
+where observations $z$ of the true underlying process $f(\theta)$ are assumed to be corrupted by some random noise $\epsilon \sim N(0, \sigma^2)$. We are typically interested 
+in inferring the value of some unobserved parameters $\theta$ given the noisy observations of the process. 
 
 I will focus on the setting of a deterministic computer model $f: \R^d \to \R$ as a function of some unknown parameters $\theta \in \R^d$. [insert example here] In general, I will allow
 for these models to depend on additional covariates and produce multiple outputs (i.e. $f: (x, \theta) \to \R^k$), but I omit these complexities here for notational convenience. Suppose 
@@ -127,10 +132,12 @@ While all seemingly reasonable, these approaches have subtle differences and may
  and the addition of the spatial process parameters make for more difficult inference on a higher-dimensional posterior. I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
  
   \textbf{3. Complete Spatio-temporal Model}
-  [intro sentence] The natural next step is to extend the model to incorporate temporal variation. The general data model is now
+  [intro sentence] The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
   \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
   where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
-  To avoid the challenges associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cit{Arab}
+  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. I will develop dimensionality 
+  reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}) and recent advances in 
+  dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
  
  
  
@@ -144,13 +151,14 @@ While all seemingly reasonable, these approaches have subtle differences and may
  \end{itemize}
 
 
-
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
 \bibitem{Cleary} Emmet Cleary, Alfredo Garbuno-Inigo, Shiwei Lan, Tapio Schneider, Andrew M. Stuart, “Calibrate, emulate, sample”, Journal of Computational Physics, Volume 424, 2021, 109716, ISSN 0021-9991, https://doi.org/10.1016/j.jcp.2020.109716.
 \bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
 \bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
-\bibitem{Arab} Arab, Ali & Hooten, Mevin & Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science. 10.1007/978-0-387-35973-1_564. 
+\bibitem{Arab} Arab, Ali \& Hooten, Mevin \& Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science.
+\bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
+\bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
 
 \end{thebibliography}
 
