@@ -94,15 +94,11 @@ $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the
  principled uncertainty quantification such that all quantifiable sources of uncertainty are meaningfully reflected in the posterior distribution. This is essential in many applications
  where these models are used for forward-looking decision-making, as uncertainty in model estimates and predictions must be a key part of the decision-making process \cite{Dietze}.
  Moreover, a thorough accounting of uncertainty has the potential to advance scientific theory by identifying missing or under-calibrated processes in $f$. 
-
-
-
-
-1.) $f(\theta)$ is
-costly to compute, 2.) uncertainty quantification is essential, and 3.) the underlying process of interest exhibits significant spatial and/or temporal variation. The first constraint typically precludes iterative inference 
-procedures like Markov Chain Monte Carlo (MCMC), instead demanding approximation techniques such as statistical emulation. A common approach is to fit a Gaussian process emulator 
-$\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$ in place of $f$ in the inference algorithm. The second point implies that optimizing $\theta$ is not enough; informed  decision-making based on the model requires summarizing the distribution of possible parameter values, which should incorporate all possible sources of uncertainty. Finally, while the above statistical model is static, the physical phenomenon of interest often exhibits spatiotemporal variation, which should be included in the model if one hopes to draw general scientific conclusions and make predictions 
-across unobserved space and time. \\
+ 
+ Second, I plan to address shortcomings of the static statistical model above by allowing parameters (potentially both process and data parameters) to vary across space 
+ and time. In practice, the underlying physical processes are often dynamic, not fully understood, and exhibit spatio-temporal variability. The static model thus 
+ represents a convenient approximation, but this significantly limits its generalizability beyond observed data. The development of novel methodological and computational 
+ methods to handle more complex dynamic models will increase generalizability and advance understanding of complex processes that vary across space and time. 
 
 \noindent
 \textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest''
@@ -120,9 +116,7 @@ For example, the naive method is to modify the inference algorithm to replace an
 While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
  
  \textbf{2. Spatial Variability} With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatially varying generalizations. 
- In the terrestrial carbon modeling settings, existing studies typically focus on specific sites at which ecological data are collected [cite]. In theory, if the parameters $\theta$ correspond to universal physical 
- processes then the site location should not play a significant role. In practice, this is far from the truth; the underlying physical processes are not fully understood and thus variability in the estimated values
- and uncertainty of $\theta$ across space may reveal gaps in scientific knowledge and lead to future directions for research. The power of hierarchical Bayesian modeling has recently been recognized in 
+ In the terrestrial carbon modeling settings, existing studies typically focus on specific sites at which ecological data are collected [cite].  The power of hierarchical Bayesian modeling has recently been recognized in 
  formally studying this spatial variation (e.g. \cite{Fer2}). We can extend the simple Gaussian model to consider data collected at different spatial locations $j = 1, \dots, k$:
  \begin{align*}
  &y^{(j)}_i|\theta_j, \sigma_j^2 \sim N(f(\theta_j), \sigma_j^2) \\
