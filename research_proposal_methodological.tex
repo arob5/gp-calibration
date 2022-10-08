@@ -64,15 +64,38 @@ Scalable Bayesian Methods for Scientific Machine Learning
 Andrew Roberts
 \end{flushright} 
 
-TODO: Multi-fidelity methods paper
-https://arxiv.org/abs/2210.01534
-
 The effectiveness of formally combining scientific knowledge with statistical and machine learning methods is increasingly being recognized \cite{Willcox}. Physical models
 encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification. This interplay between domain 
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
-My research will adopt a Bayesian framework for the analysis of a deterministic, scientifically-informed model $f$ given observations $y$ of the true underlying physical process.
+Complex computer models are ubiquitous in modern science and engineering. These models are used for modeling \textbf{complex} and dynamic systems, ranging from the carbon cycle [cite], climate [cite], and pandemics [cite]. My proposed research program will contribute methodological advancements for calibrating, predicting, and quantifying uncertainty in computer models, and
+will promote (i.) improvements in data-informed decision making and (ii.) advancements in scientific discovery. 
+
+
+
+My proposed research program will adopt a methodological framework with applications to a wide variety of problems in science and engineering. 
+
+
+As a motivating example, consider
+the problem of modeling the terrestrial component of the carbon cycle \cite{Firedlingstein}, which is essential both for long-term climate change forecasts (\textbf{cite}) as well as near-term
+prediction for targeted environmental decision making (\cite{Dietze}, \cite{Cayelan}). Terrestrial carbon monitoring relies on complex, process-based models which typically depend on many
+unknown or unobserved parameters (\textbf{cite}). The task is then to confront these models with observational data in order to (i.) calibrate the unknown parameters, (ii.) quantify sources of 
+uncertainty, and (iii.) utilize the calibrated model for prediction. This \textbf{task} of combining scientific models with data is effectively framed in a Bayesian setting. Letting $f(\theta)$ denote the process model as a function of the unknown parameters $\theta$, and $y$ be observations of the true carbon fluxes, then a very simple Bayesian model can be formulated as follows.
+\begin{align*}
+&y = f(\theta) + \epsilon \\
+&\epsilon \sim N(0, \sigma^2) \\
+&(\theta, \sigma^2) \sim \pi_0
+\end{align*}
+The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
+while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
+\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). The above 
+formulation is a standard \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
+beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the joint posterior distribution
+\[\pi(\theta, \sigma^2|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
+or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. 
+
+My proposed research program will adopt a Bayesian framework for the analysis of a deterministic, scientifically-informed model $f$ given observations $y$ of the true underlying physical process.
 \begin{align*}
 &y = f(\theta) + \epsilon \\
 &\epsilon \sim N(0, \sigma^2) \\
@@ -144,13 +167,15 @@ and the introduction of new parameters makes inference more difficult in the res
 
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
+\bibitem{Cayelan} Cayelan C. Carey, Whitney M. Woelmer, Mary E. Lofton, Renato J. Figueiredo, Bethany J. Bookout, Rachel S. Corrigan, Vahid Daneshmand, Alexandria G. Hounshell, Dexter W. Howard, Abigail S. L. Lewis et al (2022) Advancing lake and reservoir water quality management with near-term, iterative ecological forecasting, Inland Waters, 12:1, 107-120, DOI: 10.1080/20442041.2020.1816421
 \bibitem{Cleary} Emmet Cleary, Alfredo Garbuno-Inigo, Shiwei Lan, Tapio Schneider, Andrew M. Stuart, “Calibrate, emulate, sample”, Journal of Computational Physics, Volume 424, 2021, 109716, ISSN 0021-9991, https://doi.org/10.1016/j.jcp.2020.109716.
+\bibitem{Dietze} Dietze et al, “Iterative near-term ecological forecasting: Needs, opportunities, and challenges”, Proceedings of the National Academy of Sciences, 115, 7, 1424-1432, 2018.
 \bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
 \bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
 \bibitem{Arab} Arab, Ali \& Hooten, Mevin \& Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science.
+\bibitem{Firedlingstein} Friedlingstein, et al: Global Carbon Budget 2021, Earth Syst. Sci. Data, 14, 1917–2005, https://doi.org/10.5194/essd-14-1917-2022, 2022.
 \bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
 \bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
-\bibitem{Dietze} Dietze et al, “Iterative near-term ecological forecasting: Needs, opportunities, and challenges”, Proceedings of the National Academy of Sciences, 115, 7, 1424-1432, 2018.
 \bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
 
 \end{thebibliography}
