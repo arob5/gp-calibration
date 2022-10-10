@@ -69,6 +69,17 @@ encapsulate prior scientific knowledge, while a Bayesian statistical framework a
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
+Complex computer models have become essential tools for studying complex phenomena in a wide variety of scientific and engineering fields, 
+tackling problems ranging from climate projections [cite] to pandemic response [cite]. My proposed research program will contribute methodological 
+advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
+overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
+setting of interest, let $f: \theta \mapsto \R$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
+parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
+In this case, $f$ is a process-model that predicts the net exchange of carbon between an ecosystem and the atmosphere (\cite{Waring}) and $\theta$ may encompass 
+unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. 
+
+
+
 Complex computer models are ubiquitous in modern science and engineering. These models are used for modeling \textbf{complex} and dynamic systems, ranging from the carbon cycle [cite], climate [cite], and pandemics [cite]. My proposed research program will contribute methodological advancements for calibrating, predicting, and quantifying uncertainty in computer models, and
 will promote (i.) improvements in data-informed decision making and (ii.) advancements in scientific discovery. 
 
@@ -78,7 +89,7 @@ My proposed research program will adopt a methodological framework with applicat
 
 
 As a motivating example, consider
-the problem of modeling the terrestrial component of the carbon cycle \cite{Firedlingstein}, which is essential both for long-term climate change forecasts (\textbf{cite}) as well as near-term
+the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}, which is essential both for long-term climate change forecasts (\textbf{cite}) as well as near-term
 prediction for targeted environmental decision making (\cite{Dietze}, \cite{Cayelan}). Terrestrial carbon monitoring relies on complex, process-based models which typically depend on many
 unknown or unobserved parameters (\textbf{cite}). The task is then to confront these models with observational data in order to (i.) calibrate the unknown parameters, (ii.) quantify sources of 
 uncertainty, and (iii.) utilize the calibrated model for prediction. This \textbf{task} of combining scientific models with data is effectively framed in a Bayesian setting. Letting $f(\theta)$ denote the process model as a function of the unknown parameters $\theta$, and $y$ be observations of the true carbon fluxes, then a very simple Bayesian model can be formulated as follows.
@@ -173,10 +184,11 @@ and the introduction of new parameters makes inference more difficult in the res
 \bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
 \bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
 \bibitem{Arab} Arab, Ali \& Hooten, Mevin \& Wikle, Christopher. (2007). Hierarchical Spatial Models. Encyclopedia of geographical information science.
-\bibitem{Firedlingstein} Friedlingstein, et al: Global Carbon Budget 2021, Earth Syst. Sci. Data, 14, 1917–2005, https://doi.org/10.5194/essd-14-1917-2022, 2022.
+\bibitem{Friedlingstein} Friedlingstein, et al: Global Carbon Budget 2021, Earth Syst. Sci. Data, 14, 1917–2005, https://doi.org/10.5194/essd-14-1917-2022, 2022.
 \bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
 \bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
 \bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
+\bibitem{Waring} Richard H. Waring, Steven W. Running, CHAPTER 10 - Advances in Eddy-Flux Analyses, Remote Sensing, and Evidence of Climate Change, Forest Ecosystems (Third Edition), Academic Press, 2007, Pages 317-344, ISBN 9780123706058, https://doi.org/10.1016/B978-012370605-8.50017-7.
 
 \end{thebibliography}
 
