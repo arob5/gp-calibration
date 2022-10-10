@@ -69,67 +69,47 @@ encapsulate prior scientific knowledge, while a Bayesian statistical framework a
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
-Complex computer models have become essential tools for studying complex phenomena in a wide variety of scientific and engineering fields, 
+Complex computer models have become essential tools for studying complex phenomena in a wide variety of scientific and engineering disciplines, 
 tackling problems ranging from climate projections [cite] to pandemic response [cite]. My proposed research program will contribute methodological 
 advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
 overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
 setting of interest, let $f: \theta \mapsto \R$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
-In this case, $f$ is a process-model that predicts the net exchange of carbon between an ecosystem and the atmosphere (\cite{Waring}) and $\theta$ may encompass 
-unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data in 
-order to calibrate the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. Due to its..., 
-these challenges are typically addressed within a Bayesian framework; a simplified example of this approach might look like
+In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere (\cite{Waring}) and $\theta$ may encompass 
+unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
+order to calibrate (i.e. estimate) the unknown parameters $\theta$, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. 
+
+
+These 
+tasks are complicated when the underlying process being modeled is dynamic and complex, \textbf{an example being} the spatiotemporal dynamics exhibited by terrestrial carbon fluxes.
+In order to accommodate complexities and uncertainties such as these, the process model is typically embedded within a hierarchical Bayesian framework \cite{Clark}. As a basic starting 
+point, one might consider the following model. 
 \begin{align*}
-&y = f(\theta) + \epsilon \\
-&\epsilon \sim N(0, \sigma^2) \\
-&(\theta, \sigma^2) \sim \pi_0
+y|\theta \sim N(f(\theta), \sigma^2) \\
+\theta|\mu_{\theta}, \Sigma_{\theta} \sim N(\mu_{\theta}, \Sigma_{\theta}) \\
+(\theta, \sigma^2, \mu_{\theta}, \Sigma_{\theta}) \sim \pi_0
 \end{align*}
-The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
-while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
-\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). 
+This is a powerful formulation in that it accounts for distinct sources of uncertainty in a principled, probabilistic manner: the first line models the difference between the 
+observed data $y$ and the process model output $f(\theta)$ as Gaussian white noise. The second line allows for explicit modeling of variation in the 
+parameters $\theta$, which can account for the spatiotemporal dynamics. Finally, the prior distribution $\pi_0$ encodes prior domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameters 
+$\sigma^2, \mu_\theta, \Sigma_{\theta}$. All of this statistical structure is built around the scientifically-informed model $f$, which incorporates domain knowledge of the physical 
+process itself. To avoid confusion, I henceforth refer to $f$ and $\theta$ as the 
+\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\mu_\theta$).  
+The above formulation can be interpreted as a \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
+beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the posterior distribution of interest, either the full joint distribution $p(\theta, \sigma^2, \mu_\theta, \Sigma_\theta|y)$, 
+the marginal $p(\theta|y)$, or anything in between. 
+
+While in theory this inverse problem can be solved by inference algorithms like Markov Chain Monte Carlo (MCMC), the use of such iterative algorithms requires running the 
+process model $f$ at each iteration. This means MCMC is infeasible in settings where $f$ is very costly to execute, as is the case with certain terrestrial carbon models which can take
+many hours to run a single time \cite{Fer}. There is a wide body of literature dedicated to approximation techniques to circumvent this problem, with particular emphasis on the 
+flexible approach of fitting a Gaussian process emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$
+in place of $f$ in the inference algorithm [cite].
+
+I have detailed two  
 
 
 
 
-As a motivating example, consider
-the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}, which is essential both for long-term climate change forecasts (\textbf{cite}) as well as near-term
-prediction for targeted environmental decision making (\cite{Dietze}, \cite{Cayelan}). Terrestrial carbon monitoring relies on complex, process-based models which typically depend on many
-unknown or unobserved parameters (\textbf{cite}). The task is then to confront these models with observational data in order to (i.) calibrate the unknown parameters, (ii.) quantify sources of 
-uncertainty, and (iii.) utilize the calibrated model for prediction. This \textbf{task} of combining scientific models with data is effectively framed in a Bayesian setting. Letting $f(\theta)$ denote the process model as a function of the unknown parameters $\theta$, and $y$ be observations of the true carbon fluxes, then a very simple Bayesian model can be formulated as follows.
-\begin{align*}
-&y = f(\theta) + \epsilon \\
-&\epsilon \sim N(0, \sigma^2) \\
-&(\theta, \sigma^2) \sim \pi_0
-\end{align*}
-The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
-while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
-\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). The above 
-formulation is a standard \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
-beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the joint posterior distribution
-\[\pi(\theta, \sigma^2|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
-or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. 
-
-My proposed research program will adopt a Bayesian framework for the analysis of a deterministic, scientifically-informed model $f$ given observations $y$ of the true underlying physical process.
-\begin{align*}
-&y = f(\theta) + \epsilon \\
-&\epsilon \sim N(0, \sigma^2) \\
-&(\theta, \sigma^2) \sim \pi_0
-\end{align*}
-Here, $\theta$ represents unobserved parameters of interest, which we seek to calibrate so that the output of the process model $f(\theta)$ agrees with the observations 
-$y := (y_1, \dots, y_n)^T$. 
-The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
-while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
-\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). 
-The above formulation is a standard \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
-beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the joint posterior distribution
-\[\pi(\theta, \sigma^2|y) \propto N(y|f(\theta), \sigma^2 I_n)\pi_0(\theta, \sigma^2)\]
-or the marginal posterior $\pi(\theta|y)$, which can be obtained by marginalizing over $\sigma^2$. My research will focus on statistical and computational challenges 
-commonly faced in this setting when modeling complex processes.
-
-First, I assume throughout that $f(\theta)$ is very costly to compute, as is often the case with simulation-based computer models of physical phenomena (e.g. \cite{Fer}). 
-This constraint precludes iterative inference procedures like Markov Chain Monte Carlo (MCMC) in solving the Bayesian inverse problem, instead demanding 
-approximation techniques such as statistical emulation. I consider the popular and flexible approach of fitting a Gaussian process emulator 
-$\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$ in place of $f$ in the inference algorithm.
  While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored or accounted for in an ad hoc manner [cite]. My research will emphasize
  principled uncertainty quantification such that all quantifiable sources of uncertainty are meaningfully reflected in the posterior distribution. This is essential in many applications
  where these models are used for forward-looking decision-making, as uncertainty in model estimates and predictions must be a key part of the decision-making process \cite{Dietze}.
@@ -192,6 +172,7 @@ and the introduction of new parameters makes inference more difficult in the res
 \bibitem{Kugler} Benoit Kugler, Florence Forbes, Sylvain Douté. Fast Bayesian Inversion for high dimensional inverse problems. Statistics and Computing, Springer Verlag (Germany), In press. ffhal-02908364v3f
 \bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
 \bibitem{Waring} Richard H. Waring, Steven W. Running, CHAPTER 10 - Advances in Eddy-Flux Analyses, Remote Sensing, and Evidence of Climate Change, Forest Ecosystems (Third Edition), Academic Press, 2007, Pages 317-344, ISBN 9780123706058, https://doi.org/10.1016/B978-012370605-8.50017-7.
+\bibitem{Clark} Clark, James S. 2005. Why environmental scientists are becoming Bayesians. Ecology Letters, Vol. 8: 2-14
 
 \end{thebibliography}
 
