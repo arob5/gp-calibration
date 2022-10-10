@@ -79,6 +79,14 @@ In this case, $f$ is a process model that predicts the net exchange of carbon be
 unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
 order to calibrate (i.e. estimate) the unknown parameters $\theta$, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. 
 
+These tasks may be complicated by several features commonly found in real-world applications. First, the runtime of the computer model $f$ may be prohibitively long, 
+precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. Second, the 
+underlying process being modeled by $f$ often exhibits complex dynamics, and attempts to explicitly model these dynamics lead to even more computationally challenging
+models. Terrestrial carbon models have both of these features; sophisticated models often require many hours to run a single execution \cite{Fer} and the ecological 
+parameters $\theta$ commonly exhibit spatiotemporal variation. 
+
+[carbon models exhibit both] [balance that must be struck]
+
 
 These 
 tasks are complicated when the underlying process being modeled is dynamic and complex, \textbf{an example being} the spatiotemporal dynamics exhibited by terrestrial carbon fluxes.
