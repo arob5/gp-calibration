@@ -76,16 +76,19 @@ overarching objectives: (i.) improving data-informed decision-making under uncer
 setting of interest, let $f: \theta \mapsto \R$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
 In this case, $f$ is a process-model that predicts the net exchange of carbon between an ecosystem and the atmosphere (\cite{Waring}) and $\theta$ may encompass 
-unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. 
+unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data in 
+order to calibrate the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. Due to its..., 
+these challenges are typically addressed within a Bayesian framework; a simplified example of this approach might look like
+\begin{align*}
+&y = f(\theta) + \epsilon \\
+&\epsilon \sim N(0, \sigma^2) \\
+&(\theta, \sigma^2) \sim \pi_0
+\end{align*}
+The prior distribution $\pi_0$ encodes domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameter $\sigma^2$, 
+while the scientifically-informed model $f$ incorporates existing knowledge of the physical process itself. To avoid confusion, I always refer to $f$ and $\theta$ as the 
+\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\pi_0$). 
 
 
-
-Complex computer models are ubiquitous in modern science and engineering. These models are used for modeling \textbf{complex} and dynamic systems, ranging from the carbon cycle [cite], climate [cite], and pandemics [cite]. My proposed research program will contribute methodological advancements for calibrating, predicting, and quantifying uncertainty in computer models, and
-will promote (i.) improvements in data-informed decision making and (ii.) advancements in scientific discovery. 
-
-
-
-My proposed research program will adopt a methodological framework with applications to a wide variety of problems in science and engineering. 
 
 
 As a motivating example, consider
