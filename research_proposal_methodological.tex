@@ -75,7 +75,7 @@ advances for calibrating, predicting, and quantifying uncertainty using such mod
 overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
 setting of interest, let $f: \theta \mapsto \R^d$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
-In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere (\cite{Waring}) and $\theta$ may encompass 
+In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Waring} and $\theta$ may encompass 
 unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
 order to calibrate (i.e. estimate) the unknown parameters $\theta$, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. 
 
@@ -99,113 +99,23 @@ Recent calls have highlighted the need for research that brings together state-o
 as increasingly complex statistical models demand additional computational approximation techniques. Therefore, I will begin by addressing fundamental issues of uncertainty in standard static, deterministic models. Specifically, I will develop methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest'' uncertainty quantification. With this foundation established, I will then be in a position to integrate spatiotemporal dynamics into the statistical model, as well as consider the issue of stochastic simulators. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting \cite{Dietze}. 
  
  \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
- for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through the inference procedure? In the current literature, this question is either largely ignored or addressed in an ad hoc manner [cite]. Gaining a rigorous understanding of methods for propagating emulator uncertainty is essential to ensure that model predictions are not inaccurately presented as overly confident. Various papers have offered bespoke solutions to this problem (\cite{Cleary}, \cite{Fer}), but no comprehensive
+ for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through the inference procedure? In the current literature, this question is either largely ignored or addressed in an ad hoc manner [cite]. Gaining a rigorous understanding of methods for propagating emulator uncertainty is essential to ensure that model predictions are not inaccurately presented as overly confident. Various papers have offered bespoke solutions to this problem \cite{Cleary, Fer}, but no comprehensive
 methodological study has been conducted. Moreover, these existing methods consider only the Gaussian error model and treat emulator uncertainty in an independent fashion, failing to take advantage of the correlation in Gaussian process predictions. I will address these gaps in the literature by (i.) conducting a rigorous comparison of methods for propagating emulator uncertainty under the standard Gaussian noise model, (ii.) developing novel techniques which take advantage of the Gaussian process predictive correlation, and (iii.) generalize these methods to auto-regressive and Laplace error models, both of which 
 are common in ecological applications \cite{Fer}. 
 
  \textbf{2. Spatio-temporal Dynamics}
-With methodologically sound and scalable algorithms in hand for the baseline static case, I will then be in a position to begin investigating spatiotemporal generalizations of the statistical model. Given the spatiotemporal nature of most physical processes, this is an important extension that is often ignored, presumably due to computational challenges (\cite{Fer2}, [another citation]). Parameters $\theta$ may be thought to vary over space
+With methodologically sound and scalable algorithms in hand for the baseline static framework, I will then be in a position to begin investigating spatiotemporal generalizations of the statistical model. Given the spatiotemporal nature of most physical processes, this is an important extension that is often ignored, presumably due to computational challenges (\cite{Fer2}, [another citation]). Parameters $\theta$ may naturally be thought to vary over space
 and time; however, even if they are not then quantifying spatiotemporal variation in uncertainty can help identify 
-missing processes in physical models, as well as provide a greater understanding as to the generalizability of the process model beyond observed data (\cite{Fer2}, \cite{Dietze}, [cite transferability study?]). 
-
-The general data model I will consider is 
+missing processes in physical models, as well as provide a greater understanding as to the generalizability of the process model beyond observed data \cite{Fer2, Dietze} [cite transferability study?]. To address these issues I will extend the data model as 
   \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
- where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. While there is a body of research
- concerning computer models with spatial and/or temporal output [cite],... Researchers in both the spatiotemporal statistics and computer modeling communities
- have noted the potential for integrating methods in both fields using modern advances in machine learning and computation [cite: Gramacy stochastic simulator review and Wikle spatiotemporal stats review].
+ where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. Ad hoc solutions have been developed to deal with computer models with spatially or temporally indexed outputs ([cite]), but it is difficult to find literature that additionally considers an 
+ explicit spatiotemporal model for the process parameters $\theta$ ([cite]). As an example, recent studies concerning terrestrial carbon models have 
+ allowed process parameters $\theta$ to exhibit Gaussian variability across different ecological data collection
+sites \cite{Fer2}. This constitutes a first step towards understanding the spatial variability in $\theta$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. Researchers in both the spatiotemporal statistics and computer modeling communities
+have noted the potential for integrating methods in both fields using modern advances in machine learning and computation \cite{Wikle, Baker}. My proposed research will bridge this divide by (i.) developing novel techniques to integrate modern spatiotemporal dynamical models \cite{Wikle, Hefley}
+with the computer modeling framework, (ii.) develop dimensionality reduction and approximation methods that draw from Bayesian inverse problem 
+theory \cite{Kugler} and Bayesian filtering \cite{Sarkka}, and (iii.) extend my previous uncertainty quantification methodology to this more complex setting. 
  
- 
- 
- To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
-  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
-  via the Markovian linear model
-  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
-  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
-  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
-  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
-  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
-  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
- 
-
-These 
-tasks are complicated when the underlying process being modeled is dynamic and complex, \textbf{an example being} the spatiotemporal dynamics exhibited by terrestrial carbon fluxes.
-In order to accommodate complexities and uncertainties such as these, the process model is typically embedded within a hierarchical Bayesian framework \cite{Clark}. As a basic starting 
-point, one might consider the following model. 
-\begin{align*}
-y|\theta \sim N(f(\theta), \sigma^2) \\
-\theta|\mu_{\theta}, \Sigma_{\theta} \sim N(\mu_{\theta}, \Sigma_{\theta}) \\
-(\theta, \sigma^2, \mu_{\theta}, \Sigma_{\theta}) \sim \pi_0
-\end{align*}
-This is a powerful formulation in that it accounts for distinct sources of uncertainty in a principled, probabilistic manner: the first line models the difference between the 
-observed data $y$ and the process model output $f(\theta)$ as Gaussian white noise. The second line allows for explicit modeling of variation in the 
-parameters $\theta$, which can account for the spatiotemporal dynamics. Finally, the prior distribution $\pi_0$ encodes prior domain knowledge about the values and uncertainty of the process parameters $\theta$ and data parameters 
-$\sigma^2, \mu_\theta, \Sigma_{\theta}$. All of this statistical structure is built around the scientifically-informed model $f$, which incorporates domain knowledge of the physical 
-process itself. To avoid confusion, I henceforth refer to $f$ and $\theta$ as the 
-\textit{process} model and parameters, respectively, to avoid confusion with the statistical model and parameters (e.g. $\sigma^2$, $\mu_\theta$).  
-The above formulation can be interpreted as a \textit{Bayesian inverse problem}, in which the un-observed quantity $\theta$ is inferred using the observed data $y$ and prior 
-beliefs $\pi_0$. ``Solving'' this inverse problem is interpreted as finding the posterior distribution of interest, either the full joint distribution $p(\theta, \sigma^2, \mu_\theta, \Sigma_\theta|y)$, 
-the marginal $p(\theta|y)$, or anything in between. 
-
-While in theory this inverse problem can be solved by inference algorithms like Markov Chain Monte Carlo (MCMC), the use of such iterative algorithms requires running the 
-process model $f$ at each iteration. This means MCMC is infeasible in settings where $f$ is very costly to execute, as is the case with certain terrestrial carbon models which can take
-many hours to run a single time \cite{Fer}. There is a wide body of literature dedicated to approximation techniques to circumvent this problem, with particular emphasis on the 
-flexible approach of fitting a Gaussian process emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then using $\hat{f}$
-in place of $f$ in the inference algorithm [cite].
-
-I have detailed two  
-
-
-
-
- While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored or accounted for in an ad hoc manner [cite]. My research will emphasize
- principled uncertainty quantification such that all quantifiable sources of uncertainty are meaningfully reflected in the posterior distribution. This is essential in many applications
- where these models are used for forward-looking decision-making, as uncertainty in model estimates and predictions must be a key part of the decision-making process \cite{Dietze}.
- Moreover, a thorough accounting of uncertainty has the potential to advance scientific theory by identifying missing or under-calibrated processes in $f$. 
- 
- Second, I plan to address shortcomings of the static statistical model above by allowing parameters (potentially both process and data parameters) to vary across space 
- and time. In practice, the underlying physical process is often dynamic, not fully understood, and exhibits spatio-temporal variability. The static model thus 
- represents a convenient approximation, but this significantly limits its generalizability beyond observed data. The development of novel methodological and computational 
- methods to handle more complex dynamic models will increase generalizability and advance understanding of complex processes that vary across the spatial and 
- temporal dimensons. 
-
-\noindent
-\textbf{Research Plan.} To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest'' uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for spatially-indexed uncertainty estimates. Finally, I will generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting \cite{Dietze}. 
- 
- \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
- for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through 
- the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
- where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
- $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $f(\theta)$ in the inference algorithm \cite{Fer}. 
- 
- 
-While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous study of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
- 
- \textbf{2. Spatial Variability} With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatially varying generalizations. I will approach this problem by extending the Bayesian inverse problem to the full hierarchical model,
-\begin{align*}
-&y \sim N(f(\theta), \sigma^2 I_n) \\
-&\theta \sim N(\mu_\theta, \Sigma_\theta) \\
-&(\mu_\theta, \Sigma_\theta, \sigma^2) \sim \pi_0
-\end{align*}
-noting that this could be augmented to include hierarchical structure on $\sigma^2$ and to consider distributions other than Gaussian. As an example, recent studies in the terrestrial 
-carbon monitoring literature have taken $\Sigma_\theta = \sigma^2_\theta I$, allowing process parameters $\theta$ to exhibit Gaussian variability across different ecological data collection
-sites \cite{Fer2}. This constitutes a first step towards understanding the spatial variability in $\theta$ and $\sigma^2$, but doesn't incorporate any explicit spatial information such as a concept of ``nearness'' between the sites. I will extend this model to explicitly model $\theta$ as a spatial process, for example, by placing a Gaussian process prior on $\theta$ (that is, adopting the 
-\textit{kriging} model common in geostatistics). This hierarchical model is straightforward to define
- but complicated by the fact that $f$ must be emulated and its uncertainty quantified, data parameters like $\sigma^2$ may require spatial process priors as well,
-and the introduction of new parameters makes inference more difficult in the resulting higher-dimensional space.  I will draw on the baseline research conducted in part one to extend the principled uncertainty quantification and inference scheme to this spatial setting, developing the necessary computational approximations in order to calibrate and predict with this model. 
- 
-  \textbf{3. Complete Spatio-temporal Model}
-   The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
-  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
-  where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
-  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
-  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
-  via the Markovian linear model
-  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
-  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
-  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
-  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
-  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
-  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
 
 \begin{thebibliography}{20}
 \bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
@@ -223,6 +133,7 @@ and the introduction of new parameters makes inference more difficult in the res
 \bibitem{Clark} Clark, James S. 2005. Why environmental scientists are becoming Bayesians. Ecology Letters, Vol. 8: 2-14
 \bibitem{Laubmeier} Laubmeier et al. Ecological Dynamics: Integrating Empirical, Statistical, and Analytical Methods. Trends Ecol Evol. 2020 Dec;35(12):1090-1099. doi: 10.1016/j.tree.2020.08.006. Epub 2020 Sep 12. PMID: 32933777.
 \bibitem{Wikle} Wikle, C.K. (2015), Modern perspectives on statistics for spatio-temporal data. WIREs Comput Stat, 7: 86-98. https://doi.org/10.1002/wics.1341
+\bibitem{Baker} Baker et al. "Analyzing Stochastic Computer Models: A Review with Opportunities." Statist. Sci. 37 (1) 64 - 89, February 2022. https://doi.org/10.1214/21-STS822
 
 \end{thebibliography}
 
