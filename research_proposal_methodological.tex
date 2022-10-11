@@ -64,7 +64,7 @@ Scalable Bayesian Methods for Scientific Machine Learning
 Andrew Roberts
 \end{flushright} 
 
-The effectiveness of formally combining scientific knowledge with statistical and machine learning methods is increasingly being recognized \cite{Willcox}. Physical models
+The effectiveness of formally combining scientific knowledge with statistical and machine learning methods is increasingly being recognized \cite{Willcox, Laubmeier, Wikle}. Physical models
 encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification. This interplay between domain 
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
@@ -104,14 +104,15 @@ methodological study has been conducted. Moreover, these existing methods consid
 are common in ecological applications \cite{Fer}. 
 
  \textbf{2. Spatio-temporal Dynamics}
-With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatiotemporal generalizations in the statistical model. Given the spatiotemporal nature of most physical processes, ... Parameters $\theta$ may be thought to vary over space
+With methodologically sound and scalable algorithms in hand for the baseline static case, I will then be in a position to begin investigating spatiotemporal generalizations of the statistical model. Given the spatiotemporal nature of most physical processes, this is an important extension that is often ignored, presumably due to computational challenges (\cite{Fer2}, [another citation]). Parameters $\theta$ may be thought to vary over space
 and time; however, even if they are not then quantifying spatiotemporal variation in uncertainty can help identify 
-missing processes in physical models as well as provide a greater understanding as to the generalizability of the process model beyond observed data (\cite{Fer2}, \cite{Dietze}).
+missing processes in physical models, as well as provide a greater understanding as to the generalizability of the process model beyond observed data (\cite{Fer2}, \cite{Dietze}, [cite transferability study?]). 
 
 The general data model I will consider is 
   \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
  where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. While there is a body of research
- concerning computer models with spatial and/or temporal output [cite] 
+ concerning computer models with spatial and/or temporal output [cite],... Researchers in both the spatiotemporal statistics and computer modeling communities
+ have noted the potential for integrating methods in both fields using modern advances in machine learning and computation [cite: Gramacy stochastic simulator review and Wikle spatiotemporal stats review].
  
  
  
@@ -220,6 +221,8 @@ and the introduction of new parameters makes inference more difficult in the res
 \bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
 \bibitem{Waring} Richard H. Waring, Steven W. Running, CHAPTER 10 - Advances in Eddy-Flux Analyses, Remote Sensing, and Evidence of Climate Change, Forest Ecosystems (Third Edition), Academic Press, 2007, Pages 317-344, ISBN 9780123706058, https://doi.org/10.1016/B978-012370605-8.50017-7.
 \bibitem{Clark} Clark, James S. 2005. Why environmental scientists are becoming Bayesians. Ecology Letters, Vol. 8: 2-14
+\bibitem{Laubmeier} Laubmeier et al. Ecological Dynamics: Integrating Empirical, Statistical, and Analytical Methods. Trends Ecol Evol. 2020 Dec;35(12):1090-1099. doi: 10.1016/j.tree.2020.08.006. Epub 2020 Sep 12. PMID: 32933777.
+\bibitem{Wikle} Wikle, C.K. (2015), Modern perspectives on statistics for spatio-temporal data. WIREs Comput Stat, 7: 86-98. https://doi.org/10.1002/wics.1341
 
 \end{thebibliography}
 
