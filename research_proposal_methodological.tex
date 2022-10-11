@@ -80,12 +80,38 @@ unknown ecological parameters such as the soil respiration rate or seasonal leaf
 order to calibrate (i.e. estimate) the unknown parameters $\theta$, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. 
 
 These tasks may be complicated by several features commonly found in real-world applications. First, the runtime of the computer model $f$ may be prohibitively long, 
-precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. Second, the 
+precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. There is a wide body 
+of literature dedicated to approximation techniques to circumvent this problem, with particular emphasis on the flexible approach of fitting a Gaussian process 
+emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$,and then using $\hat{f}$
+in place of $f$ in the inference algorithm [cite]. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
+or accounted for in an ad hoc manner [cite]. A second complication common in computer modeling is that the 
 underlying process being modeled by $f$ often exhibits complex dynamics, and attempts to explicitly model these dynamics lead to even more computationally challenging
-models. Terrestrial carbon models have both of these features; sophisticated models often require many hours to run a single execution \cite{Fer} and the ecological 
-parameters $\theta$ commonly exhibit spatiotemporal variation. 
+models. (need a sentence here)Terrestrial carbon models have both of these features; sophisticated simulations often require many hours to run a single execution \cite{Fer} and the ecological 
+parameters $\theta$ commonly exhibit spatiotemporal variation [cite]. (include stochastic simulators as third challenge?) These problems share a common theme: the difficulty in striking 
+a balance between realism and computational and statistical feasibility in the analysis of computer models. Often, one of these characteristics must be sacrificed in favor of the other [cite].
+Given the ubiquity of these models in informing evidence-based policy, it is essential to develop novel methods to handle more complex models while providing
+an accurate accounting of uncertainties. 
+Recent calls have highlighted the need for research that brings together state-of-the-art computational methods with modern statistical and machine learning models in order to 
+address these problems [cite Wikle, Gramacy]. My proposed research addresses this need. 
 
-[carbon models exhibit both] [balance that must be struck]
+\noindent
+\textbf{Research Plan.} (update this intro) To address these problems, I will begin by developing baseline methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest'' uncertainty quantification. I will then generalize the statistical model to explicitly incorporate spatial information, seeking to improve predictive power and allowing for spatially-indexed uncertainty estimates. Finally, I will generalize to a full spatiotemporal model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting \cite{Dietze}. 
+ c
+ 
+ 
+ 
+ 
+ \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
+ for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through 
+ the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
+ where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
+ $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $f(\theta)$ in the inference algorithm \cite{Fer}. 
+ 
+While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous study of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
+
+
+
+
 
 
 These 
