@@ -64,8 +64,8 @@ Scalable Bayesian Methods for Scientific Machine Learning
 Andrew Roberts
 \end{flushright} 
 
-The effectiveness of formally combining scientific knowledge with statistical and machine learning methods is increasingly being recognized \cite{Willcox, Laubmeier, Wikle}. Physical models
-encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification. This interplay between domain 
+The effectiveness of formally combining scientific theory with statistical and machine learning methods is increasingly being recognized \cite{Willcox, Laubmeier, Wikle}. Physical models
+encapsulate prior scientific knowledge, while a Bayesian statistical framework allows for principled inference, prediction, and uncertainty quantification [cite]. This interplay between domain 
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
@@ -73,26 +73,22 @@ Complex computer models have become essential tools for studying complex phenome
 tackling problems ranging from climate projections [cite] to pandemic response [cite]. My proposed research program will contribute methodological 
 advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
 overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
-setting of interest, let $f: \theta \mapsto \R^d$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
+setting of interest, let $f: \theta \mapsto \R^k$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
 In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Waring} and $\theta$ may encompass 
 unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
-order to calibrate (i.e. estimate) the unknown parameters $\theta$, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. 
+order to calibrate (i.e. estimate) the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. [Add basic model setup here]
 
-These tasks may be complicated by several features commonly found in real-world applications. First, the runtime of the computer model $f$ may be prohibitively long, 
-precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. There is a wide body 
-of literature dedicated to approximation techniques to circumvent this problem, with particular emphasis on the flexible approach of fitting a Gaussian process 
-emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$,and then using $\hat{f}$
-in place of $f$ in the inference algorithm [cite]. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
-or accounted for in an ad hoc manner [cite]. A second complication common in computer modeling is that the 
-underlying process being modeled by $f$ often exhibits complex dynamics, and attempts to explicitly model these dynamics lead to even more computationally challenging
-models. (need a sentence here)Terrestrial carbon models have both of these features; sophisticated simulations often require many hours to run a single execution \cite{Fer} and the ecological 
-parameters $\theta$ commonly exhibit spatiotemporal variation [cite]. (include stochastic simulators as third challenge?) These problems share a common theme: the difficulty in striking 
-a balance between realism and computational and statistical feasibility in the analysis of computer models. Often, one of these characteristics must be sacrificed in favor of the other [cite].
+These tasks may be complicated by several features commonly present in real-world applications. First, the runtime of the computer model $f$ may be prohibitively long, 
+precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. A standard approach to address this problem is to fit a Gaussian process 
+emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then use $\hat{f}$
+in place of $f$ in subsequent inference \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
+or accounted for in an ad hoc manner \cite{Fer}. A second complication common in this setting arises due to the complexity of the underlying process being modeled by $f$. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
+(e.g $\sigma^2$) may all exhibit variation across space and time. Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. Terrestrial carbon models often face both of these challenges; sophisticated simulations often have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation $\theta$ \cite{Fer2} [another citation?]. All of these problems share a common theme: the difficulty in striking a balance between realism and computational and statistical feasibility in the analysis of complex systems. Often, one of these characteristics must be sacrificed in favor of the other [cite].
 Given the ubiquity of computer models in informing evidence-based policy, it is essential to develop novel methods to handle more complex models while providing
 an accurate accounting of uncertainties. 
 Recent calls have highlighted the need for research that brings together state-of-the-art computational methods with modern statistical and machine learning models in order to address these problems [cite Wikle, Gramacy]. My proposed research addresses this need. 
-[also should add why UQ is important: scientific discovery and data-driven decision making] [make more clear that I'm working on statistical models, not the process models themselves] [At least state the basic model: $y = f(\theta) + \epsilon$] [somewhere should state why it is important to generalize Gaussian error model]
+[also should add why UQ is important: scientific discovery and data-driven decision making] [make more clear that I'm working on statistical models, not the process models themselves] [At least state the basic model: $y = f(\theta) + \epsilon$] [somewhere should state why it is important to generalize Gaussian error model] [Include stochastic simulators as third challenge?]
 
 \noindent
 \textbf{Research Plan.} (update this intro) An emphasis throughout this research will be the principled quantification of uncertainty, which is made more difficult
@@ -134,6 +130,7 @@ theory \cite{Kugler} and Bayesian filtering \cite{Sarkka}, and (iii.) extend my 
 \bibitem{Laubmeier} Laubmeier et al. Ecological Dynamics: Integrating Empirical, Statistical, and Analytical Methods. Trends Ecol Evol. 2020 Dec;35(12):1090-1099. doi: 10.1016/j.tree.2020.08.006. Epub 2020 Sep 12. PMID: 32933777.
 \bibitem{Wikle} Wikle, C.K. (2015), Modern perspectives on statistics for spatio-temporal data. WIREs Comput Stat, 7: 86-98. https://doi.org/10.1002/wics.1341
 \bibitem{Baker} Baker et al. "Analyzing Stochastic Computer Models: A Review with Opportunities." Statist. Sci. 37 (1) 64 - 89, February 2022. https://doi.org/10.1214/21-STS822
+\bibitem{Kennedy} Kennedy, M.C. and O'Hagan, A. (2001), Bayesian calibration of computer models. Journal of the Royal Statistical Society: Series B (Statistical Methodology), 63: 425-464. https://doi.org/10.1111/1467-9868.00294
 
 \end{thebibliography}
 
