@@ -102,6 +102,28 @@ as increasingly complex statistical models demand additional computational appro
  for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through the inference procedure? In the current literature, this question is either largely ignored or addressed in an ad hoc manner [cite]. Gaining a rigorous understanding of methods for propagating emulator uncertainty is essential to ensure that model predictions are not inaccurately presented as overly confident. Various papers have offered bespoke solutions to this problem (\cite{Cleary}, \cite{Fer}), but no comprehensive
 methodological study has been conducted. Moreover, these existing methods consider only the Gaussian error model and treat emulator uncertainty in an independent fashion, failing to take advantage of the correlation in Gaussian process predictions. I will address these gaps in the literature by (i.) conducting a rigorous comparison of methods for propagating emulator uncertainty under the standard Gaussian noise model, (ii.) developing novel techniques which take advantage of the Gaussian process predictive correlation, and (iii.) generalize these methods to auto-regressive and Laplace error models, both of which 
 are common in ecological applications \cite{Fer}. 
+
+ \textbf{2. Spatio-temporal Dynamics}
+With methodologically sound and scalable algorithms in hand for the baseline static model, I will then be in a position to begin investigating spatiotemporal generalizations in the statistical model. Given the spatiotemporal nature of most physical processes, ... Parameters $\theta$ may be thought to vary over space
+and time; however, even if they are not then quantifying spatiotemporal variation in uncertainty can help identify 
+missing processes in physical models as well as provide a greater understanding as to the generalizability of the process model beyond observed data (\cite{Fer2}, \cite{Dietze}).
+
+The general data model I will consider is 
+  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
+ where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. While there is a body of research
+ concerning computer models with spatial and/or temporal output [cite] 
+ 
+ 
+ 
+ To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
+  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
+  via the Markovian linear model
+  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
+  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
+  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
+  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
+  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
+  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
  
 
 These 
@@ -154,19 +176,6 @@ I have detailed two
  where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
  $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $f(\theta)$ in the inference algorithm \cite{Fer}. 
  
-   \textbf{2. Spatio-temporal Dynamics}
-   The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
-  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
-  where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
-  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
-  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
-  via the Markovian linear model
-  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
-  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
-  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
-  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
-  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
-  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
  
 While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous study of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
  
