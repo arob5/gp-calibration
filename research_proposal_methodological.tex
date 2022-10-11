@@ -92,7 +92,7 @@ a balance between realism and computational and statistical feasibility in the a
 Given the ubiquity of computer models in informing evidence-based policy, it is essential to develop novel methods to handle more complex models while providing
 an accurate accounting of uncertainties. 
 Recent calls have highlighted the need for research that brings together state-of-the-art computational methods with modern statistical and machine learning models in order to address these problems [cite Wikle, Gramacy]. My proposed research addresses this need. 
-[also should add why UQ is important: scientific discovery and data-driven decision making] [make more clear that I'm working on statistical models, not the process models themselves]
+[also should add why UQ is important: scientific discovery and data-driven decision making] [make more clear that I'm working on statistical models, not the process models themselves] [At least state the basic model: $y = f(\theta) + \epsilon$] [somewhere should state why it is important to generalize Gaussian error model]
 
 \noindent
 \textbf{Research Plan.} (update this intro) An emphasis throughout this research will be the principled quantification of uncertainty, which is made more difficult
@@ -100,9 +100,8 @@ as increasingly complex statistical models demand additional computational appro
  
  \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
  for the uncertainty introduced by the emulator approximation, resulting in overly confident posterior estimates. This begs the question: what is the ``correct'' way to propagate the emulator uncertainty through the inference procedure? In the current literature, this question is either largely ignored or addressed in an ad hoc manner [cite]. Gaining a rigorous understanding of methods for propagating emulator uncertainty is essential to ensure that model predictions are not inaccurately presented as overly confident. Various papers have offered bespoke solutions to this problem (\cite{Cleary}, \cite{Fer}), but no comprehensive
-methodological study has been conducted. Moreover, the existing methods treat emulator uncertainty in an independent fashion, failing to take advantage
-of the correlation in Gaussian process predictions. I will address these gaps in the literature by (i.) conducting a rigorous comparison of methods
-for propagating emulator uncertainty, (ii.) developing novel techniques which take advantage of the predictive correlation, and (iii.) [TODO]
+methodological study has been conducted. Moreover, these existing methods consider only the Gaussian error model and treat emulator uncertainty in an independent fashion, failing to take advantage of the correlation in Gaussian process predictions. I will address these gaps in the literature by (i.) conducting a rigorous comparison of methods for propagating emulator uncertainty under the standard Gaussian noise model, (ii.) developing novel techniques which take advantage of the Gaussian process predictive correlation, and (iii.) generalize these methods to auto-regressive and Laplace error models, both of which 
+are common in ecological applications \cite{Fer}. 
  
 
 These 
@@ -154,6 +153,20 @@ I have detailed two
  the inference procedure? A few entirely reasonable options are to: 1.) replace the original inverse problem $y = f(\theta) + \epsilon$ with the modified version $y = f(\theta) + \eta_{\text{GP}}(\theta) + \epsilon$, 
  where $\eta_{\text{GP}} \sim N(0, k(\theta, \theta))$ \cite{Cleary}, 2.) marginalize the approximate likelihood $N(\hat{f}(\theta), \sigma^2)$ over $\hat{f}(\theta)$, or 3.) sample from the Gaussian process 
  $f_\theta \sim \mathcal{GP}(m(\theta), k(\theta, \theta))$ and use the sample $f_\theta$ in place of $f(\theta)$ in the inference algorithm \cite{Fer}. 
+ 
+   \textbf{2. Spatio-temporal Dynamics}
+   The natural next step is to extend the model to incorporate temporal variation. The general data model I will consider is 
+  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
+  where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatio-temporal processes. 
+  To avoid the limitations associated with estimating space-time covariance matrices, I will adopt the modern dynamic model approach \cite{Arab}. As a simple example, 
+  we can let $\theta_t := (\theta_t (s_1), \dots, \theta_t (s_m))$ be a spatial process at known locations $s_1, \dots, s_m$ at time $t$ and assume this process is updated
+  via the Markovian linear model
+  \[\theta_t = T_{\gamma_t} \theta_{t - 1} + \epsilon_t, \text{ where } \epsilon_t \sim N(0, \Sigma_\epsilon)\]
+  where $T_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$ \cite{Arab}. Clearly, even this simple model leads to a 
+  much higher-dimensional parameter space and its associated computational challenges. I will use this model as a starting point, develop methods for more
+  complicated generalizations, and extend my previous work to develop efficient methods of quantifying uncertainty across the spatial and temporal dimensions. 
+  I will develop dimensionality reduction and approximation methods that draw both from Bayesian inverse problem theory (e.g. \cite{Kugler}), Bayesian filtering \cite{Sarkka},
+  and recent advances in dynamic spatiotemporal modeling (e.g. \cite{Hefley}). 
  
 While all seemingly reasonable, these approaches have subtle differences and may only be suitable with certain inference algorithms. Motivated by the fact that well-calibrated uncertainty estimates are essential in applications, I will conduct a rigorous study of what constitutes ``honest'' uncertainty quantification in this setting and develop scalable algorithms that correctly propagate emulator uncertainty. 
  
