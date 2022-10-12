@@ -73,14 +73,14 @@ Computer models have become essential tools for studying complex phenomena in a 
 tackling problems from climate projections \cite{Canadell} to pandemic response \cite{Swallow}. My proposed research program will contribute methodological 
 advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
 overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
-setting of interest, let $f: \theta \mapsto \R^k$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
+setting of interest, let $f: \theta \mapsto \R$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
 In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Waring} and $\theta$ may encompass 
-unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
+unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y \in \R^n$ in 
 order to calibrate (i.e. estimate) the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. These problems are typically formulated in a Bayesian setting due to its flexibility in accommodating various distinct sources of uncertainty \cite{Kennedy, Clark}. One might consider the very simple data model in which the simulator output is assumed to give the mean of the true underlying process, subject
 to some white noise.   
 \begin{align*}
-&y \sim N(f(\theta), \sigma^2) \\
+&y \sim N(f(\theta), \sigma^2 I_n) \\
 &(\theta, \sigma^2) \sim \pi_0
 \end{align*}
 Here, $\pi_0$ is a prior distribution that encodes previous domain knowledge about the process parameters $\theta$ and statistical parameter $\sigma^2$.
