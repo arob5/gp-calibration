@@ -69,7 +69,7 @@ encapsulate prior scientific knowledge, while a Bayesian statistical framework a
 knowledge and statistical inference is essential for advancing scientific theory and informing high-consequence decision-making. My research goal is to develop novel methodological 
 and computational approaches for model calibration, prediction, and uncertainty quantification for scientifically-informed modeling of complex systems. 
 
-Computer models (i.e. simulators or process models) have become essential tools for studying complex phenomena in a wide variety of scientific and engineering disciplines, 
+Computer models have become essential tools for studying complex phenomena in a wide variety of scientific and engineering disciplines, 
 tackling problems from climate projections \cite{Canadell} to pandemic response \cite{Swallow}. My proposed research program will contribute methodological 
 advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
 overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
@@ -77,29 +77,25 @@ setting of interest, let $f: \theta \mapsto \R^k$ denote the computer model (i.e
 parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
 In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Waring} and $\theta$ may encompass 
 unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y$ in 
-order to calibrate (i.e. estimate) the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. These problems are typically formulated in a Bayesian setting due to its flexibility in accommodating various distinct sources of uncertainty \cite{Kennedy, Clark}. One might consider the very simple data model in which the simulator output gives the mean of the true underlying process, subject
+order to calibrate (i.e. estimate) the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. These problems are typically formulated in a Bayesian setting due to its flexibility in accommodating various distinct sources of uncertainty \cite{Kennedy, Clark}. One might consider the very simple data model in which the simulator output is assumed to give the mean of the true underlying process, subject
 to some white noise.   
 \begin{align*}
 &y \sim N(f(\theta), \sigma^2) \\
 &(\theta, \sigma^2) \sim \pi_0
 \end{align*}
-where $\pi_0$ is a prior distribution that encodes domain knowledge about the process parameters $\theta$ and statistical parameter $\sigma^2$.
-The problem of inferring the parameters $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem}. ``Solving'' such a problem is defined as obtaining the posterior distribution $p(\theta|y)$.  
-[clarify use of process model/simulator]
+Here, $\pi_0$ is a prior distribution that encodes previous domain knowledge about the process parameters $\theta$ and statistical parameter $\sigma^2$.
+The problem of inferring the parameters $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. ``Solving'' such a problem is defined as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2)\pi_0(\theta)$, which typically involves utilizing an iterative inference procedure like Markov Chain Monte Carlo (MCMC).
 
-These tasks are complicated by several features commonly present in real-world applications. First, the runtime of the computer model $f$ may be prohibitively long, 
-precluding the tens of thousands of evaluations typically required by the Monte Carlo approaches used for calibration and uncertainty quantification. A standard approach to address this problem is to fit a Gaussian process 
-emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate the true model $f$, and then use $\hat{f}$
-in place of $f$ in subsequent inference \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
+The use of computer models is complicated by several features commonly present in real-world applications. First, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
+emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
 or accounted for in an ad hoc manner \cite{Fer}. A second complication common in this setting arises due to the complexity of the underlying process being modeled by $f$. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
-(e.g. $\sigma^2$) may all exhibit variation across space and time. Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. Terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2} [another citation?]. All of these problems share a common theme: the difficulty in striking a balance between realism and computational and statistical feasibility in the analysis of complex systems. Often, one of these characteristics must be sacrificed in favor of the other [cite].
-Given the ubiquity of computer models in informing evidence-based policy, it is essential to develop methods to handle more complex models without sacrificing
-comprehensive uncertainty quantification.
+(e.g. $\sigma^2$) may exhibit variation across space and time. Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. Terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2} [another citation?]. All of these problems share a common theme: the difficulty in striking a balance between realism and computational and statistical feasibility in the analysis of complex systems. Often, one of these characteristics must be sacrificed in favor of the other [cite].
+Given the ubiquity of computer models in informing evidence-based policy, it is essential to develop methods to handle more complex models while simultaneously providing a full accounting of uncertainties. 
 There have been recent calls highlighting the need for research that brings together state-of-the-art computational methods with modern statistical and machine learning models in order to address these problems \cite{Wikle, Baker}. My proposed research aims to address this need. 
-[also should add why UQ is important: scientific discovery and data-driven decision making] [make more clear that I'm working on statistical models, not the process models themselves] [At least state the basic model: $y = f(\theta) + \epsilon$] [somewhere should state why it is important to generalize Gaussian error model] [Include stochastic simulators as third challenge?]
+[somewhere should state why it is important to generalize Gaussian error model] [Include stochastic simulators as third challenge?]
 
 \noindent
-\textbf{Research Plan.} (update this intro) An emphasis throughout this research will be the principled quantification of uncertainty, which is made more difficult
+\textbf{Research Plan.} An emphasis throughout this research will be the principled quantification of uncertainty, which is made more difficult
 as increasingly complex statistical models demand additional computational approximation techniques. Therefore, I will begin by addressing fundamental issues of uncertainty in standard static, deterministic models. Specifically, I will develop methods for incorporating emulator uncertainty into the statistical inference algorithm in order to achieve more ``honest'' uncertainty quantification. With this foundation established, I will then be in a position to integrate spatiotemporal dynamics into the statistical model, as well as consider the issue of stochastic simulators. These modeling steps will pose increasingly difficult computational challenges, which I intend to address by developing approximation and dimensionality reduction techniques. Throughout this process, I will test these methods on terrestrial carbon models commonly used in ecological forecasting \cite{Dietze}. 
  
  \textbf{1. Propagating Emulator Uncertainty.} I will begin by exploring the ramifications of approximating the computationally expensive model $f$ with the  cheaper Gaussian process emulator $\hat{f}$. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$. However, this fails to account
@@ -144,6 +140,8 @@ other Biogeochemical Cycles and Feedbacks. In Climate Change 2021: The Physical 
 Working Group I to the Sixth Assessment Report of the Intergovernmental Panel on Climate Change. Cambridge University Press,
 Cambridge, United Kingdom and New York, NY, USA, pp. 673–816, doi:10.1017/9781009157896.007.
 \bibitem{Swallow} Swallow et al, Challenges in estimation, uncertainty quantification and elicitation for pandemic modelling, Epidemics, Volume 38, 2022, 100547, ISSN 1755-4365, https://doi.org/10.1016/j.epidem.2022.100547.
+\bibitem{Stuart} A. M. Stuart (2010). Inverse problems: A Bayesian perspective. Acta Numerica, 19, pp 451-559 doi:10.1017/
+S0962492910000061.
 \end{thebibliography}
 
 
