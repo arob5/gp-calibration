@@ -68,31 +68,30 @@ The effectiveness of formally combining scientific theory with statistical and m
 Physical models encapsulate prior scientific knowledge, while a rigorous statistical framework allows for principled inference, prediction, and uncertainty quantification \cite{Clark}. Computer models have become essential tools at this scientific-statistical interface, tackling problems from 
 climate projections \cite{Canadell} to pandemic response \cite{Swallow}. The task of combining these models with real-world data continues to present
 significant challenges, requiring tradeoffs between realism and computational and statistical feasibility. Given the ubiquity of computer models in informing
- evidence-based policy, it is essential to develop methods to handle more complex models [different word other than model?] while simultaneously providing a full accounting of uncertainties.
+ evidence-based policy, it is essential to develop methods to handle increased complexity while simultaneously providing a full accounting of uncertainties.
 Recent calls have highlighted the need to bring together state-of-the-art computational methods with modern statistical 
 and machine learning models in order to address these problems \cite{Wikle, Baker}. My proposed research aims to address this need by developing novel methodological and computational approaches for combining large-scale datasets with [adjective?] computer models, with the goal of improving scientifically-informed modeling of complex systems. 
 
-[Better intro] Scientists often utilize a computer model $f$ of a physical process, where the output
-is a function of some unknown, unobserved parameter $\theta$. For example, to study the terrestrial carbon cycle, ecologists use a process model $f$ 
+Complex processes are commonly studied using a computer model $f$, where the output is a function of some unknown, unobserved parameter $\theta$.
+For example, to study the terrestrial carbon cycle, ecologists use a process model $f$ 
 that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Friedlingstein, Waring}. Running the model requires specifying values for parameters that 
 may not be known, such as the soil respiration rate or seasonal leaf growth \cite{Fer}. In order to estimate (i.e. calibrate) these unknown parameters, it is necessary to obtain observations $y$ 
 of the underlying physical process in order to tune $\theta$ so that $f(\theta) \approx y$. This problem is typically formulated in a Bayesian statistical setting due to its flexibility in accommodating
 various sources of uncertainty \cite{Kennedy, Clark}. For example, the simple yet common data model\begin{align*}
-&y \sim N(f(\theta), \sigma^2 I_n) \\
+&y \sim N(f(\theta), \sigma^2 I) \\
 &(\theta, \sigma^2) \sim \pi_0,
 \end{align*}
-assumes the simulator output gives the mean of the true process, subject to white noise. The prior distribution $\pi_0$ encodes previous domain knowledge about the 
-process parameters $\theta$ and statistical parameter $\sigma^2$. The problem of inferring the
- parameters $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. Solving such a problem is defined 
- as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2)\pi_0(\theta)$, which typically involves utilizing an iterative inference procedure like 
- Markov Chain Monte Carlo (MCMC). [maybe mention other things people do with computer models here: UQ, prediction]
+assumes the simulator output gives the mean of the true process, subject to white noise. The prior distribution $\pi_0$ encodes domain knowledge about the 
+process parameter $\theta$ and statistical parameter $\sigma^2$. The problem of inferring $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. Solving such a problem is defined 
+ as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2 I)\pi_0(\theta)$, which typically involves leveraging an iterative inference procedure like Markov Chain Monte Carlo (MCMC). [maybe mention other things people do with computer models here: UQ, prediction]
  
  The use of computer models is complicated by several features commonly present in real-world applications. First, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
 emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
-or accounted for in an ad hoc manner \cite{Fer}. A second complication common in this setting arises due to the complexity of the underlying process being modeled by $f$. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
-(e.g. $\sigma^2$) may exhibit variation across space and time. Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. For example, 
-terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit 
-spatiotemporal variation \cite{Fer2}.
+or accounted for in an ad hoc manner \cite{Fer}. A second complication is the difficulty in extending the statistical model to account for complex dynamics
+in the underlying physical process. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
+(e.g. $\sigma^2$) may exhibit variation across space and time. 
+
+Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. For example, terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2}.
 
 
 % Old paragraph
