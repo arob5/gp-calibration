@@ -83,41 +83,19 @@ various sources of uncertainty \cite{Kennedy, Clark}. For example, the simple ye
 \end{align*}
 assumes the simulator output gives the mean of the true process, subject to white noise. The prior distribution $\pi_0$ encodes domain knowledge about the 
 process parameter $\theta$ and statistical parameter $\sigma^2$. The problem of inferring $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. Solving such a problem is defined 
- as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2 I)\pi_0(\theta)$, which typically involves leveraging an iterative inference procedure like Markov Chain Monte Carlo (MCMC). [maybe mention other things people do with computer models here: UQ, prediction]
+ as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2 I)\pi_0(\theta)$, which typically involves using an iterative inference procedure like Markov Chain Monte Carlo (MCMC). In practice, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
+emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. For example, this approximation is commonly used in terrestrial carbon modeling, given that sophisticated simulations of the carbon cycle can have a runtime of many hours \cite{Fer}. A second complication that arises in practice is the need to account for variation in model
+parameters. In scientific applications, the underlying process commonly exhibits complex dynamics in space and time. The simplified statistical model above fails to account
+for these dynamics, not allowing for spatiotemporal decision making under uncertainty. Hierarchical statistical models can add spatial and temporal structure
+to outputs $y$, process parameters $\theta$, and statistical parameters (e.g. $\sigma^2$), but further increase the computational burden of the inference procedure. My proposed research
+aims to contribute scalable methods which... [finish sentence]
  
- The use of computer models is complicated by several features commonly present in real-world applications. First, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
-emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
-or accounted for in an ad hoc manner \cite{Fer}. A second complication is the difficulty in extending the statistical model to account for complex dynamics
+ A second complication is the difficulty in extending the statistical model to account for complex dynamics
 in the underlying physical process. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
-(e.g. $\sigma^2$) may exhibit variation across space and time. 
+(e.g. $\sigma^2$) may exhibit variation across space and time. Quantifying the spatiotemporal uncertainty is important [expand], yet attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models [bad sentence]. For example, terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2}. [also don't like this sentence]
 
-Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. For example, terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2}.
-
-
-% Old paragraph
-My proposed research program will contribute methodological 
-advances for calibrating, predicting, and quantifying uncertainty using such models. Moreover, this research will support two 
-overarching objectives: (i.) improving data-informed decision-making under uncertainty and (ii.) advancing scientific discovery and research. To define the 
-setting of interest, let $f: \theta \mapsto \R$ denote the computer model (i.e. a simulator or process model) as a function of some unknown and unobserved
-parameters $\theta \in \R^d$. As a motivating example, consider the problem of modeling the terrestrial component of the carbon cycle \cite{Friedlingstein}. 
-In this case, $f$ is a process model that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Waring} and $\theta$ may encompass 
-unknown ecological parameters such as the soil respiration rate or seasonal leaf growth \cite{Fer}. The task is then to confront these models with observational data $y \in \R^n$ in 
-order to calibrate (i.e. estimate) the unknown parameters, utilize the calibrated model for prediction, and carefully track sources of uncertainty throughout the analysis. These problems are typically formulated in a Bayesian setting due to its flexibility in accommodating various distinct sources of uncertainty \cite{Kennedy, Clark}. One might consider the very simple data model in which the simulator output is assumed to give the mean of the true underlying process, subject
-to some white noise.   
-\begin{align*}
-&y \sim N(f(\theta), \sigma^2 I_n) \\
-&(\theta, \sigma^2) \sim \pi_0
-\end{align*}
-Here, $\pi_0$ is a prior distribution that encodes previous domain knowledge about the process parameters $\theta$ and statistical parameter $\sigma^2$.
-The problem of inferring the parameters $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. ``Solving'' such a problem is defined as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2)\pi_0(\theta)$, which typically involves utilizing an iterative inference procedure like Markov Chain Monte Carlo (MCMC). 
-
-The use of computer models is complicated by several features commonly present in real-world applications. First, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
-emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
-or accounted for in an ad hoc manner \cite{Fer}. A second complication common in this setting arises due to the complexity of the underlying process being modeled by $f$. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
-(e.g. $\sigma^2$) may exhibit variation across space and time. Attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models. Terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2} [another citation?]. All of these problems share a common theme: the difficulty in striking a balance between realism and computational and statistical feasibility in the analysis of complex systems. Often, one of these characteristics must be sacrificed in favor of the other [cite].
-Given the ubiquity of computer models in informing evidence-based policy, it is essential to develop methods to handle more complex models while simultaneously providing a full accounting of uncertainties. 
-There have been recent calls highlighting the need for research that brings together state-of-the-art computational methods with modern statistical and machine learning models in order to address these problems \cite{Wikle, Baker}. My proposed research aims to address this need. 
-[somewhere should state why it is important to generalize Gaussian error model] [Include stochastic simulators as third challenge?]
+ While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
+or accounted for in an ad hoc manner \cite{Fer}.
 
 \noindent
 \textbf{Research Plan.} Uncertainty quantification is a major theme underlying each stage of this proposal, and is made more difficult
@@ -128,7 +106,7 @@ as increasingly complex statistical models require additional approximation tech
 methodological study has been conducted. Moreover, these existing methods consider only the Gaussian error model and treat emulator uncertainty in an independent fashion, failing to take advantage of the correlation in Gaussian process predictions. I will address these gaps in the literature by (i.) conducting a rigorous comparison of methods for propagating emulator uncertainty under the standard Gaussian noise model, (ii.) developing novel techniques which take advantage of the Gaussian process predictive correlation, and (iii.) generalize these methods to auto-regressive and Laplace error models, both of which 
 are common in ecological applications \cite{Fer}. 
 
- \textbf{2. Spatio-temporal Dynamics}
+ \textbf{2. Spatio-temporal Dynamics.}
 With methodologically sound and scalable algorithms in hand for the baseline static framework, I will then be in a position to begin investigating spatiotemporal generalizations of the statistical model. Given the spatiotemporal nature of most physical processes, this is an important extension that is often ignored, presumably due to computational challenges (\cite{Fer2}, [another citation]). Parameters $\theta$ may naturally be thought to vary over space
 and time; even if they are believed to be static, a dynamic model allows for spatially and temporally varying uncertainty estimates, which can help identify 
 missing processes in physical models, as well as provide a greater understanding of how models generalize beyond observed data \cite{Fer2, Dietze}. To address these issues I will extend the data model as 
