@@ -87,13 +87,8 @@ process parameter $\theta$ and statistical parameter $\sigma^2$. The problem of 
 emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Kennedy, Fer, Cleary}. For example, this approximation is commonly used in terrestrial carbon modeling, given that sophisticated simulations of the carbon cycle can have a runtime of many hours \cite{Fer}. A second complication that arises in practice is the need to account for variation in model
 parameters. In scientific applications, the underlying process commonly exhibits complex dynamics in space and time. The simplified statistical model above fails to account
 for these dynamics, not allowing for spatiotemporal decision making under uncertainty. Hierarchical statistical models can add spatial and temporal structure
-to outputs $y$, process parameters $\theta$, and statistical parameters (e.g. $\sigma^2$), but further increase the computational burden of the inference procedure. My proposed research
-aims to contribute scalable methods which... [finish sentence]
+to outputs $y$, process parameters $\theta$, and statistical parameters (e.g. $\sigma^2$), but further increase the computational burden of the inference procedure. My proposed research aims to contribute scalable methods which... [finish sentence, maybe be more explicit that my proposal addresses the two issues detailed above]
  
- A second complication is the difficulty in extending the statistical model to account for complex dynamics
-in the underlying physical process. Simulation outputs $y$, process parameters $\theta$, and statistical parameters 
-(e.g. $\sigma^2$) may exhibit variation across space and time. Quantifying the spatiotemporal uncertainty is important [expand], yet attempts to explicitly model these dynamics lead to even more computationally and statistically challenging models [bad sentence]. For example, terrestrial carbon models often face both of these challenges; sophisticated simulations can have a runtime of many hours \cite{Fer} and ecological parameters have been found to exhibit spatiotemporal variation \cite{Fer2}. [also don't like this sentence]
-
  While this approximation is often necessary, the emulator introduces an additional source of uncertainty that is often ignored 
 or accounted for in an ad hoc manner \cite{Fer}.
 
