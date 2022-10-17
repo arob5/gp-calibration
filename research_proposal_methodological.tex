@@ -106,13 +106,15 @@ static setting. Building upon this foundation, I will then work to embed this co
  \text{Virtual Library of Simulation Experiments} \cite{Surjanovic}, and validation on the SIPNET terrestrial carbon model \cite{Fer}. This ecological simulation uses a simplified model of the carbon cycle, yielding a faster runtime which affords the opportunity to compare against brute force approaches that are typically not possible for larger models. This work will contribute novel theoretical results and off-the-shelf, scalable algorithms for emulator uncertainty propagation in statistical inference, supplanting existing ad hoc approaches with rigorous, validated methodology. 
 
  \textbf{2. Spatiotemporal Dynamics.}
- The next phase of my proposal involves embedding computer models within a spatiotemporal statistical framework, while continuing to build upon the uncertainty quantification work detailed above. My general approach will involve integrating modern techniques from Bayesian filtering \cite{Sarkka}, inverse problem theory \cite{Kugler}, and spatiotemporal statistics \cite{Wikle, Hefley} within the computer modeling framework. To explicitly model spatiotemporal dynamics, I will consider the general data model
+ The next phase of my proposal involves embedding computer models within a spatiotemporal statistical framework, while continuing to build upon the uncertainty quantification work detailed above. I will adopt a modern state-space framework, drawing from recent advances in Bayesian filtering 
+ \cite{Sarkka} and dynamic spatiotemporal modeling \cite{Wikle, Hefley}.  
+To explicitly model spatiotemporal dynamics, I will consider the general data model
  \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t)\]
- where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. For example, the process parameters can be modeled using a Markovian linear model
+ where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. I will then formulate dynamic models for the parameters. For example, the process parameters can be assumed to follow a Markovian linear model
  \[\theta_t = H_{\gamma_t} \theta_{t - 1} + \delta_t\]
  where $\theta_t := (\theta_t(s_1), \dots, \theta_t(s_m))$ denotes the process parameters at time $t$ and spatial locations $s_1, \dots, s_m$, 
  and $H_{\gamma_t}$ is a transition matrix that potentially depends on some time-varying parameters $\gamma_t$. These extensions yield high-dimensional 
- hierarchical models that pose problems for existing inference algorithms. To address these issues I will 
+ hierarchical models that pose problems for existing inference algorithms. To address these issues I will develop novel methodology that extends recent work on inference for high-dimensional partially observed dynamic systems \cite{Park}. Integrating these methods with my Gaussian process emulation and uncertainty quantification framework will face the additional computational bottleneck posed by the poor scalability of Gaussian process prediction. To address this I will adopt a well-known local Gaussian process approximation [cite], making adjustments to correctly propagate the additional approximation uncertainty. I will validate these methods using \textit{PDEBench}, a recent effort to collect standardized benchmark models and metrics in scientific machine learning \cite{Takamoto}. I will further validate my methodology by calibrating the SIPNET carbon model over the contiguous United States, and ultimately progress to similar tests of the more computationally-intensive ED2 carbon model \cite{Fer, Fer2}.
  
  
 With methodologically sound and scalable algorithms in hand for the baseline static framework, I will then be in a position to begin investigating spatiotemporal generalizations of the statistical model. Given the spatiotemporal nature of most physical processes, this is an important extension that is often ignored, presumably due to computational challenges (\cite{Fer2}, [another citation]). Parameters $\theta$ may naturally be thought to vary over space
@@ -154,7 +156,8 @@ S0962492910000061.
 \bibitem{Fadikar} Fadikar et al, Calibrating a Stochastic, Agent-Based Model Using Quantile-Based Emulation. SIAM/ASA Journal on Uncertainty Quantification. https://doi.org/10.1137/17M1161233.
 \bibitem{Surjanovic} Surjanovic et al, Virtual Library of Simulation Experiments: Test Functions and Datasets.
 \bibitem{Takamoto} Takamoto et al, PDEBench: An Extensive Benchmark for Scientific Machine Learning. Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track
-\bibitem{Tuo} et al, A theoretical framework for calibration in computer models: parametrization, estimation and convergence properties. 
+\bibitem{Tuo} Tuo et al, A theoretical framework for calibration in computer models: parametrization, estimation and convergence properties. 
+\bibitem{Park} Park et al, Inference on high-dimensional implicit dynamic models using a guided intermediate resampling filter
 
 \end{thebibliography}
 
