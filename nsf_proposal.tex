@@ -96,10 +96,14 @@ I will then generalize these ideas to error models for simulators with time-inde
 These extensions yield high-dimensional hierarchical models that pose problems for existing inference algorithms. To address these issues I will develop novel methodology that extends recent work on inference for high-dimensional partially observed dynamic systems \cite{Park}. Integrating these methods with my Gaussian process emulation and uncertainty quantification framework will face the additional computational bottleneck posed by the poor scalability of Gaussian process prediction. To deal with this I will adopt a well-known parallelizable local Gaussian process approximation \cite{Gramacy}, making adjustments to correctly propagate the additional approximation uncertainty. I will validate these methods using \textit{PDEBench}, which offers a suite of time-varying simulations as benchmarks for scientific machine learning methods \cite{Takamoto}. I will further validate my methodology by scaling the SIPNET carbon model calibration to cover the contiguous United States, and ultimately progress to similar tests of the more computationally-intensive ED2 carbon simulator \cite{Fer, Fer2}.
 
 \noindent
-\textbf{Intellectual Merit.} This research will produce broadly applicable Bayesian methodology for the statistical analysis of expensive computer models using extensive spatiotemporal datasets. It will contribute novel theoretical results and off-the-shelf, scalable algorithms for emulator uncertainty propagation in statistical inference, supplanting existing ad hoc approaches with rigorous, validated methodology. Moreover, it will integrate recent advances in dynamic spatiotemporal modeling with computer modeling methodology, addressing current computational bottlenecks in large-scale simulation-based inference.
+\textbf{Intellectual Merit.} This research will produce broadly applicable Bayesian methodology for the statistical analysis of computer models using extensive spatiotemporal datasets. It will contribute novel theoretical results and off-the-shelf, scalable algorithms for emulator uncertainty propagation in statistical inference, supplanting existing ad hoc approaches with rigorous, validated methodology. Moreover, it will integrate recent advances in dynamic spatiotemporal modeling with computer modeling methodology, addressing current computational bottlenecks in large-scale simulation-based inference.
 
 \noindent
-\textbf{Broader Impacts.} 
+\textbf{Broader Impacts.} All methodological developments will be implemented in open-source, well-documented software packages, intended for use across a wide array of scientific disciplines. These packages will be integrated in the \textit{Predictive Ecosystem Analyzer}, an open-source software tool that allows researchers and land managers to work with ecological models and observational data \cite{Fer}. This has the potential to drastically accelerate the pace of ecological model development,  
+
+-dissemination: open-source, PEcAn as specific example
+-ecological impacts: policy, climate change
+-mentorship
 
 
 \section{Stuff to move to broader impacts or intellectual merit}
