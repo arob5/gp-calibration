@@ -16,18 +16,52 @@ preprocess.settings <- function(settings) {
   }
   
   # Init tau.gamma.shape so that the hyperprior mean of tau equals the true tau value
-  if(is.null(settings$tau.gamma.shape) & (settings$tau.gamma.rate == 1.0)) {
-    settings$tau.gamma.shape <- settings$tau.true
+  if(is.null(settings$tau.gamma.shape)) {
+    settings$tau.gamma.shape <- settings$tau.true * settings$tau.gamma.rate
   }
   
-  # Init u.gaussian.mean so that hyperprior mean of u equals the true u value
-  if(is.null(settings$u.gaussian.mean)) {
-    settings$u.gaussian.mean <- settings$u.true
+  for(j in seq_len(settings$k)) {
+    
+    # Init u.gaussian.mean so that hyperprior mean of u equals the true u value
+    if((length(settings$u.gaussian.mean) < j) || is.null(settings$u.gaussian.mean[[j]])) {
+      settings$u.gaussian.mean[[j]] <- settings$u.true[[j]]
+    }
+    
+    # If Gaussian std devs are NULL, initialize so that the priors have the specified
+    # coefficients of variation. 
+    if((length(settings$u.gaussian.sd) < j) || is.null(settings$u.gaussian.sd[[j]])) {
+      if(is.null(settings$u.prior.coef.var[[j]])) {
+        stop("Either <u.gaussian.sd> or <u.prior.coef.var> must be non-NULL for calibration parameter ", j)
+      }
+    
+      settings$u.gaussian.sd[[j]] <- settings$u.prior.coef.var[[j]] * settings$u.gaussian.mean[[j]]
+    }
+    
+    # If calibration parameter range is NULL, set to (-Inf, Inf).
+    if((length(settings$u.rng) < j) || is.null(settings$u.rng[[j]])) {
+      settings$u.rng[[j]] <- c(-Inf, Inf)
+    }
   }
   
-  if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")])) && is.null(settings$X)) {
-    settings$X <- matrix(seq(qnorm(.01, settings$u.true, settings$sigma.true), 
-                             qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N), ncol = settings$k)
+  # Convert lists to more convenient types
+  settings$u.true <- as.vector(settings$u.true, mode = "numeric")
+  settings$u.gaussian.mean <- as.vector(settings$u.gaussian.mean, mode = "numeric")
+  settings$u.gaussian.sd <- as.vector(settings$u.gaussian.sd, mode = "numeric")
+  settings$u.prior.coef.var <- as.vector(settings$u.prior.coef.var, mode = "numeric")
+  settings$u.rng <- matrix(c(sapply(settings$u.rng, function(x) x)), nrow = settings$k, ncol = 2, byrow = TRUE)
+  
+  # If not explicitly passed, generate design via Latin Hypercube Sampling
+  run.algs <- settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
+  if(!any(sapply(run.algs, is.null)) && any(as.logical(run.algs)) && is.null(settings$X)) {
+    LHS.X.pred <- is.null(settings$X.pred)
+    if(LHS.X.pred) {
+      X.LHS <- LHS.train.test(settings$N, settings$N.pred, settings$k, 
+                              settings$u.gaussian.mean, settings$u.gaussian.sd, joint = settings$joint.sample.train.test)
+      settings$X <- X.LHS$X
+      settings$X.pred <- X.LHS$X.test
+    } else {
+      settings$X <- randomLHS(settings$N, settings$k)
+    }
   }
   
   return(settings)
@@ -35,11 +69,47 @@ preprocess.settings <- function(settings) {
 }
 
 
+get.model.output <- function(f, X, i) {
+  # f: the model f(u, i)
+  # X: Nxk matrix with design points given by rows
+  # i: Inputs i to f(u, i).
+  
+  N <- nrow(X)
+  y <- vector("numeric", length = N)
+  for(j in 1:N) {
+    y[j] <- f(X[j,], i[j,])
+  }
+  
+  return(y)
+  
+}
+
+
+generate.observed.data <- function(n, f, u, tau, lik.type) {
+  # In each case, f(u) gives the mean of the distribution. tau is either the 
+  # precision (Gaussian), rate parameter (Gamma), or log precision (log-normal)
+  
+  f.vals <- sapply(1:n, function(i) f(u, i))
+  
+  if(lik.type == "gaussian") {
+    y.obs <- rnorm(n, f.vals, 1/sqrt(tau))
+  } else if(lik.type == "gamma") {
+    y.obs <- rgamma(n, shape = tau * f.vals, rate = tau)
+  } else if(lik.type == "lnorm") {
+    y.obs <- rlnorm(n, meanlog = log(f.vals - 0.5 * (1/tau), sdlog = 1 / sqrt(tau)))
+  } else {
+    stop("Invalid likelihood type: ", lik.type)
+  }
+  
+  return(list(y = y.obs, f = f.vals))
+  
+}
+
+
 # Log isotropic multivariate normal density
-log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
+log.dmvnorm <- function(y, u, tau, f.vals, normalize = TRUE) {
   n <- length(y)
-  mu.vec <- rep(f(u), n)
-  log.dens <- 0.5*n*log(tau) - 0.5*tau*sum((y - mu.vec)^2)
+  log.dens <- 0.5*n*log(tau) - 0.5*tau*sum((y - f.vals)^2)
   
   if(normalize) return(log.dens - 0.5*n*log(2*pi))
   return(log.dens)
@@ -47,13 +117,13 @@ log.dmvnorm <- function(y, u, tau, f, normalize = TRUE) {
 
 # Log unnormalized isotropic multivariate normal density, as function of 
 # sufficient statistic
-dmvnorm.log.unnorm.SS <- function(SS, tau, n, normalize = TRUE) {
+dmvnorm.log.SS <- function(SS, tau, n, normalize = TRUE) {
   log.dens <- (n/2)*log(tau) - (tau/2)*SS
   if(normalize) return(log.dens - 0.5*n*log(2*pi))
   return(log.dens)
 }
 
-save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, normalize = TRUE) {
+save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f.vals, tau, normalize = TRUE) {
   
   N.pred <- nrow(X.pred)
   llik.pred <- matrix(NA, nrow = N.pred, ncol = 1)
@@ -77,7 +147,7 @@ save.gaussian.llik.plot <- function(y.obs, X.pred, out.dir, file.name, f, tau, n
 }
 
 
-save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
+save.gp.1d.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.pct, out.path, exp.pred = FALSE) {
   # Determine size of confidence interval to plot
   p <- 1 - (1 - interval.pct)/2
   
@@ -127,7 +197,32 @@ save.gp.pred.mean.plot <- function(gp.obj, X, X.pred, SS, SS.pred, f, interval.p
 }
 
 
-save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
+save.gp.pred.mean.plot <- function(gp.obj, X, X.test, SS, SS.test, 
+                                   lognormal.adjustment = FALSE, log.log.plot = FALSE, out.path) {
+
+  gp.pred <- predict_gp(X.test, gp.obj, lognormal.adjustment = lognormal.adjustment)
+  gp.train.pred <- predict_gp(X, gp.obj, lognormal.adjustment = lognormal.adjustment)
+  dt <- data.table(SS_true = SS.test, SS_pred = as.vector(gp.pred$mean), data_type = "test")
+  dt.train <- data.table(SS_true = SS, SS_pred = as.vector(gp.train.pred$mean), data_type = "train")
+  dt <- rbindlist(list(dt, dt.train), use.names = TRUE)
+  
+  if(log.log.plot) {
+    dt[, SS_true := log(SS_true)]
+    dt[, SS_pred := log(SS_pred)]
+  }
+  
+  ggplot(dt, aes(x=SS_true, y=SS_pred, color=data_type)) + 
+    geom_point() + 
+    xlab(paste0(ifelse(log.log.plot, "Log ", ""), "True")) + 
+    ylab(paste0(ifelse(log.log.plot, "Log ", ""), "Pred")) + 
+    ggtitle("Sufficient Statistic GP Predictions") + 
+    # theme(legend.position = "none") + 
+    geom_abline(intercept = 0, slope = 1)
+  ggsave(out.path)
+}
+
+
+save.gp.1d.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS.pred, out.path) {
 
   # Calculate predictive means and standard errors
   gp.pred <- predict_gp(X.pred, gp.log.obj)
@@ -151,8 +246,8 @@ save.gp.pred.llik.plot <- function(gp.log.obj, tau, n, X, X.pred, log.SS, log.SS
 
   # Likelihood evaluations to plot
   llik.gp.approx <- 0.5 * n * log(tau) + logM - 0.5 * n * log(2*pi) - scale.factors
-  llik.exact.design <- dmvnorm.log.unnorm.SS(exp(log.SS), tau, n)
-  llik.exact.pred <- dmvnorm.log.unnorm.SS(exp(log.SS.pred), tau, n)
+  llik.exact.design <- dmvnorm.log.SS(exp(log.SS), tau, n)
+  llik.exact.pred <- dmvnorm.log.SS(exp(log.SS.pred), tau, n)
   
   # Log-likelihood plot
   range.values <- c(llik.gp.approx, llik.exact.design, llik.exact.pred)
@@ -221,9 +316,9 @@ save.gp.pred.mean.plot.old <- function(interval.pct, tau, y.obs, X, X.pred, SS, 
     llik.pred[i, 1] <- dmvnorm.log.unnorm(y.obs, X.pred[i,1], tau, f)
   }
   
-  llik.gp.mean <- dmvnorm.log.unnorm.SS(gp.means, tau, n, FALSE)
-  llik.gp.upper <- dmvnorm.log.unnorm.SS(gp.pred.upper, tau, n, FALSE)
-  llik.gp.lower <- dmvnorm.log.unnorm.SS(gp.pred.lower, tau, n, FALSE)
+  llik.gp.mean <- dmvnorm.log.SS(gp.means, tau, n, FALSE)
+  llik.gp.upper <- dmvnorm.log.SS(gp.pred.upper, tau, n, FALSE)
+  llik.gp.lower <- dmvnorm.log.SS(gp.pred.lower, tau, n, FALSE)
   
   png(file.path(out.dir, paste0(base.file.name, "_llik.png")), width=600, height=350)
   par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
@@ -344,6 +439,29 @@ save.posterior.plots <- function(posterior.samples, pars, out.dir, int.prob = 0.
 }
 
 
+save.SS.tau.samples.plot <- function(posterior.samples, out.path) {
+  
+  # Combine samples from all chains
+  posterior.samples <- posterior.samples[,,c("tau", "SS")]
+  SS <- as.vector(sapply(seq(1, dim(posterior.samples)[2]), function(chain) posterior.samples[, chain, "SS"]))
+  tau <- as.vector(sapply(seq(1, dim(posterior.samples)[2]), function(chain) posterior.samples[, chain, "tau"]))
+  
+  # Add regression line
+  reg <- lm(tau ~ SS, data = data.frame(SS = SS, tau = tau))
+
+  # Save scatter plot
+  png(out.path, width=600, height=350)
+  plot(SS, tau, main = "Sufficient statistic GP samples vs. tau samples",
+       xlab = "SS", ylab = "tau")
+  abline(reg, col = "red")
+  
+  mtext(paste0("tau = ", format(round(reg$coefficients[1], 2), nsmall = 2), 
+               " + ", format(round(reg$coefficients[2], 2), nsmall = 2), " * SS"), side = 4, col = "red")
+  dev.off()
+
+}
+
+
 par.mcmc.results.to.arr <- function(mcmc.results, pars, n.mcmc, warmup.frac) {
   n.warmup <- ceiling(warmup.frac * n.mcmc)
   warmup.sel <- seq(1, n.warmup)
@@ -459,61 +577,154 @@ lognormal_mgf_numerical_approx <- function(s, mu, sigma, num_eval, tol, M, scale
 }
 
 
-# Mimics output format of rstan::extract
-# Source: https://discourse.mc-stan.org/t/code-to-read-reshape-draws-to-match-rstan-extract/18819
-make_posterior <- function(files, num_warmup = -1){
+calc.SS <- function(X, i, f, y.obs, log.SS = FALSE) {
+  # Run full model at given locations
+  y <- get.model.output(f, X, i)
   
-  # read first line to get parameter (column) names
-  params <- names(data.table::fread(files[1], skip = 38, nrow = 0))
-  
-  # skip warmup draws if they were saved
-  skip <- ifelse(num_warmup > 0, num_warmup + 40, 38)
-  
-  # bind together all the chains, skipping warm-up if necessary
-  chains <- lapply(files, function(file){
-    chain <- suppressWarnings(data.table::fread(file, skip = skip))
-    names(chain) <- params
-    chain
-  }) %>%
-    bind_rows()
-  
-  iter <- nrow(chains)
-  
-  # figure out highest dimension in parameters
-  max_dim <- max(str_count(params, "\\."))
-  
-  # extract parameter names and indices
-  param_dims <- data.frame(param = params) %>%
-    separate(param, into = c('param', paste0('dim', 1:max_dim)), 
-             sep = "\\.", convert = TRUE, fill = "right") %>%
-    group_by(param) %>%
-    summarize_all(max)
-  
-  posterior <- list()
-  
-  # loop over parameters
-  for(i in 1:nrow(param_dims)){
-    
-    param <- param_dims %>%
-      slice(i) %>%
-      pull(param)
-    
-    dims <- param_dims %>%
-      slice(i) %>%
-      select(-param) %>%
-      as.numeric()
-    
-    # reshape draws into array defined by dims
-    draws <- chains %>%
-      select(which(str_detect(names(.), param))) %>%
-      as.matrix() %>%
-      array(c(iter, dims[!is.na(dims)]))
-    
-    posterior[[param]] <- draws
+  # Calculate sufficient statistic at training and test locations
+  N <- nrow(X)
+  SS <- rep(0, N)
+
+  for(i in seq(1, N)) {
+    SS[i] <- sum((y[i] - y.obs)^2)
   }
   
-  posterior
+  if(log.SS) return(log(SS))
+  return(SS)
+
 }
+
+
+LHS.train.test <- function(N, N.test, k, mu.vals, sd.vals, joint = TRUE) {
+
+  # Generate train and test sets
+  if(joint) {
+    X.combined <- randomLHS(N + N.test, k)
+    X <- X.combined[1:N,,drop=FALSE]
+    X.test <- X.combined[-(1:N),,drop=FALSE]
+  } else {
+    X <- randomLHS(N, k)
+    X.test <- randomLHS(N.test, k)
+  }
+  
+  # Apply inverse CDS transform using prior distributions.
+  for(j in seq_len(k)) {
+    X[,j] <- qnorm(X[,j], mu.vals[j], sd.vals[j])
+    X.test[,j] <- qnorm(X.test[,j], mu.vals[j], sd.vals[j])
+  }
+  
+  return(list(X = X, X.test = X.test))
+  
+}
+
+
+fit.GPs <- function(gp.libs, X, SS, log.SS = FALSE) {
+  
+  # If modeling log(SS) instead of SS
+  if(log.SS) {
+    SS <- log(SS)
+  }
+  
+  # Fit GP regressions
+  gp.fits <- vector(mode = "list", length = length(gp.libs))
+  gp.fit.times <- vector(mode = "list", length = length(gp.libs))
+  gp.fits.index <- 1
+  if("mlegp" %in% gp.libs) {
+    tic <- proc.time()[3]
+    gp.fits[[gp.fits.index]] <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+    toc <- proc.time()[3]
+    gp.fit.times[[gp.fits.index]] <- toc - tic
+    names(gp.fits)[[gp.fits.index]] <- "mlegp"
+    names(gp.fit.times)[[gp.fits.index]] <- "mlegp"
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if("hetGP" %in% settings$gp.library) {
+    tic <- proc.time()[3]
+    gp.fits[[gp.fits.index]] <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+    toc <- proc.time()[3]
+    gp.fit.times[[gp.fits.index]] <- toc - tic
+    names(gp.fits)[[gp.fits.index]] <- "hetGP"
+    names(gp.fit.times)[[gp.fits.index]] <- "hetGP"
+    gp.fits.index <- gp.fits.index + 1
+  }
+  
+  if(gp.fits.index != length(gp.fits) + 1) {
+    stop("Invalid GP library detected.")
+  }
+  
+  # Order to match order of gp.libs
+  return(list(gp.list = gp.fits[gp.libs], times = unlist(gp.fit.times)))
+  
+}
+
+
+save.cv.SS.plot <- function(cv.obj, out.path, log.SS = FALSE, gp.libs = NULL) {
+  
+  num.itr.cv <- cv.obj$num.itr.cv
+  num.pred <- length(cv.obj$SS.test[[1]])
+  
+  if(is.null(gp.libs)) {
+    gp.libs <- cv.obj$gp.libs
+  }
+  
+  # Preprocess data for ggplot
+  dt <- data.table(SS_true = c(sapply(cv.obj$SS.test, as.numeric)), 
+                   cv_itr = rep(seq(1, num.itr.cv), each = num.pred))
+  for(gp in gp.libs) {
+    dt[[gp]] <- c(sapply(cv.obj[[gp]]$pred.mean, as.numeric))
+  }
+
+  dt <- melt(dt, id.vars = c("SS_true", "cv_itr"), measure.vars = gp.libs,
+             variable.name = "gp_lib", value.name = "SS_pred")
+  dt[, cv_itr := as.factor(cv_itr)]
+  
+  if(log.SS) {
+    dt[, SS_true := log(SS_true)]
+    dt[, SS_pred := log(SS_pred)]
+  }
+  
+  ggplot(dt, aes(x=SS_true, y=SS_pred, color=cv_itr)) + 
+    geom_point() + 
+    facet_wrap(~gp_lib, scale="free") + 
+    xlab(paste0(ifelse(log.SS, "Log ", ""), "True")) + 
+    ylab(paste0(ifelse(log.SS, "Log ", ""), "Pred")) + 
+    ggtitle("Sufficient Statistic Predictions") + 
+    theme(legend.position = "none") + 
+    geom_abline(intercept = 0, slope = 1)
+  ggsave(out.path)
+  
+}
+
+
+get.cv.summary <- function(cv.obj) {
+  gp.cv.list <- vector(mode = "list", length = length(cv.obj$gp.libs))
+  for(gp in cv.obj$gp.libs) {
+    gp.cv.list[[gp]] <- data.table(gp_lib = gp,
+                                   fit_time = unlist(cv.obj[[gp]]$fit.time),
+                                   cv_itr = seq_len(cv.obj$num.itr.cv),
+                                   rmse = unlist(cv.obj[[gp]]$rmse), 
+                                   mae = unlist(cv.obj[[gp]]$mae))
+  }
+  
+  return(rbindlist(gp.cv.list, use.names = TRUE))
+  
+}
+
+
+save.cv.box.plot <- function(cv.summary, metrics, out.path) {
+  cv.summary <- melt(cv.summary, id.vars = c("gp_lib", "cv_itr"), 
+                     measure.vars = metrics, variable.name = "metric", value.name = "metric_value")
+  num.cv.itr <- max(cv.summary$cv_itr)
+  
+  ggplot(cv.summary, aes(x=gp_lib, y=metric_value)) + 
+  geom_boxplot() + 
+  facet_wrap(~metric, scale="free") + 
+  xlab("") + ylab("")
+  ggsave(out.path)
+
+}
+
 
 
 

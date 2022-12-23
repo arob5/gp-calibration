@@ -417,6 +417,50 @@ where $M_{\mu, \sigma^2}$ is the Laplace transform of a $LN(\mu, \sigma^2)$ dens
 \[p(z|\tau, u) \propto \tau^{n/2} \hat{M}_{\mu(u), k(u,u)}(\tau/2)\]
 
 
+\subsubsection{Extending Model and Considering Model Misspecification}
+The first part of this section is basically just transcribing Jonathan's notes from the 9/9/2022 meeting. Begin by considering a slight generalization of the existing model: 
+\begin{align*}
+z_i &= y_i + \delta_i \\
+y_i &= f(u, i) \\
+\delta_i &\overset{iid}{\sim} N(0, \tau^{-1}) \\
+\end{align*}
+Equivalently, 
+\[z_i \overset{ind}{\sim} N(f(u, i), \tau^{-1})\]
+This has been the working model, except the additional input $i$ has been added to $f$. This term allows for things like time trends, and is key in dealing with some 
+identifiability issues discussed below. Up to this point we have been considering $f(u, i) = u$, but this new model allows for examples such as
+$f(u, i) = \sin(2\pi u i) + ci$. To test multiple dimensional input spaces we can consider example models such as $f(u, i) = u_1 \sin(2\pi u_2 i) + u_3 i$. 
+
+To test for misspecification, we suppose our assumption of independent errors is incorrect and instead generate the data with errors given by a AR(1) process:
+\begin{align*}
+&z_i = y_i + \epsilon_i \\
+&y_i = f(u, i) \\
+&\epsilon_i \sim N(\alpha \epsilon_{i - 1}, \sigma^2), \ \alpha \in (-1, 1) \\
+\end{align*}
+Settings $\alpha = 0$ recovers the independent error model, and now we can vary $\alpha$ to investigate misspecification in terms of correlated errors. 
+
+Finally, let's consider the conditions required to analytically derive the posterior $p(u|z)$ for testing purposes (if the posterior is Gaussian, then we can also analytically 
+derive $p(u, \tau|z)$ via the well-known closed-form solution of the normal inverse-gamma model). For observed data $z \in \R^n$ (and implicitly conditioning on a known 
+precision parameter $\tau$) we have posterior given by
+\[p(u|z) \propto p(z|u)\pi_0(u) = N_n(y, \tau^{-1}I_n)\pi_0(u)\]
+where $y := [f(u, 1), \dots, f(u, n)]^T \in \R^n$. I also assume a Gaussian prior on $u$: $\pi_0(u) = N_k(u|\mu, \Lambda)$. Also consider the vector-valued function
+$F: \R^k \to \R^n$ given by $F(u) = y = [f(u, 1), \dots, f(u, n)]^T$. We then can re-write the likelihood as $z \sim N_n(F(u), \tau^{-1}I_n)$. I assume that $F$ is injective 
+and linear, and slightly abuse notation by letting $F$ also denote the $n \times k$ matrix representing this linear operator: $F(u) = Fu$. Note that the injective constraint
+is equivalent to requiring $F$ to have linearly independent columns; thus we must have $n > k$. The Bayesian inverse problem can now be written:
+\begin{align*}
+&z|u \sim N_n(Fu, \tau^{-1}I_n) \\
+&u \sim N_k(\mu, \Lambda)
+\end{align*}
+
+Knapik et al (2011) give the closed-form posterior in this setting:
+\begin{align*}
+&u|z \sim N_k(Az + \mu, S) \\
+&A = \Lambda F^T(\tau^{-1}I_n + F \Lambda F^T)^{-1} \\
+&S = \Lambda - A(\tau^{-1}I_n + F \Lambda F^T)A^T
+\end{align*}
+
+Note that without the addition of $i$ in $f(u, i)$ the injective constraint would not hold. An example of a model with input space $\R^2$ that yields a linear, injective mapping $F$ is 
+$f(u, i) = u_1 i + u_2 i^2$.
+
 \subsubsection{Comparing to the ``fully Bayesian'' approach}
 It would be interesting to compare the current approach to the fully Bayesian approach. This would especially be true for the Laplace likelihood, as it would allow sampling of 
 the Laplace parameters. 
@@ -532,16 +576,84 @@ This expectation is very sensitive to both the GP uncertainty estimates and $\ta
 \item Interested in continuing to collaborate in the Fall
 \end{itemize}
 
-
-
-
-
 \end{itemize}
 
 
+\section{Meeting: 9/9/2022}
+\subsection{Updates}
+\begin{itemize}
+\item Updated code to allow for multiple parameter tests. Currently only allows independent Gaussian priors for each parameter. 
+\item Implemented interface for running GP emulator ``bakeoff''. 
+\item Implemented suite of functions for visualizing/summarizing emulator and MCMC results. 
+\end{itemize}
+
+\subsection{Emulator Testing and Validation}
+\begin{itemize}
+\item Model comparison: sampling train and test locations
+\item Metrics:
+	\begin{itemize}
+	\item RMSE, MAE
+	\item Metrics targeting likelihood or acceptance ratio
+	\end{itemize}
+\item Should also take into account predictive standard errors, both average uncertainty and extreme areas of uncertainty
+\end{itemize}
+
+\subsection{Planned Parameter Calibration Tests}
+\subsubsection{1D Non-Gaussian Likelihood}
+\begin{itemize}
+\item Gamma: $z|u \sim G(\beta f(u), \beta)$
+\item Log-Normal: $z|u \sim LogNormal\left(\log(f(u)) - \frac{1}{2\tau}, \tau^{-1}\right)$
+\end{itemize}
+
+\subsubsection{Higher Dimensional Tests}
+\begin{itemize}
+\item Baseline Gaussian example: $z_i \overset{iid}{\sim} N(f(u), \tau^{-1})$
+\item Heteroskedastic and/or correlated Gaussian examples: $z \sim N_n(f(u)1_n, \Sigma)$
+\item Banana-shaped distribution (need to integrate $f(u)$ into this): 
+\begin{align*}
+&x_i \overset{iid}{\sim} N_2(0, \Sigma) \\
+&z_i^{(1)} := \eta x_i^{(1)} \\
+&z_i^{(2)} := \eta^{-1} x_i^{(2)} + \gamma((x_i^{(1)})^2 + \eta^2)
+\end{align*}
+\item Neal's Funnel
+\end{itemize}
+
+\subsubsection{Varying the model $f$}
+\begin{itemize}
+\item What kind of features to consider in tests?
+\end{itemize}
+
+\subsection{Calculating Posterior}
+The working model:
+\begin{align*}
+&z_1, \dots, z_n \overset{iid}{\sim} N(f(u), \tau^{-1}) \\
+&u_j \overset{ind}{\sim} N(\mu_j, \sigma_j^2) \\
+&\tau \sim G(a, b)
+\end{align*}
+I've been assuming $f: \R^k \to \R$, where $k$ is the dimension of the calibration parameter. 
+For $k = 1$, and with $f(u) = u$, this is just the typical Normal Inverse-Gamma model and the posterior 
+is well-known in closed form. In my understanding, in higher dimensions, an analytical solution is known 
+for the Bayesian inverse problem where $f$ is linear and injective. However, if $f$ in our example is a scalar-valued
+function than I don't see how to analytically derive the posterior. 
 
 
+\section{Meeting: 9/13/2022}
+\subsection{Agenda}
+\begin{enumerate}
+\item Follow-up questions from last meeting
+\item Review fellowship application plan
+\item Question about directed study
+\end{enumerate}
 
+\subsection{Follow-up questions}
+\begin{itemize}
+\item Recall setup: observed data $z \in \R^n$, knots $u_1, \dots, u_N \in \R^k$. Sufficient statistic given by
+\[T(u) = \sum_{i = 1}^{n} [f(u, i) - z_i]^2\]
+The addition of $i$ to $f(u, i)$ (or more generally the addition of other ``observational parameters'') appears to now require running the model
+$N \times n$ times: $f(u_j, i)$, $1 \leq j \leq N$, $1 \leq i \leq n$. Am I understanding this correctly? 
+\item I think it'd be helpful for me to gain a better understanding of the actual data and the process model. 
+\item KS statistic/dependent data
+\end{itemize}
 
 
 

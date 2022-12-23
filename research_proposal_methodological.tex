@@ -1,0 +1,150 @@
+\documentclass[11pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage[margin=1.0in]{geometry}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Cor}{\mathrm{Corr}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\def\R{\mathbb{R}}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{condition}{Condition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{notation}{Notation}
+
+\begin{document}
+
+\begin{center}
+Scalable Bayesian Methods for Scientific Machine Learning
+\end{center}
+
+\begin{flushright}
+Andrew Roberts
+\end{flushright} 
+
+The effectiveness of formally combining scientific theory with statistical and machine learning methods is increasingly being recognized \cite{Willcox, Laubmeier, Wikle}. 
+Physical models encapsulate prior scientific knowledge, while a rigorous statistical framework allows for principled inference, prediction, and uncertainty quantification \cite{Wikle}. Computer models have become essential tools at this scientific-statistical interface, tackling problems from 
+climate projections \cite{Canadell} to pandemic response \cite{Swallow}. The task of calibrating these models with noisy real-world data continues to present
+significant challenges, requiring tradeoffs between realism and computational and statistical feasibility. Given the ubiquity of computer models in informing
+ evidence-based policy, it is essential to develop methods to handle more complex models while simultaneously providing a full accounting of uncertainties.
+ My proposed research aims to confront these challenges by developing novel methodological and computational approaches for integrating large-scale datasets with expensive computer simulations. 
+ % Recent calls have highlighted the need to bring together state-of-the-art computational methods with modern statistical 
+%  and machine learning models in order to address these problems \cite{Wikle, Baker}.
+
+Complex processes are commonly analyzed using a computer model (i.e. \textit{simulation} or \textit{process model}) $f$, where the output is a function of some unknown, unobserved parameter $\theta$.
+For example, to study the terrestrial carbon cycle, ecologists use a process model 
+that predicts the net exchange of carbon between an ecosystem and the atmosphere \cite{Fer}. Running the model requires specifying values for parameters that 
+may not be known, such as the soil respiration rate or seasonal leaf growth \cite{Fer}. In order to estimate (i.e. calibrate) these unknown parameters, it is common to obtain observations $y$ 
+of the underlying physical process in order to tune $\theta$ so that $f(\theta) \approx y$. This problem is typically formulated in a Bayesian statistical setting due to its flexibility in accommodating
+various sources of uncertainty \cite{Kennedy}. For example, the simple yet common data model\begin{align*}
+&y \sim N(f(\theta), \sigma^2 I) \\
+&(\theta, \sigma^2) \sim \pi_0,
+\end{align*}
+assumes the simulator output gives the mean of the true process, subject to white noise. The prior distribution $\pi_0$ encodes domain knowledge about the 
+process parameter $\theta$ and statistical parameter $\sigma^2$. The problem of inferring $\theta$ given the noisy observations $y$ and prior beliefs $\pi_0$ is referred to as a \textit{Bayesian inverse problem} \cite{Stuart}. Solving such a problem is defined 
+ as obtaining the posterior distribution $p(\theta|y) \propto N(y|f(\theta), \sigma^2 I)\pi_0(\theta)$, which typically involves using an iterative inference procedure like Markov Chain Monte Carlo (MCMC). In practice, the runtime of the simulator $f$ may be prohibitively long, precluding the tens of thousands of evaluations typically required by MCMC. A standard approach to address this problem is to fit a Gaussian process 
+emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$ to approximate $f$, which is then used in place of $f$ in the inference algorithm \cite{Fer, Kennedy, Cleary}. For example, Gaussian process emulation is commonly employed in terrestrial carbon modeling to calibrate sophisticated carbon cycle simulations that can have a runtime of many hours \cite{Fer}. A second complication that commonly arises in scientific applications is the challenge of capturing complex spatial and temporal dynamics of the underlying process while accurately quantifying uncertainty across both of these dimensions. 
+Limited by computational constraints, scientists often calibrate physical models in limited spatial and temporal domains, treating process parameters $\theta$ and statistical parameters (e.g. $\sigma^2$) as fixed. For example, terrestrial carbon models are typically calibrated independently at different ecological data collection sites \cite{Fer2}. Large-scale, multi-site parameter calibration has the potential to drastically increase the generalizability of carbon models and improve spatiotemporally-informed decision making. 
+My proposal seeks to address these challenges--emulator uncertainty quantification and spatiotemporal model calibration--with the goal of making such large-scale calibration feasible and accurate. 
+ 
+ There remains significant work to be done in addressing these complications. While the use of Gaussian process emulators has become standard practice, few studies have focused on correctly propagating emulator uncertainty through the inference procedure. Naive emulation would simply use the Gaussian process mean $m(\theta)$ in place of the process model evaluation $f(\theta)$, thus replacing the true likelihood $N(f(\theta), \sigma^2 I)$
+with the approximation $N(m(\theta), \sigma^2 I)$. This completely ignores the uncertainty introduced by using $\hat{f}$ in place of $f$, leading to overly confident posterior estimates. Ad hoc methods to propagate emulator uncertainty have included a pointwise variance adjustment 
+$\sigma^2 + k(\theta, \theta)$ or re-sampling scheme in which a sample $\hat{f}_{\theta} \sim N(m(\theta), k(\theta, \theta))$ replaces $f(\theta)$ as the likelihood mean. \cite{Fer, Cleary}. While an improvement over the naive baseline, these methods treat emulator uncertainty as independent across different values of $\theta$, ignoring the correlation structure captured in the predictive variance $k(\cdot, \cdot)$. Uncertainty quantification is further complicated when spatiotemporal dynamics are included. Modern dynamic hierarchical models provide an ideal framework for quantifying spatial and temporal variation in model parameters \cite{Wikle}, but such models are typically infeasible in computer modeling settings due to their computational demands. The existing computer modeling literature has focused on spatially or temporally indexed simulator outputs \cite{Fadikar}, but rarely considers variation in process parameters. Existing examples of assimilating large-scale spatiotemporal datasets with computer models typically utilize thrifty alternatives to full Bayesian inference, sacrificing uncertainty quantification to ease computational burdens \cite{Sun}.
+
+\noindent
+\textbf{Research Plan.} To address the challenges highlighted above, I will begin by investigating the fundamental issue of emulator uncertainty in the 
+non-dynamic setting. Building upon this foundation, I will then work to embed this core methodology in a dynamic spatiotemporal statistical model. These modeling steps will pose increasingly difficult computational challenges, which I intend to address via an interdisciplinary approach, drawing from spatiotemporal statistics, Bayesian inverse problem theory, and machine learning to develop novel inference methods. Throughout this process, I will validate these methods on benchmark computer modeling and scientific machine learning problems \cite{Surjanovic, Takamoto}, as well as terrestrial carbon models commonly used for ecological forecasting \cite{Dietze}. This work is collaborative in nature, co-advised by Jonathan Huggins, who has expertise in scalable Bayesian inference and machine learning, and Michael Dietze, an ecologist with expertise in ecological forecasting and the terrestrial carbon cycle. 
+ 
+ \textbf{1. Propagating Emulator Uncertainty.} I will begin by conducting a rigorous study of emulator uncertainty to fill the current gap in the literature. I will develop novel algorithms for propagating Gaussian process uncertainty and compare their performance to the baseline independent variance adjustment schemes detailed above. To incorporate the predictive Gaussian process correlation structure, I will leverage the correlation between the current and proposed parameter values in Metropolis-Hastings MCMC algorithms. For example, the re-sampling scheme \cite{Fer} can be generalized so that 
+ $(\hat{f}_{\theta}, \hat{f}_{\theta^\prime})$ are drawn jointly from the Gaussian process, where $\theta$ and $\theta^\prime$ are the current and proposed parameter values, respectively. I will also develop an alternate set of algorithms by integrating the Gaussian process out of the likelihood, thus averaging over the emulator uncertainty. This integral can be calculated jointly over the current and proposed parameter values and has an analytic solution for the independent Gaussian error model. I will then generalize these ideas to error models for simulators with time-indexed output $f(\theta) = (f_1, f_2, \dots, f_T)$, a common feature of ecological simulations. To accomplish this I will analyze two approaches: (i.) reducing the dimensionality of the output via basis-function 
+ approximations, allowing the application of my previous methods to each basis dimension separately, and (ii.) directly emulating the likelihood under an auto-regressive error model instead of the simulator itself, thus reducing back to univariate outputs \cite{Fer}.
+ My analysis will include the derivation of theoretical results obtained by extending existing parameter calibration theory \cite{Tuo}, numerical tests from the 
+ \textit{Virtual Library of Simulation Experiments} \cite{Surjanovic}, and validation on the SIPNET terrestrial carbon model \cite{Fer}. This ecological simulation uses a simplified model of the carbon cycle, yielding a faster runtime which affords the opportunity to validate against more computationally intensive approaches. This work will contribute novel theoretical results and off-the-shelf, scalable algorithms for emulator uncertainty propagation in statistical inference, supplanting existing ad hoc approaches with rigorous, validated methodology. 
+
+ \textbf{2. Spatiotemporal Dynamics.}
+ The next phase of my proposal involves embedding computer models within a spatiotemporal statistical framework, while continuing to build upon the uncertainty quantification methods detailed above. I will adopt a state-space framework, drawing from recent advances in Bayesian filtering 
+ \cite{Sarkka} and dynamic spatiotemporal modeling \cite{Wikle, Hefley}.  
+To explicitly model spatiotemporal dynamics, I will consider data models of the form
+ \[y(s, t) = f(\theta(s, t)) + \epsilon(s, t),\]
+ where observed data $y$, process parameters $\theta$, and error $\epsilon$ are all modeled as spatiotemporal processes. I will then formulate dynamic models for the parameters. For example, the process parameters can be assumed to follow a Markovian linear model 
+ $\theta_t = H \theta_{t - 1} + \delta_t$, where $\theta_t$ is a a spatially-index vector of process parameters at time $t$, $H$ ia a transition matrix, and $\delta_t$ is an error term. 
+These extensions yield high-dimensional 
+ hierarchical models that pose problems for existing inference algorithms. To address these issues I will develop novel methodology that extends recent work on inference for high-dimensional partially observed dynamic systems \cite{Park}. Integrating these methods with my Gaussian process emulation and uncertainty quantification framework will face the additional computational bottleneck posed by the poor scalability of Gaussian process prediction. To deal with this I will adopt a well-known parallelizable local Gaussian process approximation \cite{Gramacy}, making adjustments to correctly propagate the additional approximation uncertainty. I will validate these methods using \textit{PDEBench}, which offers a suite of time-varying simulations as benchmarks for scientific machine learning methods \cite{Takamoto}. I will further validate my methodology by scaling the SIPNET carbon model calibration to cover the contiguous United States, and ultimately progress to similar tests of the more computationally-intensive ED2 carbon simulator \cite{Fer, Fer2}.
+
+\begin{thebibliography}{20}
+\bibitem{Willcox} Willcox, K.E., Ghattas, O. \& Heimbach, P. The imperative of physics-based modeling and inverse theory in computational science. Nat Comput Sci 1, 166–168 (2021). https://doi.org/10.1038/s43588-021-00040-z
+\bibitem{Laubmeier} Laubmeier et al. Ecological Dynamics: Integrating Empirical, Statistical, and Analytical Methods. Trends Ecol Evol. 2020 Dec;35(12):1090-1099. doi: 10.1016/j.tree.2020.08.006. Epub 2020 Sep 12. PMID: 32933777.
+\bibitem{Wikle} Wikle, C.K. (2015), Modern perspectives on statistics for spatio-temporal data. WIREs Comput Stat, 7: 86-98. https://doi.org/10.1002/wics.1341
+\bibitem{Canadell} Canadell et al, 2021: Global Carbon and
+other Biogeochemical Cycles and Feedbacks. In Climate Change 2021: The Physical Science Basis. Contribution of
+Working Group I to the Sixth Assessment Report of the Intergovernmental Panel on Climate Change. Cambridge University Press,
+Cambridge, United Kingdom and New York, NY, USA, pp. 673–816, doi:10.1017/9781009157896.007.
+\bibitem{Swallow} Swallow et al, Challenges in estimation, uncertainty quantification and elicitation for pandemic modelling, Epidemics, Volume 38, 2022, 100547, ISSN 1755-4365, https://doi.org/10.1016/j.epidem.2022.100547.
+\bibitem{Baker} Baker et al. "Analyzing Stochastic Computer Models: A Review with Opportunities." Statist. Sci. 37 (1) 64 - 89, February 2022. https://doi.org/10.1214/21-STS822
+\bibitem{Fer} Fer, I., Kelly, R., Moorcroft, P. R., Richardson, A. D., Cowdery, E. M., and Dietze, M. C.: Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation, Biogeosciences, 15, 5801–5830, https://doi.org/10.5194/bg-15-5801-2018, 2018.
+\bibitem{Kennedy} Kennedy, M.C. and O'Hagan, A. (2001), Bayesian calibration of computer models. Journal of the Royal Statistical Society: Series B (Statistical Methodology), 63: 425-464. https://doi.org/10.1111/1467-9868.00294
+\bibitem{Stuart} A. M. Stuart (2010). Inverse problems: A Bayesian perspective. Acta Numerica, 19, pp 451-559 doi:10.1017/
+S0962492910000061.
+\bibitem{Cleary} Emmet Cleary, Alfredo Garbuno-Inigo, Shiwei Lan, Tapio Schneider, Andrew M. Stuart, “Calibrate, emulate, sample”, Journal of Computational Physics, Volume 424, 2021, 109716, ISSN 0021-9991, https://doi.org/10.1016/j.jcp.2020.109716.
+\bibitem{Fadikar} Fadikar et al, Calibrating a Stochastic, Agent-Based Model Using Quantile-Based Emulation. SIAM/ASA Journal on Uncertainty Quantification. https://doi.org/10.1137/17M1161233.
+\bibitem{Sun} Sun et al, Synthesizing simulation and field data of solar irradiance. Stat Anal Data Min: The ASA Data Sci Journal. 2019; 12: 311– 324. https://doi.org/10.1002/sam.11414
+\bibitem{Surjanovic} Surjanovic et al, Virtual Library of Simulation Experiments: Test Functions and Datasets.
+\bibitem{Takamoto} Takamoto et al, PDEBench: An Extensive Benchmark for Scientific Machine Learning. Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track
+\bibitem{Dietze} Dietze et al, “Iterative near-term ecological forecasting: Needs, opportunities, and challenges”, Proceedings of the National Academy of Sciences, 115, 7, 1424-1432, 2018.
+\bibitem{Tuo} Tuo et al, A theoretical framework for calibration in computer models: parametrization, estimation and convergence properties. 
+\bibitem{Sarkka} Särkkä, S. (2013). Bayesian Filtering and Smoothing (Institute of Mathematical Statistics Textbooks). Cambridge: Cambridge University Press. doi:10.1017/CBO9781139344203
+\bibitem{Hefley} Trevor J. Hefley, Mevin B. Hooten, Ephraim M. Hanks, Robin E. Russell, Daniel P. Walsh, Dynamic spatio-temporal models for spatial data, Spatial Statistics.
+\bibitem{Park} Park et al, Inference on high-dimensional implicit dynamic models using a guided intermediate resampling filter.
+\bibitem{Gramacy} Gramacy et al, Local Gaussian process approximation for large computer experiments, 2013.
+\bibitem{Fer2} Istem Fer, Alexey Shiklomanov, Kimberly A. Novick, Christopher M. Gough, M. Altaf Arain, Jiquan Chen, Bailey Murphy, Ankur R. Desai, Michael C. Dietze: Capturing site-to-site variability through Hierarchical Bayesian calibration of a process-based dynamic vegetation model, bioRxiv 2021.04.28.441243; doi: https://doi.org/10.1101/2021.04.28.441243. 
+
+\end{thebibliography}
+
+
+
+\end{document}
+
+
+

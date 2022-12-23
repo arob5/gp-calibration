@@ -4,15 +4,14 @@
 #
 # Andrew Roberts
 
-# TODO: 
-#   - Add functionality to time runs
-
 library(parallel)
 library(bayesplot)
 library(ggplot2)
 library(rstan)
 library(mlegp)
+library(hetGP)
 library(pracma)
+library(lhs)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -42,11 +41,11 @@ settings <- list(
   
   # General 
   seed = 5, 
-  k = 1, # Dimension of u
+  k = 2, # Dimension of u
   base.dir = getwd(),
   output.dir = "output",
-  run.id = paste0("lg_mgf_test_N4_", Sys.time()), 
-  run.description = "Log-normal approx test, N=4.",
+  run.id = paste0("2d test", Sys.time()), 
+  run.description = "",
   
   # General MCMC
   n.mcmc.chains = 4, 
@@ -57,9 +56,9 @@ settings <- list(
   
   # Algorithms
   mcmc.brute.force.stan = FALSE, 
-  mcmc.gp.stan = TRUE, 
+  mcmc.gp.stan = FALSE, 
   mcmc.gp.mean.stan = FALSE, 
-  mcmc.pecan = FALSE,
+  mcmc.pecan = TRUE,
   mcmc.brute.force.stan.path = "parameter_calibration_1d_example.stan",
   mcmc.gp.stan.path = "parameter_calibration_gp_1d_example.stan", 
   mcmc.gp.mean.path = "parameter_calibration_gp_mean_1d_example.stan",
@@ -68,23 +67,26 @@ settings <- list(
   n = 1000,
   N.pred = 1000, # Used for producing plots and as GP prediction test points
   lik.type = "gaussian",
-  model = function(u) {u},
-  u.true = 0.5,
-  sigma.true = 0.3, 
-  tau.true = NULL, 
+  model = function(u, i) {u * i^2 + 2},
+  u.true = list(0.5, 1.0),
+  # sigma.true = 0.3, 
+  tau.true = 1 / 0.3^2, 
   
   # Priors
   tau.gamma.shape = NULL,
   tau.gamma.rate = 1.0,
+  u.prior.coef.var = list(0.5, 1.0),
   u.gaussian.mean = NULL,
-  u.gaussian.sd = 0.25,
-  u.rng = c(-Inf, Inf),
+  u.gaussian.sd = NULL,
+  u.rng = NULL,
   
   # Gaussian Process: used for algorithms gp.stan, gp.mean.stan, and pecan)
   X = NULL, # Manually input design matrix; will override below settings
-  N = 4, 
-  gp.library = "mlegp", 
+  N = 20, 
+  gp.library = "hetGP", 
+  log.normal.process = TRUE,
   gp.plot.interval.pct = .95, 
+  joint.sample.train.test = FALSE, 
   
   # Brute Force algorithm settings
   n.itr.mcmc.brute.force = 50000,
@@ -122,18 +124,18 @@ saveRDS(settings, file = file.path(run.dir, "settings.RData"))
 # -----------------------------------------------------------------------------
 
 set.seed(settings$seed)
-pars <- c("u", "tau")
+pars <- c(paste0("u[", seq(1, settings$k), "]"), "tau")
 
 # Generate observed data
 f <- settings$model
-y.obs <- rnorm(settings$n, f(settings$u.true), settings$sigma.true)
+data.obs <- generate.observed.data(settings$n, f, settings$u.true, settings$tau.true, settings$lik.type)
+y.obs <- data.obs$y
+f.vals <- data.obs$f
 
 # Save plot of true likelihood
-u.pred <- seq(qnorm(.01, settings$u.true, settings$sigma.true), 
-              qnorm(.99, settings$u.true, settings$sigma.true), length = settings$N.pred)
-X.pred <- matrix(u.pred, ncol=1)
-save.gaussian.llik.plot(y.obs, X.pred, run.dir, "exact_llik.png", f, settings$tau.true)
-
+if(settings$k == 1) {
+  save.gaussian.llik.plot(y.obs, settings$X.pred, run.dir, "exact_llik.png", f.vals, settings$tau.true)
+}
 
 # -----------------------------------------------------------------------------
 # Gaussian Process Regression
@@ -143,23 +145,20 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   # Design points
   X <- settings$X
   N <- settings$N
-  y.model <- apply(X, 1, f)
+  i.design <- matrix(1:N, ncol=1)
+  y.model <- get.model.output(f, X, i.design)
   
   # Sufficient statistic that will be emulated
-  SS <- rep(0, N)
-  for(i in seq(1, N)) {
-    SS[i] <- sum((y.model[i] - y.obs)^2)
-  }
-  
-  # Similarly calculate true SS at test points for reference in subsequent plots
-  SS.pred <- rep(0, settings$N.pred)
-  for(i in seq(1, settings$N.pred)) {
-    SS.pred[i] <- sum((f(X.pred[i]) - y.obs)^2)
-  }
-  
+  SS <- calc.SS(X, i.design, f, y.obs)
+  SS.pred <- calc.SS(settings$X.pred, f, y.obs)
+
   # Fit GP regression
   if(settings$gp.library == "mlegp") {
     gp.fit <- mlegp(X, SS, nugget.known = 0, constantMean = 1)
+  } else if(settings$gp.library == "hetGP") {
+    gp.fit <- mleHomGP(X, SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
+  } else {
+    stop("Invalid GP library: ", settings$gp.library)
   }
   
   # Map kernel parameters to Stan parameterization
@@ -169,17 +168,23 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
   
   # Save plots demonstrating GP fit
   if(settings$k == 1) {
-    save.gp.pred.mean.plot(gp.obj, X, X.pred, SS, SS.pred, f, 
-                           settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
+    save.gp.1d.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, f, 
+                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_SS.png"))
   }
   
-  # If running "mcmc.gp.stan", response variable in GP regression is log sufficient statistic
-  if(settings$mcmc.gp.stan) {
+  save.gp.pred.mean.plot(gp.obj, X, settings$X.pred, SS, SS.pred, lognormal.adjustment = FALSE, 
+                         log.log.plot = TRUE, file.path(run.dir, "gp_pred_SS_scatter.png")) 
+
+  
+  # If response variable in GP regression is log sufficient statistic
+  if(settings$mcmc.gp.stan || settings$log.normal.process) {
     log.SS <- log(SS)
     log.SS.pred <- log(SS.pred)
     
     if(settings$gp.library == "mlegp") {
       gp.log.fit <- mlegp(X, log.SS, nugget.known = 0, constantMean = 1)
+    } else if(settings$gp.library == "hetGP") {
+      gp.log.fit <- mleHomGP(X, log.SS, covtype = "Gaussian", known = list(g = .Machine$double.eps))
     }
     
     gp.log.stan.params <- create.gp.params.list(gp.log.fit, settings$gp.library)
@@ -191,10 +196,15 @@ if(any(as.logical(settings[c("mcmc.gp.stan", "mcmc.gp.mean.stan", "mcmc.pecan")]
                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_log_SS.png"))
       save.gp.pred.mean.plot(gp.log.obj, X, X.pred, log.SS, log.SS.pred, f, 
                              settings$gp.plot.interval.pct, file.path(run.dir, "gp_pred_exp_log_SS.png"), exp.pred = TRUE)
+      save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
+                             file.path(run.dir, "gp_pred_log_SS_llik.png"))
     }
     
-    save.gp.pred.llik.plot(gp.log.obj, settings$tau.true, settings$n, X, X.pred, log.SS, log.SS.pred,
-                           file.path(run.dir, "gp_pred_log_SS_llik.png"))
+    # TODO: Make sure plot dimensions/scale are the same for this plot and non-log plot
+    # Is the LNP really this much of a worse model in this case or is this a bug in the code?
+    save.gp.pred.mean.plot(gp.log.obj, X, settings$X.pred, SS, SS.pred, lognormal.adjustment = TRUE, 
+                           log.log.plot = TRUE, file.path(run.dir, "lnp_pred_SS_scatter.png")) 
+
     
   }
   
@@ -267,8 +277,6 @@ if(settings$mcmc.gp.stan) {
 }
 
 
-
-
 # -----------------------------------------------------------------------------
 # PEcAn parameter calibration: 
 #   Adaptive Metropolis-within-Gibbs with re-sampling of sufficient statistic
@@ -283,9 +291,22 @@ if(settings$mcmc.pecan) {
   proposal.vars <- vector(mode = "list", length = settings$n.mcmc.chains)
   u.init <- vector(mode = "list", length = settings$n.mcmc.chains)
   for(i in seq_len(settings$n.mcmc.chains)) {
-    proposal.vars[[i]] <- 0.1 * diff(qnorm(c(0.05, 0.95), settings$u.gaussian.mean, settings$u.gaussian.sd))
+    proposal.vars[[i]] <- 0.1 * sapply(seq_len(settings$k), 
+                                       function(j) diff(qnorm(c(0.05, 0.95), 
+                                                              settings$u.gaussian.mean[j], 
+                                                              settings$u.gaussian.sd[j])))
     u.init[[i]] <- X[u.init.indices[i],,drop = FALSE]
   }
+  
+  # Modeling the sufficient statistic either as Gaussian process or log-normal process.
+  if(settings$log.normal.process) {
+    gp.obj.pecan <- gp.log.obj
+  } else {
+    gp.obj.pecan <- gp.obj
+  }
+  
+  # Set range of u to prevent extrapolation
+  u.range.pecan <- apply(X, 2, range)
   
   # Set up parallel computation
   cl <- makeCluster(settings$n.mcmc.chains)
@@ -301,10 +322,10 @@ if(settings$mcmc.pecan) {
   })
   
   mcmc.pecan.results <- parLapply(cl, seq(1, settings$n.mcmc.chains), 
-                                  function(chain) mcmc.GP.test(gp.obj = gp.obj, 
+                                  function(chain) mcmc.GP.test(gp.obj = gp.obj.pecan, 
                                                                n = settings$n, 
                                                                n.itr = settings$n.itr.mcmc.pecan, 
-                                                               u.rng = settings$u.rng, 
+                                                               u.rng = u.range.pecan, 
                                                                SS.joint.sample = settings$SS.joint.sample, 
                                                                resample.tau = settings$resample.tau, 
                                                                tau.gamma.shape = settings$tau.gamma.shape, 
@@ -315,13 +336,15 @@ if(settings$mcmc.pecan) {
                                                                proposal.vars = proposal.vars[[chain]],
                                                                adapt.frequency = settings$adapt.frequency, 
                                                                adapt.min.scale = settings$adapt.min.scale, 
-                                                               accept.rate.target = settings$accept.rate.target))
+                                                               accept.rate.target = settings$accept.rate.target, 
+                                                               log.normal.process = settings$log.normal.process))
 
   stopCluster(cl)
-  samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, pars, settings$n.itr.mcmc.pecan, settings$warmup.frac)
+  samples.pecan <- par.mcmc.results.to.arr(mcmc.pecan.results, c(pars, "SS"), settings$n.itr.mcmc.pecan, settings$warmup.frac)
   saveRDS(mcmc.summary(samples.pecan, pars), file = file.path(run.dir, "summary.pecan.RData"))
   save.posterior.plots(samples.pecan, pars, run.dir, settings$interval.prob, settings$interval.prob.outer,
                        settings$interval.point.est, ".pecan", "PEcAn")
+  save.SS.tau.samples.plot(samples.pecan, file.path(run.dir, "SS_tau_samples_pecan.png"))
   
 }
 

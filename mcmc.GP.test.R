@@ -15,14 +15,16 @@ library(mvtnorm)
 #   - Generalize u prior function to allow for multivariate u
 
 mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau, tau.gamma.shape, tau.gamma.rate, 
-                         u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency, adapt.min.scale, accept.rate.target) {
+                         u.prior.mean, u.prior.sd, u0, proposal.vars, adapt.frequency, adapt.min.scale, accept.rate.target, 
+                         log.normal.process) {
 
   accept.count <- 0
   tau.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   u.samples <- matrix(NA, nrow = n.itr, ncol = ncol(gp.obj$X))
+  SS.samples <- matrix(NA, nrow = n.itr, ncol = 1)
   
   # Initial parameter values
-  SS0 <- sample.SS(gp.obj, u0)
+  SS0 <- sample.SS(gp.obj, u0, log.normal.process)
   tau.curr <- sample.tau(n, SS0, tau.gamma.shape, tau.gamma.rate)
   u.curr <- u0
   
@@ -39,16 +41,17 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     }
     
     # Propose new calibration parameters
-    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[1], ub = u.rng[2])
+    u.proposal <- TruncatedNormal::rtmvnorm(1, mu = c(u.curr), sigma = cov.proposal, lb = u.rng[1,], ub = u.rng[2,])
+    u.proposal <- matrix(u.proposal, nrow = 1)
     
     # Sample sufficient statistics corresponding to current and proposed values of the calibration parameter
     if(SS.joint.sample) {
-      SS.samples <- sample.SS(gp.obj, rbind(u.curr, u.proposal))
-      SS.curr <- SS.samples[1]
-      SS.proposal <- SS.samples[2]
+      SS.joint.samples <- sample.SS(gp.obj, rbind(u.curr, u.proposal), log.normal.process)
+      SS.curr <- SS.joint.samples[1]
+      SS.proposal <- SS.joint.samples[2]
     } else {
-      SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1))
-      SS.proposal <- sample.SS(gp.obj, as.matrix(u.proposal, nrow = 1))
+      SS.curr <- sample.SS(gp.obj, as.matrix(u.curr, nrow = 1), log.normal.process)
+      SS.proposal <- sample.SS(gp.obj, u.proposal, log.normal.process)
     }
     
     # Re-sample precision parameter tau
@@ -61,13 +64,14 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     # Calculate log-conditional density u given tau
     u.curr.cond.dens <- calc.u.log.conditional.density(u.curr, n, tau.curr, SS.curr, u.prior.mean, u.prior.sd)
     u.proposal.cond.dens <- calc.u.log.conditional.density(u.proposal, n, tau.proposal, SS.proposal, u.prior.mean, u.prior.sd)
-    
+                                                           
     # Accept or reject proposed u value
     if(accept.u.proposal(u.curr.cond.dens, u.proposal.cond.dens, u.curr, u.proposal, cov.proposal, u.rng)) {
       u.curr <- u.proposal
       SS.curr <- SS.proposal
       accept.count <- accept.count + 1
     }
+    SS.samples[itr,] <- SS.curr
     u.samples[itr,] <- u.curr
    
     # Gibbs step: sample tau conditional on current value of u
@@ -75,19 +79,24 @@ mcmc.GP.test <- function(gp.obj, n, n.itr, u.rng, SS.joint.sample, resample.tau,
     tau.samples[itr, 1] <- tau.curr
   }
   
-  samples.list <- list(u = u.samples, tau = tau.samples)
+  samples.list <- list(u = u.samples, tau = tau.samples, SS = SS.samples)
   
   return(samples.list)
   
 }
 
 
-sample.SS <- function(gp.obj, X.pred) {
+sample.SS <- function(gp.obj, X.pred, log.normal.process) {
 
   gp.pred <- predict_gp(X.pred, gp.obj, pred.cov = TRUE)
 
+  # Sampled value is log(SS), so exponentiate.
+  if(log.normal.process) {
+    return(exp(as.vector(rmvnorm(1, mean = c(gp.pred$mean), sigma = gp.pred$cov))))
+  }
+  
   repeat {
-    SS <- rmvnorm(1, mean = gp.pred$mean, sigma = gp.pred$cov)
+    SS <- rmvnorm(1, mean = c(gp.pred$mean), sigma = gp.pred$cov)
     if(all(SS >= 0)) break
   }
   
@@ -102,7 +111,10 @@ sample.tau <- function(n, SS, gamma.shape, gamma.rate) {
 
 
 calc.u.log.conditional.density <- function(u, n, tau, SS, u.prior.mean, u.prior.sd, rng) {
-  0.5*n*log(tau) - 0.5*tau*SS + log(dnorm(u, u.prior.mean, u.prior.sd))
+  
+  log.prior <- sum(sapply(seq_along(u.prior.mean), function(j) dnorm(u[,j], u.prior.mean[j], u.prior.sd[j], log = TRUE)))
+  0.5*n*log(tau) - 0.5*tau*SS + log.prior
+  
 }
 
 

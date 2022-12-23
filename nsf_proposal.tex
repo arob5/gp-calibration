@@ -1,0 +1,141 @@
+\documentclass[11pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage[margin=1.0in]{geometry}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Cor}{\mathrm{Corr}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\def\R{\mathbb{R}}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{condition}{Condition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{notation}{Notation}
+
+\begin{document}
+
+\begin{center}
+Scalable Emulator-Based Bayesian Methods for Scientific Machine Learning
+\end{center}
+
+By taking advantage of existing scientific knowledge, computer models have become indispensable tools for tackling a wide range of problems [cite].
+However, unknown model parameters and biases due to model limitations need to be addressed by incorporating statistical and machine learning methods. The task of using noisy real-world data to solve these problems continues to present significant challenges, requiring tradeoffs between realism and computational and statistical feasibility. Given the ubiquity of computer models in informing evidence-based policy, it is essential to address these issues while simultaneously providing a full accounting of uncertainties. My proposed research aims to confront these challenges by developing novel methodological and computational approaches for integrating large-scale datasets with expensive computer simulations. 
+
+% The effectiveness of formally combining scientific theory with statistical and machine learning methods is increasingly being recognized \cite{Willcox, Laubmeier, Wikle}. 
+ % Computer models have become essential tools at this scientific-statistical interface, tackling problems from 
+% climate projections \cite{Canadell} to pandemic response \cite{Swallow}. The task of calibrating these models with noisy real-world data continues to present
+% significant challenges, requiring tradeoffs between realism and computational and statistical feasibility. Given the ubiquity of computer models in informing
+ % evidence-based policy, it is essential to develop methods to handle more complex models while simultaneously providing a full accounting of uncertainties.
+ % My proposed research aims to confront these challenges by developing novel methodological and computational approaches for integrating large-scale datasets with expensive computer simulations. 
+ % Recent calls have highlighted the need to bring together state-of-the-art computational methods with modern statistical 
+%  and machine learning models in order to address these problems \cite{Wikle, Baker}.
+% Physical models encapsulate prior scientific knowledge, while a rigorous statistical framework allows for principled inference, prediction, and uncertainty quantification \cite{Wikle}.
+
+Complex processes are commonly analyzed using a computer model (i.e., simulator) $f$, where the output is a function of some unknown, unobserved parameter $\theta$.
+For example, to study the terrestrial carbon cycle, ecologists use a computer model 
+that predicts the net exchange of carbon between an ecosystem and the atmosphere, which requires specifying values for unknown parameters like the soil respiration rate \cite{Fer}.
+A Bayesian statistical formulation is typically employed to estimate (i.e., calibrate) these unknown parameters by comparing simulation outputs to field observations $y$ of the true physical process \cite{Kennedy}. Performing inference for $\theta$ typically involves running an iterative procedure like Markov Chain Monte Carlo (MCMC) to sample from the posterior $p(\theta|y)$. In scientific applications, challenges in inference and uncertainty quantification commonly arise due to (i.) prohibitively long simulator runtimes, and (ii.) complex spatiotemporal dynamics of the underlying physical process. A standard solution to the former issue is to approximate $f$ with a Gaussian process (GP) emulator $\hat{f}(\cdot) \sim \mathcal{GP}(m(\cdot), k(\cdot, \cdot))$, where the mean and covariance functions--$m$ and $k$, respectively-- are learned from a small number of model runs \cite{Fer, Kennedy, Cleary}. While this approximation has become standard practice, few studies have considered proper quantification and propagation of the emulator uncertainty \cite{Fer, Cleary}. Moreover, existing attempts to incorporate statistical models of large-scale spatiotemporal dynamics have relied on simplified alternatives to full Bayesian inference, sacrificing uncertainty quantification to ease computational demands \cite{Sun}.
+My research goal is to advance methodology that jointly addresses these two issues, enabling accurate emulator-based inference for complex spatiotemporal systems. 
+
+% Uncertainty quantification is further complicated when spatiotemporal dynamics are included. The existing computer modeling literature has focused on spatially or temporally indexed simulator outputs \cite{Fadikar}, but rarely considers variation in process parameters. 
+% Modern dynamic hierarchical models provide an ideal framework for quantifying spatial and temporal variation in model parameters \cite{Wikle}, but such models are typically infeasible in computer modeling settings due to their computational demands
+% Exceptions include an assortment of ad hoc approaches that treat emulator uncertainty as independent across different values of $\theta$, ignoring the correlation structure encoded by $k(\cdot, \cdot)$ 
+
+% ...acknowledges that emulation and approximation uncertainty practically have the same effect as data uncertainty, and hence should be reflected in the posterior distribution. 
+
+\noindent
+\textbf{Research Plan.} To address these challenges, I will begin by investigating the fundamental issue of emulator uncertainty in the 
+non-dynamic setting, then generalize to a dynamic spatiotemporal statistical model. I will validate these methods on benchmark problems in scientific machine learning provided by the recent \textit{PDEBench} initiative \cite{Takamoto}, as well as terrestrial carbon models actively used in ecological forecasts \cite{Dietze}. This work is collaborative in nature, co-advised by Jonathan Huggins, an expert in scalable Bayesian inference and machine learning, and Michael Dietze, an ecologist with expertise in ecological forecasting and the terrestrial carbon cycle. 
+
+ \textbf{1. Emulator Uncertainty.} I will begin by rigorously investigating emulator uncertainty, extending existing theory \cite{Tuo} and developing novel algorithms for propagating GP uncertainty. Specifically, I will leverage the correlation structure in emulator predictions encoded by $k(\cdot, \cdot)$ between current and proposed parameter values in Metropolis-Hastings type MCMC algorithms. To accomplish this, I will generalize an existing re-sampling method \cite{Fer} as well as consider analytic approaches that involve integrating the GP out of the likelihood to average over emulator uncertainty. 
+I will then extend these ideas to error models for simulators with time-indexed output, a common feature in scientific applications. I will develop two approaches: (i.) reducing the dimensionality of the output via basis-function 
+ approximations and (ii.) directly emulating the likelihood (instead of $f$) under an auto-regressive error model to reduce back to univariate outputs \cite{Fer}. 
+ %My analysis will include the derivation of theoretical results obtained by extending existing parameter calibration theory \cite{Tuo}, numerical tests from the 
+ %\textit{Virtual Library of Simulation Experiments} \cite{Surjanovic}, and validation on the SIPNET terrestrial carbon model \cite{Fer}. This ecological simulation uses a simplified model of the carbon cycle, yielding a faster runtime which affords the opportunity to validate against more computationally intensive approaches. 
+
+ \textbf{2. Spatiotemporal Dynamics.} Next, I will embed the emulator framework within a spatiotemporal statistical model, building upon my previous work to ensure a holistic accounting of uncertainties. I will adopt a state-space framework, considering dynamical models generally of the form $y(s, t) = f(\theta(s, t)) + \epsilon(s, t)$, where $(s, t)$ indicates space-time dependence \cite{Wikle, Hefley}. I will initially explore a linear Markovian model for $\theta$, and analyze combinations of spatial basis function approaches with smoothing GP priors to obtain tractable simulation-based spatiotemporal models. 
+These extensions yield high-dimensional hierarchical models that pose problems for existing inference algorithms. To address these issues I will develop novel methodology that extends recent work on inference for high-dimensional partially observed dynamic systems \cite{Park}. Integrating these methods with my GP emulation and uncertainty quantification framework will face the additional computational bottleneck posed by the poor scalability of GP prediction. To deal with this I will build upon the large body of work in GP approximations, starting from the viewpoint of parallelizable localized approaches \cite{Gramacy}. I will extend my uncertainty quantification work to incorporate this additional source of approximation uncertainty. 
+
+\noindent
+\textbf{Intellectual Merit.} This research will produce broadly applicable Bayesian methodology for the statistical analysis of computer models using large spatiotemporal datasets. It will contribute novel theoretical results and off-the-shelf, scalable algorithms for emulator uncertainty propagation in statistical inference, supplanting existing ad hoc approaches with rigorous, validated methodology. Moreover, it will integrate recent advances in dynamic spatiotemporal modeling with computer modeling methodology, addressing current computational bottlenecks in large-scale simulation-based inference.
+
+\noindent
+\textbf{Broader Impacts.} All methodological developments will be implemented in open-source, well-documented software packages, intended for use across a wide array of scientific disciplines. These packages will also be integrated in the \textit{Predictive Ecosystem Analyzer}, an open-source software tool that allows researchers and land managers to work with ecological models and observational data \cite{Fer}. This has the potential to drastically accelerate the pace of ecological model development, which plays a pivotal role in the management of national forests and public lands, and projections of climate change impacts. Through my collaboration with Michael Dietze, director of the Ecological Forecasting Initiative, I will also participate in an existing Sloan Foundation supported partnership that serves three minority-serving institutions with large tribal populations (Salish-Kootenai College, Cal Poly Humboldt, U. New Mexico-Gallup). I will support culturally-sensitive training in environmental data science as an online mentor, working with undergraduates in the program and helping them pursue further research opportunities, such as REUs. 
+
+\begin{thebibliography}{20}
+\bibitem{Willcox} Willcox, K.E. et al. Nat Comput Sci 1 2021, 166–168.
+\bibitem{Laubmeier} Laubmeier, A. et al. Trends Ecol Evol 2020, 35(12):1090-1099.
+\bibitem{Wikle} Wikle, C.K.,  WIREs Comput Stat 2015, 7: 86-98.
+\bibitem{Canadell} Canadell, P. et al, In Climate Change 2021: The Physical Science Basis. IPCC, pp. 673–816.
+\bibitem{Swallow} Swallow, B. et al, Epidemics 2022, Volume 38, 100547, ISSN 1755-4365.
+\bibitem{Baker} Baker, E. et al. Statist. Sci. 2022, 37 (1) 64 - 89.
+\bibitem{Fer} Fer, I. et al, Biogeosciences 2018, 15, 5801–5830.
+\bibitem{Kennedy} Kennedy, M.C. and O'Hagan, A., Journal of the Royal Statistical Society: Series B 2001, 63: 425-464.
+\bibitem{Stuart} Stuart, A. M., Acta Numerica 2010, 19, 451-559. 
+\bibitem{Cleary} Cleary, E. et al, Journal of Computational Physics 2021, Volume 424, 109716, ISSN 0021-9991.
+\bibitem{Fadikar} Fadikar, A. et al, SIAM/ASA Journal on Uncertainty Quantification 2018, Vol 6, 4, 1685-1706.
+\bibitem{Sun} Sun, F. et al, Stat Anal Data Min: The ASA Data Sci Journal 2019. 12: 311– 324. 
+\bibitem{Surjanovic} Surjanovic, S. et al, Virtual Library of Simulation Experiments: Test Functions and Datasets.
+\bibitem{Takamoto} Takamoto, M. et al, Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track 2022.
+\bibitem{Dietze} Dietze, M. et al, Proceedings of the National Academy of Sciences 2018.115,7, 1424-1432.
+\bibitem{Tuo} Tuo, R. et al. SIAM/ASA Journal on Uncertainty Quantification 2016. Journal Volume: 4; Journal Issue: 1; Journal ID: ISSN 2166-2525.
+\bibitem{Sarkka} Särkkä, S. Bayesian Filtering and Smoothing. 2013. Cambridge: Cambridge University Press.
+\bibitem{Hefley} Hefley, T.J. et al. Spatial Statistics 2017. 20: 206-220.
+\bibitem{Park} Park, J. et al. Statistics and Computing 2020. 30:1497–1522.
+\bibitem{Gramacy} Gramacy R. et al. Journal of Computational and Graphical Statistics 2015, 24;2: 561-578.
+\bibitem{Fer2} Fer, I. et al. bioRxiv 2021; doi: https://doi.org/10.1101/2021.04.28.441243. 
+
+
+
+
+
+\end{thebibliography}
+
+
+
+\end{document}
+
+
+
