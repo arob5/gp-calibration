@@ -27,7 +27,8 @@ print(current.step)
 # Number of datasets
 cat("Number of datasets: ", length(inputs))
 
-# First dataset. What is the UST column?
+# First dataset. What is the UST column? Looks like time stamp is every 
+# 30 minutes. 
 inputs1.data <- inputs[[1]]$data
 dim(inputs1.data)
 head(inputs1.data)
@@ -75,12 +76,41 @@ inputs[[1]]$n_eff
 inputs[[2]]$variable.name
 
 # Why is the first column of inputs[[2]]$data called "Qle" and not "LE"?
+# This is partially addressed in a comment in pda.get.model.output.R, which calls
+# "LE" a data variable name, and "Qle" a model output name. Seems like there are 
+# just a few different naming schemes in use. 
 head(inputs[[2]]$data)
+
+# Plot some of the FC data (Note: only printing non-NA observations, so messing up the
+# time dependence in the plot, so take with grain of salt)
+sel.FC.non.NA <- !is.na(inputs1.data$FC)
+n.plot <- 60
+plot(1:n.plot, inputs1.data$FC[sel.FC.non.NA][1:n.plot])
+
+# Plot some of the UST data 
+sel.UST.non.NA <- !is.na(inputs1.data$UST)
+plot(1:n.plot, inputs1.data$UST[sel.UST.non.NA][1:n.plot])
+
+# Plot some of the LE data 
+sel.Qle.non.NA <- !is.na(inputs[[2]]$data$Qle)
+plot(1:n.plot, inputs[[2]]$data$Qle[sel.Qle.non.NA][1:n.plot])
+
 
 #
 # Likelihood associated with different datasets to be calibrated against
 #
 
+# "inputs" element of the "settings" object stores information that pertains to 
+# the "inputs" object explored above.
+names(settings$assim.batch$inputs[[1]])
+settings$assim.batch$inputs[[1]]$path # Path to data I guess? 
+settings$assim.batch$inputs[[1]]$likelihood # Laplace likelihood associated with this dataset
+settings$assim.batch$inputs[[1]]$variable.id
+
+
+
+
+# TODO: plot the data above (obs and data)
 
 
 #
