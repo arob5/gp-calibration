@@ -1,0 +1,97 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Calibration of Terrestrial Carbon Models}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{General Setting: Computer Model Calibration}
+\section{Motivating Example: Very Simple Ecosystem Model}
+\subsection{Relation to the General Setting}
+
+\section{Parameter Calibration Basics}
+\subsection{Correlated Outputs}
+In the previous section, we assumed independence between model outputs, which resulted in a convenient likelihood. To be clear, we applied the independence assumption
+\begin{align}
+p(y|\theta, \Sigma_\epsilon) = \prod_{j = 1}^{p} p(y_j|\theta, \sigma_{\epsilon_j}^2)
+\end{align}
+where $y \in \R^p$ is a single observation of the $p$ outputs. In the case that this assumption is inappropriate, the previous models may lead to inaccurate 
+quantification of uncertainties. In this case, we consider an explicit model for the covariance between model outputs. We begin by introducing a simple model 
+that generalizes $\Sigma_\epsilon = \text{diag}\left(\sigma_{\epsilon_1}^2, \dots, \sigma_{\epsilon_p}^2\right)$ from a diagonal to an arbitrary, dense covariance 
+matrix. Since $\Sigma_\epsilon$ is now parameterized by $\frac{p(p+1)}{2}$ parameters, this model is only computational feasible when the number of outputs is 
+quite small. Nevertheless, it is a good starting point to motivate more complicated models. 
+
+
+
+
+\section{Surrogate Modeling}
+\section{Multi-Site Hierarchical Models}
+
+\section{Appendix}
+
+\section{TODOs}
+\begin{itemize}
+\item Contrast setting with KOH setting that has both $X$ and $\theta$ variables. 
+\item Standardize my notation in how I'm subscripting vs. superscripting variables to index observations vs. outputs. 
+\end{itemize}
+
+
+\end{document}
+
+
