@@ -12,17 +12,29 @@ library(BayesianTools)
 set.seed(5)
 
 #
-# Setup: settings control synthetic data generation
+# Setup: settings control synthetic data generation and which parameters to calibrate
 #
 
 # Number days in time series 
 N_days <- 1000
 
-# Standard deviation of observation error (for now assuming Gaussian noise). Also 
-# store minimum and lower bounds on the standard deviation to align with the 
-# reference parameter formatting in VSEMgetDefaults()
-sig_eps <- 2.0
-sig_eps_rng <- c(0.1, 4.0)
+# Standard deviation of observation error (for now assuming Gaussian noise) for each 
+# output. Also store minimum and lower bounds on the standard deviation to align with the 
+# reference parameter formatting in VSEMgetDefaults(). Note that the NEE output of the
+# model VSEM() is scales by 1000, so the observation error magnitude should correspond 
+# to this scale. 
+ref_pars_lik <- data.frame(best = c(2.0, 2.0, 2.0, 2.0), 
+                           lower = c(0.1, 0.1, 0.1, 0.1), 
+                           upper = c(4.0, 4.0, 4.0, 4.0))
+rownames(ref_pars_lik) <- c("NEE", "Cv", "Cs", "CR")
+
+# Names of parameters to calibrate. This can include the likelihood parameters
+# to calibrate the observation noise variances, etc. 
+pars_cal <- c("KEXT", "sig_eps")
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv")
 
 #
 # Synthetic data generation
@@ -35,13 +47,59 @@ PAR <- VSEMcreatePAR(seq_len(N_days))
 # The "best" column of the reference parameters are used to generate the "true" 
 # output data. We will add noise to this data to simulate the field observations.
 ref_pars <- VSEMgetDefaults()
-data_ref <- as.data.table(VSEM(refPars$best, PAR))
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
 
-# Add observational noise, assumes same observational noise on each output so re-scale 
-# NEE to be on similar scale as the C pools so the noise level makes sense.
-ref_pars["sig_eps",] <- c(sig_eps, sig_eps_rng)
+# Add observational noise; NEE is scaled by 1000. Fow now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
 data_ref[, NEE := NEE*1000]
-data_obs <- data_ref + rnorm(nrow(data_ref), sd = ref_pars["sig_eps", "best"])
+Sig_eps <- diag(ref_pars_lik[colnames(data_ref), "best"])
+Lt <- sqrt(Sig_eps)
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z * Lt
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+
+#
+# Likelihood
+#
+
+llik_Gaussian <- function(par, par_lik, par_ref, par_cal_sel, output_vars, PAR, data_obs) {
+  # This is more or less the simplest possible likelihood to use in this setting. 
+  # It assumes iid Gaussian likelihoods for each output, and assumes independence 
+  # across outputs. 
+  
+  # Parameters not calibrated are fixed at default values
+  theta <- par_ref$best
+  theta[par_cal_sel] <- par
+  
+  # Run forward model, re-scale NEE.
+  pred_model <- as.data.table(VSEM(theta[1:11], PAR))[, ..output_vars]
+  if("NEE" %in% output_vars) {
+    pred_model[, NEE := NEE*1000]
+  }
+  
+  # Evaluate log-likelihood for each output
+  model_errs <- pred_model - data_obs[, ..output_vals]
+  
+  # Sum log-likelihoods, per independence assumption. 
+}
+
+
+# here is the likelihood 
+likelihood <- function(par, sum = TRUE){
+  # set parameters that are not calibrated on default values 
+  x = refPars$best
+  x[parSel] = par
+  predicted <- VSEM(x[1:11], PAR) # replace here VSEM with your model 
+  predicted[,1] = 1000 * predicted[,1] # this is just rescaling
+  diff <- c(predicted[,1:4] - obs[,1:4]) # difference betweeno observed and predicted
+  # univariate normal likelihood. Note that there is a parameter involved here that is fit
+  llValues <- dnorm(diff, sd = x[12], log = TRUE)  
+  if (sum == FALSE) return(llValues)
+  else return(sum(llValues))
+}
 
 
 #
