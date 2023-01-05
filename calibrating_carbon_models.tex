@@ -1,0 +1,142 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Calibration of Terrestrial Carbon Models}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{General Setting: Computer Model Calibration}
+\section{Motivating Example: Very Simple Ecosystem Model}
+\subsection{Relation to the General Setting}
+
+\section{Parameter Calibration Basics}
+\subsection{Correlated Outputs}
+In the previous section, we assumed independence between model outputs, which resulted in a convenient likelihood. To be clear, we applied the independence assumption
+\begin{align}
+p(y|\theta, \Sigma_\epsilon) = \prod_{j = 1}^{p} p(y_j|\theta, \sigma_{\epsilon_j}^2)
+\end{align}
+where $y \in \R^p$ is a single observation of the $p$ outputs. In the case that this assumption is inappropriate, the previous models may lead to inaccurate 
+quantification of uncertainties. In this case, we consider an explicit model for the covariance between model outputs. We begin by introducing a simple model 
+that generalizes $\Sigma_\epsilon = \text{diag}\left(\sigma_{\epsilon_1}^2, \dots, \sigma_{\epsilon_p}^2\right)$ from a diagonal to an arbitrary, dense covariance 
+matrix. Since $\Sigma_\epsilon$ is now parameterized by $\frac{p(p+1)}{2}$ parameters, this model is only computational feasible when the number of outputs is 
+quite small. Nevertheless, it is a good starting point to motivate more complicated models. 
+
+Under a Gaussian observation model, the likelihood for a single observation $y_i \in \R^p$ now becomes 
+\begin{align}
+p(y_i|\theta, \Sigma_\epsilon) &= N_p(y_i|f(i, \theta), \Sigma_\epsilon).
+\end{align}
+The likelihood across all observations is thus
+\begin{align}
+p(Y|\theta, \Sigma_\epsilon) &= \prod_{i = 1}^{n} N_p(y_i|f(i, \theta), \Sigma_\epsilon). \label{corr_output_lik}
+\end{align}
+We should emphasize that we are still assuming independent observation noise across \textit{time}; this model only accounts for correlations across outputs 
+independent of time. The assumption that this output covariance $\Sigma_\epsilon$ is constant across time can be relaxed, at the cost of further increasing the 
+complexity of the model. A numerically stable implementation of the log of [\ref{corr_output_lik}] is provided in the appendix [\ref{corr_output_lik_implementation}].
+
+
+\section{Surrogate Modeling}
+\section{Multi-Site Hierarchical Models}
+
+\section{Appendix}
+
+\subsection{Correlated Gaussian Likelihood Implementation} \label{corr_output_lik_implementation}
+We consider coding the log of [\ref{corr_output_lik}] efficiently, which is especially important when it will need to be evaluated at each iteration of an
+MCMC algorithm. The full log-likelihood is given by 
+\begin{align}
+\log p(Y|\theta, \Sigma_\epsilon) &= -\frac{1}{2} \log(2\pi) -\frac{n}{2} \log \det(\Sigma_\epsilon) - \frac{1}{2} \sum_{i = 1}^{n} (y_i - f(i, \theta))^T \Sigma_\epsilon^{-1} (y - f(i, \theta)) \label{log_lik_corr_outputs}
+\end{align}
+Due to the assumption that the output covariance $\Sigma_\epsilon$ is constant across observations, we need only calculate the Cholesky decomposition 
+$\Sigma_\epsilon = LL^T$ a single time per likelihood evaluation. Denoting $e_i := y - f(i, \theta) \in \R^p$, the summation in the third term can then be computed as
+\begin{align}
+\sum_{i = 1}^{n} e_i^T \Sigma_\epsilon^{-1} e_i &= \sum_{i = 1}^{n} e_i^T (L L^T)^{-1} e_i \\
+									&= \sum_{i = 1}^{n} (L^{-1} e_i)^T (L^{-1} e_i) \nonumber \\
+									&=  \sum_{i = 1}^{n} \alpha_i^T \alpha_i, \text{ where } \alpha_i := L^{-1}e_i, \nonumber \\
+									&= \alpha^T \alpha, \text{ where } \alpha := (\alpha_1^T, \dots, \alpha_n^T)^T \in \R^{np}, \nonumber
+\end{align}
+where the $\alpha_i$ can be computed efficiently using forward substitution. Define $E \in \R^{p \times n}$ as the matrix with columns $e_1, \dots, e_n$. 
+Then $L^{-1}E$ has columns $\alpha_1, \dots, \alpha_n$. Thus, we can form $\alpha$ by stacking the columns of $L^{-1}E$ into a long vector 
+columnwise. 
+
+Recall that the inference algorithm considered for the correlated output model consisted of a Metropolis-within-Gibbs sampler. In this algorithm, the likelihood 
+[\ref{log_lik_corr_outputs}] must only be evaluated during the $\theta$ sampling step, conditional on $\Sigma_\epsilon$. Therefore, the second term containing the 
+determinant may be treated as a constant and need not be evaluated. However, for completeness we provide the computation of this term using the Cholesky 
+factor $L$ below. 
+\begin{align}
+\log \det(\Sigma_\epsilon) = \log \det(LL^T) &= \log \det(L)^2 \\
+								  &= 2 \log \prod_{j = 1}^{p} L_{jj} \\
+								  &= 2 \sum_{j = 1}^{p} \log L_{jj}
+\end{align}
+The full, normalized log-likelihood can thus be implemented as
+\begin{align}
+\log p(Y|\theta, \Sigma_\epsilon) &= -\frac{1}{2} \log(2\pi) - n\sum_{j = 1}^{p} \log L_{jj}  - \frac{1}{2} \alpha^T \alpha
+\end{align}
+
+
+\section{TODOs}
+\begin{itemize}
+\item Contrast setting with KOH setting that has both $X$ and $\theta$ variables. 
+\item Standardize my notation in how I'm subscripting vs. superscripting variables to index observations vs. outputs. Also how to 
+index $f(\theta)$ when referring to outputs and observations at different time steps. 
+\item Establish notation $y_i$ for observations and $Y_j$ for time series of output $j$. 
+\end{itemize}
+
+
+\end{document}
+
+
