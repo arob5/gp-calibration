@@ -12,17 +12,27 @@ library(BayesianTools)
 set.seed(5)
 
 #
-# Setup: settings control synthetic data generation
+# Setup: settings control synthetic data generation and which parameters to calibrate
 #
 
 # Number days in time series 
 N_days <- 1000
 
-# Standard deviation of observation error (for now assuming Gaussian noise). Also 
-# store minimum and lower bounds on the standard deviation to align with the 
-# reference parameter formatting in VSEMgetDefaults()
-sig_eps <- 2.0
-sig_eps_rng <- c(0.1, 4.0)
+# The covariance matrix between the outputs, for now assumed constant over time. 
+# Also assuming iid Gaussian noise for now. Note that the NEE output of the
+# model VSEM() is scales by 1000, so the observation error magnitude should correspond 
+# to this scale. 
+Sig_eps <- diag(c(2.0, 2.0, 2.0, 2.0))
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+
+# Names of parameters to calibrate. This can include the likelihood parameters
+# to calibrate the observation noise variances, etc. 
+pars_cal <- c("KEXT", "sig_eps")
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv")
 
 #
 # Synthetic data generation
@@ -35,13 +45,66 @@ PAR <- VSEMcreatePAR(seq_len(N_days))
 # The "best" column of the reference parameters are used to generate the "true" 
 # output data. We will add noise to this data to simulate the field observations.
 ref_pars <- VSEMgetDefaults()
-data_ref <- as.data.table(VSEM(refPars$best, PAR))
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
 
-# Add observational noise, assumes same observational noise on each output so re-scale 
-# NEE to be on similar scale as the C pools so the noise level makes sense.
-ref_pars["sig_eps",] <- c(sig_eps, sig_eps_rng)
+# Add observational noise; NEE is scaled by 1000. Fow now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
 data_ref[, NEE := NEE*1000]
-data_obs <- data_ref + rnorm(nrow(data_ref), sd = ref_pars["sig_eps", "best"])
+Lt <- chol(Sig_eps) # Upper triangular Cholesky factor of output covariance
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z %*% Lt
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+
+#
+# Likelihood
+#
+
+llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs, output_vars) {
+  # This is more or less the simplest possible likelihood to use in this setting. 
+  # It assumes iid Gaussian likelihoods for each output, and assumes independence 
+  # across outputs. 
+  #
+  # Returns:
+  #   Unnormalized log-likelihood across all observations and over the output variables
+  #   specified in 'output_vars'. 
+  
+  # Parameters not calibrated are fixed at default values
+  theta <- par_ref$best
+  theta[par_cal_sel] <- par
+  
+  # Run forward model, re-scale NEE.
+  pred_model <- as.data.table(VSEM(theta[1:11], PAR))[, ..output_vars]
+  if("NEE" %in% output_vars) {
+    pred_model[, NEE := NEE*1000]
+  }
+  
+  # Evaluate sum (y_i - f_i)^T Sig_eps (y_i - f_i) over i.
+  Sig_eps <- Sig_eps[output_vars, output_vars]
+  L <- t(chol(Sig_eps))
+  model_errs <- data_obs[, ..output_vars] - pred_model
+  log_quadratic_form <- sum(colSums(forwardsolve(L, t(model_errs))^2))
+  
+  return(-0.5 * log_quadratic_form)
+  
+}
+
+
+# here is the likelihood 
+likelihood <- function(par, sum = TRUE){
+  # set parameters that are not calibrated on default values 
+  x = refPars$best
+  x[parSel] = par
+  predicted <- VSEM(x[1:11], PAR) # replace here VSEM with your model 
+  predicted[,1] = 1000 * predicted[,1] # this is just rescaling
+  diff <- c(predicted[,1:4] - obs[,1:4]) # difference betweeno observed and predicted
+  # univariate normal likelihood. Note that there is a parameter involved here that is fit
+  llValues <- dnorm(diff, sd = x[12], log = TRUE)  
+  if (sum == FALSE) return(llValues)
+  else return(sum(llValues))
+}
 
 
 #
