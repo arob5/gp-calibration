@@ -111,7 +111,9 @@ $\Sigma_\epsilon = LL^T$ a single time per likelihood evaluation. Denoting $e_i 
 \end{align}
 where the $\alpha_i$ can be computed efficiently using forward substitution. Define $E \in \R^{p \times n}$ as the matrix with columns $e_1, \dots, e_n$. 
 Then $L^{-1}E$ has columns $\alpha_1, \dots, \alpha_n$. Thus, we can form $\alpha$ by stacking the columns of $L^{-1}E$ into a long vector 
-columnwise. 
+columnwise. Note that $\alpha$ is conceptually helpful, but in code we do not actually need to re-shape the matrix; the squared Euclidean norm of each column 
+of $L^{-1}E$ can be computed and then the resulting squared norms can be summed. We again emphasize that $L^{-1}E$ should be computed using forward 
+substitution. 
 
 Recall that the inference algorithm considered for the correlated output model consisted of a Metropolis-within-Gibbs sampler. In this algorithm, the likelihood 
 [\ref{log_lik_corr_outputs}] must only be evaluated during the $\theta$ sampling step, conditional on $\Sigma_\epsilon$. Therefore, the second term containing the 
