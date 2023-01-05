@@ -18,15 +18,13 @@ set.seed(5)
 # Number days in time series 
 N_days <- 1000
 
-# Standard deviation of observation error (for now assuming Gaussian noise) for each 
-# output. Also store minimum and lower bounds on the standard deviation to align with the 
-# reference parameter formatting in VSEMgetDefaults(). Note that the NEE output of the
+# The covariance matrix between the outputs, for now assumed constant over time. 
+# Also assuming iid Gaussian noise for now. Note that the NEE output of the
 # model VSEM() is scales by 1000, so the observation error magnitude should correspond 
 # to this scale. 
-ref_pars_lik <- data.frame(best = c(2.0, 2.0, 2.0, 2.0), 
-                           lower = c(0.1, 0.1, 0.1, 0.1), 
-                           upper = c(4.0, 4.0, 4.0, 4.0))
-rownames(ref_pars_lik) <- c("NEE", "Cv", "Cs", "CR")
+Sig_eps <- diag(c(2.0, 2.0, 2.0, 2.0))
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 
 # Names of parameters to calibrate. This can include the likelihood parameters
 # to calibrate the observation noise variances, etc. 
@@ -53,10 +51,9 @@ data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
 # outputs, but can consider models that fill in the off-diagonal Sig_eps values
 # in the future. 
 data_ref[, NEE := NEE*1000]
-Sig_eps <- diag(ref_pars_lik[colnames(data_ref), "best"])
-Lt <- sqrt(Sig_eps)
+Lt <- chol(Sig_eps) # Upper triangular Cholesky factor of output covariance
 Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
-data_obs <- data_ref + Z * Lt
+data_obs <- data_ref + Z %*% Lt
 
 # Index selector for calibration parameters
 pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
@@ -65,10 +62,14 @@ pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
 # Likelihood
 #
 
-llik_Gaussian <- function(par, par_lik, par_ref, par_cal_sel, output_vars, PAR, data_obs) {
+llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs, output_vars) {
   # This is more or less the simplest possible likelihood to use in this setting. 
   # It assumes iid Gaussian likelihoods for each output, and assumes independence 
   # across outputs. 
+  #
+  # Returns:
+  #   Unnormalized log-likelihood across all observations and over the output variables
+  #   specified in 'output_vars'. 
   
   # Parameters not calibrated are fixed at default values
   theta <- par_ref$best
@@ -80,10 +81,14 @@ llik_Gaussian <- function(par, par_lik, par_ref, par_cal_sel, output_vars, PAR, 
     pred_model[, NEE := NEE*1000]
   }
   
-  # Evaluate log-likelihood for each output
-  model_errs <- pred_model - data_obs[, ..output_vals]
+  # Evaluate sum (y_i - f_i)^T Sig_eps (y_i - f_i) over i.
+  Sig_eps <- Sig_eps[output_vars, output_vars]
+  L <- t(chol(Sig_eps))
+  model_errs <- data_obs[, ..output_vars] - pred_model
+  log_quadratic_form <- sum(colSums(forwardsolve(L, t(model_errs))^2))
   
-  # Sum log-likelihoods, per independence assumption. 
+  return(-0.5 * log_quadratic_form)
+  
 }
 
 
