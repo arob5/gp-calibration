@@ -77,27 +77,35 @@ $x = (i, j)$, where $i$ indexes the time series output and $j$ indexes the outpu
 classical KOH sense. Since $f(i, j, \theta)$ maps to the value of a single output $j$ at a single time step $i$ then it is a scalar-valued computer model. Relating the 
 model to field data will yield statistical models of the form 
 \begin{align}
-y_{ij} &= f(i, j, \theta) + \epsilon_{ij}
+y_{ij} &= f(i, j, \theta) + \epsilon_{ij} \label{ij_model}
 \end{align}
 Models for the error process $\epsilon_{ij}$ might consider time-invariant correlation across outputs $j$, as well as autocorrelation across time $i$. 
 
 For a different perspective, let us now conceptualize the computer model as $f(i, \theta)$, a vector-valued simulator that outputs values for the four outputs
 at time $i$. We can now consider an observational model of the form 
 \begin{align}
-y_{i} &= f(i, \theta) + \epsilon_{i}
+y_{i} &= f(i, \theta) + \epsilon_{i} \label{i_model}
 \end{align}
 where $\epsilon_{i}$ is a four-dimensional vector of errors. We can take this a step further and consider a computer model with no control inputs
 $f(\theta)$ that outputs a matrix of dimensions $n \times 4$ representing the full time-series for the four outputs. The corresponding statistical model looks 
 like
 \begin{align}
-y = f(\theta) + \epsilon
+y = f(\theta) + \epsilon \label{no_control_input_model}
 \end{align}
 where $\epsilon$ is now a large matrix of errors. On the face of it, these definitions appear to hold only conceptual value. If we wanted to fit a simple 
 statistical model assuming independent observation error equal in magnitude across outputs and time then we could consider 
 $\epsilon_{ij} \overset{iid}{\sim} N(0, \sigma_\epsilon^2)$, 
 $\epsilon_i \overset{iid}{\sim} N_4(0, \sigma_\epsilon^2 I_4)$, and $\epsilon \sim N_{n \times 4}(0, \sigma_\epsilon^2 I_{n \times 4})$ 
-in the three respective models, and the three resulting models would be identical. 
+in the three respective models, and the three resulting models would be identical. However, in the setting where $f$ is sufficiently costly 
+as to require emulation, the distinction between the three formulations has vastly different practical ramifications. 
 
+We now briefly consider what model emulation might look like in each of the three cases. This discussion parallels one presented in 
+Conti and O'Hagan \cite{Conti}, which also happened to be motivated by the problem of calibrating a vegetation model to study 
+carbon dynamics. However, their study presents the case of a single time-series output, while we have been considering multiple. 
+Note that in moving from [\ref{ij_model}] to 
+[\ref{i_model}] and then to [\ref{no_control_input_model}], we simply conceptually shifted model \textit{inputs} (indicators for time and 
+output variable) to model \textit{outputs}. This yields a scalar-valued model in [\ref{ij_model}] and ultimately a model with a very large 
+number of outputs in [\ref{no_control_input_model}]. 
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
@@ -171,6 +179,13 @@ The full, normalized log-likelihood can thus be implemented as
 index $f(\theta)$ when referring to outputs and observations at different time steps. 
 \item Establish notation $y_i$ for observations and $Y_j$ for time series of output $j$. 
 \end{itemize}
+
+\begin{thebibliography}{20}
+\bibitem{Kennedy} Kennedy, M.C. and O'Hagan, A. (2001), Bayesian calibration of computer models. Journal of the Royal Statistical Society: Series B (Statistical Methodology), 63: 425-464. https://doi.org/10.1111/1467-9868.00294.
+s11222-019-09886-w.
+\bibitem{Conti} Stefano Conti, Anthony O’Hagan, (2010), Bayesian emulation of complex multi-output and dynamic computer models, Journal of Statistical Planning and Inference,
+Volume 140, Issue 3, 640-651, 0378-3758, https://doi.org/10.1016/j.jspi.2009.08.006.
+\end{thebibliography}
 
 
 \end{document}
