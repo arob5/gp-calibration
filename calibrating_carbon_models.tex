@@ -62,6 +62,8 @@
 \newpage
 
 \section{General Setting: Computer Model Calibration}
+TODO
+
 \section{Motivating Example: Very Simple Ecosystem Model}
 The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
 a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
@@ -105,14 +107,16 @@ leaf-area ratio (LAR) and $C_v(t)$. The constant $k$ is a fixed extinction rate 
 \text{GPP}(t) &= \text{PAR}(t) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(t) \right) \right) \nonumber \\
 \text{NPP}(t) &= (1 - \gamma) \times \text{GPP}(t) \nonumber
 \end{align}
-As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP. 
+As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP.
 
-
+Potential calibration parameters $\theta$ of this model include $\alpha_v$, $\tau_v$, $\tau_r$, $\tau_s$, $\text{LAR}$, $k$, and $\gamma$, but it is common to fix some of the parameters at their 
+nominal values and calibrate the remaining subset. 
 Once the parameters $\theta$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
-observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is mapping from these inputs to the four resulting time series. A more 
+observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is given by an execution of the ODE solve, and represents
+the mapping from the inputs to these four resulting time series. A more 
 detailed discussion of the forward model is given in the following section. 
 
-\subsection{Relation to the General Setting}
+\subsection{Relation to the General Computer Model Calibration Setting}
 We now consider how ecosystem models such as VSEM relate to, and differ from, the KOH formulation. As previously discussed, the KOH model assumes that
 computer simulators take the form $f(x, \theta)$, requiring specification of control inputs $x$ and calibration parameters $\theta$. The calibration parameters 
 in the case of VSEM were stated in the previous section. But are there control inputs in this setting? It depends how we view the model. If we let 
@@ -184,6 +188,11 @@ required to deal with the complexity in this setting.
 
 
 \section{Parameter Calibration Basics}
+In this section, we consider the basic parameter calibration problem under the assumption that the model $f$ is sufficiently fast as to not require emulation. 
+
+\subsection{Basic Model}
+TODO
+
 \subsection{Correlated Outputs}
 In the previous section, we assumed independence between model outputs, which resulted in a convenient likelihood. To be clear, we applied the independence assumption
 \begin{align}
