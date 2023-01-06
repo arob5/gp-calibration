@@ -116,9 +116,8 @@ simulation over time; in other words, the dynamics are baked into the emulator i
 single univariate-output emulator is attractive, there may be some issues with this approach. Fitting an emulator that accurately re-creates the changing dynamics
 over the full time series for each output at different $\theta$ values seems a potentially daunting task. Conti and O'Hagan present an alternative 
 \textit{many single output (MS) emulators} scheme, in which $n$ independent emulators are constructed, one for each time step. When $n$ is large, this has the 
-obvious drawback of requiring fitting a very large number of emulators. 
-
-Turning to the second model $f(i, \theta)$, we can explore the same exact ideas, with slight modifications. The TI approach now requires a single multi-output 
+obvious drawback of requiring fitting a very large number of emulators. Turning to the second model $f(i, \theta)$, we can explore the same exact ideas, with slight modifications. 
+The TI approach now requires a single multi-output 
 emulator with $p$ outputs, which predicts the $p$ outputs at each time step. The MS scheme now requires $n$ $p$-output emulators. 
 
 For the final model $f(\theta)$, we require a single emulator that maps $\theta \mapsto \R^{n \times p}$, which Conti and O'Hagan term the 
@@ -129,7 +128,10 @@ model this will look something like $p(y|\theta, \Sigma_\epsilon) = N_{n \times 
 the error in its predictions relative to field observations $y$, then targeting the likelihood for emulation drastically simplifies the problem from an $n \times p$ 
 dimensional to a univariate output space! Conceptually, in this setting we are still viewing the time series as outputs (as opposed to the model $f(i, j, \theta)$) but now 
 we are projecting this high-dimensional output space onto a one-dimensional space by mapping the time series through the likelihood function. As with all of the other
-methods, there are still issues with this approach, and a more thorough comparison is explored later in the paper. 
+methods, there are still issues with this approach, and a more thorough comparison is explored later in the paper. On a notational note, we will continue to utilize 
+$f(i, j, \theta)$, $f(i, \theta)$, and $f(\theta)$ as a practical means to describe algorithms, regardless of whether time and output dimension are conceptually thought 
+of as inputs or outputs of the model. In particular, $f(i, j, \theta) \in \R$ is a scalar denoting the value of output $j$ at time $i$, $f(i, \theta) \in \R^p$ is a column vector 
+of the $p$ outputs at time $i$, and $f(\theta) \in \R^{n \times p}$ is a matrix of all outputs at all times (where the specific set of times will be made clear by context). 
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
