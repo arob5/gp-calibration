@@ -99,13 +99,21 @@ $\epsilon_i \overset{iid}{\sim} N_4(0, \sigma_\epsilon^2 I_4)$, and $\epsilon \s
 in the three respective models, and the three resulting models would be identical. However, in the setting where $f$ is sufficiently costly 
 as to require emulation, the distinction between the three formulations has vastly different practical ramifications. 
 
-We now briefly consider what model emulation might look like in each of the three cases. This discussion parallels one presented in 
+We now briefly consider what model emulation might look like in each of the three cases; a thorough discussion of the costs and benefits of each 
+is delayed until later in this paper. This discussion parallels one presented in 
 Conti and O'Hagan \cite{Conti}, which also happened to be motivated by the problem of calibrating a vegetation model to study 
 carbon dynamics. However, their study presents the case of a single time-series output, while we have been considering multiple. 
 Note that in moving from [\ref{ij_model}] to 
 [\ref{i_model}] and then to [\ref{no_control_input_model}], we simply conceptually shifted model \textit{inputs} (indicators for time and 
 output variable) to model \textit{outputs}. This yields a scalar-valued model in [\ref{ij_model}] and ultimately a model with a very large 
 number of outputs in [\ref{no_control_input_model}]. 
+
+Starting with the first model, $f(i, j, \theta)$, we can consider a single emulator that maps $(i, j, \theta) \mapsto \R$. In particular, the input space of this 
+emulator is $\{1, \dots, n\} \times \{1, \dots, p\} \times \mathcal{D}_{\theta}$, where I have returned to the generic notation $p$ to represent the number 
+of outputs ($p = 4$ for VSEM). Although only a single emulator must be built in this formulation, it must be able to accurately capture the dynamics of the
+simulation over time; in other words, the dynamics are baked into the emulator itself. Conti and O'Hagan \cite{Conti} refer to this as the 
+\textit{time input (TI) emulator}
+
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
