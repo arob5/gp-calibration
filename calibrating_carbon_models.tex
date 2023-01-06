@@ -68,20 +68,44 @@ a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simpl
 in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
 This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
 above-ground vegetation, below-ground vegetation, and soil organic matter. This is coupled with a single forcing variable, the quantity of photosynthetically 
-available radiation (PAR). Let $C_v(t)$ (\textbf{v}egetation, above ground), $C_r(t)$ (\textbf{r}oots), and $C_s(t)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $t$. 
+active radiation (PAR), which represents the portion of the light spectrum usable by plants for photosynthesis. 
+Let $C_v(t)$ (\textbf{v}egetation, above ground), $C_r(t)$ (\textbf{r}oots), and $C_s(t)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $t$. 
 The dynamics describing the carbon fluxes between these pools depend on $NPP(t)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $t$, 
 which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration, where GPP quantifies the amount of carbon 
-fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is NPP minus heterotrophic 
+fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is (aside from a sign change) 
+NPP minus heterotrophic 
 respiration. Thus, in the VSEM model this means 
 \begin{align}
-\text{NPP} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
+-\text{NEE} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
 \end{align}
-The state equations describing the carbon dynamics are then given by 
+The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
+The state equations describing the carbon dynamics are then given by
 \begin{align}
-\dot{C}_v(t) &= \alpha_v NPP(t) - \frac{C_v(t)}{\tau_v} \\
-\dot{C}_r(t) &= (1.0 - \alpha_v) NPP(t) - \frac{C_r(t)}{\tau_r} \nonumber \\
+\dot{C}_v(t) &= \alpha_v \times \text{NPP}(t) - \frac{C_v(t)}{\tau_v} \label{VSEM_ODE_system} \\
+\dot{C}_r(t) &= (1.0 - \alpha_v) \times \text{NPP}(t) - \frac{C_r(t)}{\tau_r} \nonumber \\
 \dot{C}_s(t) &= \frac{C_r(t)}{\tau_r} + \frac{C_v(t)}{\tau_v} - \frac{C_s(t)}{\tau_s} \nonumber 
 \end{align}
+where the parameters $\tau_v$, $\tau_r$, and $\tau_s$ are residence times or longevity parameters for above-ground vegetation, below-ground vegetation, and soil organic matter, 
+respectively. In particular, $\tau_v$ and $\tau_r$ represent the longevity of above and below ground biomass, respectively, while $\tau_s$ is the residence time of organic matter 
+in the soil. Carbon is thus assumed to be lost from the plant pools to the soil pool at fixed turnover rates, and similarly from the soil pool to the atmosphere. VSEM also makes the simplifying assumption that a fixed proportion of NPP is allocated to above and below ground vegetation, where $\alpha_v$ is the fraction
+allocated to the former. 
+
+The dynamics [\ref{VSEM_ODE_system}] are driven by the forcing effect of PAR, which drives the values of NPP and GPP over time. VSEM assumes a simple calculation, 
+where GPP is given by a product of three factors:
+\begin{enumerate}
+\item The amount of light available for photosynthesis (PAR) (MJ/$m^2$/day).
+\item Light-use efficiency (LUE), a measure of the efficiency at which vegetation can use light for photosynthesis. 
+\item The rate at which the available light decays as it passes downwards through a canopy of leaves. 
+\end{enumerate}
+The rate described in the third item above is modeled by the Beer-Lambert law, which yields an exponential decay rate $e^{-k*\text{LAI}}$, 
+where LAI is the \textit{leaf-area index}, defined as the ratio of one-sided leaf area per unit of ground area. LAI at time $t$ is assumed to be given by the product of a fixed 
+leaf-area ratio (LAR) and $C_v(t)$. The constant $k$ is a fixed extinction rate controlling the rate of exponential decay. The full calculations for NPP are given below. 
+\begin{align}
+\text{LAI}(t) &= \text{LAR} \times C_v(t) \\
+\text{GPP}(t) &= \text{PAR}(t) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(t) \right) \right) \nonumber \\
+\text{NPP}(t) &= (1 - \gamma) \times \text{GPP}(t) \nonumber
+\end{align}
+As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP. 
 
 
 Once the parameters $\theta$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
