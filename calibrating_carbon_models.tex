@@ -63,8 +63,12 @@
 
 \section{General Setting: Computer Model Calibration}
 \section{Motivating Example: Very Simple Ecosystem Model}
-TODO: introduce model...This simple model supposes that carbon can be in one of three pools: above-ground vegetation, below-ground vegetation, and 
-soil organic matter. We let $C_v$, $C_r$, and $C_s$ denote the quantity of carbon (kg $C/m^2$) in each of the three respective states... 
+The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
+a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
+in the \href{https://github.com/florianhartig/BayesianTools}{\texitt{BayesianTools}} R package. 
+This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
+above-ground vegetation, below-ground vegetation, and soil organic matter. This is coupled with a single forcing variable, the quantity of photosynthetically 
+available radiation (PAR). Let $C_v$, $C_r$, and $C_s$ denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools. 
 Once the parameters $\theta$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
 observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is mapping from these inputs to the four resulting time series. A more 
 detailed discussion of the forward model is given in the following section. 
@@ -132,6 +136,13 @@ methods, there are still issues with this approach, and a more thorough comparis
 $f(i, j, \theta)$, $f(i, \theta)$, and $f(\theta)$ as a practical means to describe algorithms, regardless of whether time and output dimension are conceptually thought 
 of as inputs or outputs of the model. In particular, $f(i, j, \theta) \in \R$ is a scalar denoting the value of output $j$ at time $i$, $f(i, \theta) \in \R^p$ is a column vector 
 of the $p$ outputs at time $i$, and $f(\theta) \in \R^{n \times p}$ is a matrix of all outputs at all times (where the specific set of times will be made clear by context). 
+
+To conclude the conceptual framework 
+explored here, we emphasize the characteristics of ecosystem models that made calibration challenging relative to the classical KOH formulation. In particular, KOH originally 
+considered computer models with univariate outputs, which was subsequently generalized to a (typically modest) number of outputs. On the other hand, 
+vegetation models like VSEM produce multiple time series of outputs, yielding a very high-dimensional output space. Alterations to classical approaches are therefore
+required to deal with the complexity in this setting.  
+
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
@@ -209,6 +220,7 @@ index $f(\theta)$ when referring to outputs and observations at different time s
 \begin{thebibliography}{20}
 \bibitem{Kennedy} Kennedy, M.C. and O'Hagan, A. (2001), Bayesian calibration of computer models. Journal of the Royal Statistical Society: Series B (Statistical Methodology), 63: 425-464. https://doi.org/10.1111/1467-9868.00294.
 s11222-019-09886-w.
+\bibitem{Hartig} Florian Hartig, Francesco Minunno and Stefan Paul (2017). BayesianTools: General-Purpose MCMC and SMC Samplers and Tools for Bayesian Statistics. R package version 0.1.4. https://github.com/florianhartig/BayesianTools.
 \bibitem{Conti} Stefano Conti, Anthony O’Hagan, (2010), Bayesian emulation of complex multi-output and dynamic computer models, Journal of Statistical Planning and Inference,
 Volume 140, Issue 3, 640-651, 0378-3758, https://doi.org/10.1016/j.jspi.2009.08.006.
 \end{thebibliography}
