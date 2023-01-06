@@ -112,8 +112,24 @@ Starting with the first model, $f(i, j, \theta)$, we can consider a single emula
 emulator is $\{1, \dots, n\} \times \{1, \dots, p\} \times \mathcal{D}_{\theta}$, where I have returned to the generic notation $p$ to represent the number 
 of outputs ($p = 4$ for VSEM). Although only a single emulator must be built in this formulation, it must be able to accurately capture the dynamics of the
 simulation over time; in other words, the dynamics are baked into the emulator itself. Conti and O'Hagan \cite{Conti} refer to this as the 
-\textit{time input (TI) emulator}
+\textit{time input (TI) emulator}, although in our setting the output index $j$ is also an input in addition to time. While the apparent simplicity of fitting a 
+single univariate-output emulator is attractive, there may be some issues with this approach. Fitting an emulator that accurately re-creates the changing dynamics
+over the full time series for each output at different $\theta$ values seems a potentially daunting task. Conti and O'Hagan present an alternative 
+\textit{many single output (MS) emulators} scheme, in which $n$ independent emulators are constructed, one for each time step. When $n$ is large, this has the 
+obvious drawback of requiring fitting a very large number of emulators. 
 
+Turning to the second model $f(i, \theta)$, we can explore the same exact ideas, with slight modifications. The TI approach now requires a single multi-output 
+emulator with $p$ outputs, which predicts the $p$ outputs at each time step. The MS scheme now requires $n$ $p$-output emulators. 
+
+For the final model $f(\theta)$, we require a single emulator that maps $\theta \mapsto \R^{n \times p}$, which Conti and O'Hagan term the 
+\textit{multi-output (MO) emulator} approach. In most applications, $n$ is large and so fitting an emulator 
+with such a high-dimensional output space is completely infeasible. The situation can sometimes be ameliorated via dimensionality reduction techniques such as 
+Principal Components Analysis (PCA). Alternatively, we might abandon emulation of $f$ directly and instead emulate the likelihood directly. Under a Gaussian error
+model this will look something like $p(y|\theta, \Sigma_\epsilon) = N_{n \times p}(f(\theta), \Sigma_\epsilon)$. If we only care about the computer model insofar as 
+the error in its predictions relative to field observations $y$, then targeting the likelihood for emulation drastically simplifies the problem from an $n \times p$ 
+dimensional to a univariate output space! Conceptually, in this setting we are still viewing the time series as outputs (as opposed to the model $f(i, j, \theta)$) but now 
+we are projecting this high-dimensional output space onto a one-dimensional space by mapping the time series through the likelihood function. As with all of the other
+methods, there are still issues with this approach, and a more thorough comparison is explored later in the paper. 
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
