@@ -22,17 +22,21 @@ N_days <- 1000
 # Also assuming iid Gaussian noise for now. Note that the NEE output of the
 # model VSEM() is scales by 1000, so the observation error magnitude should correspond 
 # to this scale. 
-Sig_eps <- diag(c(2.0, 2.0, 2.0, 2.0))
+Sig_eps <- diag(c(4.0, 4.0, 4.0, 4.0))
 rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 
-# Names of parameters to calibrate. This can include the likelihood parameters
-# to calibrate the observation noise variances, etc. 
-pars_cal <- c("KEXT", "sig_eps")
+# Names of parameters to calibrate.
+pars_cal <- c("KEXT")
+
+# Whether or not to fix likelihoods parameters (typically observational noise 
+# variance/covariance) or to treat as random and calibrate them. 
+learn_lik_par <- FALSE
 
 # Identify which outputs to constrain in the model. Each constrained output factors 
 # into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
-output_vars <- c("NEE", "Cv")
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+N_outputs <- length(output_vars)
 
 #
 # Synthetic data generation
@@ -51,7 +55,7 @@ data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
 # outputs, but can consider models that fill in the off-diagonal Sig_eps values
 # in the future. 
 data_ref[, NEE := NEE*1000]
-Lt <- chol(Sig_eps) # Upper triangular Cholesky factor of output covariance
+Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
 Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
 data_obs <- data_ref + Z %*% Lt
 
@@ -62,7 +66,7 @@ pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
 # Likelihood
 #
 
-llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs, output_vars) {
+llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs) {
   # This is more or less the simplest possible likelihood to use in this setting. 
   # It assumes iid Gaussian likelihoods for each output, and assumes independence 
   # across outputs. 
@@ -76,7 +80,7 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
   theta[par_cal_sel] <- par
   
   # Run forward model, re-scale NEE.
-  pred_model <- as.data.table(VSEM(theta[1:11], PAR))[, ..output_vars]
+  pred_model <- as.data.table(VSEM(theta, PAR))[, ..output_vars]
   if("NEE" %in% output_vars) {
     pred_model[, NEE := NEE*1000]
   }
@@ -91,21 +95,20 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
   
 }
 
-
-# here is the likelihood 
-likelihood <- function(par, sum = TRUE){
-  # set parameters that are not calibrated on default values 
-  x = refPars$best
-  x[parSel] = par
-  predicted <- VSEM(x[1:11], PAR) # replace here VSEM with your model 
-  predicted[,1] = 1000 * predicted[,1] # this is just rescaling
-  diff <- c(predicted[,1:4] - obs[,1:4]) # difference betweeno observed and predicted
-  # univariate normal likelihood. Note that there is a parameter involved here that is fit
-  llValues <- dnorm(diff, sd = x[12], log = TRUE)  
-  if (sum == FALSE) return(llValues)
-  else return(sum(llValues))
-}
-
+# Comparing against example likelihood from documentation
+# likelihood <- function(par, sum = TRUE){
+#   # set parameters that are not calibrated on default values 
+#   x = ref_pars$best
+#   x[pars_cal_sel] = par
+#   predicted <- VSEM(x[1:11], PAR) # replace here VSEM with your model 
+#   predicted[,1] = 1000 * predicted[,1] # this is just rescaling
+#   diff <- c(predicted[,1:4] - as.data.frame(data_obs)[,1:4]) # difference betweeno observed and predicted
+#   # univariate normal likelihood. Note that there is a parameter involved here that is fit
+#   diff <- c(diff[[1]], diff[[2]], diff[[3]], diff[[4]])
+#   llValues <- dnorm(diff, sd = 2.0, log = TRUE)  
+#   if (sum == FALSE) return(llValues)
+#   else return(sum(llValues))
+# }
 
 #
 # Plots of synthetic data
@@ -167,9 +170,14 @@ plotTimeSeries(observed = data_obs[[3]],
 plotTimeSeries(observed = data_obs[[4]], 
                predicted = data_ref[[4]], main = colnames(data_ref)[4])
 
+#
+# Test likelihood
+#
+k_ext_vals <- seq(ref_pars["KEXT", "lower"], ref_pars["KEXT", "upper"], length.out = 100)
+llik_vals <- vector(mode = "numeric", length = length(k_ext_vals))
+for(i in seq_along(llik_vals)) {
+  llik_vals[i] <- llik_Gaussian(k_ext_vals[i], Sig_eps, ref_pars, pars_cal_sel, output_vars, PAR, data_obs)
+}
 
-
-
-
-
+plot(k_ext_vals, llik_vals, type = "l")
 
