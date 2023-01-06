@@ -63,7 +63,41 @@
 
 \section{General Setting: Computer Model Calibration}
 \section{Motivating Example: Very Simple Ecosystem Model}
+TODO: introduce model...This simple model supposes that carbon can be in one of three pools: above-ground vegetation, below-ground vegetation, and 
+soil organic matter. We let $C_v$, $C_r$, and $C_s$ denote the quantity of carbon (kg $C/m^2$) in each of the three respective states... 
+Once the parameters $\theta$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
+observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is mapping from these inputs to the four resulting time series. A more 
+detailed discussion of the forward model is given in the following section. 
+
 \subsection{Relation to the General Setting}
+We now consider how ecosystem models such as VSEM relate to, and differ from, the KOH formulation. As previously discussed, the KOH model assumes that
+computer simulators take the form $f(x, \theta)$, requiring specification of control inputs $x$ and calibration parameters $\theta$. The calibration parameters 
+in the case of VSEM were stated in the previous section. But are there control inputs in this setting? It depends how we view the model. If we let 
+$x = (i, j)$, where $i$ indexes the time series output and $j$ indexes the output variable (NEE, $C_v$, etc.) then $f(x, \theta) = f(i, j, \theta)$ can indeed be thought of in the 
+classical KOH sense. Since $f(i, j, \theta)$ maps to the value of a single output $j$ at a single time step $i$ then it is a scalar-valued computer model. Relating the 
+model to field data will yield statistical models of the form 
+\begin{align}
+y_{ij} &= f(i, j, \theta) + \epsilon_{ij}
+\end{align}
+Models for the error process $\epsilon_{ij}$ might consider time-invariant correlation across outputs $j$, as well as autocorrelation across time $i$. 
+
+For a different perspective, let us now conceptualize the computer model as $f(i, \theta)$, a vector-valued simulator that outputs values for the four outputs
+at time $i$. We can now consider an observational model of the form 
+\begin{align}
+y_{i} &= f(i, \theta) + \epsilon_{i}
+\end{align}
+where $\epsilon_{i}$ is a four-dimensional vector of errors. We can take this a step further and consider a computer model with no control inputs
+$f(\theta)$ that outputs a matrix of dimensions $n \times 4$ representing the full time-series for the four outputs. The corresponding statistical model looks 
+like
+\begin{align}
+y = f(\theta) + \epsilon
+\end{align}
+where $\epsilon$ is now a large matrix of errors. On the face of it, these definitions appear to hold only conceptual value. If we wanted to fit a simple 
+statistical model assuming independent observation error equal in magnitude across outputs and time then we could consider 
+$\epsilon_{ij} \overset{iid}{\sim} N(0, \sigma_\epsilon^2)$, 
+$\epsilon_i \overset{iid}{\sim} N_4(0, \sigma_\epsilon^2 I_4)$, and $\epsilon \sim N_{n \times 4}(0, \sigma_\epsilon^2 I_{n \times 4})$ 
+in the three respective models, and the three resulting models would be identical. 
+
 
 \section{Parameter Calibration Basics}
 \subsection{Correlated Outputs}
