@@ -65,10 +65,25 @@
 \section{Motivating Example: Very Simple Ecosystem Model}
 The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
 a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
-in the \href{https://github.com/florianhartig/BayesianTools}{\texitt{BayesianTools}} R package. 
+in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
 This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
 above-ground vegetation, below-ground vegetation, and soil organic matter. This is coupled with a single forcing variable, the quantity of photosynthetically 
-available radiation (PAR). Let $C_v$, $C_r$, and $C_s$ denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools. 
+available radiation (PAR). Let $C_v(t)$ (\textbf{v}egetation, above ground), $C_r(t)$ (\textbf{r}oots), and $C_s(t)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $t$. 
+The dynamics describing the carbon fluxes between these pools depend on $NPP(t)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $t$, 
+which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration, where GPP quantifies the amount of carbon 
+fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is NPP minus heterotrophic 
+respiration. Thus, in the VSEM model this means 
+\begin{align}
+\text{NPP} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
+\end{align}
+The state equations describing the carbon dynamics are then given by 
+\begin{align}
+\dot{C}_v(t) &= \alpha_v NPP(t) - \frac{C_v(t)}{\tau_v} \\
+\dot{C}_r(t) &= (1.0 - \alpha_v) NPP(t) - \frac{C_r(t)}{\tau_r} \nonumber \\
+\dot{C}_s(t) &= \frac{C_r(t)}{\tau_r} + \frac{C_v(t)}{\tau_v} - \frac{C_s(t)}{\tau_s} \nonumber 
+\end{align}
+
+
 Once the parameters $\theta$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
 observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is mapping from these inputs to the four resulting time series. A more 
 detailed discussion of the forward model is given in the following section. 
