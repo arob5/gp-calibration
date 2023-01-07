@@ -193,7 +193,7 @@ In this section, we consider the basic parameter calibration problem under the a
 \subsection{Basic Model}
 TODO
 
-\subsection{Correlated Outputs}
+\subsection{Correlated Outputs} \label{corr_outputs}
 In the previous section, we assumed independence between model outputs, which resulted in a convenient likelihood. To be clear, we applied the independence assumption
 \begin{align}
 p(y|\theta, \Sigma_\epsilon) = \prod_{j = 1}^{p} p(y_j|\theta, \sigma_{\epsilon_j}^2)
@@ -216,8 +216,24 @@ We should emphasize that we are still assuming independent observation noise acr
 independent of time. The assumption that this output covariance $\Sigma_\epsilon$ is constant across time can be relaxed, at the cost of further increasing the 
 complexity of the model. A numerically stable implementation of the log of [\ref{corr_output_lik}] is provided in the appendix [\ref{corr_output_lik_implementation}].
 
-
 \section{Surrogate Modeling}
+
+\subsection{Multiple Time Series Outputs}
+Here we consider formulating a calibration model with multiple time series outputs that 1.) accounts for correlation between output variables, 
+and 2.) builds an emulator to overcome the long compute time of $f$. We retain the assumption that, within each time series, the observation 
+errors are iid Gaussian. Essentially, we seek a reformulation of the model [\ref{corr_outputs}] that adjusts to the expensive computer model 
+regime. Recall the likelihood from this model:
+\begin{align}
+p(Y|\theta, \Sigma_\epsilon) &= \prod_{i = 1}^{n} N_p(y_i|f(i, \theta), \Sigma_\epsilon). \label{corr_output_lik}
+\end{align}
+
+\subsubsection{Likelihood Emulation}
+To begin, consider the assumption that the output variables are independent. Then the log-likelihood assumes the form
+\begin{align}
+\log p(Y|\theta, \Sigma_\epsilon) &= \sum_{i = 1}^{n} \sum_{j = 1}^{p} \log N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})
+\end{align}
+
+
 \section{Multi-Site Hierarchical Models}
 
 \section{Appendix}
