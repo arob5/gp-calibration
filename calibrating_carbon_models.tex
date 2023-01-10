@@ -230,9 +230,57 @@ p(Y|\theta, \Sigma_\epsilon) &= \prod_{i = 1}^{n} N_p(y_i|f(i, \theta), \Sigma_\
 \subsubsection{Likelihood Emulation}
 To begin, consider the assumption that the output variables are independent. Then the log-likelihood assumes the form
 \begin{align}
-\log p(Y|\theta, \Sigma_\epsilon) &= \sum_{i = 1}^{n} \sum_{j = 1}^{p} \log N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})
+\log p(Y|\theta, \Sigma_\epsilon) &= \sum_{i = 1}^{n} \sum_{j = 1}^{p} \log N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j}) \\
+					  	  &= -\frac{np}{2} \log(2\pi \sigma^2_{\epsilon_j})  - \frac{1}{2} \sum_{i = 1}^{n} \sum_{j = 1}^{p} \frac{1}{\sigma^2_{\epsilon_j}} (y_{ij} - f(i, j, \theta))^2 \nonumber \\
+						  &= -\frac{np}{2} \log(2\pi \sigma^2_{\epsilon_j}) - \frac{1}{2} \sum_{j = 1}^{p} \frac{1}{\sigma^2_{\epsilon_j}} \sum_{i = 1}^{n} (y_{ij} - f(i, j, \theta))^2 \nonumber
 \end{align}
+The iid Gaussian assumption is quite convenient, as it decouples the simulator $f(i, j, \theta)$ from the observation variances $\sigma^2_{\epsilon_j}$ in the log-likelihood. 
+Therefore, instead of emulating the entire log-likelihood (which is a function of the unknown variance parameters) we can simply emulate the $p$ functions
+\begin{align}
+T_j(\theta) &= \sum_{i = 1}^{n} (y_{ij} - f(i, j, \theta))^2, \ j = 1, \dots, p \label{SSR}
+\end{align}
+which do not depend on the $\sigma^2_{\epsilon_j}$. Since the $T_j$ define the sum of squared residuals for each output variable, they are strictly non-negative 
+functions. Therefore, to constrain the GP emulators we can instead emulate the functions defined by $L_j(\theta) := \log(T_j(\theta))$. 
+Letting $L_j^*$, $j = 1, \dots, p$ denote the fitted $p$ univariate, independent GP emulators for these functions, then the approximate log-likelihood becomes
+\begin{align}
+\log p_{T^*(\theta)}(Y|\theta, \Sigma_\epsilon) &:= -\frac{np}{2} \log(2\pi \sigma^2_{\epsilon_j})  - \frac{1}{2} \sum_{j = 1}^{p} \frac{1}{\sigma^2_{\epsilon_j}} \exp\left(L^*_j(\theta)\right) \label{approx_emulator_llik_indep}
+\end{align}
+Note that the $L^*_j(\theta)$ are random approximations; integrating out these quantities requires numerical methods due to the exponentiation, or a stochastic emulator 
+(i.e. sampling) approach may be used. In either case, the exact log-likelihood may then be replaced by the approximation in an MCMC or optimization procedure. We 
+emphasize that the specific structure of the independent Gaussian allows the (log) sum of squared residuals to be emulated, and thus allows inference over both the 
+observation variances $\sigma^2_{\epsilon_j}$ and the calibration parameters $\theta$. 
 
+This convenient decoupling of $\sigma^2_{\epsilon_j}$ and $\theta$ is lost when 
+more complicated error structures are considered. For example, suppose that the assumption of independence between the output variables is inappropriate. We thus 
+consider the model [\ref{corr_output_lik}] where $\Sigma_\epsilon$ has non-diagonal structure. For now we consider the case of a small number of outputs so that 
+it is reasonable to allow $\Sigma_\epsilon$ to have dense structure. The log-likelihood under this model is 
+\begin{align}
+\log p(Y|\theta, \Sigma_\epsilon) &= -\frac{1}{2} \log(2\pi) -\frac{n}{2} \log \det(\Sigma_\epsilon) - \frac{1}{2} \sum_{i = 1}^{n} (y_i - f(i, \theta))^T \Sigma_\epsilon^{-1} (y - f(i, \theta)) \label{log_lik_corr_outputs}
+\end{align}
+where we now see that there is no sufficient statistic (as in the sum of squared residuals) that can be emulated separately from $\Sigma_\epsilon$. If $\Sigma_\epsilon$
+is known a priori, then it can be treated as fixed and we can consider the target of emulation to be 
+$\ell(\theta) := \log p(Y|\theta, \Sigma_\epsilon): \mathcal{D}_\theta \to \R$. In the more common situation where $\Sigma_\epsilon$ is not known, then the requirement of 
+fixing $\Sigma_\epsilon$ prior to emulation is unsatisfactory from an uncertainty quantification perspective. An alternative idea is to consider $\Sigma_\epsilon$ as an 
+additional input to the emulator, and thus emulate the unnormalized negative log-likelihood
+\begin{align}
+\Phi(\theta, \Sigma_\epsilon) &:= \frac{n}{2} \log \det(\Sigma_\epsilon)  \frac{1}{2} \sum_{i = 1}^{n} (y_i - f(i, \theta))^T \Sigma_\epsilon^{-1} (y - f(i, \theta))
+\end{align} 
+which represents a mapping $\mathcal{D}_\theta \times \mathcal{S}^+_p \to \R$, where $\mathcal{S}^+_p$ is the space of $p \times p$ positive definite matrices. 
+Due to the symmetry of the covariance matrices, this yields a $d_{\theta} + \frac{p(p + 1)}{2}$ input space. For moderate numbers of calibration parameters 
+$d_\theta$ and small numbers of output variables $p$ this may be reasonable, but clearly will struggle to scale to larger problems. We can also consider parameterizing 
+the covariance matrix is forms more conducive to learning, e.g. via Cholesky factors. Letting $\Phi^* \sim \mathcal{GP}(\mu_\Phi^*, k_\Phi^*)$ denote the fit emulator for
+$\Phi(\theta, \Sigma_\epsilon)$, then the approximate likelihood is given by 
+\begin{align}
+p_{\Phi^*}(Y|\theta, \Sigma_\epsilon) &:= \exp\left\{-\Phi^*(\theta, \Sigma_\epsilon)\right\}
+\end{align}
+This random approximation to the true negative log-likelihood thus has a log-normal distribution 
+\begin{align}
+p_{\Phi^*}(Y|\theta, \Sigma_\epsilon) &\sim \text{LN}\left(\mu^*_\Phi(\theta, \Sigma_\epsilon), k^*_\Phi(\theta, \Sigma_\epsilon) \right)
+\end{align}
+and so $\Phi^*$ can be analytically integrated out as
+\begin{align}
+\E_{\Phi^*}\left[p_{\Phi^*}(Y|\theta, \Sigma_\epsilon) \right] &= \exp\left\{-\mu^*_\Phi(\theta, \Sigma_\epsilon) - \frac{1}{2}k^*_\Phi(\theta, \Sigma_\epsilon) \right\}
+\end{align}
 
 \section{Multi-Site Hierarchical Models}
 
