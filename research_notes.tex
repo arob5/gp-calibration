@@ -93,7 +93,40 @@
 	T_j(\theta) &= \sum_{t = 1}^{n} (y_{tj} - f(t, j, \theta))^2, \ j = 1, \dots, p
 	\end{align} 
 	\item Replaces problem of fitting one $np$-output emulator with that of fitting $p$ univariate emulators. 
+	\item The likelihood assumptions and choice of emulation target decouples the observation noise variances from the functions being emulated, allowing inference over both the variance parameters
+	and $\theta$. Let $T_j^*$ denote the fit GP emulators. 
+	\item Using stochastic approximation for log-likelihood 
+	\begin{align}
+	\ell_{T^*}(\theta) &:= -\frac{np}{2} \log(2\pi \sigma^2_{\epsilon_j}) - \frac{1}{2} \sum_{j = 1}^{p} \frac{1}{\sigma^2_{\epsilon_j}} T_j^*(\theta)
+	\end{align}
+	where the randomness stems from $T_j^*(\theta) \sim N(\mu^*_{T_j}(\theta), k^*_{T_j}(\theta))$. When a log-likelihood evaluation is required (e.g. in MCMC) then samples are produced from the $T_j^*$.
 	\end{itemize}
+\end{itemize}
+
+\subsection{Low-cost Improvements}
+\begin{itemize}
+\item Emulate $L_j(\theta) := \log T_j(\theta)$ instead of the $T_j$ directly in order to enforce positivity on the emulated residual sum of squares. 
+\item In MCMC, jointly sample $[T_j^*(\theta), T_j^*(\theta^\prime)]$ using GP covariance, where $\theta$ and $\theta^\prime$ are current and proposed parameter values, respectively. 
+\item Fix bug in code that re-samples the precision parameter in MCMC when it should be fixed. 
+\item Modularize code so that the GP emulator fit and the MCMC for parameter calibration are separate. Add in model checking to ensure that GP fit is good. 
+\item Very basic discrepancy analysis: fit GP to residuals (after calibration) for 1.) model checking, and 2.) potential of bias-corrected prediction
+\end{itemize}
+
+\subsection{Mid-cost Improvements}
+\begin{itemize}
+\item Investigate correlation between output variables. Modify likelihood as needed, e.g.,
+	\begin{align}
+	p(Y|\Sigma_\epsilon, \theta) &= \prod_{t = 1}^{n} N_p(y_{t}|f(t, \theta), \Sigma_{\epsilon}) \label{ind_output_corr}
+	\end{align}
+\item Investigate correlation across time. Modify likelihood as needed, e.g., 
+	\begin{align}
+	p(Y|\Sigma_\epsilon, \theta) &= \prod_{j = 1}^{p} \prod_{t = 1}^{n} N\left(y_{tj}|\beta_0 + \beta_1 f(t, j, \theta) + \beta_2 y_{t-1,j} + \beta_3 \sin\left(\frac{2\pi}{365}t\right) + \beta_4 \cos\left(\frac{2\pi}{365}t\right), \sigma^2_{\epsilon_j}\right) \label{ind_autocorr}
+	\end{align}
+\item Extend hierarchical multi-site calibration to explicitly model spatial structure, e.g., for a single output ($p=1$), 
+	\begin{align}
+	y_{st} &\overset{iid}{\sim} N(f(t, \theta(s)), \sigma^2_\epsilon) \\
+	\theta &\sim \mathcal{GP}(\mu_\theta, k_\theta)
+	\end{align}
 \end{itemize}
 
 
