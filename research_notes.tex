@@ -1,0 +1,108 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Research Notes: Ecological Modeling}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{11/11/2022}
+
+\subsection{Summary of Current Model}
+\begin{itemize}
+\item Notation: Calibration inputs $\theta$, computer model $f$, field data $y$.
+\item Computer model: 
+	\begin{itemize}
+	\item Inputs: $\theta \in \R^{d_\theta}$, $n$ time steps defining the time range. 
+	\item Outputs: $p$ time series, each of length $n$. Each time series corresponds to a constraint/output variable (e.g. NEE, LEE). 
+	\item Option 1: think of $f(\theta)$ as mapping from $\R^{d_\theta}$ to $\R^{n \times p}$ (highly multi-output simulator).
+	\item Option 2: think of $f(t, \theta)$ as mapping from $\{1, \dots, n\} \times \R^{d_\theta}$ to $\R^p$ (time-input, multi-output simulator).
+	\item Option 3: think of $f(t, j, \theta)$ as mapping from $\{1, \dots, n\} \times \{1, \dots, p\} \times \R^{d_\theta}$ to $\R$ (time-variable input, univariate output simulator). 
+	\item Let $Y \in \R^{n \times p}$ denote the field data corresponding to the computer outputs $f(\theta)$.
+	\end{itemize}
+\item Statistical model:
+	\begin{itemize}
+	\item Currently assuming independence between output variables, and across time within each output variable. For Gaussian likelihoods this means,
+		\begin{align}
+		p(Y|\Sigma_\epsilon, \theta) &= \prod_{t = 1}^{n} \prod_{j = 1}^{p} N(y_{tj}|f(t, j, \theta), \sigma^2_{\epsilon_j}) \label{ind_lik}
+		\end{align}
+	\end{itemize}
+\item Emulator:
+	\begin{itemize}
+	\item The likelihood [\ref{ind_lik}] implies a log-likelihood
+	\begin{align}
+	\log p(Y|\Sigma_\epsilon, \theta) &= -\frac{np}{2} \log(2\pi \sigma^2_{\epsilon_j}) - \frac{1}{2} \sum_{j = 1}^{p} \frac{1}{\sigma^2_{\epsilon_j}} \sum_{t = 1}^{n} (y_{tj} - f(t, j, \theta))^2
+	\end{align}
+	\item Current model fits $p$ independent GP emulators to the functions
+	\begin{align}
+	T_j(\theta) &= \sum_{t = 1}^{n} (y_{tj} - f(t, j, \theta))^2, \ j = 1, \dots, p
+	\end{align} 
+	\item Replaces problem of fitting one $np$-output emulator with that of fitting $p$ univariate emulators. 
+	\end{itemize}
+\end{itemize}
+
+
+\end{document}
+
+
+
+
+
+
+
+
