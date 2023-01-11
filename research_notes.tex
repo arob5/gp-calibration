@@ -129,6 +129,18 @@
 	\end{align}
 \end{itemize}
 
+\subsection{High-cost Improvements}
+\begin{itemize}
+\item Thinking more deeply about the kernel assumptions, e.g. if emulating likelihood, we may have prior knowledge that can be incorporated into the GP prior. Especially important if extrapolation is required.
+\item Exploring non-stationarity. 
+\item More sophisticated model discrepancy approaches; e.g. incorporating prior information in attempt to simultaneously estimate $\theta$ and discrepancy. Particularly important if emphasis is placed on finding 
+the true value of $\theta$, as opposed to simply wanting good predictions. 
+\item Alternative to likelihood emulation--time-input/dynamic emulation, e.g., if simulator produces time series $\{z_t\}$ where $z_{t + 1} = f(z_t)$ and $f$ is independent of $t$, then we can emulate this operator $f$ 
+which advances the system forward one time step.
+\item Combining parameter calibration with state estimation.  
+\item More sophisticated emulation in spatial setting; sharing information across space, etc. 
+\end{itemize}
+
 
 \end{document}
 
