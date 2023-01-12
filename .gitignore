@@ -8,3 +8,5 @@
 *.toc
 output/
 images/
+renv/
+.Rproj.user
