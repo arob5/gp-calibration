@@ -73,6 +73,8 @@
 	\item Option 1: think of $f(\theta)$ as mapping from $\R^{d_\theta}$ to $\R^{n \times p}$ (highly multi-output simulator).
 	\item Option 2: think of $f(t, \theta)$ as mapping from $\{1, \dots, n\} \times \R^{d_\theta}$ to $\R^p$ (time-input, multi-output simulator).
 	\item Option 3: think of $f(t, j, \theta)$ as mapping from $\{1, \dots, n\} \times \{1, \dots, p\} \times \R^{d_\theta}$ to $\R$ (time-variable input, univariate output simulator). 
+	\item Option 4: $z_{t + 1} = f(z_t)$ and $f$ is independent of $t$, then we can emulate this operator $f$ which advances the system forward one time step.
+	\item Likelihood emulation very beneficial for dimensionality reduction in this very high-dimensional output setting. Option 4 may be another promising option to explore in the future. 
 	\item Let $Y \in \R^{n \times p}$ denote the field data corresponding to the computer outputs $f(\theta)$.
 	\end{itemize}
 \item Statistical model:
@@ -114,6 +116,7 @@
 
 \subsection{Mid-cost Improvements}
 \begin{itemize}
+\item Thinking more deeply about the kernel assumptions, e.g. if emulating likelihood, we may have prior knowledge that can be incorporated into the GP prior. Especially important if extrapolation is required.
 \item Investigate correlation between output variables. Modify likelihood as needed, e.g.,
 	\begin{align}
 	p(Y|\Sigma_\epsilon, \theta) &= \prod_{t = 1}^{n} N_p(y_{t}|f(t, \theta), \Sigma_{\epsilon}) \label{ind_output_corr}
@@ -122,22 +125,21 @@
 	\begin{align}
 	p(Y|\Sigma_\epsilon, \theta) &= \prod_{j = 1}^{p} \prod_{t = 1}^{n} N\left(y_{tj}|\beta_0 + \beta_1 f(t, j, \theta) + \beta_2 y_{t-1,j} + \beta_3 \sin\left(\frac{2\pi}{365}t\right) + \beta_4 \cos\left(\frac{2\pi}{365}t\right), \sigma^2_{\epsilon_j}\right) \label{ind_autocorr}
 	\end{align}
-\item Extend hierarchical multi-site calibration to explicitly model spatial structure, e.g., for a single output ($p=1$), 
-	\begin{align}
-	y_{st} &\overset{iid}{\sim} N(f(t, \theta(s)), \sigma^2_\epsilon) \\
-	\theta &\sim \mathcal{GP}(\mu_\theta, k_\theta)
-	\end{align}
 \end{itemize}
 
 \subsection{High-cost Improvements}
 \begin{itemize}
-\item Thinking more deeply about the kernel assumptions, e.g. if emulating likelihood, we may have prior knowledge that can be incorporated into the GP prior. Especially important if extrapolation is required.
 \item Exploring non-stationarity. 
 \item More sophisticated model discrepancy approaches; e.g. incorporating prior information in attempt to simultaneously estimate $\theta$ and discrepancy. Particularly important if emphasis is placed on finding 
 the true value of $\theta$, as opposed to simply wanting good predictions. 
 \item Alternative to likelihood emulation--time-input/dynamic emulation, e.g., if simulator produces time series $\{z_t\}$ where $z_{t + 1} = f(z_t)$ and $f$ is independent of $t$, then we can emulate this operator $f$ 
 which advances the system forward one time step.
 \item Combining parameter calibration with state estimation.  
+\item Extend hierarchical multi-site calibration to explicitly model spatial structure, e.g., for a single output ($p=1$), 
+	\begin{align}
+	y_{st} &\overset{iid}{\sim} N(f(t, \theta(s)), \sigma^2_\epsilon) \\
+	\theta &\sim \mathcal{GP}(\mu_\theta, k_\theta)
+	\end{align}
 \item More sophisticated emulation in spatial setting; sharing information across space, etc. 
 \end{itemize}
 
