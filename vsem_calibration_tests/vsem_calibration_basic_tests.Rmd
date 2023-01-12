@@ -18,31 +18,116 @@ described above or choose to focus on a subset of the outputs (e.g. just NEE). I
 I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
 parameters. I add Gaussian noise to the resulting outputs, resulting in the data-generating process
 $$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
-where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \R^{n \times p}$ collect all of the field data observations and 
-$\Sigma_epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply a likelihood
+where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \mathbb{R}^{n \times p}$ collect all of the field data observations and 
+$\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply the likelihood
 $$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
+I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as statistical model used to perform calibration.
 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(BayesianTools)
+
+set.seed(5)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r run_params, include = FALSE}
+# Number days in time series 
+N_days <- 1000
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+# The covariance matrix between the outputs. Note that the NEE output of the
+# model VSEM() is scalesd by 1000, so the observation error magnitude should correspond 
+# to this scale. 
+Sig_eps <- diag(c(4.0, 4.0, 4.0, 4.0))
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 
-```{r cars}
-summary(cars)
+# Names of parameters to calibrate.
+pars_cal <- c("KEXT")
+
+# Whether or not to fix Sig_eps at known value, or to treat as random and infer from data.  
+learn_lik_par <- FALSE
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+N_outputs <- length(output_vars)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+# Model Parameters and Synthetic Data Generation
+```{r data_gen, include = FALSE}
+# Create time series of Phosynthetically Active Radiation (PAR) which is the forcing variable
+# for the VSEM model. 
+PAR <- VSEMcreatePAR(seq_len(N_days))
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# The "best" column of the reference parameters are used to generate the "true" 
+# output data. We will add noise to this data to simulate the field observations.
+ref_pars <- VSEMgetDefaults()
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
+
+# Add observational noise; NEE is scaled by 1000. Fow now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
+data_ref[, NEE := NEE*1000]
+Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z %*% Lt
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r PAR_plot, echo = FALSE}
+# Plot PAR, the forcing term in the model
+plot(PAR, main = "PAR (driving the model)", xlab = "Day", ylab = "PAR")
+```
+
+
+```{r NEE_plot, echo = FALSE}
+output_var_idx <- 1
+plotTimeSeries(observed = data_obs[[output_vars[output_var_idx]]], 
+               predicted = data_ref[[output_vars[output_var_idx]]], main = output_vars[output_var_idx])
+```
+
+```{r Cv_plot, echo = FALSE}
+output_var_idx <- 2
+plotTimeSeries(observed = data_obs[[output_vars[output_var_idx]]], 
+               predicted = data_ref[[output_vars[output_var_idx]]], main = output_vars[output_var_idx])
+```
+
+```{r Cs_plot, echo = FALSE}
+output_var_idx <- 3
+plotTimeSeries(observed = data_obs[[output_vars[output_var_idx]]], 
+               predicted = data_ref[[output_vars[output_var_idx]]], main = output_vars[output_var_idx])
+```
+
+```{r CR_plot, echo = FALSE}
+output_var_idx <- 4
+plotTimeSeries(observed = data_obs[[output_vars[output_var_idx]]], 
+               predicted = data_ref[[output_vars[output_var_idx]]], main = output_vars[output_var_idx])
+```
+
+```{r NEE_vs_PAR, echo = FALSE}
+# Normalize NEE and PAR and plot them together
+# Note: NEE > 0 implies positive flux to atmosphere
+NEE_ref_norm <- data_ref[, (NEE - mean(NEE))/sd(NEE)]
+PAR_norm <- (PAR - mean(PAR)) / sd(PAR)
+plot(NEE_ref_norm, main = "Ground Truth NEE vs. PAR (Normalized)", 
+     xlab = "Day", ylab = "Z-scaore NEE/PAR", col = "red")
+points(PAR_norm, col = "blue")
+
+legend(x = "bottomright",     
+       legend = c("NEE", "PAR"), 
+       pch = c(1, 1),
+       col = c("red", "blue")) 
+```
+
+
+
+
+
+
