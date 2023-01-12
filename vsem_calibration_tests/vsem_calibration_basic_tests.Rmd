@@ -1,0 +1,48 @@
+---
+title: 'VSEM Calibration: Basic Tests'
+output: html_document
+date: '2023-01-12'
+---
+
+# Introduction
+
+## Ecosystem Model
+The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that models carbon dynamics between three pools (above-ground vegetation, below-ground vegetation, 
+and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
+pools and Net Ecosystem Exchange (NEE). I represent the model mathematically as 
+$$f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}$$
+where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ as 
+described above or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
+
+## Statistical Model
+I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
+parameters. I add Gaussian noise to the resulting outputs, resulting in the data-generating process
+$$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
+where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \R^{n \times p}$ collect all of the field data observations and 
+$\Sigma_epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply a likelihood
+$$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
