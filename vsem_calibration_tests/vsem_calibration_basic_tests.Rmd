@@ -151,7 +151,8 @@ for(i in seq_along(llik_vals)) {
   llik_vals[i] <- llik_Gaussian(k_ext_vals[i], Sig_eps, ref_pars, pars_cal_sel, output_vars, PAR, data_obs)
 }
 
-plot(k_ext_vals, llik_vals, type = "l", xlab = "KEXT", ylab = "Unnormalized Log-Likelihood", "Log-Likelihood 1D Projection")
+plot(k_ext_vals, llik_vals, type = "l", xlab = "KEXT", ylab = "Unnormalized Log-Likelihood", main = "Log-Likelihood 1D Projection")
+abline(v = ref_pars["KEXT", "best"], col = "red")
 ```
 
 

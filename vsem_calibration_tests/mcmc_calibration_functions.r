@@ -55,3 +55,24 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
 }
 
 
+mcmc_calibrate <- function(N_mcmc, learn_lik_params, f, llik, lprior) {
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
