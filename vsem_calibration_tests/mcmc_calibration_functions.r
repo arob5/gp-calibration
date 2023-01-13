@@ -55,7 +55,48 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
 }
 
 
-mcmc_calibrate <- function(N_mcmc, learn_lik_params, f, llik, lprior) {
+# TODO: look into need for truncated Gaussian in PEcAn algorithm
+mcmc_calibrate <- function(f, llik, lprior, par_cal_sel, par_ref, data_obs, output_vars, PAR,
+                           theta_init, Sig_eps_init, N_mcmc, learn_Sig_eps) {
+  
+  # Number observations in time series, number output variables, and dimension of parameter space
+  n <- nrow(data_obs)
+  p <- length(output_vars)
+  d <- length(theta_sel)
+  
+  # Objects to store samples
+  par_cal_names <- rownames(par_ref)[par_cal_sel]
+  theta_samp <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
+  colnames(theta_samp) <- par_cal_names
+  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+  
+  # Set initial values
+  theta_samp[1,] <- theta_init
+  Sig_eps_samp[1,] <- Sig_eps_init
+  Sig_eps_curr <- Sig_eps_init
+  
+  # Proposal covariance
+  Cov_prop <- diag(1, nrow = d)
+  L_prop <- t(chol(Cov_prop))
+  
+  for(itr in seq(2, N_mcmc)) {
+    
+    #
+    # Metropolis step for theta 
+    #
+    
+    # theta proposal
+    theta_prop <- theta_samp[itr-1,] + L_prop %*% rnorm(p)
+    
+    # Calculate log-likelihood, either exactly by running the full model f or approximately using 
+    # an emulator. 
+    llik_prop <- llik(theta_prop, Sig_eps_curr, par_ref, par_cal_sel, output_vars, PAR, data_obs)
+    
+    #
+    # Gibbs step for Sig_eps
+    #
+    
+  }
   
 }
 
