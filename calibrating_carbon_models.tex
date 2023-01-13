@@ -186,6 +186,42 @@ considered computer models with univariate outputs, which was subsequently gener
 vegetation models like VSEM produce multiple time series of outputs, yielding a very high-dimensional output space. Alterations to classical approaches are therefore
 required to deal with the complexity in this setting.  
 
+\subsection{A Note on Notation and the Matrix Normal Distribution}
+As illustrated in the above discussion, our current analysis is concerned with correlation across time and output variables (we will later consider spatial correlation as well). The 
+notation for considering statistical models across these dimensions can be cumbersome, so we take a moment to clearly define notation here. Restricting our attention to Gaussian 
+likelihoods will place the primary modeling focus on the covariance matrix summarizing associations across time and output variables. With $n$-length time series and $p$ output 
+variables in general we may consider any $np \times np$ covariance matrix, but we typically entertain specific covariance structures for computational tractability. To motivate the 
+following definitions, consider the specific model in which we assume independence across time but represent output variable covariances through the matrix $\Sigma_\epsilon \in \R^{p \times p}$. 
+In the notation established in the previous section, this may be written
+\begin{align}
+y_i \overset{ind}{\sim} N_p(f(i, \theta), \Sigma_\epsilon) \label{example_assumption}
+\end{align}
+The full $np \times np$ covariance matrix implied by this model is simply block-diagonal $\text{diag}(\Sigma_\epsilon, \dots, \Sigma_\epsilon)$, which can be equivalently written as the 
+Kronecker product $I_n \otimes \Sigma_\epsilon$. The random vector associated with this large covariance matrix is the vectorized version of $Y \in \R^{n \times p}$, constructed 
+by appending its \textit{rows} in order to create the large vector $Y_{\text{vec}} \in \R^{np}$. We can similarly 
+vectorize $f(\theta) \in \R^{n \times p}$ to produce $f_{\text{vec}}(\theta) \in \R^{np}$. With this notation, we may re-write [\ref{example_assumption}] as
+\begin{align}
+Y_{\text{vec}} &\sim N_{np}(f_{\text{vec}}(\theta), I_n \otimes \Sigma_\epsilon)
+\end{align}
+Yet another equivalent representation that doesn't require re-shaping $Y$ and $f(\theta)$ is to use the \textit{matrix normal distribution}
+\begin{align}
+Y &\sim N_{n \times p}(f(\theta), \Sigma_\epsilon, I_n)
+\end{align}
+which yields a parameterization in terms of the location $f(\theta)$ and two scale parameters $\Sigma_\epsilon$ and $I_n$.
+
+An obvious generalization in the above model is to replace the diagonal matrix $I_n$ with an arbitrary covariance matrix $\Sigma_T \in \R^{n \times n}$ correlations across time. 
+This yields a general model structure 
+\begin{align}
+Y &\sim N_{n \times p}(f(\theta), \Sigma_\epsilon, \Sigma_T)
+\end{align}
+which will be explored throughout this paper. The time-output variable covariance matrix implied by this model is
+\begin{align}
+\Sigma_T \otimes \Sigma_\epsilon &= \begin{pmatrix} (\Sigma_T)_{11}\Sigma_\epsilon & \hdots & (\Sigma_T)_{1n}\Sigma_\epsilon \\
+										   \vdots & \hdots & \vdots \\
+										   (\Sigma_T)_{n1}\Sigma_\epsilon & \hdots & (\Sigma_T)_{nn}\Sigma_\epsilon \end{pmatrix}
+\end{align}
+Such structure allows a time effect to modify the output covariance across time.  
+
 
 \section{Parameter Calibration Basics}
 In this section, we consider the basic parameter calibration problem under the assumption that the model $f$ is sufficiently fast as to not require emulation. 
@@ -215,6 +251,22 @@ p(Y|\theta, \Sigma_\epsilon) &= \prod_{i = 1}^{n} N_p(y_i|f(i, \theta), \Sigma_\
 We should emphasize that we are still assuming independent observation noise across \textit{time}; this model only accounts for correlations across outputs 
 independent of time. The assumption that this output covariance $\Sigma_\epsilon$ is constant across time can be relaxed, at the cost of further increasing the 
 complexity of the model. A numerically stable implementation of the log of [\ref{corr_output_lik}] is provided in the appendix [\ref{corr_output_lik_implementation}].
+
+\subsection{Fully-Worked Example and MCMC Algorithm}
+We now consider inference for the model [\ref{corr_output_lik}], which assumes independence across time but models correlation between outputs. Since we are taking a Bayesian approach, 
+to complete the model we must assign priors on $\theta$ and $\Sigma_\epsilon$. We will consider a generic prior on $\theta$, but choose an inverse Wishart prior for $\Sigma_\epsilon$, as it
+provides conjugate structure that can be exploited to yield a Metropolis-within-Gibbs sampling scheme. The full model can thus be written
+\begin{align}
+y_i|\theta, \Sigma_\epsilon &\overset{ind}{\sim} N_p(f(i, \theta), \Sigma_\epsilon), \ i = 1, \dots, n \\
+\Sigma_\epsilon |\theta &\sim \text{Inv-Wishart}(\Sigma_0, \nu) \nonumber \\
+\theta &\sim \pi_0 \nonumber
+\end{align}
+To sample from the joint posterior $p(\theta, \Sigma_\epsilon|Y)$ we consider the conditionals $p(\theta|\Sigma_\epsilon, Y)$ and $p(\Sigma_\epsilon |\theta, Y)$, where only the latter is available 
+in closed-form. Therefore, we consider a Metropolis-within-Gibbs approach where each MCMC consists of a Metropolis step to sample $\theta$ conditional on $\Sigma_\epsilon$, and then a Gibbs
+step to sample from $\Sigma_\epsilon$ conditional on the new $\theta$ value. 
+
+
+
 
 \section{Surrogate Modeling}
 
