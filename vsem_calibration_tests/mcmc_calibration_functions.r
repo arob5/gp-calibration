@@ -214,11 +214,28 @@ mcmc_calibrate <- function(f, llik_func, lprior, par_cal_sel, par_ref, data_obs,
 }
 
 
-sample_Sig_eps <- function(model_errs_curr, Sig_eps_prior_params, n) {
+sample_Sig_eps <- function(model_errs, Sig_eps_prior_params, n) {
+  # Return sample of the observation covariance matrix Sig_eps, drawn from the conditional  
+  # posterior p(Sig_eps|theta, Y). Under the model assumptions, this conditional posterior 
+  # has an inverse Wishart distribution. This function does not explicitly take theta as an 
+  # argument; rather, it assumes the forward model f(theta) has already been run and 
+  # the error matrix Y - f(theta) is provided by the argument `model_errs`.
+  #
+  # Args:
+  #     model_errs: matrix of dimensions n x p, where n = number observations in time 
+  #                 series and p = number output variables. 
+  #    Sig_eps_prior_params: list, containing elements with names "scale_matrix" and "dof" 
+  #                          that are the arguments of the Inverse Wishart distribution.
+  #    n: The number of observations in Y (i.e. the length of the time series). Should 
+  #       equal the number of rows of `model_errs`.
+  #
+  # Returns:
+  #    matrix, p x p positive definite matrix sampled from the inverse Wishart distribution p(Sig_eps|theta, Y).
   
   inv_wishart_scale <- crossprod(model_errs_curr) + Sig_eps_prior_params$scale_matrix
   inv_wishart_dof <- n + Sig_eps_prior_params$dof
   
+  return(LaplacesDemon::rinvwishart(nu = inv_wisharat_dof, S = inv_wishart_scale))
   
 }
 
