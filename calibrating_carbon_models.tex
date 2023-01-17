@@ -258,12 +258,59 @@ to complete the model we must assign priors on $\theta$ and $\Sigma_\epsilon$. W
 provides conjugate structure that can be exploited to yield a Metropolis-within-Gibbs sampling scheme. The full model can thus be written
 \begin{align}
 y_i|\theta, \Sigma_\epsilon &\overset{ind}{\sim} N_p(f(i, \theta), \Sigma_\epsilon), \ i = 1, \dots, n \\
-\Sigma_\epsilon |\theta &\sim \text{Inv-Wishart}(\Sigma_0, \nu) \nonumber \\
+\Sigma_\epsilon |\theta &\sim \mathcal{W}_p^{-1}(\Sigma_0, \nu) \nonumber \\
 \theta &\sim \pi_0 \nonumber
 \end{align}
 To sample from the joint posterior $p(\theta, \Sigma_\epsilon|Y)$ we consider the conditionals $p(\theta|\Sigma_\epsilon, Y)$ and $p(\Sigma_\epsilon |\theta, Y)$, where only the latter is available 
 in closed-form. Therefore, we consider a Metropolis-within-Gibbs approach where each MCMC consists of a Metropolis step to sample $\theta$ conditional on $\Sigma_\epsilon$, and then a Gibbs
 step to sample from $\Sigma_\epsilon$ conditional on the new $\theta$ value. 
+
+Beginning with the Gibbs step, consider fixing $\theta$. Then finding $p(\Sigma_\epsilon | \theta, Y)$ becomes the problem of conducting inference for $\Sigma_\epsilon$ with prior 
+$\mathcal{W}_p^{-1}(\Sigma_0, \nu)$ given data $Y_i - f(i, \theta) \overset{iid}{\sim} N_p(0, \Sigma_\epsilon)$. This setup yields the well-known conjugate posterior 
+\begin{align}
+\Sigma_\epsilon|\theta, Y \sim \mathcal{W}_p^{-1}\left((Y - f(\theta))^T(Y - f(\theta)) + \Sigma_0, n + \nu\right)
+\end{align}
+The distribution $p(\theta|\Sigma_\epsilon, Y)$ is not available in closed-form but can be updated using a Metropolis step. This yields the following algorithm. 
+
+ \begin{algorithm}[H]
+	\SetAlgoLined
+	
+	\textbf{Input}: 
+	\begin{itemize}
+	\item Initial parameter values $\theta^{(0)}, \Sigma_\epsilon^{(0)}$
+	\item Number iterations $N_{\text{MCMC}}$
+	\item Proposal Covariance $\Sigma_{\text{prop}}$
+	\end{itemize}
+		
+	\bigskip
+	
+	\For{$t = 1, \dots, N_{\text{MCMC}}$} {
+	\textit{MH step, sample $\theta$}: \\[.2cm]
+	Sample $\theta^\prime \sim N_{d_\theta}(\theta^{(t - 1)}, \Sigma_{\text{prop}})$ \\
+	 $\alpha(\theta^{(t - 1)}, \theta^\prime) := \min\left\{1, \frac{N_{n \times p}(Y|f(\theta^\prime), \Sigma_\epsilon^{(t-1)}, I_n)\pi_0(\theta^\prime)}{N_{n \times p}(Y|f(\theta^{(t-1)}), \Sigma_\epsilon^{(t-1)}, I_n)\pi_0(\theta^{(t-1)})} \right\}$ \\
+	 Sample $U \sim \mathcal{U}[0, 1]$ \\
+	 \If{$U < \alpha(\theta^{(t - 1)}, \theta^\prime)$} {
+	 	$\theta^{(t)} := \theta^\prime$ \\
+	 } \Else {
+		$\theta^{(t)} := \theta^{(t - 1)}$ \\
+	 }
+	
+	\bigskip
+	
+	\textit{Gibbs step, sample $\Sigma_\epsilon$}: \\[.2cm]
+	Sample $\Sigma_\epsilon^{(t)} \sim \mathcal{W}_p^{-1}\left((Y - f(\theta))^T (Y - f(\theta)) + \Sigma_0, n + \nu \right)$	
+}
+This algorithm will serve as a basis for comparison when generalizing to situations where the computer model $f$ is expensive to evaluate. 
+
+
+\caption{MCMC: Correlated Outputs, Fast Computer Model}
+\end{algorithm}
+
+
+
+
+
+
 
 
 
