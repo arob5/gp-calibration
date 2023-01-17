@@ -151,7 +151,7 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 #    - Pass in priors instead of hard-coding
 mcmc_calibrate <- function(f, llik_func, lprior, par_cal_sel, par_ref, data_obs, output_vars, PAR,
                            theta_init, theta_prior_params, theta_bounds = NA, Sig_eps_init, Sig_eps_prior_params = NA,
-                           N_mcmc, learn_Sig_eps) {
+                           N_mcmc, learn_Sig_eps, adapt_frequency, adapt_min_scale, accept_rate_target) {
   # MCMC with no GP approximations. Can handle correlated outputs. 
 
   # Number observations in time series, number output variables, and dimension of parameter space
@@ -182,6 +182,14 @@ mcmc_calibrate <- function(f, llik_func, lprior, par_cal_sel, par_ref, data_obs,
     # Metropolis step for theta
     #
 
+    # Adapt proposal covariance matrix
+    if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
+      Cov_prop <- adapt.cov.proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
+                                     adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
+      L_prop <- t(chol(Cov_prop))
+      accept_count <- 0
+    }
+    
     # theta proposal
     theta_prop <- theta_samp[itr-1,] + L_prop %*% rnorm(p)
 
@@ -195,6 +203,7 @@ mcmc_calibrate <- function(f, llik_func, lprior, par_cal_sel, par_ref, data_obs,
       theta_samp[itr,] <- theta_prop
       log_theta_post_curr <- log_theta_post_prop
       model_errs_curr <- model_errs_prop
+      accept_count <- accept_count + 1 
     } else {
       theta_samp[itr,] <- theta_samp[itr-1,]
     }
@@ -210,6 +219,8 @@ mcmc_calibrate <- function(f, llik_func, lprior, par_cal_sel, par_ref, data_obs,
     }
 
   }
+  
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
 
 }
 
@@ -240,7 +251,34 @@ sample_Sig_eps <- function(model_errs, Sig_eps_prior_params, n) {
 }
 
 
-
+adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_rate, accept_rate_target) {
+  # Returns an adapted covariance matrix to be used in adaptive MCMC scheme. Computes the new
+  # covariance matrix by considering the sample correlation calculated from previous parameter
+  # samples, which is scaled by a factor determined by the acceptance rate and target acceptance
+  # rate. 
+  #
+  # Args:
+  #    cov_proposal: matrix, p x p positive definite covariance matrix. 
+  #    sample_history: matrix, l x p, where l is number of previous parameter samples used 
+  #                    in sample correlation calculation. Each row of the matrix is a previous 
+  #                    sample. 
+  #    min_scale: numeric scalar, used as a floor for the scaling factor. 
+  #    accept_rate: numeric scalar, the MCMC accept rate over the l-length parameter history. 
+  #    accept_rate_target: numeric scalar, the desired acceptance rate. 
+  #
+  # Returns:
+  #    matrix, p x p covariance matrix. 
+  
+  if(accept_rate == 0) {
+    return(min_scale * cov_proposal)
+  } else {
+    cor_estimate <- stats::cor(sample_history)
+    scale.factor <- max(accept_rate / accept_rate_target, min_scale)
+    stdev <- apply(sample_history, 2, stats::sd)
+    scale_mat <- scale_factor * diag(stdev, nrow = length(stdev))
+    return(scale_mat %*% cor_estimate %*% scale_mat)
+  }
+}
 
 
 
