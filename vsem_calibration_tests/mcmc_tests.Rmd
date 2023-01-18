@@ -1,0 +1,70 @@
+---
+title: "MCMC Tests"
+output: html_document
+date: '2023-01-17'
+---
+
+# Introduction
+This file contains tests/validation code for the MCMC and related functions in *mcmc_calibration_functions.r* 
+
+# Parameters and Model Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+
+set.seed(5)
+```
+
+
+```{r run_params, include = FALSE}
+# Number days in time series 
+N_days <- 1000
+
+# The covariance matrix between the outputs. Note that the NEE output of the
+# model VSEM() is scalesd by 1000, so the observation error magnitude should correspond 
+# to this scale. 
+Sig_eps <- diag(c(4.0, 4.0, 4.0, 4.0))
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+
+# Names of parameters to calibrate.
+pars_cal <- c("KEXT")
+
+# Whether or not to fix Sig_eps at known value, or to treat as random and infer from data.  
+learn_lik_par <- FALSE
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+N_outputs <- length(output_vars)
+```
+
+
+```{r data_gen, include = FALSE}
+# Create time series of Phosynthetically Active Radiation (PAR) which is the forcing variable
+# for the VSEM model. 
+PAR <- VSEMcreatePAR(seq_len(N_days))
+
+# The "best" column of the reference parameters are used to generate the "true" 
+# output data. We will add noise to this data to simulate the field observations.
+ref_pars <- VSEMgetDefaults()
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
+
+# Add observational noise; NEE is scaled by 1000. Fow now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
+data_ref[, NEE := NEE*1000]
+Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z %*% Lt
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+```
+
+
+
