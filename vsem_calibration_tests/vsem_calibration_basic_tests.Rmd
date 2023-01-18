@@ -32,7 +32,8 @@ library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
 
-set.seed(5)
+random_seed <- 5
+set.seed(random_seed)
 ```
 
 
@@ -168,7 +169,8 @@ abline(v = ref_pars["KEXT", "best"], col = "red")
 ref_pars["KEXT", "dist"] <- "Uniform"
 ref_pars["KEXT", "param1"] <- 0.2
 ref_pars["KEXT", "param2"] <- 0.7
-print(ref_pars[pars_cal_sel, c("dist", "param1", "param2")])
+theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
+print(theta_prior_params)
 ```
 ## Observation Covariance Matrix
 
@@ -176,14 +178,32 @@ print(ref_pars[pars_cal_sel, c("dist", "param1", "param2")])
 # Define inverse Gamma hyperparameters, in order to achieve mean and sd specified above
 inv_gamma_a <- 2 + (sig_eps_prior_mean / sig_eps_prior_sd)^2
 inv_gamma_b <- sig_eps_prior_mean + sig_eps_prior_mean^3 / sig_eps_prior_sd^2
+
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = rep(inv_gamma_a, N_outputs), 
+                             IG_scale = rep(inv_gamma_b, N_outputs))
 ```
 
 Recall that the true noise variances $\sigma^2_{\epsilon_j}$ $j = 1, \dots, 4$ were all set to the value `r noise_var`. In this example, I define iid priors
 $$\sigma^2_{\epsilon_j} \overset{iid}{\sim} IG(a, b)$$
-where a = `r inv_gamma_a` and b = `r inv_gamma_b` which center the priors on the true values, with standard deviations `r sig_eps_prior_sd`. 
+where a = `r inv_gamma_a` and b = `r inv_gamma_b` which center the priors on the true values, with standard deviations `r sig_eps_prior_sd`. Note that this defines iid priors, but the 
+variances are not constrained to be equal across outputs. 
 
 
+# MCMC
 
+## Adaptive Metropolis-within-Gibbs
+I first consider an adaptive MWG sampler without any sort of model emulation. 
+
+```{r}
+# Parameters for MWG sampler
+learn_Sig_eps <- TRUE
+diag_cov <- TRUE
+N_mcmc <- 50000
+adapt_frequency <- 1000
+adapt_min_scale <- 0.1
+accept_rate_target <- 0.3
+```
 
 
 

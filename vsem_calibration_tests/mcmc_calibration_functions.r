@@ -199,7 +199,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   # Number observations in time series, number output variables, and dimension of parameter space
   n <- nrow(data_obs)
   p <- length(output_vars)
-  d <- length(theta_sel)
+  d <- length(par_cal_sel)
 
   # Objects to store samples
   par_cal_names <- rownames(par_ref)[par_cal_sel]
