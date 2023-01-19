@@ -203,15 +203,15 @@ I first consider an adaptive MWG sampler without any sort of model emulation.
 # Parameters for MWG sampler
 learn_Sig_eps <- TRUE
 diag_cov <- TRUE
-N_mcmc <- 50000
-adapt_frequency <- 1000
+N_mcmc <- 20
+adapt_frequency <- 5
 adapt_min_scale <- 0.1
 accept_rate_target <- 0.3
 ```
 
 ```{r}
-mwg_results <- mcmc_calibrate(par_ref = par_ref, 
-                              par_cal_sel = par_cal_sel, 
+mwg_results <- mcmc_calibrate(par_ref = ref_pars, 
+                              par_cal_sel = pars_cal_sel, 
                               data_obs = data_obs, 
                               output_vars = output_vars, 
                               PAR = PAR,

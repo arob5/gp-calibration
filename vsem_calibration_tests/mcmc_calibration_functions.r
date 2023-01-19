@@ -89,7 +89,7 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA) {
 }
 
 
-run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = NA) {
+run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = c("NEE", "Cv", "Cs", "CR")) {
   # Runs the VSEM model using specified parameter settings, returning the outputs 
   # of the model. 
   #
@@ -102,7 +102,7 @@ run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = NA) {
   #                 parameters that will be calibrated. 
   #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
   #         term in VSEM. 
-  #    output_vars: character vector, selects columns of output from VSEM model. If NA, returns
+  #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
   #
   # Returns:
@@ -239,7 +239,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   }
   
   Sig_eps_curr <- Sig_eps_init
-  model_errs_curr <- data_obs - run_VSEM(theta_init, par_ref, par_cal_sel, PAR)
+  model_errs_curr <- data_obs[, ..output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars)
   log_theta_post_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) + calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -255,7 +255,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
     # Adapt proposal covariance matrix
     if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
-      Cov_prop <- adapt.cov.proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
+      Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
                                      adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
       L_prop <- t(chol(Cov_prop))
       accept_count <- 0
@@ -265,7 +265,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     theta_prop <- (theta_samp[itr-1,] + L_prop %*% rnorm(d))[1,]
 
     # Calculate log-likelihood for proposal
-    model_errs_prop <- data_obs - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR)
+    model_errs_prop <- data_obs[, ..output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
     llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
 
     # Accept-Reject Step
@@ -342,6 +342,7 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
   if(Sig_eps_prior_params$dist == "IW") {
     return(LaplacesDemon::rinvwishart(nu = Sig_eps_prior_params$dof, S = Sig_eps_prior_params$scale_matrix))
   } else if(Sig_eps_prior_params$dist == "IG") {
+    p <- length(Sig_eps_prior_params$IG_shape)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
       sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = Sig_eps_prior_params$IG_shape[j], scale = Sig_eps_prior_params$IG_scale[j])
@@ -415,7 +416,7 @@ adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_r
     return(min_scale * cov_proposal)
   } else {
     cor_estimate <- stats::cor(sample_history)
-    scale.factor <- max(accept_rate / accept_rate_target, min_scale)
+    scale_factor <- max(accept_rate / accept_rate_target, min_scale)
     stdev <- apply(sample_history, 2, stats::sd)
     scale_mat <- scale_factor * diag(stdev, nrow = length(stdev))
     return(scale_mat %*% cor_estimate %*% scale_mat)
