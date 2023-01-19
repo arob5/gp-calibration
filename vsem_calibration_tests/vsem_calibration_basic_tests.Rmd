@@ -203,10 +203,11 @@ I first consider an adaptive MWG sampler without any sort of model emulation.
 # Parameters for MWG sampler
 learn_Sig_eps <- TRUE
 diag_cov <- TRUE
-N_mcmc <- 20
-adapt_frequency <- 5
+N_mcmc <- 10000
+adapt_frequency <- 250
 adapt_min_scale <- 0.1
 accept_rate_target <- 0.3
+proposal_scale_decay <- 0.8
 ```
 
 ```{r}
@@ -224,7 +225,8 @@ mwg_results <- mcmc_calibrate(par_ref = ref_pars,
                               N_mcmc = N_mcmc, 
                               adapt_frequency = adapt_frequency, 
                               adapt_min_scale = adapt_min_scale, 
-                              accept_rate_target = accept_rate_target)
+                              accept_rate_target = accept_rate_target, 
+                              proposal_scale_decay = proposal_scale_decay)
 ```
 
 

@@ -159,7 +159,7 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
                            theta_init = NA, theta_prior_params, 
                            learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = NA, diag_cov = FALSE, 
-                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target) {
+                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay) {
   # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
   # between the different output variables, but assumes independence across time. Samples from posterior over both  
   # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
@@ -196,8 +196,10 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #              is automatically set to TRUE. Default is FALSE. 
   #    N_mcmc: integer, the number of MCMC iterations. 
   #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
-  #    min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
+  #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
   #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
+  #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
+  #                          number of iterations. 
   #
   # Returns:
   #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
@@ -244,6 +246,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   
   # Proposal covariance
   Cov_prop <- diag(1, nrow = d)
+  log_scale_prop <- 0
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
 
@@ -253,16 +256,22 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     # Metropolis step for theta
     #
 
-    # Adapt proposal covariance matrix
+    # Adapt proposal covariance matrix and scaling term
     if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
-      Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
-                                     adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
+      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
+      #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
+      if(accept_count == 0) {
+        print(paste0("Itr: ", itr))
+        Cov_prop <- adapt_min_scale * Cov_prop
+      } else {
+        Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
+      }
       L_prop <- t(chol(Cov_prop))
       accept_count <- 0
     }
     
     # theta proposal
-    theta_prop <- (theta_samp[itr-1,] + L_prop %*% rnorm(d))[1,]
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% rnorm(d))[1,]
 
     # Calculate log-likelihood for proposal
     model_errs_prop <- data_obs[, ..output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
@@ -270,7 +279,8 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
     # Accept-Reject Step
     log_theta_post_prop <- llik_prop + calc_lprior_theta(theta_prop, theta_prior_params)
-    if(runif(1) < exp(log_theta_post_prop - log_theta_post_curr)) {
+    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
+    if(runif(1) < alpha) {
       theta_samp[itr,] <- theta_prop
       log_theta_post_curr <- log_theta_post_prop
       model_errs_curr <- model_errs_prop
@@ -279,6 +289,9 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
       theta_samp[itr,] <- theta_samp[itr-1,]
     }
 
+    # Adapt scaling term for proposal
+    log_scale_prop <- log_scale_prop + (1 / itr^proposal_scale_decay) * (alpha - accept_rate_target)
+    
     #
     # Gibbs step for Sig_eps
     #
