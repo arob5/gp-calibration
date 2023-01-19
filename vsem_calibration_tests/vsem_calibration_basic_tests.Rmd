@@ -31,7 +31,9 @@ library(data.table)
 library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
+```
 
+```{r}
 random_seed <- 5
 set.seed(random_seed)
 ```
@@ -76,12 +78,14 @@ PAR <- VSEMcreatePAR(seq_len(N_days))
 # The "best" column of the reference parameters are used to generate the "true" 
 # output data. We will add noise to this data to simulate the field observations.
 ref_pars <- VSEMgetDefaults()
-data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
 
 # Add observational noise; NEE is scaled by 1000. Fow now considering independent 
 # outputs, but can consider models that fill in the off-diagonal Sig_eps values
 # in the future. 
-data_ref[, NEE := NEE*1000]
+if("NEE" %in% output_vars) {
+  data_ref[, NEE := NEE*1000]
+}
 Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
 Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
 data_obs <- data_ref + Z %*% Lt
@@ -205,7 +209,23 @@ adapt_min_scale <- 0.1
 accept_rate_target <- 0.3
 ```
 
-
+```{r}
+mwg_results <- mcmc_calibrate(par_ref = par_ref, 
+                              par_cal_sel = par_cal_sel, 
+                              data_obs = data_obs, 
+                              output_vars = output_vars, 
+                              PAR = PAR,
+                              theta_init = NA, 
+                              theta_prior_params = theta_prior_params, 
+                              learn_Sig_eps = TRUE, 
+                              Sig_eps_init = NA, 
+                              Sig_eps_prior_params = Sig_eps_prior_params, 
+                              diag_cov = TRUE, 
+                              N_mcmc = N_mcmc, 
+                              adapt_frequency = adapt_frequency, 
+                              adapt_min_scale = adapt_min_scale, 
+                              accept_rate_target = accept_rate_target)
+```
 
 
 

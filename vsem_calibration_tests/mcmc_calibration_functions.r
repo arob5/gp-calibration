@@ -57,7 +57,7 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
 }
 
 
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars) {
+llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA) {
   # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
   # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
   # the forward model has already been run, unlike llik_Gaussian(),  which runs
@@ -69,11 +69,18 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars) {
   #                 Y - f(theta). 
   #     Sig_eps: matrix of dimensions p x p, the covariance matrix used in the 
   #              multivariate Gaussian likelihood calculation. 
+  #     output_vars: character vector, containing names of output variables to be selected.
+  #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
+  #                  associated with the output variables, as well as column names of `model_errs`.
+  #                  If NA, uses entire matrix. 
   #
   # Returns:
   #    numeric, the unnormalized log-likelihood. 
   
-  Sig_eps <- Sig_eps[output_vars, output_vars]
+  if(!is.na(output_vars)) {
+    Sig_eps <- Sig_eps[output_vars, output_vars]
+    model_errs <- model_errs[, output_vars]
+  }
   L <- t(chol(Sig_eps))
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
   
@@ -82,7 +89,7 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars) {
 }
 
 
-run_VSEM <- function(par, par_ref, par_cal_sel, PAR) {
+run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = NA) {
   # Runs the VSEM model using specified parameter settings, returning the outputs 
   # of the model. 
   #
@@ -95,6 +102,8 @@ run_VSEM <- function(par, par_ref, par_cal_sel, PAR) {
   #                 parameters that will be calibrated. 
   #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
   #         term in VSEM. 
+  #    output_vars: character vector, selects columns of output from VSEM model. If NA, returns
+  #                 all four columns. 
   #
   # Returns:
   #   matrix of dimensions n x p where n is the length of the time series and p is the number
@@ -231,7 +240,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   
   Sig_eps_curr <- Sig_eps_init
   model_errs_curr <- data_obs - run_VSEM(theta_init, par_ref, par_cal_sel, PAR)
-  log_theta_post_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr, output_vars) + calc_lprior_theta(theta_init, theta_prior_params)
+  log_theta_post_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) + calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
   Cov_prop <- diag(1, nrow = d)
@@ -253,11 +262,11 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     }
     
     # theta proposal
-    theta_prop <- theta_samp[itr-1,] + L_prop %*% rnorm(p)
+    theta_prop <- (theta_samp[itr-1,] + L_prop %*% rnorm(d))[1,]
 
     # Calculate log-likelihood for proposal
     model_errs_prop <- data_obs - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR)
-    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr, output_vars)
+    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
 
     # Accept-Reject Step
     log_theta_post_prop <- llik_prop + calc_lprior_theta(theta_prop, theta_prior_params)
@@ -373,7 +382,7 @@ sample_cond_post_Sig_eps <- function(model_errs, Sig_eps_prior_params, n) {
   } else if(Sig_eps_prior_params$dist == "IG") {
     n <- nrow(model_errs)
     p <- ncol(model_errs)
-    output_l2_errs <- colsums(model_errs^2)
+    output_l2_errs <- colSums(model_errs^2)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
       sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = 0.5*n + Sig_eps_prior_params$IG_shape[j], scale = 0.5*output_l2_errs[j] + Sig_eps_prior_params$IG_scale[j])
