@@ -57,7 +57,7 @@ llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, 
 }
 
 
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA) {
+llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = FALSE) {
   # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
   # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
   # the forward model has already been run, unlike llik_Gaussian(),  which runs
@@ -73,16 +73,23 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA) {
   #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
   #                  associated with the output variables, as well as column names of `model_errs`.
   #                  If NA, uses entire matrix. 
+  #    normalize: logical, if TRUE returns the normalized log-density, which requires calculation of 
+  #               the determinant term. Otherwise, excludes this term, thus returning an unnormalized
+  #               log density (where Sig_eps is treated as a constant). Default is FALSE. 
   #
   # Returns:
   #    numeric, the unnormalized log-likelihood. 
   
   if(!is.na(output_vars)) {
     Sig_eps <- Sig_eps[output_vars, output_vars]
-    model_errs <- model_errs[, output_vars]
+    model_errs <- model_errs[, ..output_vars]
   }
   L <- t(chol(Sig_eps))
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
+  
+  if(normalize) {
+    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
+  }
   
   return(-0.5 * log_quadratic_form)
   
@@ -159,7 +166,7 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
                            theta_init = NA, theta_prior_params, 
                            learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = NA, diag_cov = FALSE, 
-                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay) {
+                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay, proposal_scale_init) {
   # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
   # between the different output variables, but assumes independence across time. Samples from posterior over both  
   # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
@@ -200,6 +207,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
   #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
   #                          number of iterations. 
+  #    proposal_scale_init: numeric, the proposal covariance is initialized to be diagonal, with `proposal_scale_init` along the diagonal. 
   #
   # Returns:
   #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
@@ -242,13 +250,17 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   
   Sig_eps_curr <- Sig_eps_init
   model_errs_curr <- data_obs[, ..output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars)
-  log_theta_post_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) + calc_lprior_theta(theta_init, theta_prior_params)
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
-  Cov_prop <- diag(1, nrow = d)
+  Cov_prop <- diag(proposal_scale_init, nrow = d)
   log_scale_prop <- 0
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
+  
+  # TEMP
+  prop_vals <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
+  prop_sd <- vector(length = N_mcmc, mode = "numeric")
 
   for(itr in seq(2, N_mcmc)) {
 
@@ -258,10 +270,9 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
     # Adapt proposal covariance matrix and scaling term
     if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
-      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE], 
+      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE],
       #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
       if(accept_count == 0) {
-        print(paste0("Itr: ", itr))
         Cov_prop <- adapt_min_scale * Cov_prop
       } else {
         Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
@@ -271,18 +282,26 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     }
     
     # theta proposal
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% rnorm(d))[1,]
+    # print(sqrt(exp(log_scale_prop)) * as.numeric(L_prop))
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
+    
+    # TEMP
+    prop_vals[itr,] <- theta_prop
+    prop_sd[itr] <- as.numeric(L_prop * sqrt(exp(log_scale_prop)))
 
-    # Calculate log-likelihood for proposal
+    # Calculate log-likelihoods for current and proposed theta
     model_errs_prop <- data_obs[, ..output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
+    llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
     llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
 
     # Accept-Reject Step
-    log_theta_post_prop <- llik_prop + calc_lprior_theta(theta_prop, theta_prior_params)
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    log_theta_post_curr <- llik_curr + lprior_theta_curr
+    log_theta_post_prop <- llik_prop + lprior_theta_prop
     alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
-    if(runif(1) < alpha) {
+    if(runif(1) <= alpha) {
       theta_samp[itr,] <- theta_prop
-      log_theta_post_curr <- log_theta_post_prop
+      lprior_theta_curr <- lprior_theta_prop
       model_errs_curr <- model_errs_prop
       accept_count <- accept_count + 1 
     } else {
@@ -307,7 +326,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
   }
   
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp, prop_vals = prop_vals, prop_sd = prop_sd))
 
 }
 

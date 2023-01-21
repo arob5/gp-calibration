@@ -57,6 +57,7 @@ sig_eps_prior_sd <- 0.4
 
 # Names of parameters to calibrate.
 pars_cal <- c("KEXT")
+N_pars <- length(pars_cal)
 
 # Whether or not to fix Sig_eps at known value, or to treat as random and infer from data.  
 learn_lik_par <- FALSE
@@ -154,24 +155,13 @@ legend(x = "bottomright",
        col = c("red", "blue")) 
 ```
 
-### Likelihood Plot
-```{r, echo = FALSE}
-k_ext_vals <- seq(ref_pars["KEXT", "lower"], ref_pars["KEXT", "upper"], length.out = 100)
-llik_vals <- vector(mode = "numeric", length = length(k_ext_vals))
-for(i in seq_along(llik_vals)) {
-  llik_vals[i] <- llik_Gaussian(k_ext_vals[i], Sig_eps, ref_pars, pars_cal_sel, output_vars, PAR, data_obs)
-}
-
-plot(k_ext_vals, llik_vals, type = "l", xlab = "KEXT", ylab = "Unnormalized Log-Likelihood", main = "Log-Likelihood 1D Projection")
-abline(v = ref_pars["KEXT", "best"], col = "red")
-```
 
 # Priors
 
 ## Calibration Parameters
 ```{r, echo = FALSE}
 ref_pars["KEXT", "dist"] <- "Uniform"
-ref_pars["KEXT", "param1"] <- 0.2
+ref_pars["KEXT", "param1"] <- 0.3
 ref_pars["KEXT", "param2"] <- 0.7
 theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
 print(theta_prior_params)
@@ -193,6 +183,70 @@ $$\sigma^2_{\epsilon_j} \overset{iid}{\sim} IG(a, b)$$
 where a = `r inv_gamma_a` and b = `r inv_gamma_b` which center the priors on the true values, with standard deviations `r sig_eps_prior_sd`. Note that this defines iid priors, but the 
 variances are not constrained to be equal across outputs. 
 
+# Likelihood, prior, and posterior plots
+
+```{r, echo = FALSE}
+k_ext_vals <- seq(theta_prior_params["KEXT", "param1"], theta_prior_params["KEXT", "param1"], length.out = 100)
+n_Sig_eps_prior_samp <- 10
+
+# Samples from Sig_eps prior
+Sig_eps_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = N_outputs)
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  Sig_eps_vals[j,] <- diag(sample_prior_Sig_eps(Sig_eps_prior_params))
+}
+
+# Calibration parameter priors
+lprior_vals <- vector(mode = "numeric", length = length(k_ext_vals))
+
+# Likelihood and posterior evaluations at different values 
+llik_vals_true <- vector(mode = "numeric", length = length(k_ext_vals))
+log_post_vals_true <- vector(mode = "numeric", length = length(k_ext_vals))
+llik_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = length(k_ext_vals))
+log_post_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = length(k_ext_vals))
+
+for(i in seq_along(k_ext_vals)) {
+  
+  # Run forward model at specific calibration parameter value
+  model_outputs <- run_VSEM(k_ext_vals[i], ref_pars, pars_cal_sel, PAR, output_vars)
+  model_errs <- data_obs[, ..output_vars] - model_outputs
+  
+  # Density evaluations using true value of Sig_eps.
+  llik_vals_true[i] <- llik_Gaussian_err(model_errs, Sig_eps)
+  lprior_vals[i] <- calc_lprior_theta(k_ext_vals[i], theta_prior_params)
+  log_post_vals_true[i] <- llik_vals_true[i] + lprior_vals[i]
+  
+  # Density evaluations at sampled values of Sig_eps. 
+  for(j in seq_len(n_Sig_eps_prior_samp)) {
+    llik_vals[j,i] <- llik_Gaussian_err(model_errs, diag(Sig_eps_vals[j,]))
+    log_post_vals[j,i] <- llik_vals[j,i] + lprior_vals[i]
+  }
+  
+}
+```
+
+```{r}
+plot(k_ext_vals, exp(lprior_vals), type = "l", col = "red",  main = "Prior: KEXT")
+```
+
+```{r}
+rng_y <- range(llik_vals)
+plot(k_ext_vals, llik_vals_true, type = "l", col = "red", ylim = rng_y, main = "Unnormalized Log-Likelihood: KEXT")
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  lines(k_ext_vals, llik_vals[j,], type = "l", col = "gray")
+}
+abline(v = ref_pars["KEXT", "best"], col = "red", lty = "dashed")
+```
+
+
+
+```{r}
+rng_y <- range(log_post_vals)
+plot(k_ext_vals, log_post_vals_true, type = "l", col = "red", ylim = rng_y, main = "Unnormalized Log-Posterior: KEXT")
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  lines(k_ext_vals, log_post_vals[j,], type = "l", col = "gray")
+}
+abline(v = ref_pars["KEXT", "best"], col = "red", lty = "dashed")
+```
 
 # MCMC
 
@@ -203,11 +257,12 @@ I first consider an adaptive MWG sampler without any sort of model emulation.
 # Parameters for MWG sampler
 learn_Sig_eps <- TRUE
 diag_cov <- TRUE
-N_mcmc <- 10000
+N_mcmc <- 1249
 adapt_frequency <- 250
 adapt_min_scale <- 0.1
 accept_rate_target <- 0.3
-proposal_scale_decay <- 0.8
+proposal_scale_decay <- 0.7
+proposal_scale_init <- 0.1
 ```
 
 ```{r}
@@ -219,15 +274,37 @@ mwg_results <- mcmc_calibrate(par_ref = ref_pars,
                               theta_init = NA, 
                               theta_prior_params = theta_prior_params, 
                               learn_Sig_eps = TRUE, 
-                              Sig_eps_init = NA, 
+                              Sig_eps_init = Sig_eps, 
                               Sig_eps_prior_params = Sig_eps_prior_params, 
                               diag_cov = TRUE, 
                               N_mcmc = N_mcmc, 
                               adapt_frequency = adapt_frequency, 
                               adapt_min_scale = adapt_min_scale, 
                               accept_rate_target = accept_rate_target, 
-                              proposal_scale_decay = proposal_scale_decay)
+                              proposal_scale_decay = proposal_scale_decay, 
+                              proposal_scale_init = proposal_scale_init)
 ```
+
+### Trace Plots for Sig2_eps Variances
+```{r}
+# Plot Sig_eps trajectories
+par(mfrow=c(N_outputs, 1), mai = c(0.1, 1, 0.1, 1))
+for(j in seq_len(N_outputs)) {
+  plot(mwg_results$Sig_eps[200:N_mcmc,j], type = "l", ylab = output_vars[j])
+}
+```
+
+### Trace Plots for theta
+```{r}
+# Plot Sig_eps trajectories
+par(mfrow=c(N_pars, 1), mai = c(0.1, 1, 0.1, 1))
+for(j in seq_len(N_pars)) {
+  plot(mwg_results$theta[,j], type = "l", ylab = pars_cal[j])
+}
+```
+
+
+
 
 
 
