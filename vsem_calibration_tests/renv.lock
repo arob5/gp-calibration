@@ -543,6 +543,16 @@
       "Hash": "b64cdbb2b340437c4ee047a1f4c4377b",
       "Requirements": []
     },
+    "lhs": {
+      "Package": "lhs",
+      "Version": "1.1.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "64645ac3590e26c258a281560d7c7cf7",
+      "Requirements": [
+        "Rcpp"
+      ]
+    },
     "lifecycle": {
       "Package": "lifecycle",
       "Version": "1.0.1",

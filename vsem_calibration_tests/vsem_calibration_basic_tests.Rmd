@@ -11,8 +11,7 @@ The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that mod
 and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
 pools and Net Ecosystem Exchange (NEE). I represent the model mathematically as 
 $$f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}$$
-where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ as 
-described above or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
+where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ (NEE, 3 carbon pools) or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
 
 ## Statistical Model
 I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
@@ -21,7 +20,7 @@ $$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
 where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \mathbb{R}^{n \times p}$ collect all of the field data observations and 
 $\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply the likelihood
 $$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
-I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as statistical model used to perform calibration.
+I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as well as the statistical model used to perform calibration.
 
 
 ```{r setup, include=FALSE}
