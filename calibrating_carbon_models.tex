@@ -381,7 +381,32 @@ and so $\Phi^*$ can be analytically integrated out as
 \E_{\Phi^*}\left[p_{\Phi^*}(Y|\theta, \Sigma_\epsilon) \right] &= \exp\left\{-\mu^*_\Phi(\theta, \Sigma_\epsilon) - \frac{1}{2}k^*_\Phi(\theta, \Sigma_\epsilon) \right\}
 \end{align}
 
-\section{Multi-Site Hierarchical Models}
+\section{Multi-Site Spatial Models}
+The time-independent, correlated-output likelihood we have been considering
+\begin{align}
+Y \sim N_{n \times p}(f(\theta), \Sigma_\epsilon, I_n)
+\end{align}
+has been implicitly assuming observations at a single spatial location--say, $s \in S \subset \R^2$. We might emphasize this by writing
+\begin{align}
+Y_s \sim N_{n_s \times p}(f_s(\theta_s), \Sigma_s, I_{n_s}).
+\end{align}
+Anything with an $s$ subscript we now treat as potentially varying spatially. In particular, I draw attention to the subscripts on $n_s$ and $f_s$. The former 
+indicates that we allow different numbers of observations at each spatial location, but are still assuming the same $p$ output variables are measured at each location. 
+The notation $f_s$ is not meant to imply that a different process-based model is used at each spatial location; rather, it captures the fact the forcing data $F_s$ depends 
+on space. Specifically, we have $f_s(\theta_s) := f(F_s, \theta_s)$. Up to this point we have essentially been treating $F_s$ as part of the model, but considering that it varies 
+over space we must make that explicit in the notation $f_s$. 
+
+\subsection{Hierarchical Multi-Site Calibration}
+We begin with a simple hierarchical model that allows parameters to vary across space, but does not impose any specific spatial structure. For simplicity for the time being, 
+we take $\Sigma_\epsilon$ to be constant across space. Suppose we consider calibrating $f$ at $d_s$ sites (i.e. spatial locations). 
+\begin{align}
+Y_s|\theta_s, \Sigma_\epsilon &\overset{ind}{\sim} N_{n_{s} \times p}(f_s(\theta_s), \Sigma_\epsilon, I_n) \\ 
+\theta_s &\overset{ind}{\sim} N_{d}(\mu_\theta, \Sigma_\theta) \nonumber \\
+\mu_\theta &\sim \pi_\theta \nonumber \\
+\Sigma_\theta &\sim \pi_\Sigma \nonumber
+\end{align}
+Note that evaluation of the likelihood requires $d_s$ evaluations of the forward model, once for each site. 
+
 
 \section{Appendix}
 
@@ -419,7 +444,6 @@ The full, normalized log-likelihood can thus be implemented as
 \log p(Y|\theta, \Sigma_\epsilon) &= -\frac{1}{2} \log(2\pi) - n\sum_{j = 1}^{p} \log L_{jj}  - \frac{1}{2} \alpha^T \alpha
 \end{align}
 
-
 \section{TODOs}
 \begin{itemize}
 \item Contrast setting with KOH setting that has both $X$ and $\theta$ variables. 
@@ -435,6 +459,7 @@ s11222-019-09886-w.
 \bibitem{Conti} Stefano Conti, Anthony O’Hagan, (2010), Bayesian emulation of complex multi-output and dynamic computer models, Journal of Statistical Planning and Inference,
 Volume 140, Issue 3, 640-651, 0378-3758, https://doi.org/10.1016/j.jspi.2009.08.006.
 \end{thebibliography}
+
 
 
 \end{document}
