@@ -519,7 +519,32 @@ fit_GP <- function(X_design, y_design, gp_lib, gp_kernel) {
 }
 
 
-LHS_train_test <- function(N_train, N_test, d, prior_params, joint = TRUE, extrapolate = TRUE) {
+LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE) {
+  # Generate a set training (design) points and test/validation points for evaluating a Gaussian 
+  # process fit using Latin Hypercube Sampling (LHS). Can generate the train and test sets jointly, 
+  # meaning they are sampled together in the LHS procedure. Or they can be sampled independently 
+  # using two separate LHS schemes. Also allows the option to ensure that the test points are 
+  # within the extent of the training points, if only the interpolation accuracy of the GP 
+  # is of interest. In this case, the truncation means that the test points will not exactly
+  # be distributed as specified in `prior_params`.
+  #
+  # Args:
+  #    N_train: integer, the number of training points to sample. 
+  #    N_test: integer, the number of test points to sample. 
+  #    prior_params: data.frame containing the prior distribution information of the input 
+  #                  parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                  for the requirements of this data.frame. 
+  #    joint: logical, if TRUE jointly samples train/test. Default is TRUE. 
+  #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
+  #                 truncation is performed to guarantee the samples are within the extent of the 
+  #                 training set. Default is TRUE. 
+  #
+  # Returns: 
+  #    list, with named elements "X_train" and "X_test", storing the N_train x d and 
+  #    N_test x d matrices of samples, respectively. 
+  
+  # The dimension of the input space
+  d <- nrow(prior_params)
   
   # Generate train and test sets
   if(joint) {
@@ -533,8 +558,13 @@ LHS_train_test <- function(N_train, N_test, d, prior_params, joint = TRUE, extra
   
   # Apply inverse CDS transform using prior distributions.
   for(j in seq_len(d)) {
-    
+
     if(prior_params[j, "dist"] == "Uniform") {
+      
+      # Train
+      X_train[,j] <- qunif(X_train[,j], prior_params[j, "param1"], prior_params[j, "param2"])
+      
+      # Test
       if(extrapolate) {
         lower_bound_test <- prior_params[j, "param1"]
         upper_bound_test <- prior_params[j, "param2"]
@@ -542,10 +572,14 @@ LHS_train_test <- function(N_train, N_test, d, prior_params, joint = TRUE, extra
         lower_bound_test <- min(X_train[,j])
         upper_bound_test <- max(X_train[,j])
       }
-      
-      X_train[,j] <- qunif(X_train[,j], prior_params[j, "param1"], prior_params[j, "param2"])
       X_test[,j] <- qunif(X_test[,j], lower_bound_test, upper_bound_test)
+      
     } else if(prior_params[j, "dist"] == "Gaussian") {
+      
+      # Train
+      X_train[,j] <- qnorm(X_train[,j], mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
+      
+      # Test
       if(extrapolate) {
         lower_bound_test <- -Inf
         upper_bound_test <- Inf
@@ -553,8 +587,6 @@ LHS_train_test <- function(N_train, N_test, d, prior_params, joint = TRUE, extra
         lower_bound_test <- min(X_train[,j])
         upper_bound_test <- max(X_train[,j])
       }
-      
-      X_train[,j] <- qnorm(X_train[,j], mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
       X_test[,j] <- qtruncnorm(X_test[,j], a = lower_bound_test, b = upper_bound_test, mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
     }
     

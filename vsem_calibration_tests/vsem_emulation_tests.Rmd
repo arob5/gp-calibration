@@ -177,10 +177,16 @@ print(paste0("Number parameters: ", N_pars))
 ```{r}
 
 # Latin Hypercube Sample
-N_test <- 10
-X_train_test <- LHS_train_test(N_design_points, N_test, N_pars, theta_prior_params, joint = TRUE, extrapolate = FALSE)
+N_design_points <- 1000
+N_test <- 1000
+X_train_test <- LHS_train_test(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE)
 X_train <- X_train_test$X_train
 X_test <- X_train_test$X_test
+
+hist(X_train, 50)
+hist(X_test, 50)
+# plot(X_train, matrix(1, nrow = nrow(X_train)), col = "red")
+# points(X_test, matrix(1, nrow = nrow(X_test)), col = "blue")
 ```
 
 ## Run Model and calculate L2 error
