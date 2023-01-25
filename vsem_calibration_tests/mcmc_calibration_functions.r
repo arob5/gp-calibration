@@ -7,6 +7,7 @@
 # Andrew Roberts
 #
 
+library(truncnorm)
 library(LaplacesDemon)
 
 llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs) {
@@ -494,9 +495,74 @@ calc_SSR <- function(data_obs, model_outputs_list) {
 }
 
 
+fit_independent_GPs <- function(X_design, Y_design, gp_lib, gp_kernel) {
+
+}
 
 
+fit_GP <- function(X_design, y_design, gp_lib, gp_kernel) {
+  
+  tic <- proc.time()[3]
+  if(gp_lib == "mlegp") {
+    gp_fit <- mlegp(X_design, y_design, nugget.known = 0, constantMean = 1)
+  } else if(gp_lib == "hetGP") {
+    gp_fit <- mleHomGP(X_design, y_design, covtype = gp_kernel, known = list(g = .Machine$double.eps))
+  } else {
+    stop("Invalid GP library: ", gp_lib)
+  }
 
+  toc <- proc.time()[3]
+  gp_fit_time <- toc - tic
+  
+  return(list(fit = gp_fit, time = gp_fit_time))
+  
+}
+
+
+LHS_train_test <- function(N_train, N_test, d, prior_params, joint = TRUE, extrapolate = TRUE) {
+  
+  # Generate train and test sets
+  if(joint) {
+    X_combined <- randomLHS(N_train + N_test, d)
+    X_train <- X_combined[1:N_train,,drop=FALSE]
+    X_test <- X_combined[-(1:N_train),,drop=FALSE]
+  } else {
+    X_train <- randomLHS(N_train, d)
+    X_test <- randomLHS(N_test, d)
+  }
+  
+  # Apply inverse CDS transform using prior distributions.
+  for(j in seq_len(d)) {
+    
+    if(prior_params[j, "dist"] == "Uniform") {
+      if(extrapolate) {
+        lower_bound_test <- prior_params[j, "param1"]
+        upper_bound_test <- prior_params[j, "param2"]
+      } else {
+        lower_bound_test <- min(X_train[,j])
+        upper_bound_test <- max(X_train[,j])
+      }
+      
+      X_train[,j] <- qunif(X_train[,j], prior_params[j, "param1"], prior_params[j, "param2"])
+      X_test[,j] <- qunif(X_test[,j], lower_bound_test, upper_bound_test)
+    } else if(prior_params[j, "dist"] == "Gaussian") {
+      if(extrapolate) {
+        lower_bound_test <- -Inf
+        upper_bound_test <- Inf
+      } else {
+        lower_bound_test <- min(X_train[,j])
+        upper_bound_test <- max(X_train[,j])
+      }
+      
+      X_train[,j] <- qnorm(X_train[,j], mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
+      X_test[,j] <- qtruncnorm(X_test[,j], a = lower_bound_test, b = upper_bound_test, mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
+    }
+    
+  }
+  
+  return(list(X_train = X_train, X_test = X_test))
+  
+}
 
 
 
