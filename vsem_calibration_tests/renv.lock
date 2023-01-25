@@ -55,6 +55,14 @@
         "qgam"
       ]
     },
+    "DiceDesign": {
+      "Package": "DiceDesign",
+      "Version": "1.9",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "b7b812ae4484d4bbf0a0baac72e8fc01",
+      "Requirements": []
+    },
     "IDPmisc": {
       "Package": "IDPmisc",
       "Version": "1.1.20",
@@ -440,6 +448,18 @@
         "sandwich"
       ]
     },
+    "hetGP": {
+      "Package": "hetGP",
+      "Version": "1.1.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "33720ed09c5a2813ad0c906e8ad9fa72",
+      "Requirements": [
+        "DiceDesign",
+        "MASS",
+        "Rcpp"
+      ]
+    },
     "highr": {
       "Package": "highr",
       "Version": "0.9",
@@ -628,6 +648,14 @@
       "Requirements": [
         "Rcpp"
       ]
+    },
+    "mlegp": {
+      "Package": "mlegp",
+      "Version": "3.1.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "c6938a194d407a74052b2859d4977e67",
+      "Requirements": []
     },
     "msm": {
       "Package": "msm",

@@ -52,6 +52,8 @@ the exponentiated quadratic kernel depends on the specific GP package used.
 knitr::opts_chunk$set(echo = TRUE)
 
 library(lhs)
+library(hetGP)
+library(mlegp)
 library(data.table)
 library(BayesianTools)
 
@@ -60,6 +62,11 @@ source("mcmc_calibration_functions.r")
 
 
 ```{r run_params, include = FALSE}
+#
+# Model and data generation settings
+#
+
+
 # Number days in time series 
 N_days <- 1000
 
@@ -83,9 +90,20 @@ N_pars <- length(pars_cal)
 # into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
 output_vars <- c("NEE", "Cv", "Cs", "CR")
 N_outputs <- length(output_vars)
+```
+
+```{r}
+#
+# GP Emulator Settings
+#
+
+# GP packages and kernel families to use
+gp_libs <- c("mlegp", "hetGP")
+gp_kernels <- c("Gaussian", "Gaussian")
 
 # Number of design points used to fit GP emulators
 N_design_points <- 30 * N_pars
+
 ```
 
 
@@ -133,7 +151,7 @@ print(ref_pars)
 print(Sig_eps)
 ```
 
-# Constructing Design Points
+# Runing Model at Design Points
 
 ## Priors on Calibration Parameters
 ```{r, echo = FALSE}
@@ -146,8 +164,25 @@ print(theta_prior_params)
 ```
 
 ## Sample Design Points
+```{r, echo = FALSE}
+print(paste0("Number design points: ", N_design_points))
+print(paste0("Number parameters: ", N_pars))
+```
+
+
 ```{r}
 
+# Latin Hypercube Sample
+X_design <- randomLHS(N_design_points, N_pars)
 ```
+
+## Run Model and calculate L2 error
+```{r}
+model_outputs_list <- lapply(X_design, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+SSR <- calc_SSR(data_obs, model_outputs_list)
+```
+
+
+
 
 

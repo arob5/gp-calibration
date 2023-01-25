@@ -456,6 +456,42 @@ adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_r
 }
 
 
+calc_SSR <- function(data_obs, model_outputs_list) {
+  # Computes the sum of squared residuals (SSR) between model runs and observed 
+  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
+  # design point for emulation) or outputs from single model run (e.g. as required
+  # during MCMC).
+  #
+  # Args:
+  #    data_obs: data.table of dimension n x p, where n is the length of the time 
+  #              series outputs from the model, and p is the number of output variables.
+  #              This is Y in my typical notation. 
+  #    model_outputs_list: either a data.table of dimension n x p corresponding to the 
+  #                        model outputs f(theta) from a single model run. Or a list 
+  #                        {f(theta_1), ..., f(theta_N)} of such data.tables, collecting
+  #                        the outputs from multiple model runs. 
+  # 
+  # Returns:
+  #    matrix of dimension N x p, where N is the number of model runs and p is the 
+  #    number of output variables. The (i, j) entry of the matrix is the SSR
+  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
+  
+  # If model only run at single set of calibration parameter values
+  if(is.data.table(model_outputs_list)) {
+    model_outputs_list <- list(model_outputs_list)
+  }
+  
+  N_param_runs <- length(model_outputs_list)
+  N_outputs <- ncol(model_outputs_list[[1]])
+  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
+  
+  for(i in seq_along(model_outputs_list)) {
+    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]])^2
+  }
+  
+  return(SSR)
+  
+}
 
 
 
