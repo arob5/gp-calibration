@@ -194,6 +194,7 @@ hist(X_test, 50)
 model_outputs_list <- lapply(X_design, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
 SSR <- calc_SSR(data_obs, model_outputs_list)
 # TODO: normalize design data y, X and think about cross validation strategy
+# TODO: look into parallelizing GP fits (across different outputs and eventually across different sites).
 ```
 
 

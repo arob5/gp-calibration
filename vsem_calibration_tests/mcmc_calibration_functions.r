@@ -494,19 +494,69 @@ calc_SSR <- function(data_obs, model_outputs_list) {
   
 }
 
+# TODO: Parallelize independent GP fitting
+fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
+  # Builds on top of `fit_GP()` to generalize to multivariate GP regression. Simply 
+  # fits independent GPs for each output (where the same input points are used for each GP).
+  #
+  # Args:
+  #    X_train: matrix of shape N x d, where N is the number of design (training) points
+  #             and d is the dimension of the input space. 
+  #    y_train: matrix of shape N x p, with jth column containing the training outputs 
+  #             for the jth output variable corresponding to the training inputs. 
+  #    gp_lib: character, string specifying the GP package to use. Currently supports 
+  #            "mlegp" and "hetGP". 
+  #    gp_kernel: character, string specifying the kernel family to use. Potential options are 
+  #               limited by the specified GP library. Currently only supports "Gaussian" (i.e. the 
+  #               squared exponential/exponentiated quadratic/radial basis function kernel).
+  #
+  # Returns:
+  #    list, with named elements "fits" and "times". The first is itself a list, 
+  #    with length `ncol(Y_train)`; i.e. length equal to the number of outputs. The jth 
+  #    element stores the fit GP object returned by `fit_GP()`, containing the fit GP for the jth output. 
+  #    The "times" element is a numeric vector storing the times required to fit each GP. 
 
-fit_independent_GPs <- function(X_design, Y_design, gp_lib, gp_kernel) {
-
+  p <- ncol(Y_train)
+  GP_objects <- vector(mode = "list", length = p)
+  GP_fit_times <- vector(mode = "numeric", length = p)
+  
+  for(j in seq_len(p)) {
+    GP_fit_list <- fit_GP(X_train, Y_train[,j, drop = FALSE], gp_lib, gp_kernel)
+    GP_objects[[j]] <- GP_fit_list[["fit"]]
+    GP_fit_times[j] <- GP_fit_list[["time"]]
+  }
+  
+  return(list(fits = GP_fit_list, times = GP_fit_times))
+  
 }
 
 
-fit_GP <- function(X_design, y_design, gp_lib, gp_kernel) {
+fit_GP <- function(X_train, y_train, gp_lib, gp_kernel) {
+  # Estimate kernel and mean function hyperparameters for a univariate GP regression 
+  # using specified Gaussian Process (GP) package. 
+  #
+  # Args:
+  #    X_train: matrix of shape N x d, where N is the number of design (training) points
+  #             and d is the dimension of the input space. 
+  #    y_train: matrix of shape N x 1, the training outputs corresponding to the training inputs. 
+  #    gp_lib: character, string specifying the GP package to use. Currently supports 
+  #            "mlegp" and "hetGP". 
+  #    gp_kernel: character, string specifying the kernel family to use. Potential options are 
+  #               limited by the specified GP library. Currently only supports "Gaussian" (i.e. the 
+  #               squared exponential/exponentiated quadratic/radial basis function kernel). 
+  #
+  # Returns:
+  #    Returns, list with named elements "fit" and "time". The former stores the fit GP object 
+  #    returned by the fitting function in the specified GP package. The latter contains the 
+  #    time taken by the fitting procedure. 
+  
+  eps_nug <- sqrt(.Machine$double.eps)
   
   tic <- proc.time()[3]
   if(gp_lib == "mlegp") {
-    gp_fit <- mlegp(X_design, y_design, nugget.known = 0, constantMean = 1)
+    gp_fit <- mlegp(X_train, y_train, nugget.known = 1, nugget = eps_nug, constantMean = 1)
   } else if(gp_lib == "hetGP") {
-    gp_fit <- mleHomGP(X_design, y_design, covtype = gp_kernel, known = list(g = .Machine$double.eps))
+    gp_fit <- mleHomGP(X_train, y_train, covtype = gp_kernel, known = list(g = eps_nug))
   } else {
     stop("Invalid GP library: ", gp_lib)
   }
