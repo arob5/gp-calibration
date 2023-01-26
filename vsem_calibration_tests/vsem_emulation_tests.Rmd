@@ -99,7 +99,9 @@ N_outputs <- length(output_vars)
 
 emulator_settings <- data.frame(gp_libs = c("mlegp", "mlegp", "hetGP", "hetGP"), 
                                 target = c("SSR", "log_SSR", "SSR", "log_SSR"), 
-                                kernel = "Gaussian")
+                                kernel = "Gaussian", 
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
                                 
 
 design_alg <- "LHS"
@@ -189,15 +191,22 @@ hist(X_test, 50)
 # points(X_test, matrix(1, nrow = nrow(X_test)), col = "blue")
 ```
 
-## Run Model and calculate L2 error
+## Run Model, calculate L2 error, and prep data for GP regressions
 ```{r}
-model_outputs_list <- lapply(X_design, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+model_outputs_list <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
 SSR <- calc_SSR(data_obs, model_outputs_list)
-# TODO: normalize design data y, X and think about cross validation strategy
-# TODO: look into parallelizing GP fits (across different outputs and eventually across different sites).
+GP_data_preprocessed <- prep_GP_training_data(X_train, SSR, scale_X = TRUE, normalize_Y = TRUE)
+X_train <- GP_data_preprocessed$X
+Y_train <- GP_data_preprocessed$Y
+
+# TODO: Think about cross validation strategy
+# TODO: Look into parallelizing GP fits (across different outputs and eventually across different sites).
 ```
 
 
-
+## Fit GPs
+```{r}
+gp_fit_list <- fit_GP(X_train, Y_train[,1,drop = FALSE], "hetGP", "Gaussian")
+```
 
 

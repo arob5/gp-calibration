@@ -647,5 +647,53 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
 }
 
 
+prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize_Y = FALSE) {
+  # Preps training data inputs X and outputs Y for fitting Gaussian Process (GP) model by 
+  # scaling each input variable to the unit interval, and normalizing the output variable 
+  # by subtracting its mean and dividing by its standard deviation. The bounds used to 
+  # standardize X are computed using the range of each input variable in the training set X.
+  # If Y has multiple columns, each column is treated as a different output and each column
+  # is normalized independently. 
+  #
+  # Source for matrix operations code to normalize X: find_reps() function of hetGP package. 
+  #
+  # Args:
+  #    X: matrix of dimension N x d, where N is the number of training points and d is the dimension 
+  #       of the input space. 
+  #    Y: matrix of dimension N x p where p is the number of output variables.
+  #    scale_X: logical, if TRUE, maps X to d-dimensional unit hypercube. 
+  #    normalize_Y: logical, if TRUE, transforms y via Z-score. 
+  #
+  # Returns:
+  #    list, with named elements "X", "Y", "input_bounds", and "output_stats". X and Y are the 
+  #    training inputs and outputs, and may or may not be standardized/normalized depending on 
+  #    the arguments `scale_X` and `normalize_Y`. `input_bounds` is a 2 x d matrix summarizing the 
+  #    range of each input variable used to standardize X. The first row contains the minimum 
+  #    value of each of the respective input variables in the training set, and similarly the 
+  #    second row stores the maxima. `output_stats` is a named vector with names 
+  #    "mean_Y" and "var_Y" storing the mean and variance of Y used to compute the Z-scores. 
+  #    If `scale_X` is FALSE then "input_bounds" will be NULL and likewise with 
+  #    `normalize_Y` and "output_stats". 
+  
+  if(!is.null(X) && scale_X) {
+    input_bounds <- apply(X, 2, range)
+    X <- (X - matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*% diag(1/(input_bounds[2,] - input_bounds[1,]), ncol(X))
+  } else {
+    input_bounds <- NULL
+  }
+  
+  if(normalize_Y) {
+    output_stats <- rbind(apply(Y, 2, mean), apply(Y, 2, var))
+    rownames(output_stats) <- c("mean_Y", "var_Y")
+    Y <- (Y - matrix(output_stats["mean_Y",], nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)) / 
+         matrix(sqrt(output_stats["var_Y",]), nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)
+  } else {
+    output_stats <- NULL
+  }
+  
+  return(list(X = X, Y = Y, input_bounds = input_bounds, output_stats = output_stats))
+  
+}
+
 
 
