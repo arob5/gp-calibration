@@ -209,4 +209,12 @@ Y_train <- GP_data_preprocessed$Y
 gp_fit_list <- fit_GP(X_train, Y_train[,1,drop = FALSE], "hetGP", "Gaussian")
 ```
 
+## Predict
+```{r}
+pred_list <- predict_GP(X_test, gp_fit_list$fit, "hetGP", cov_mat = FALSE)
+```
+
+
+
+
 

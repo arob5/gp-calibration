@@ -526,7 +526,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
     GP_fit_times[j] <- GP_fit_list[["time"]]
   }
   
-  return(list(fits = GP_fit_list, times = GP_fit_times))
+  return(list(fits = GP_objects, times = GP_fit_times))
   
 }
 
@@ -695,7 +695,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   
 }
 
-
+# TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
   
   pred_list <- vector(mode = "list", length = 4)
@@ -703,7 +703,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
   names(pred_list) <- pred_list_names
   
   if(gp_lib == "mlegp") {
-    mlegp_pred <- predict(gp_obs, newData = X_pred, se.fit = TRUE)
+    mlegp_pred <- predict(gp_obj, newData = X_pred, se.fit = TRUE)
     pred_list[["mean"]] <- mlegp_pred[["fit"]]
     pred_list[["sd2"]] <- mlegp_pred[["se.fit"]]^2
   } else if(gp_lib == "hetGP") {
@@ -713,10 +713,11 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
     } else {
       X_prime <- NULL
     }
-    hetGP_pred <- predict(gp_obs, X_pred, xprime = X_prime)
+    hetGP_pred <- predict(gp_obj, X_pred, xprime = X_prime)
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
+  return(pred_list)
   
 }
 
