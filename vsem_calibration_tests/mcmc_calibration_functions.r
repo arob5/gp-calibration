@@ -696,4 +696,27 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
 }
 
 
+predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
+  
+  pred_list <- vector(mode = "list", length = 4)
+  pred_list_names <- c("mean", "sd2", "sd2_nug", "cov")
+  names(pred_list) <- pred_list_names
+  
+  if(gp_lib == "mlegp") {
+    mlegp_pred <- predict(gp_obs, newData = X_pred, se.fit = TRUE)
+    pred_list[["mean"]] <- mlegp_pred[["fit"]]
+    pred_list[["sd2"]] <- mlegp_pred[["se.fit"]]^2
+  } else if(gp_lib == "hetGP") {
+    # Second matrix for computing predictive covariance
+    if(cov_mat) {
+      X_prime <- X_pred
+    } else {
+      X_prime <- NULL
+    }
+    hetGP_pred <- predict(gp_obs, X_pred, xprime = X_prime)
+    pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
+  }
+  
+  
+}
 
