@@ -179,7 +179,7 @@ print(paste0("Number parameters: ", N_pars))
 ```{r}
 
 # Latin Hypercube Sample
-N_design_points <- 1000
+N_design_points <- 10
 N_test <- 1000
 X_train_test <- LHS_train_test(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE)
 X_train <- X_train_test$X_train
@@ -196,8 +196,8 @@ hist(X_test, 50)
 model_outputs_list <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
 SSR <- calc_SSR(data_obs, model_outputs_list)
 GP_data_preprocessed <- prep_GP_training_data(X_train, SSR, scale_X = TRUE, normalize_Y = TRUE)
-X_train <- GP_data_preprocessed$X
-Y_train <- GP_data_preprocessed$Y
+X_train_preprocessed <- GP_data_preprocessed$X
+Y_train_preprocessed <- GP_data_preprocessed$Y
 
 # TODO: Think about cross validation strategy
 # TODO: Look into parallelizing GP fits (across different outputs and eventually across different sites).
@@ -206,15 +206,29 @@ Y_train <- GP_data_preprocessed$Y
 
 ## Fit GPs
 ```{r}
-gp_fit_list <- fit_GP(X_train, Y_train[,1,drop = FALSE], "hetGP", "Gaussian")
+gp_fit_list <- fit_GP(X_train_preprocessed, Y_train_preprocessed[,1,drop = FALSE], "hetGP", "Gaussian")
 ```
 
 ## Predict
 ```{r}
-pred_list <- predict_GP(X_test, gp_fit_list$fit, "hetGP", cov_mat = FALSE)
+X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
+pred_list <- predict_GP(X_test_preprocessed, gp_fit_list$fit, "hetGP", cov_mat = FALSE)
 ```
 
+## Prep test data
+```{r}
+model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+SSR_test <- calc_SSR(data_obs, model_outputs_list_test)
+SSR_pred <- normalize_output_data(matrix(pred_list$mean, ncol = 1), GP_data_preprocessed$output_stats[,1,drop=FALSE], inverse = TRUE)
+```
 
+## Plot Results
+```{r}
+x_order <- order(X_test[,1])
+plot(X_test[,1], SSR_test[,1], col = "red")
+points(X_test[,1], SSR_pred[,1], col = "blue")
+points(X_train[,1], SSR[,1], col = "green")
+```
 
 
 

@@ -677,7 +677,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   
   if(!is.null(X) && scale_X) {
     input_bounds <- apply(X, 2, range)
-    X <- (X - matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*% diag(1/(input_bounds[2,] - input_bounds[1,]), ncol(X))
+    X <- scale_input_data(X, input_bounds)
   } else {
     input_bounds <- NULL
   }
@@ -685,8 +685,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   if(normalize_Y) {
     output_stats <- rbind(apply(Y, 2, mean), apply(Y, 2, var))
     rownames(output_stats) <- c("mean_Y", "var_Y")
-    Y <- (Y - matrix(output_stats["mean_Y",], nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)) / 
-         matrix(sqrt(output_stats["var_Y",]), nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)
+    Y <- normalize_output_data(Y, output_stats)
   } else {
     output_stats <- NULL
   }
@@ -694,6 +693,62 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   return(list(X = X, Y = Y, input_bounds = input_bounds, output_stats = output_stats))
   
 }
+
+
+scale_input_data <- function(X, input_bounds, inverse = FALSE) {
+  # Transforms input data X (typically points at which to predict) by performing a linear scaling encoded
+  # in `input_bounds`. Can also perform the inverse transformation. 
+  #
+  # Args:
+  #    X: matrix of dimension N_pred x d, where N_pred is the number of input points and d is the dimension of the 
+  #       input space. 
+  #    input_bounds: 2 x d matrix summarizing the range of each input variable used to standardize the training inputs. 
+  #                  The first row contains the minimum value of each of the respective input variables in the training set, 
+  #                  and similarly the second row stores the maxima. This object is returned by prep_GP_training_data(). 
+  #    inverse: logical, if TRUE, treats X as already scaled and reverses the scaling. Otherwise performs the forward 
+  #             transformation. Default is FALSE. 
+  #
+  # Returns:
+  #    matrix of dimension N_pred x d; the matrix X whose columns have been scaled according to `input_bounds`. 
+  #
+  
+  if(inverse) {
+    X <- X %*% diag(input_bounds[2,] - input_bounds[1,], ncol(X)) + matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)
+  } else {
+    X <- (X - matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*% diag(1/(input_bounds[2,] - input_bounds[1,]), ncol(X))
+  }
+  
+  return(X)
+}
+
+
+normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
+  # Transforms output data by transforming Y to Z-scores, or performing the reverse operation. 
+  # Can handle multiple output variables, where each column of `Y` is treated as an output 
+  # variable and is normalized independently. 
+  #
+  # Args:
+  #    Y: matrix of dimension N x p where p is the number of output variables. 
+  #    output_stats: a matrix of dimensions 2xp, where p is the number of output variables. The matrix 
+  #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
+  #                  variance of each output variable used to compute the Z-scores. This object is 
+  #                  returned by prep_GP_training_data(). 
+  #
+  # Returns: 
+  #    matrix of dimension N x p, the transformed version of Y. 
+  
+  if(inverse) {
+    Y <- Y * matrix(sqrt(output_stats["var_Y",]), nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE) + 
+             matrix(output_stats["mean_Y",], nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)
+  } else {
+    Y <- (Y - matrix(output_stats["mean_Y",], nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)) / 
+          matrix(sqrt(output_stats["var_Y",]), nrow = nrow(Y), ncol = ncol(Y), byrow = TRUE)
+  }
+  
+  return(Y)
+  
+}
+
 
 # TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
