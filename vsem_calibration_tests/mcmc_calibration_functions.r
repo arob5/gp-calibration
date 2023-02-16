@@ -750,11 +750,48 @@ normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
 }
 
 
+predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE) {
+  # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
+  # multi-output GP regression using independent GPs. 
+  #
+  # Args:
+  #    X_pred: matrix of dimension N_pred x d, where d is the dimension of the input space. Each row is an input 
+  #            point at which to predict. 
+  #    gp_obj_list: A list of GP objects, each of which represents a GP fit to one of the outputs. The objects will 
+  #                differ based on the specific GP library used for fitting. All of the objects in the list must have 
+  #                been fit using the same library. 
+  #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
+  #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
+  #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
+  # 
+  # Returns:
+  #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
+  #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
+  #    to each GP in `gp_obj_list`). 
+  
+  lapply(gp_obj_list, function(gp) predict_GP(X_pred, gp, gp_lib, cov_mat))
+  
+}
+
+
 # TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
+  # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
+  # input points. 
+  #
+  # Args:
+  #    X_pred: matrix of dimension N_pred x d, where d is the dimension of the input space. Each row is an input 
+  #            point at which to predict. 
+  #    gp_obj: An object representing a GP fit, which will differ based on the library used to fit the GP. 
+  #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
+  #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
+  #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
+  # 
+  # Returns:
+  #    list, with named elements "mean", "sd2", "sd2_nug", "cov". 
   
-  pred_list <- vector(mode = "list", length = 4)
   pred_list_names <- c("mean", "sd2", "sd2_nug", "cov")
+  pred_list <- vector(mode = "list", length = length(pred_list_names))
   names(pred_list) <- pred_list_names
   
   if(gp_lib == "mlegp") {
@@ -775,4 +812,126 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
   return(pred_list)
   
 }
+
+
+get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolate, 
+                                ref_pars, pars_cal_sel, data_obs, PAR, output_vars, scale_X, normalize_Y) {
+  # Generates training (design) dataset and test dataset via Latin Hypercube sampling. 
+  # Input points are sampled from the space of calibration parameters, while the outputs 
+  # are the squared L2 errors between the observed data and VSEM outputs, or the log 
+  # of this quantity. Optionally pre-processes the data by scaling the inputs and 
+  # normalizing the outputs. 
+  #
+  # Args:
+  #    N_train: Number of design points. 
+  #    N_test: Number of test points. 
+  #    prior_params: data.frame containing the prior distribution information of the input 
+  #                  parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                  for the requirements of this data.frame. 
+  #    joint: logical, if TRUE jointly samples train/test. Default is TRUE. 
+  #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
+  #                 truncation is performed to guarantee the samples are within the extent of the 
+  #                 training set. Default is TRUE. 
+  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
+  #             Must contain column named "best". Parameters that are fixed at nominal 
+  #             values (not calibrated) are set to their values given in the "best" column. 
+  #    par_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
+  #                 parameters that will be calibrated. 
+  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
+  #              Colnames set to output variable names. 
+  #    output_vars: character vector, used to the select the outputs to be considered in 
+  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
+  #                 correct columns of 'data_obs'. 
+  #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
+  #         term in VSEM.
+  #
+  # Returns:
+  #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
+  #    "Y_train", "Y_train_preprocessed", "Y_test". 
+  
+  # Generate train and test input datasets via Latin Hypercube Sampling
+  X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate)
+  X_train <- X_train_test$X_train
+  X_test <- X_train_test$X_test
+  
+  # Run VSEM on train and test sets to obtain outputs
+  model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+  model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+  Y_train <- calc_SSR(data_obs, model_outputs_list_train)
+  Y_test <- calc_SSR(data_obs, model_outputs_list_test)
+  
+  # Pre-process training data: scale inputs and normalize outputs
+  # TODO: normalizing Y in the log(SSR) case must be done separately
+  GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
+  X_train_preprocessed <- GP_data_preprocessed$X
+  Y_train_preprocessed <- GP_data_preprocessed$Y
+  
+  # Pre-process testing input data
+  X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
+  
+  return(list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
+              X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
+              Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test))
+  
+}
+
+
+evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_test_points, 
+                                  theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, joint = TRUE, extrapolate = FALSE) {
+  
+  # Create list to store results
+  nrow_test_results <- N_iter * nrow(emulator_settings)
+  colnames_test_results <- c("gp_libs", "target", "kernel", "scale_X", "normalize_y", "rmse", "fit_time")
+  test_results <- data.frame(matrix(nrow = nrow_test_results, ncol = length(colnames_test_results)))
+  names(test_results) <- colnames_test_results
+  
+  # Loop over design/test datasets
+  for(iter in seq_len(N_iter)) {
+    
+    # Create design/test sets
+    train_test_data <- get_train_test_data(N_train = N_design_points, 
+                                           N_test = N_test_points,
+                                           prior_params = theta_prior_params, 
+                                           joint = joint, 
+                                           extrapolate = extrapolate, 
+                                           ref_pars = ref_pars, 
+                                           pars_cal_sel = pars_cal_sel, 
+                                           data_obs = data_obs,
+                                           PAR = PAR, 
+                                           output_vars = output_vars)
+      
+    # Loop over each model specification
+    # TODO: modify for log(SSR).
+    for(j in seq_along(emulator_settings)) {
+      
+      if(emulator_settings[j, "scale_X"]) X <- train_test_data$X_train_preprocessed
+      else X <- train_test_data$X_train
+      
+      if(emulator_settings[j, "normalize_y"]) Y <- train_test_data$Y_train_preprocessed
+      else Y <- train_test_data$Y_train
+      
+      GP_fit_list <- fit_independent_GPs(X, Y, emulator_settings[j, "gp_lib"], emulator_settings[j, "kernel"])
+      GP_pred_list <- predict_independent_GPs(X_pred, gp_obj_list, gp_lib)
+      GP_pred_errs <- calc_GP_pred_errs(GP_pred_list, train_test_data$Y_test)
+      
+    }
+
+    
+  }
+  
+  return(test_results)
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
 

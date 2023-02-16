@@ -97,18 +97,12 @@ N_outputs <- length(output_vars)
 # GP Emulator Settings
 #
 
-emulator_settings <- data.frame(gp_libs = c("mlegp", "mlegp", "hetGP", "hetGP"), 
+emulator_settings <- data.frame(gp_lib = c("mlegp", "mlegp", "hetGP", "hetGP"), 
                                 target = c("SSR", "log_SSR", "SSR", "log_SSR"), 
                                 kernel = "Gaussian", 
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
                                 
-
-design_alg <- "LHS"
-N_design_points <- 30 * N_pars
-
-print(paste0("Design algorithm: ", design_alg))
-print(paste0("Number of design points: ", N_design_points))
 print(emulator_settings)
 ```
 
@@ -177,13 +171,16 @@ print(paste0("Number parameters: ", N_pars))
 
 
 ```{r}
-
 # Latin Hypercube Sample
 N_design_points <- 10
+design_alg <- "LHS"
 N_test <- 1000
 X_train_test <- LHS_train_test(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE)
 X_train <- X_train_test$X_train
 X_test <- X_train_test$X_test
+
+print(paste0("Design algorithm: ", design_alg))
+print(paste0("Number of design points: ", N_design_points))
 
 hist(X_train, 50)
 hist(X_test, 50)
