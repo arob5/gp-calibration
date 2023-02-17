@@ -879,6 +879,7 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
 evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_test_points, 
                                   theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, joint = TRUE, extrapolate = FALSE) {
   
+  # TODO: allow storing separate error metrics for each output
   # Create list to store results
   nrow_test_results <- N_iter * nrow(emulator_settings)
   colnames_test_results <- c("gp_libs", "target", "kernel", "scale_X", "normalize_y", "rmse", "fit_time")
@@ -924,6 +925,22 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
 }
 
 
+calc_independent_gp_pred_errs <- function(gp_pred_list, Y_true) {
+  
+  lapply(seq_along(gp_pred_list), function(gp_pred) calc_gp_pred_err(gp_pred[[j]]$mean, gp_pred[[j]]$sd2, Y_true[,j]))
+  
+}
+
+
+# TODO: look into variance vs. nugget variance returned in pred object 
+calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
+  
+  sq_diff <- (y_true - gp_pred_mean)^2
+  
+  return(list(rmse = sum(sq_diff), 
+              rmse_scaled = sum(sq_diff / sqrt(gp_pred_var))))
+  
+}
 
 
 

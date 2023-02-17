@@ -164,53 +164,37 @@ print(theta_prior_params)
 ```
 
 ## Sample Design Points
-```{r, echo = FALSE}
-print(paste0("Number design points: ", N_design_points))
-print(paste0("Number parameters: ", N_pars))
-```
-
-
 ```{r}
-# Latin Hypercube Sample
 N_design_points <- 10
 design_alg <- "LHS"
 N_test <- 1000
-X_train_test <- LHS_train_test(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE)
-X_train <- X_train_test$X_train
-X_test <- X_train_test$X_test
+
+train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE, 
+                                       ref_pars, pars_cal_sel, data_obs, PAR, output_vars, scale_X = TRUE, normalize_Y = TRUE)
 
 print(paste0("Design algorithm: ", design_alg))
 print(paste0("Number of design points: ", N_design_points))
 
-hist(X_train, 50)
-hist(X_test, 50)
-# plot(X_train, matrix(1, nrow = nrow(X_train)), col = "red")
-# points(X_test, matrix(1, nrow = nrow(X_test)), col = "blue")
-```
-
-## Run Model, calculate L2 error, and prep data for GP regressions
-```{r}
-model_outputs_list <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-SSR <- calc_SSR(data_obs, model_outputs_list)
-GP_data_preprocessed <- prep_GP_training_data(X_train, SSR, scale_X = TRUE, normalize_Y = TRUE)
-X_train_preprocessed <- GP_data_preprocessed$X
-Y_train_preprocessed <- GP_data_preprocessed$Y
-
-# TODO: Think about cross validation strategy
-# TODO: Look into parallelizing GP fits (across different outputs and eventually across different sites).
 ```
 
 
 ## Fit GPs
 ```{r}
-gp_fit_list <- fit_GP(X_train_preprocessed, Y_train_preprocessed[,1,drop = FALSE], "hetGP", "Gaussian")
+gp_fit_list <- fit_independent_GPs(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")
+# gp_fit_list <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed[,1,drop = FALSE], "hetGP", "Gaussian")
 ```
 
 ## Predict
 ```{r}
-X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
-pred_list <- predict_GP(X_test_preprocessed, gp_fit_list$fit, "hetGP", cov_mat = FALSE)
+gp_pred_list <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fit_list$fits, "hetGP", cov_mat = FALSE)
 ```
+
+## Evaluate predictions
+```{r}
+# TODO: convert gp_pred errs back to original scale
+calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
+```
+
 
 ## Prep test data
 ```{r}
