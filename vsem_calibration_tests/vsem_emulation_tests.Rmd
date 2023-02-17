@@ -196,6 +196,14 @@ gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_tes
 ```
 
 
+```{r}
+N_iter <- 1
+N_test_points <- 20
+emulator_test_results <- evaluate_GP_emulators(emulator_settings, N_iter, N_design_points, N_test_points, 
+                                               theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, joint = TRUE, extrapolate = FALSE)
+```
+
+
 ## Prep test data
 ```{r}
 model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))

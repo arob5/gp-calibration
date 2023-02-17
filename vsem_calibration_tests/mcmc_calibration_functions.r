@@ -906,14 +906,16 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
 evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_test_points, 
                                   theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, joint = TRUE, extrapolate = FALSE) {
   
-  # TODO: allow storing separate error metrics for each output
   # Create list to store results
   nrow_test_results <- N_iter * nrow(emulator_settings)
-  colnames_test_results <- c("gp_libs", "target", "kernel", "scale_X", "normalize_y",
-                             paste0("rmse_", output_vars), paste0("rmse_scaled_", output_vars),
-                             paste0("fit_time_", output_vars))
+  rmse_cols <- paste0("rmse_", output_vars)
+  rmse_scaled_cols <- paste0("rmse_scaled_", output_vars)
+  fit_time_cols <- paste0("fit_time_", output_vars)
+  emulator_settings_cols <- c("gp_lib", "target", "kernel", "scale_X", "normalize_y")
+  colnames_test_results <- c(emulator_settings_cols, rmse_cols, rmse_scaled_cols, fit_time_cols)
   test_results <- data.frame(matrix(nrow = nrow_test_results, ncol = length(colnames_test_results)))
-  names(test_results) <- colnames_test_results
+  colnames(test_results) <- colnames_test_results
+  idx <- 1
   
   # Loop over design/test datasets
   for(iter in seq_len(N_iter)) {
@@ -928,22 +930,40 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
                                            pars_cal_sel = pars_cal_sel, 
                                            data_obs = data_obs,
                                            PAR = PAR, 
-                                           output_vars = output_vars)
+                                           output_vars = output_vars, 
+                                           scale_X = TRUE, 
+                                           normalize_Y = TRUE)
       
     # Loop over each model specification
     # TODO: modify for log(SSR).
     for(j in seq_along(emulator_settings)) {
       
-      if(emulator_settings[j, "scale_X"]) X <- train_test_data$X_train_preprocessed
-      else X <- train_test_data$X_train
+      if(emulator_settings[j, "scale_X"]) {
+        X_design <- train_test_data$X_train_preprocessed
+        X_pred <- train_test_data$X_test_preprocessed
+      } else {
+        X_design <- train_test_data$X_train
+        X_pred <- train_test_data$X_test
+      }
       
-      if(emulator_settings[j, "normalize_y"]) Y <- train_test_data$Y_train_preprocessed
-      else Y <- train_test_data$Y_train
+      normalize_y <- emulator_settings[j, "normalize_y"]
+      if(normalize_y) {
+        Y_design <- train_test_data$Y_train_preprocessed
+      } else {
+        Y_design <- train_test_data$Y_train
+      }
       
-      GP_fit_list <- fit_independent_GPs(X, Y, emulator_settings[j, "gp_lib"], emulator_settings[j, "kernel"])
-      GP_pred_list <- predict_independent_GPs(X_pred, gp_obj_list, gp_lib)
-      GP_pred_errs <- calc_GP_pred_errs(GP_pred_list, train_test_data$Y_test)
+      gp_lib <- emulator_settings[j, "gp_lib"]
+      gp_fit_list <- fit_independent_GPs(X_design, Y_design, gp_lib, emulator_settings[j, "kernel"])
+      gp_pred_list <- predict_independent_GPs(X_pred, gp_fit_list$fits, gp_lib, 
+                                              transform_predictions = normalize_y, train_test_data$output_stats)
+      gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
       
+      # Populate results data.frame
+      test_results[idx, emulator_settings_cols] <- emulator_settings[j, emulator_settings_cols]
+      test_results[idx, rmse_cols] <- sapply(gp_err_list, function(x) x$rmse)
+      test_results[idx, rmse_scaled_cols] <- sapply(gp_err_list, function(x) x$rmse_scaled)
+      test_results[idx, fit_time_cols] <- gp_fit_list$times
     }
 
     
