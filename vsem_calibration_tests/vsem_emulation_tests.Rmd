@@ -186,13 +186,13 @@ gp_fit_list <- fit_independent_GPs(train_test_data$X_train_preprocessed, train_t
 
 ## Predict
 ```{r}
-gp_pred_list <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fit_list$fits, "hetGP", cov_mat = FALSE)
+gp_pred_list <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fit_list$fits, "hetGP", 
+                                        cov_mat = FALSE, transform_predictions = TRUE, train_test_data$output_stats)
 ```
 
 ## Evaluate predictions
 ```{r}
-# TODO: convert gp_pred errs back to original scale
-calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
+gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
 ```
 
 

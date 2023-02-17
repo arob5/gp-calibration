@@ -750,7 +750,8 @@ normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
 }
 
 
-predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE) {
+predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, 
+                                    transform_predictions = FALSE, output_stats = NULL, inverse = TRUE) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -763,19 +764,27 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
   #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
+  #    transform_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
+  #                           inverting the Z-score transformation.
+  #    output_stats: If not NULL, then a matrix of dimensions 2xp, where p is the number of output variables. The matrix 
+  #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
+  #                  variance of each output variable used to compute the Z-scores. This object is 
+  #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
   #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). 
   
-  lapply(gp_obj_list, function(gp) predict_GP(X_pred, gp, gp_lib, cov_mat))
+  lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, transform_predictions, 
+                                              output_stats[,j,drop=FALSE]))
   
 }
 
 
 # TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
-predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
+predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, 
+                       transform_predictions = FALSE, output_stats = NULL) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -786,7 +795,13 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
   #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
   #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
-  # 
+  #    transform_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
+  #                           inverting the Z-score transformation.
+  #    output_stats: If not NULL, then a matrix of dimensions 2x1. The matrix 
+  #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
+  #                  variance of the output variable used to compute the Z-scores. This object is 
+  #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
+  #
   # Returns:
   #    list, with named elements "mean", "sd2", "sd2_nug", "cov". 
   
@@ -807,6 +822,14 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE) {
     }
     hetGP_pred <- predict(gp_obj, X_pred, xprime = X_prime)
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
+  }
+  
+  # Map back to original scale
+  if(transform_predictions) {
+    pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
+    pred_list[["sd2"]] <- output_stats["var_Y",1] * pred_list[["sd2"]]
+    pred_list[["nugs"]] <- output_stats["var_Y",1] * pred_list[["nugs"]]
+    pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
   }
   
   return(pred_list)
@@ -847,7 +870,9 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #
   # Returns:
   #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
-  #    "Y_train", "Y_train_preprocessed", "Y_test". 
+  #    "Y_train", "Y_train_preprocessed", "Y_test", "input_bounds", and "output_stats".
+  #    The latter two encode the transformations applied to the inputs and outputs, respectively 
+  #    (see prep_GP_training_data()). 
   
   # Generate train and test input datasets via Latin Hypercube Sampling
   X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate)
@@ -871,7 +896,9 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   
   return(list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
               X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
-              Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test))
+              Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test, 
+              input_bounds = GP_data_preprocessed$input_bounds, 
+              output_stats = GP_data_preprocessed$output_stats))
   
 }
 
@@ -882,7 +909,9 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
   # TODO: allow storing separate error metrics for each output
   # Create list to store results
   nrow_test_results <- N_iter * nrow(emulator_settings)
-  colnames_test_results <- c("gp_libs", "target", "kernel", "scale_X", "normalize_y", "rmse", "fit_time")
+  colnames_test_results <- c("gp_libs", "target", "kernel", "scale_X", "normalize_y",
+                             paste0("rmse_", output_vars), paste0("rmse_scaled_", output_vars),
+                             paste0("fit_time_", output_vars))
   test_results <- data.frame(matrix(nrow = nrow_test_results, ncol = length(colnames_test_results)))
   names(test_results) <- colnames_test_results
   
@@ -927,7 +956,7 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
 
 calc_independent_gp_pred_errs <- function(gp_pred_list, Y_true) {
   
-  lapply(seq_along(gp_pred_list), function(gp_pred) calc_gp_pred_err(gp_pred[[j]]$mean, gp_pred[[j]]$sd2, Y_true[,j]))
+  lapply(seq_along(gp_pred_list), function(j) calc_gp_pred_err(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$sd2, Y_true[,j]))
   
 }
 
@@ -936,9 +965,10 @@ calc_independent_gp_pred_errs <- function(gp_pred_list, Y_true) {
 calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
   
   sq_diff <- (y_true - gp_pred_mean)^2
+  N_obs <- length(y_true)
   
-  return(list(rmse = sum(sq_diff), 
-              rmse_scaled = sum(sq_diff / sqrt(gp_pred_var))))
+  return(list(rmse = sum(sq_diff) / N_obs, 
+              rmse_scaled = sum(sq_diff / gp_pred_var) / N_obs))
   
 }
 
