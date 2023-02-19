@@ -673,7 +673,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   #    second row stores the maxima. `output_stats` is a named vector with names 
   #    "mean_Y" and "var_Y" storing the mean and variance of Y used to compute the Z-scores. 
   #    If `scale_X` is FALSE then "input_bounds" will be NULL and likewise with 
-  #    `normalize_Y` and "output_stats". 
+  #    `normalize_Y` and "output_stats".
   
   if(!is.null(X) && scale_X) {
     input_bounds <- apply(X, 2, range)
@@ -751,7 +751,8 @@ normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
 
 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, 
-                                    transform_predictions = FALSE, output_stats = NULL, inverse = TRUE) {
+                                    denormalize_predictions = FALSE, output_stats = NULL, 
+                                    exponentiate_predictions = FALSE) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -764,27 +765,30 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
   #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
-  #    transform_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
-  #                           inverting the Z-score transformation.
+  #    denormalize_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
+  #                             inverting the Z-score transformation.
   #    output_stats: If not NULL, then a matrix of dimensions 2xp, where p is the number of output variables. The matrix 
   #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
   #                  variance of each output variable used to compute the Z-scores. This object is 
   #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
+  #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
+  #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
+  #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
   #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). 
   
-  lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, transform_predictions, 
-                                              output_stats[,j,drop=FALSE]))
+  lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, denormalize_predictions, 
+                                                        output_stats[,j,drop=FALSE], exponentiate_predictions))
   
 }
 
 
 # TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
-predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, 
-                       transform_predictions = FALSE, output_stats = NULL) {
+predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
+                       output_stats = NULL, exponentiate_predictions = FALSE) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -795,12 +799,15 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE,
   #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
   #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
-  #    transform_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
-  #                           inverting the Z-score transformation.
+  #    denormalize_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
+  #                             inverting the Z-score transformation.
   #    output_stats: If not NULL, then a matrix of dimensions 2x1. The matrix 
   #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
   #                  variance of the output variable used to compute the Z-scores. This object is 
   #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
+  #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
+  #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
+  #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
   #
   # Returns:
   #    list, with named elements "mean", "sd2", "sd2_nug", "cov". 
@@ -824,12 +831,29 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE,
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
-  # Map back to original scale
-  if(transform_predictions) {
+  # Invert Z-score transformation.
+  if(denormalize_predictions) {
     pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
     pred_list[["sd2"]] <- output_stats["var_Y",1] * pred_list[["sd2"]]
     pred_list[["nugs"]] <- output_stats["var_Y",1] * pred_list[["nugs"]]
-    pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
+    if(cov_mat) {
+      pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
+    }
+  }
+  
+  # Transform log-transformed predictions back to original scale. 
+  if(exponentiate_predictions) {
+    mean_log_scale <- pred_list[["mean"]]
+    sd2_log_scale <- pred_list[["sd2"]] 
+    pred_list[["mean"]] <- exp(mean_log_scale + 0.5 * sd2_log_scale)
+    pred_list[["sd2"]] <- (exp(sd2_log_scale) - 1) * exp(2*mean_log_scale + sd2_log_scale)
+    pred_list[["nugs"]] <- (exp(pred_list[["nugs"]]) - 1) * exp(2*mean_log_scale + pred_list[["nugs"]])
+    if(cov_mat) {
+      N_obs <- length(mean_log_scale)
+      mu_mat <- matrix(mean_log_scale, nrow = N_obs, ncol = N_obs, byrow = TRUE)
+      sd2_mat <- matrix(sd2_log_scale, nrow = N_obs, ncol = N_obs, byrow = TRUE)
+      pred_list[["cov"]] <- exp(mu_mat + t(mu_mat) + 0.5 * (sd2_mat + t(sd2_mat))) * (exp(pred_list[["cov"]]) - 1)
+    }
   }
   
   return(pred_list)
@@ -837,8 +861,8 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE,
 }
 
 
-get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolate, 
-                                ref_pars, pars_cal_sel, data_obs, PAR, output_vars, scale_X, normalize_Y) {
+get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolate, ref_pars, pars_cal_sel,
+                                data_obs, PAR, output_vars, scale_X, normalize_Y, log_SSR) {
   # Generates training (design) dataset and test dataset via Latin Hypercube sampling. 
   # Input points are sampled from the space of calibration parameters, while the outputs 
   # are the squared L2 errors between the observed data and VSEM outputs, or the log 
@@ -867,6 +891,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #                 correct columns of 'data_obs'. 
   #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
   #         term in VSEM.
+  #    log_SSR: logical(1), if TRUE includes log-transformed outputs as well, in addition to the
+  #             outputs on the original scale. 
   #
   # Returns:
   #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
@@ -884,9 +910,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
   Y_train <- calc_SSR(data_obs, model_outputs_list_train)
   Y_test <- calc_SSR(data_obs, model_outputs_list_test)
-  
+
   # Pre-process training data: scale inputs and normalize outputs
-  # TODO: normalizing Y in the log(SSR) case must be done separately
   GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
   X_train_preprocessed <- GP_data_preprocessed$X
   Y_train_preprocessed <- GP_data_preprocessed$Y
@@ -894,17 +919,28 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   # Pre-process testing input data
   X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
   
-  return(list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
-              X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
-              Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test, 
-              input_bounds = GP_data_preprocessed$input_bounds, 
-              output_stats = GP_data_preprocessed$output_stats))
+  
+  output_list <- list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
+                      X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
+                      Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test, 
+                      input_bounds = GP_data_preprocessed$input_bounds, 
+                      output_stats = GP_data_preprocessed$output_stats)
+  
+  # Include log-transformed L2 error
+  if(log_SSR) {
+    output_list[["log_Y_train"]] <- log(output_list$Y_train)
+    output_list[["log_Y_test"]] <- log(output_list$Y_test)
+    output_list[c("log_Y_train_preprocessed", "log_output_stats")] <- prep_GP_training_data(Y = output_list$log_Y_train, normalize_Y = TRUE)[c("Y", "output_stats")]
+  }
+  
+  return(output_list)
   
 }
 
 
 evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_test_points, 
-                                  theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, joint = TRUE, extrapolate = FALSE) {
+                                  theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, 
+                                  joint = TRUE, extrapolate = FALSE) {
   
   # Create list to store results
   nrow_test_results <- N_iter * nrow(emulator_settings)
@@ -912,14 +948,15 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
   rmse_scaled_cols <- paste0("rmse_scaled_", output_vars)
   fit_time_cols <- paste0("fit_time_", output_vars)
   emulator_settings_cols <- c("gp_lib", "target", "kernel", "scale_X", "normalize_y")
-  colnames_test_results <- c(emulator_settings_cols, rmse_cols, rmse_scaled_cols, fit_time_cols)
+  colnames_test_results <- c("iter", emulator_settings_cols, rmse_cols, rmse_scaled_cols, fit_time_cols)
   test_results <- data.frame(matrix(nrow = nrow_test_results, ncol = length(colnames_test_results)))
   colnames(test_results) <- colnames_test_results
   idx <- 1
   
+  any_log_SSR <- any(emulator_settings[,"target"] == "log_SSR")
+  
   # Loop over design/test datasets
   for(iter in seq_len(N_iter)) {
-    
     # Create design/test sets
     train_test_data <- get_train_test_data(N_train = N_design_points, 
                                            N_test = N_test_points,
@@ -932,12 +969,13 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
                                            PAR = PAR, 
                                            output_vars = output_vars, 
                                            scale_X = TRUE, 
-                                           normalize_Y = TRUE)
+                                           normalize_Y = TRUE, 
+                                           log_SSR = any_log_SSR)
       
     # Loop over each model specification
-    # TODO: modify for log(SSR).
-    for(j in seq_along(emulator_settings)) {
-      
+    for(j in seq_len(nrow(emulator_settings))) {
+
+      # Input train (design) and test points, either scaled or un-scaled.
       if(emulator_settings[j, "scale_X"]) {
         X_design <- train_test_data$X_train_preprocessed
         X_pred <- train_test_data$X_test_preprocessed
@@ -946,24 +984,36 @@ evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_
         X_pred <- train_test_data$X_test
       }
       
+      # Training output points, potentially normalized and/or log-transformed.  
       normalize_y <- emulator_settings[j, "normalize_y"]
+      log_y <- emulator_settings[j, "target"] == "log_SSR"
+      y_train_sel_string <- "Y_train"
+      output_stats_sel_string <- "output_stats"
       if(normalize_y) {
-        Y_design <- train_test_data$Y_train_preprocessed
-      } else {
-        Y_design <- train_test_data$Y_train
+        y_train_sel_string <- paste0(y_train_sel_string, "_preprocessed")
       }
+      if(log_y) {
+        y_train_sel_string <- paste0("log_", y_train_sel_string)
+        output_stats_sel_string <- paste0("log_", output_stats_sel_string)
+      }
+      Y_design <- train_test_data[[y_train_sel_string]]
       
+      # Fit GP and calculate error metrics
       gp_lib <- emulator_settings[j, "gp_lib"]
       gp_fit_list <- fit_independent_GPs(X_design, Y_design, gp_lib, emulator_settings[j, "kernel"])
-      gp_pred_list <- predict_independent_GPs(X_pred, gp_fit_list$fits, gp_lib, 
-                                              transform_predictions = normalize_y, train_test_data$output_stats)
+      gp_pred_list <- predict_independent_GPs(X_pred, gp_fit_list$fits, gp_lib, cov_mat = FALSE,
+                                              denormalize_predictions = normalize_y, 
+                                              output_stats = train_test_data[[output_stats_sel_string]], 
+                                              exponentiate_predictions = log_y)
       gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
       
       # Populate results data.frame
+      test_results[idx, "iter"] <- iter
       test_results[idx, emulator_settings_cols] <- emulator_settings[j, emulator_settings_cols]
       test_results[idx, rmse_cols] <- sapply(gp_err_list, function(x) x$rmse)
       test_results[idx, rmse_scaled_cols] <- sapply(gp_err_list, function(x) x$rmse_scaled)
       test_results[idx, fit_time_cols] <- gp_fit_list$times
+      idx <- idx + 1
     }
 
     
