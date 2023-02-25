@@ -1,10 +1,14 @@
 ---
-title: "VSEM Emulation Tests"
+title: "Log-Normal Process Emulator of Squared Error"
 output: html_document
-date: '2023-01-23'
+date: '2023-02-25'
 ---
 
 # Introduction
+In this document, I investigate the effect of log-transforming the output variable when using Gaussian Processes (GPs) to emulate a deterministic function. While log-transformations are common in regression settings to correct for distributional assumptions in the error model, it is less obvious why one would want to apply transformations in the deterministic setting, when there is no underlying distribution. The desire to do so here stems from the problem of emulating the squared L2 error between a deterministic model and field observations, so the log-transformation ensures that predictions of L2 error are non-negative. Details on the deterministic model used in these tests and the emulation framework are provided below. 
+
+## Background Literature 
+I have found little literature on the effect of transformations of the response variable in the deterministic setting, aside from a 2020 paper by Lin and Joseph titled "Transformation and Additivity in Gaussian Processes".
 
 ## Ecosystem Model
 The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that models carbon dynamics between three pools (above-ground vegetation, below-ground vegetation, 
@@ -15,7 +19,7 @@ where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the lengt
 
 ## Statistical Model and Likelihood Emulation
 
-## Likelihood Assumptions
+### Likelihood Assumptions
 I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
 parameters. I add Gaussian noise to the resulting outputs, resulting in the data-generating process
 $$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
@@ -24,7 +28,7 @@ $\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilo
 $$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
 I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as well as the statistical model used in the emulation step. 
 
-## Likelihood Emulation
+### Likelihood Emulation
 With regard to the problem of MCMC-based parameter calibration, the model outputs $f(i, j, \theta)$ appear only as a function of the 
 likelihood $p(Y|\theta, \Sigma_\epsilon)$. Therefore, to reduce the dimensionality of the emulation problem, we may consider emulating the univariate lilkelihood 
 surface $p(Y|\theta, \Sigma_\epsilon)$ as a function of $\theta$. In fact, given this simple product-form of the likelihood we actually need only emulate a sufficient
@@ -35,11 +39,13 @@ $$\tilde{\ell}_Y(\theta, \Sigma_\epsilon) := -\frac{1}{2}\sum_{j = 1}^{p}\left[n
 Conveniently, $T_j(\theta)$ is not a function of $\Sigma_\epsilon$. Thus, we may emulate $\tilde{\ell}_Y(\theta, \Sigma_\epsilon)$ by independently emulating $T_1(\theta), \dots, T_p(\theta)$. Therefore, during a Metropolis-within-Gibbs MCMC calibration scheme, an approximate likelihood evaluation may be derived from 
 the emulators for the $T_j$, without needing to emulate the likelihood as a function of $\Sigma_\epsilon$ as well. 
 
-## Gaussian Process Emulation Details
+### Gaussian Process Emulation Details
 Given the above derivations, we can fit $p$ independent GP emulators, one for each output. However, note that the $T_j$ map to the non-negative real numbers, while
-a GP is in general not constrained to yield non-negative predictions. We therefore instead emulate $L_j(\theta) := \log T_j(\theta)$. The emulation model thus becomes
+a GP is in general not constrained to yield non-negative predictions. We thus arrive at the motivation to log-transform the response and instead emulate $L_j(\theta) := \log T_j(\theta)$. The emulation model thus becomes
 $$L_j(\cdot) \sim \mathcal{GP}(\mu_j, k_j(\cdot, \cdot))$$
-where each output is emulated independently. We assume constant GP means $\mu_j$ and exponentiated quadratic kernels
+where each output is emulated independently. Equivalently, we are modeling the squared error as a log-normal process (LNP)
+$$T_j(\cdot) \sim \mathcal{LNP}(\mu_j, k_j(\cdot, \cdot))$$
+We assume constant GP means $\mu_j$ and exponentiated quadratic kernels
 $$k_j(\theta, \theta^\prime) = \alpha_j^2 \exp\left\{-\frac{1}{2}\sum_{r = 1}^{d} \left(\frac{\theta_r - \theta_r^\prime}{(l_{j})_r}\right)^2 \right\} + \gamma_j^2\delta_{\theta, \theta^\prime}$$
 The structure of the kernel is the same for each output variable, but the estimation of the kernel parameters (marginal variance $\alpha_j^2$, lengthscales 
 $(\ell_j)_{r = 1}^{d}$, and nugget variance $\gamma_j^2$) is performed via MLE independently for each output. Note that the $L_j$ are deterministic functions, 
@@ -163,19 +169,23 @@ theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
 print(theta_prior_params)
 ```
 
-## Sample Design Points
+## Settings for sampling design points
 ```{r}
 N_design_points <- 10
 design_alg <- "LHS"
 N_test <- 1000
-
-print(paste0("Design algorithm: ", design_alg))
-print(paste0("Number of design points: ", N_design_points))
-
 ```
 
-## TEST
-Testing the CR output, which was causing trouble before. 
+# One-Dimensional Example
+I begin by considering a single output (CR, below-ground biomass) and emulate the response as a function of a single parameter 
+(KEXT, the extinction coefficient in the Beer-Lambert law). 
+
+```{r CR_plot, echo = FALSE}
+plotTimeSeries(observed = data_obs[["CR"]], 
+               predicted = data_ref[["CR"]], main = "CR")
+```
+
+## Fitting GP and LNP emulators for $T_{\text{CR}}(\cdot)$
 ```{r}
 
 # Design and test points
@@ -195,75 +205,42 @@ lnp_pred_log_scale <- predict_GP(train_test_data$X_test, lnp_fit, "hetGP", cov_m
                                  output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
 ```
 
+### Train and test data
+In the below plots, we observe that the SSR appears to be monotonically decreasing as a function of KEXT, and does not achieve a minimum 
+at the true value of KEXT (gray vertical line). However, the large scale on the y-axis masks the fact that the curve actually does 
+achieve a minimum around 0.75, and around this minimum looks approximately quadratic. 
+
+```{r, echo = FALSE}
+test_order <- order(train_test_data$X_test)
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR")
+points(train_test_data$X_train, train_test_data$Y_train)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR", ylim = c(0, 500))
+points(train_test_data$X_train, train_test_data$Y_train)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray")
+```
+
+
+
+
+
 
 ### Modeling SSR
 ```{r}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2)
 ```
 
-### Modeling log(SSR)
+### Modeling log(SSR) (transformed to original scale)
 ```{r}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2)
 ```
 
-
-
-
-
-
-
-
-## Fit GPs
+### Modeling log(SSR) (plot on log scale)
 ```{r}
-gp_fit_list <- fit_independent_GPs(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")
-# gp_fit_list <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed[,1,drop = FALSE], "hetGP", "Gaussian")
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, lnp_pred_log_scale$mean, lnp_pred_log_scale$sd2)
 ```
-
-## Predict
-```{r}
-gp_pred_list <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fit_list$fits, "hetGP", 
-                                        cov_mat = FALSE, transform_predictions = TRUE, train_test_data$output_stats)
-```
-
-## Evaluate predictions
-```{r}
-gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
-```
-
-
-```{r}
-N_iter <- 1
-N_test_points <- 20
-
-emulator_test_results <- evaluate_GP_emulators(emulator_settings = emulator_settings_2, 
-                                               N_iter = N_iter, 
-                                               N_design_points = N_design_points, 
-                                               N_test_points = N_test_points, 
-                                               theta_prior_params = theta_prior_params, 
-                                               ref_pars = ref_pars, 
-                                               pars_cal_sel = pars_cal_sel, 
-                                               data_obs = data_obs, 
-                                               PAR = PAR, 
-                                               output_vars = output_vars, 
-                                               joint = TRUE, 
-                                               extrapolate = FALSE)
-```
-
-
-## Prep test data
-```{r}
-model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-SSR_test <- calc_SSR(data_obs, model_outputs_list_test)
-SSR_pred <- normalize_output_data(matrix(pred_list$mean, ncol = 1), GP_data_preprocessed$output_stats[,1,drop=FALSE], inverse = TRUE)
-```
-
-## Plot Results
-```{r}
-x_order <- order(X_test[,1])
-plot(X_test[,1], SSR_test[,1], col = "red")
-points(X_test[,1], SSR_pred[,1], col = "blue")
-points(X_train[,1], SSR[,1], col = "green")
-```
-
-
-

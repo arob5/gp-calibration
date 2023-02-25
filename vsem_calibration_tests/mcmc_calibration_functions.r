@@ -908,8 +908,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   # Run VSEM on train and test sets to obtain outputs
   model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
   model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  Y_train <- calc_SSR(data_obs, model_outputs_list_train)
-  Y_test <- calc_SSR(data_obs, model_outputs_list_test)
+  Y_train <- calc_SSR(data_obs[[output_vars]], model_outputs_list_train)
+  Y_test <- calc_SSR(data_obs[[output_vars]], model_outputs_list_test)
 
   # Pre-process training data: scale inputs and normalize outputs
   GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
@@ -1042,6 +1042,20 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
   
 }
 
+
+plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred) {
+  
+  order_pred <- order(X_pred)
+  order_train <- order(X_train)
+  gp_sd_pred <- sqrt(gp_var_pred)
+  
+  plot(X_pred[order_pred], y_pred[order_pred] + 2*gp_sd_pred[order_pred], type = "l", col = "gray")
+  lines(X_pred[order_pred], y_pred[order_pred] - 2*gp_sd_pred[order_pred], col = "gray")
+  lines(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red")
+  points(X_train[order_train], y_train[order_train], col = "red")
+  lines(X_pred[order_pred], gp_mean_pred[order_pred], type = "l", col = "blue")
+  
+}
 
 
 
