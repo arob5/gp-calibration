@@ -243,7 +243,7 @@ lnp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_tr
 gp_pred <- predict_GP(train_test_data$X_test_preprocessed, gp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
                       output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
 lnp_pred <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
-                       output_stats = train_test_data$log_output_stats, exponentiate_predictions = TRUE)
+                       output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
 ```
 
 ```{r, echo = FALSE}
@@ -266,7 +266,7 @@ abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 
 ```{r, echo = FALSE}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2, 
-               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = y_lim)
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = y_lim, exponentiate_predictions = TRUE)
 abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 

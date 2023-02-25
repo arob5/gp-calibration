@@ -835,7 +835,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   if(denormalize_predictions) {
     pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
     pred_list[["sd2"]] <- output_stats["var_Y",1] * pred_list[["sd2"]]
-    pred_list[["nugs"]] <- output_stats["var_Y",1] * pred_list[["nugs"]]
+    pred_list[["sd2_nug"]] <- output_stats["var_Y",1] * pred_list[["sd2_nug"]]
     if(cov_mat) {
       pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
     }
@@ -844,7 +844,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   # Transform log-transformed predictions back to original scale. 
   if(exponentiate_predictions) {
     pred_list_exp <- transform_GP_pred_to_LNP(pred_list$mean, pred_list$sd2, pred_list$cov)
-    pred_list_exp[["nugs"]] <- transform_GP_pred_to_LNP(gp_pred_mean = pred_list$mean, gp_pred_sd2 = pred_list$nugs)$sd2
+    pred_list_exp[["sd2_nug"]] <- transform_GP_pred_to_LNP(gp_pred_mean = pred_list$mean, gp_pred_sd2 = pred_list$sd2_nug)$sd2
     pred_list <- pred_list_exp
   }
   
@@ -1088,16 +1088,19 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 }
 
 
-plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, log_normal = FALSE, ...) {
+plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, exponentiate_predictions = FALSE, ...) {
   
   order_pred <- order(X_pred)
   order_train <- order(X_train)
   gp_sd_pred <- sqrt(gp_var_pred)
   
   # Confidence intervals
-  if(log_normal) {
+  if(exponentiate_predictions) {
     CI_lower <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
     CI_upper <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+    transformed_predictions <- transform_GP_pred_to_LNP(gp_pred_mean = gp_mean_pred, gp_pred_sd2 = gp_var_pred)
+    gp_mean_pred <- transformed_predictions$mean
+    gp_var_pred <- transformed_predictions$sd2
   } else {
     CI_lower <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
     CI_upper <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
