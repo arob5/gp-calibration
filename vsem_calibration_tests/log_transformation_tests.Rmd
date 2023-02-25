@@ -171,7 +171,7 @@ print(theta_prior_params)
 
 ## Settings for sampling design points
 ```{r}
-N_design_points <- 10
+N_design_points <- 12
 design_alg <- "LHS"
 N_test <- 1000
 ```
@@ -189,9 +189,52 @@ plotTimeSeries(observed = data_obs[["CR"]],
 ```{r}
 
 # Design and test points
-train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE, ref_pars, 
+train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = TRUE, ref_pars, 
                                        pars_cal_sel, data_obs, PAR, output_vars = "CR", scale_X = TRUE, normalize_Y = TRUE, log_SSR = TRUE)
+```
 
+### Train and test data
+In the below plots, we observe that the SSR appears to be monotonically decreasing as a function of KEXT, and does not achieve a minimum 
+at the true value of KEXT (gray dashed vertical line). However, the large scale on the y-axis masks the fact that the curve actually does 
+achieve a minimum around 0.75, and around this minimum looks approximately quadratic. We observe that this is an issue for the log-transformed 
+data, as taking a log of a quadratic will create a funnel shape around the minimum of the quadratic. 
+
+```{r, echo = FALSE}
+test_order <- order(train_test_data$X_test)
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR")
+points(train_test_data$X_train, train_test_data$Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+y_max <- 500
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR", ylim = c(0, y_max))
+points(train_test_data$X_train, train_test_data$Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+test_order <- order(train_test_data$X_test)
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test[test_order], type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "log(SSR)", ylim = c(min(train_test_data$log_Y_test[test_order]), log(y_max)))
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+### Naively fitting on train and test data
+Here I consider fitting the GP and LNP on the training data exactly as displayed above. True values (including both the training and testing 
+data) are displayed in red, while the GP predictive mean is in blue and 95% confidence intervals in gray. 
+
+```{r}
 # Fit GP on SSR and log(SSR)
 gp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")$fit
 lnp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_train_preprocessed, "hetGP", "Gaussian")$fit
@@ -201,29 +244,43 @@ gp_pred <- predict_GP(train_test_data$X_test_preprocessed, gp_fit, "hetGP", cov_
                       output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
 lnp_pred <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
                        output_stats = train_test_data$log_output_stats, exponentiate_predictions = TRUE)
-lnp_pred_log_scale <- predict_GP(train_test_data$X_test, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
-                                 output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
-```
-
-### Train and test data
-In the below plots, we observe that the SSR appears to be monotonically decreasing as a function of KEXT, and does not achieve a minimum 
-at the true value of KEXT (gray vertical line). However, the large scale on the y-axis masks the fact that the curve actually does 
-achieve a minimum around 0.75, and around this minimum looks approximately quadratic. 
-
-```{r, echo = FALSE}
-test_order <- order(train_test_data$X_test)
-plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
-     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR")
-points(train_test_data$X_train, train_test_data$Y_train)
-abline(v = ref_pars[pars_cal_sel, "best"], col = "gray")
 ```
 
 ```{r, echo = FALSE}
-plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
-     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR", ylim = c(0, 500))
-points(train_test_data$X_train, train_test_data$Y_train)
-abline(v = ref_pars[pars_cal_sel, "best"], col = "gray")
+x_lim <- range(train_test_data$X_train)
+x_len <- x_lim[2] - x_lim[1]
+x_lim[1] <- x_lim[1] - .05 * x_len
+x_lim[2] <- x_lim[2] + .05 * x_len
+y_lim <- c(0, 1e5)
+
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2, 
+               main = "GP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = c(0, 1e5))
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2, 
+               main = "GP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", ylim = c(-200, y_max), xlim = x_lim)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = y_lim)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, 
+               lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "log(SSR)", xlim = x_lim, log_normal = TRUE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+
+
+
+
 
 
 

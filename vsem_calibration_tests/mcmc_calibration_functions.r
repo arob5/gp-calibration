@@ -843,20 +843,65 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   
   # Transform log-transformed predictions back to original scale. 
   if(exponentiate_predictions) {
-    mean_log_scale <- pred_list[["mean"]]
-    sd2_log_scale <- pred_list[["sd2"]] 
-    pred_list[["mean"]] <- exp(mean_log_scale + 0.5 * sd2_log_scale)
-    pred_list[["sd2"]] <- (exp(sd2_log_scale) - 1) * exp(2*mean_log_scale + sd2_log_scale)
-    pred_list[["nugs"]] <- (exp(pred_list[["nugs"]]) - 1) * exp(2*mean_log_scale + pred_list[["nugs"]])
-    if(cov_mat) {
-      N_obs <- length(mean_log_scale)
-      mu_mat <- matrix(mean_log_scale, nrow = N_obs, ncol = N_obs, byrow = TRUE)
-      sd2_mat <- matrix(sd2_log_scale, nrow = N_obs, ncol = N_obs, byrow = TRUE)
-      pred_list[["cov"]] <- exp(mu_mat + t(mu_mat) + 0.5 * (sd2_mat + t(sd2_mat))) * (exp(pred_list[["cov"]]) - 1)
-    }
+    pred_list_exp <- transform_GP_pred_to_LNP(pred_list$mean, pred_list$sd2, pred_list$cov)
+    pred_list_exp[["nugs"]] <- transform_GP_pred_to_LNP(gp_pred_mean = pred_list$mean, gp_pred_sd2 = pred_list$nugs)$sd2
+    pred_list <- pred_list_exp
   }
   
   return(pred_list)
+  
+}
+
+
+transform_GP_pred_to_LNP <- function(gp_pred_mean = NULL, gp_pred_sd2 = NULL, gp_pred_cov = NULL) {
+  # Transforms distribution y ~ GP to exp(y) ~ LNP. The optional arguments are predictive means, 
+  # variances, and covariance matrix from a Gaussian Process. This function will transform 
+  # these into the means, variances, and covariance matrix of the log-normal process obtained
+  # by exponentiating the Gaussian Process. The mean and either the variances or covariance matrix 
+  # must be provided, since the log-normal mean and variance depend on both the GP mean and variance. 
+  #
+  # Args:
+  #    gp_pred_mean: numeric, vector of GP mean predictions. 
+  #    gp_pred_sd2: numeric, vector of GP variance predictions. Must be ordered to correspond to 
+  #                 `gp_pred_mean`. 
+  #    gp_pred_cov: matrix, GP predicted covariance matrix. Must be ordered to correspond to 
+  #                 `gp_pred_mean`. 
+  #
+  # Returns:
+  #    list, containing the predictions obeying the distribution of the exponentiated GP. 
+  #    The list will contain named elements "mean", "sd2", and "cov". The 
+  #     element "mean" will be non-NULL, containing the vector transformed means. 
+  #    If `gp_pred_cov` is non-NULL then the element "cov" will also be non-NULL. If
+  #    `gp_pred_sd2` is non-NULL then the element "var" will also be non-NULL. 
+
+  include_sd2 <- TRUE
+  if(is.null(gp_pred_sd2)) {
+    include_sd2 <- FALSE
+    if(is.null(gp_pred_cov)) {
+      stop("Either gp_pred_sd2 or gp_pred_cov must be provided.")
+    }
+    gp_pred_sd2 <- diag(gp_pred_cov)
+  }
+  
+  output_list <- list(mean = NULL, sd2 = NULL, cov = NULL)
+  output_list[["mean"]] <- exp(gp_pred_mean + 0.5 * gp_pred_sd2)
+  
+  if(!is.null(gp_pred_cov)) {
+    N_obs <- length(gp_pred_mean)
+    mu_mat <- matrix(gp_pred_mean, nrow = N_obs, ncol = N_obs, byrow = TRUE)
+    sd2_mat <- matrix(gp_pred_sd2, nrow = N_obs, ncol = N_obs, byrow = TRUE)
+    output_list[["cov"]] <- exp(mu_mat + t(mu_mat) + 0.5 * (sd2_mat + t(sd2_mat))) * (exp(gp_pred_cov) - 1)
+  }
+  
+  if(include_sd2) {
+    if(!is.null(gp_pred_cov)) {
+      output_list[["sd2"]] <- diag(output_list[["cov"]])
+    } else {
+      output_list[["sd2"]] <- (exp(gp_pred_sd2) - 1) * exp(2*gp_pred_mean + gp_pred_sd2)
+    }
+  }
+  
+  return(output_list)
   
 }
 
@@ -1043,15 +1088,24 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 }
 
 
-plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred) {
+plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, log_normal = FALSE, ...) {
   
   order_pred <- order(X_pred)
   order_train <- order(X_train)
   gp_sd_pred <- sqrt(gp_var_pred)
   
-  plot(X_pred[order_pred], y_pred[order_pred] + 2*gp_sd_pred[order_pred], type = "l", col = "gray")
-  lines(X_pred[order_pred], y_pred[order_pred] - 2*gp_sd_pred[order_pred], col = "gray")
-  lines(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red")
+  # Confidence intervals
+  if(log_normal) {
+    CI_lower <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+  } else {
+    CI_lower <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+  }
+  
+  plot(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red", ...)
+  lines(X_pred[order_pred], CI_lower[order_pred], col = "gray")
+  lines(X_pred[order_pred], CI_upper[order_pred], col = "gray")
   points(X_train[order_train], y_train[order_train], col = "red")
   lines(X_pred[order_pred], gp_mean_pred[order_pred], type = "l", col = "blue")
   

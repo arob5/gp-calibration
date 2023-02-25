@@ -191,7 +191,7 @@ gp_pred <- predict_GP(train_test_data$X_test_preprocessed, gp_fit, "hetGP", cov_
                       output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
 lnp_pred <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
                        output_stats = train_test_data$log_output_stats, exponentiate_predictions = TRUE)
-lnp_pred_log_scale <- predict_GP(train_test_data$X_test, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+lnp_pred_log_scale <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
                                  output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
 ```
 
@@ -201,11 +201,15 @@ lnp_pred_log_scale <- predict_GP(train_test_data$X_test, lnp_fit, "hetGP", cov_m
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2)
 ```
 
-### Modeling log(SSR)
+### Modeling log(SSR) (transformed to original scale)
 ```{r}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2)
 ```
 
+### Modeling log(SSR) (plot on log scale)
+```{r}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, lnp_pred_log_scale$mean, lnp_pred_log_scale$sd2)
+```
 
 
 
