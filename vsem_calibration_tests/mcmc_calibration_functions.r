@@ -964,10 +964,13 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   # Pre-process testing input data
   X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
   
+  # Pre-process testing output data
+  Y_test_preprocessed <- normalize_output_data(Y = Y_test, output_stats = GP_data_preprocessed$output_stats)
   
   output_list <- list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
                       X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
-                      Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test, 
+                      Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test,
+                      Y_test_preprocessed = Y_test_preprocessed,
                       input_bounds = GP_data_preprocessed$input_bounds, 
                       output_stats = GP_data_preprocessed$output_stats)
   
@@ -976,6 +979,7 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
     output_list[["log_Y_train"]] <- log(output_list$Y_train)
     output_list[["log_Y_test"]] <- log(output_list$Y_test)
     output_list[c("log_Y_train_preprocessed", "log_output_stats")] <- prep_GP_training_data(Y = output_list$log_Y_train, normalize_Y = TRUE)[c("Y", "output_stats")]
+    output_list[["log_Y_test_preprocessed"]] <- normalize_output_data(Y = output_list$log_Y_test, output_stats = output_list$log_output_stats)
   }
   
   return(output_list)
@@ -1088,7 +1092,7 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 }
 
 
-plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, exponentiate_predictions = FALSE, ...) {
+plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, exponentiate_predictions = FALSE, cst_shift = 0, ...) {
   
   order_pred <- order(X_pred)
   order_train <- order(X_train)
@@ -1107,10 +1111,10 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
   }
   
   plot(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red", ...)
-  lines(X_pred[order_pred], CI_lower[order_pred], col = "gray")
-  lines(X_pred[order_pred], CI_upper[order_pred], col = "gray")
+  lines(X_pred[order_pred], CI_lower[order_pred] - cst_shift, col = "gray")
+  lines(X_pred[order_pred], CI_upper[order_pred] - cst_shift, col = "gray")
   points(X_train[order_train], y_train[order_train], col = "red")
-  lines(X_pred[order_pred], gp_mean_pred[order_pred], type = "l", col = "blue")
+  lines(X_pred[order_pred], gp_mean_pred[order_pred] - cst_shift, type = "l", col = "blue")
   
 }
 

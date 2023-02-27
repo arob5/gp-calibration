@@ -258,6 +258,7 @@ plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X
 abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 
+
 ```{r, echo = FALSE}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2, 
                main = "GP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", ylim = c(-200, y_max), xlim = x_lim)
@@ -271,9 +272,54 @@ abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 
 ```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", ylim = c(-100, 1000), xlim = x_lim, exponentiate_predictions = TRUE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
 plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, 
                lnp_pred$mean, lnp_pred$sd2, 
-               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "log(SSR)", xlim = x_lim, log_normal = TRUE)
+               main = "LNP Predictions vs. True Values on log scale", xlab = "KEXT", ylab = "log(SSR)", xlim = x_lim, exponentiate_predictions = FALSE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+### Shifting SSR data away from 0
+I now consider flattening out the funnel by somewhat arbitrarily adding a positive constant to the SSR before log-transforming the data. 
+
+```{r}
+cst_shift <- 1e3
+plot(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order]), type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+lines(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order] + cst_shift), 
+      col = "red", lty = "dashed")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+points(train_test_data$X_train, log(train_test_data$Y_train + cst_shift), col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r}
+# Fit GP on log(SSR) shifted data
+train_test_data[c("log_Y_train_shifted_preprocessed", "log_shifted_output_stats")] <- prep_GP_training_data(Y = log(train_test_data$Y_train + cst_shift), normalize_Y = TRUE)[c("Y", "output_stats")]
+lnp_fit_shifted <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_train_shifted_preprocessed, "hetGP", "Gaussian")$fit
+
+# Predict with GPs
+lnp_pred_shifted <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit_shifted, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                               output_stats = train_test_data$log_shifted_output_stats, exponentiate_predictions = FALSE)
+```
+
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred_shifted$mean, lnp_pred_shifted$sd2, 
+               main = "LNP Predictions vs. True Values, Shifted Data", xlab = "KEXT", ylab = "SSR", 
+               xlim = x_lim, ylim = y_lim, exponentiate_predictions = TRUE, cst_shift = cst_shift)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred_shifted$mean, lnp_pred_shifted$sd2, 
+               main = "LNP Predictions vs. True Values, Fit on Shifted Data", xlab = "KEXT", ylab = "SSR", 
+               xlim = x_lim, ylim = c(0, y_max), exponentiate_predictions = TRUE, cst_shift = cst_shift)
 abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 
@@ -287,17 +333,6 @@ abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 
 
 
-### Modeling SSR
-```{r}
-plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2)
-```
 
-### Modeling log(SSR) (transformed to original scale)
-```{r}
-plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2)
-```
 
-### Modeling log(SSR) (plot on log scale)
-```{r}
-plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, lnp_pred_log_scale$mean, lnp_pred_log_scale$sd2)
-```
+
