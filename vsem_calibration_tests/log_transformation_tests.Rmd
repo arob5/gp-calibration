@@ -8,8 +8,25 @@ date: '2023-02-25'
 In this document, I investigate the effect of log-transforming the output variable when using Gaussian Processes (GPs) to emulate a deterministic function. While log-transformations are common in regression settings to correct for distributional assumptions in the error model, it is less obvious why one would want to apply transformations in the deterministic setting, when there is no underlying distribution. The desire to do so here stems from the problem of emulating the squared L2 error between a deterministic model and field observations, so the log-transformation ensures that predictions of L2 error are non-negative. Details on the deterministic model used in these tests and the emulation framework are provided below. 
 
 ## Background Literature 
-I have found little literature on the effect of transformations of the response variable in the deterministic setting, aside from a 2020 paper by Lin and Joseph titled "Transformation and Additivity in Gaussian Processes".
+There is a small body of literature on the effect of transformations of the response variable in the deterministic setting. I also discuss papers that more generally discuss loss/likelihood emulation. 
 
+* __Transformation and Additivity in Gaussian Processes (Lin and Joseph, 2020)__
+The authors note that log-transformations are often used to ensure non-negativity, but often at the cost of accuracy. They consider a transformation of the response variable parameterized as a Box-Cox transform and optimize to choose the transformation. 
+* __Bayesian Quadrature for Ratios (Osborne et al)__
+Osborne et al use GP priors on log-likelihoods. They also consider correlations between shared terms in the numerator and denominator of a ratio, which could also be relevant in the accept-reject Metropolis step for our problem.  
+* __Active Learning of Model Evidence Using Bayesian Quadrature (Osborne et al)__
+An application of the method from the previous Osborne et al paper. 
+* __Nonnegativity-Enforced Gaussian Process Regression (Pensoneault et al, 2020)__
+There has been a variety of work on constraining GPs to satisfy inequality constraints. Most approaches destroy the Gaussian posterior, but Pensoneault et al's approach maintains the Gaussian posterior. Their method allows one to guarantee that the probability that the GP predictive mean is 
+negative is below some user-defined threshold. Fitting the GP now requires an optimization procedure with inequality constraints. 
+* __Warped Gaussian Processes (Snelson et al)__ 
+Considers non-linear transformations of the response variable, which yields non-Gaussian noise. 
+* __Bayesian nonparametric inference in mechanistic models of complex biological systems (Noe, 2019 PhD Thesis)__
+The most comprehensive comparison of output emulation vs. loss emulation that I have found. Their setting appears to be a bit simpler due to the fact that 1.) their ultimate goal is optimization, not sampling and 2.) they do not consider estimation of likelihood parameters. Nonetheless, this is a very helpful resource that specifically considers the question of emulated RSS. Noe does not appear to address the fact that the GP is not constrained to be non-negative. 
+* __Gaussian process emulation to accelerate parameter estimation in a mechanical model of the left ventricle: a critical step towards clinical end-user relevance (Noe et al, 2019)__
+Uses ideas from the above thesis, and presents a nice discussion of different emulation options including output emulation vs. loss emulation, different options for multi-output simulations, and different approximate GP methods. 
+ 
+ 
 ## Ecosystem Model
 The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that models carbon dynamics between three pools (above-ground vegetation, below-ground vegetation, 
 and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
@@ -108,8 +125,6 @@ emulator_settings <- data.frame(gp_lib = c("mlegp", "mlegp", "hetGP", "hetGP"),
                                 kernel = "Gaussian", 
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
-                                
-print(emulator_settings)
 ```
 
 
@@ -176,7 +191,7 @@ design_alg <- "LHS"
 N_test <- 1000
 ```
 
-# One-Dimensional Example
+# Single-Output Example: Below-ground biomass
 I begin by considering a single output (CR, below-ground biomass) and emulate the response as a function of a single parameter 
 (KEXT, the extinction coefficient in the Beer-Lambert law). 
 
@@ -197,7 +212,7 @@ train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_para
 In the below plots, we observe that the SSR appears to be monotonically decreasing as a function of KEXT, and does not achieve a minimum 
 at the true value of KEXT (gray dashed vertical line). However, the large scale on the y-axis masks the fact that the curve actually does 
 achieve a minimum around 0.75, and around this minimum looks approximately quadratic. We observe that this is an issue for the log-transformed 
-data, as taking a log of a quadratic will create a funnel shape around the minimum of the quadratic. 
+data, as taking a log of a quadratic will create a funnel shape around the minimum with a steep gradient. 
 
 ```{r, echo = FALSE}
 test_order <- order(train_test_data$X_test)
@@ -232,7 +247,7 @@ abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 
 ### Naively fitting on train and test data
 Here I consider fitting the GP and LNP on the training data exactly as displayed above. True values (including both the training and testing 
-data) are displayed in red, while the GP predictive mean is in blue and 95% confidence intervals in gray. 
+data) are displayed in red, while the GP predictive mean is in blue and 95% confidence intervals in gray. Given the plots of the log-transformed data above, we certainly do not expect the LNP model to work well here. I also expect issues with the GP model, which has to choose a single lengthscale across the entire domain, which appears to be overly restrictive given the variation of the smoothness of the function over the domain. 
 
 ```{r}
 # Fit GP on SSR and log(SSR)
@@ -285,7 +300,9 @@ abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 
 ### Shifting SSR data away from 0
-I now consider flattening out the funnel by somewhat arbitrarily adding a positive constant to the SSR before log-transforming the data. 
+I now consider flattening out the funnel by somewhat arbitrarily adding a positive constant to the SSR before log-transforming the data. In particular, 
+I train a GP emulator on 
+$$\tilde{L}_{\text{CR}}(\theta) := \log(T_{\text{CR}}(\theta) + 1000)$$
 
 ```{r}
 cst_shift <- 1e3
@@ -323,9 +340,28 @@ plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X
 abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
 ```
 
+### Alternative scaling of SSR prior to taking log
+Adding $1000$ to the SSR before taking the log proved to work well for this specific case, but was the result of tinkering with the additive constant so that the transformed data looked reasonably smooth. I now consider an alterntive scaling more amenable to automation that was employed by Osborne et al in their Bayesian quadrature papers. 
+$$\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{100\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)$$
+The largest design point now satisfies 
+$$\max_i \tilde{L}_{\text{CR}}(\theta_i) = \log(1.01) \approx .0099$$
+and the remaining $\tilde{L}_{\text{CR}}(\theta_i)$ will assume values between $0$ and $\log(1.01)$.
 
 
 
+
+
+## Questions and Next Steps
+
+* Emualating non-negative functions:
+    + Shift/scale data in some way and fit GP
+    + Shift/scale data and fit LNP
+    + Consider other transformations other than log
+* Testing methodology: 
+    + How many cycles of the ODE to use when generating synthetic data? 
+    + Distribution of predictive error as the design input points (X) are varied. 
+    + Distribution of the predictive error as the observed response data (Y) is varied. 
+    + Error metrics to consider: RMSE, RMSE weighted by GP predictive standard deviations, induced error on likelihood.
 
 
 
