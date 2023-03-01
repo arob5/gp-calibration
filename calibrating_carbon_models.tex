@@ -61,10 +61,9 @@
 \tableofcontents
 \newpage
 
-\section{General Setting: Computer Model Calibration}
-TODO
-
 \section{Motivating Example: Very Simple Ecosystem Model}
+
+\subsection{Model Description}
 The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
 a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
 in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
@@ -115,6 +114,26 @@ Once the parameters $\theta$ and a specified number of time steps (days) $n$ are
 observations for NEE, $C_v$, $C_r$, and $C_s$. The forward model $f$ in this setting is given by an execution of the ODE solve, and represents
 the mapping from the inputs to these four resulting time series. A more 
 detailed discussion of the forward model is given in the following section. 
+
+\subsection{Numerical Solution}
+
+\section{General Formulation: Calibrating Black-box Computer Models}
+The problem of model calibration is that of tuning the values of $\theta$ such that the predictions of the computer model agree with observed data. Before formally defining this problem, we must be clear about what we actually 
+mean by ``computer model''. Since we are focusing on the problem of learning $\theta$, we are interested in the map from $\theta$ to the solution of the ODE system. In reality, only a discretized solution is available to us, representing 
+a numerical approximation to the true underlying solution. As shown above, the map from $\theta$ to the discretized VSEM solution can be written as 
+\[\textbf{TODO}\]
+which represents a composition of operators that each advance a single time step. In general, we might view the one-step forward map defined by an ODE solve as 
+\begin{align*}
+z_{t + 1} = g(z_t, \theta)
+\end{align*}
+where $z_t$ is a function of the forcing variable. It is entirely reasonable to define $g$ to be the computer model, as the one-step dynamics are time-independent. An alternative approach is to view the computer model as a function from 
+the calibration parameters and model drivers to the final outputs
+\[\textbf{TODO}\]
+This \textit{black-box} approach is the one we will consider here. The computer model is thus a function from model drivers and parameters to its final predictions
+\[f: \R^T \times \R^d \to \R^{T \times p}\]
+where $p$ is the number of output variables (e.g., NEE, CR). We will typically absorb the drivers into the function $f$, thus viewing $f$ as a parameter-to-output map $f: \R^d \to \R^{T \times p}$. While not explicit in the notation, it is important 
+to remember that $f$ depends on the model drivers so, for example, if we find an approximation of $f$, then this approximation can not be used to approximate the parameter-to-output map on a set of new model driver data. 
+
 
 \subsection{Relation to the General Computer Model Calibration Setting}
 We now consider how ecosystem models such as VSEM relate to, and differ from, the KOH formulation. As previously discussed, the KOH model assumes that
