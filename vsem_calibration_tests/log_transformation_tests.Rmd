@@ -1,6 +1,8 @@
 ---
 title: "Log-Normal Process Emulator of Squared Error"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 date: '2023-02-25'
 ---
 
@@ -345,11 +347,92 @@ Adding $1000$ to the SSR before taking the log proved to work well for this spec
 $$\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{100\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)$$
 The largest design point now satisfies 
 $$\max_i \tilde{L}_{\text{CR}}(\theta_i) = \log(1.01) \approx .0099$$
-and the remaining $\tilde{L}_{\text{CR}}(\theta_i)$ will assume values between $0$ and $\log(1.01)$.
+and the remaining design points $\tilde{L}_{\text{CR}}(\theta_i)$ will assume values between $0$ and $\log(1.01)$. The test points can still assume values outside of this range. The log-transformed data will look very similar to the data on the linear scale - just on a smaller scale - since
+$$\log\left(1 + \frac{y}{M}\right) = \frac{y}{M} - \frac{y^2}{2M^2} + \frac{y^3}{3M^3} - \cdots \approx \frac{y}{M}$$
+when $y$ is small and $M$ is large. Therefore, this transformation essentially results in the same emulation problem as the original, untransformed GP emulation of SSR, but will ensure non-negativity when transforming back to the original scale. This isn't necessarily a good thing, as the original GP fit performed poorly in regions where the gradient was large. Perhaps one approach is to combine the two scalings, first performing a multiplicative scaling on SSR to achieve a desired scale, then perform an additive scaling (something larger than 1) to yield a smoother surface.
+
+```{r, echo = FALSE}
+max_SSR <- max(train_test_data$Y_train)
+train_test_data$log_Y_train_shift2 <- log(train_test_data$Y_train / (max_SSR/100) + 1)
+train_test_data$log_Y_test_shift2 <- log(train_test_data$Y_test / (max_SSR/100) + 1)
+```
 
 
+The plots below consider a scaling 
+$$\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{0.001\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)$$
+which divides SSR by `r max_SSR/100` rather than `r max_SSR*100` in the current example. 
 
 
+```{r}
+plot(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order]), type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)", ylim = c(-7, 15))
+lines(train_test_data$X_test[test_order], train_test_data$log_Y_test_shift2[test_order], 
+      col = "red", lty = "dashed")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+points(train_test_data$X_train, train_test_data$log_Y_train_shift2, col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r}
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test_shift2[test_order], type = "l", col = "red", lty = "dashed",
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+points(train_test_data$X_train, train_test_data$log_Y_train_shift2, col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+# Investigating the SSR for the other output variables 
+
+```{r}
+train_test_data_other <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = TRUE, ref_pars, 
+                                             pars_cal_sel, data_obs, PAR, output_vars = c("NEE", "Cv", "Cs"), scale_X = TRUE, normalize_Y = TRUE, log_SSR = TRUE)
+```
+
+
+## Net Ecosystem Exchange (NEE)
+```{r, echo = FALSE}
+test_order <- order(train_test_data_other$X_test)
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "NEE"], type = "l", col = "red", 
+     main = "GP design and validation points: NEE", xlab = "KEXT", ylab = "NEE SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "NEE"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "NEE"], type = "l", col = "red", 
+     main = "GP design and validation points: NEE", xlab = "KEXT", ylab = "NEE log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "NEE"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+## Above-Ground Vegetation (Cv)
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "Cv"], type = "l", col = "red", 
+     main = "GP design and validation points: Cv", xlab = "KEXT", ylab = "Cv SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "Cv"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "Cv"], type = "l", col = "red", 
+     main = "GP design and validation points: Cv", xlab = "KEXT", ylab = "Cv log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "Cv"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+## Soil (Cs)
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "Cs"], type = "l", col = "red", 
+     main = "GP design and validation points: Cs", xlab = "KEXT", ylab = "Cs SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "Cs"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "Cs"], type = "l", col = "red", 
+     main = "GP design and validation points: Cs", xlab = "KEXT", ylab = "Cs log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "Cs"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
 
 ## Questions and Next Steps
 

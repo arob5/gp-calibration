@@ -1,0 +1,570 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{lmodern}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same} % disable monospaced font for URLs
+\hypersetup{
+  pdftitle={Log-Normal Process Emulator of Squared Error},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Log-Normal Process Emulator of Squared Error}
+\author{}
+\date{\vspace{-2.5em}2023-02-25}
+
+\begin{document}
+\maketitle
+
+\hypertarget{introduction}{%
+\section{Introduction}\label{introduction}}
+
+In this document, I investigate the effect of log-transforming the
+output variable when using Gaussian Processes (GPs) to emulate a
+deterministic function. While log-transformations are common in
+regression settings to correct for distributional assumptions in the
+error model, it is less obvious why one would want to apply
+transformations in the deterministic setting, when there is no
+underlying distribution. The desire to do so here stems from the problem
+of emulating the squared L2 error between a deterministic model and
+field observations, so the log-transformation ensures that predictions
+of L2 error are non-negative. Details on the deterministic model used in
+these tests and the emulation framework are provided below.
+
+\hypertarget{background-literature}{%
+\subsection{Background Literature}\label{background-literature}}
+
+There is a small body of literature on the effect of transformations of
+the response variable in the deterministic setting. I also discuss
+papers that more generally discuss loss/likelihood emulation.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Transformation and Additivity in Gaussian Processes (Lin and
+  Joseph, 2020)} The authors note that log-transformations are often
+  used to ensure non-negativity, but often at the cost of accuracy. They
+  consider a transformation of the response variable parameterized as a
+  Box-Cox transform and optimize to choose the transformation.
+\item
+  \textbf{Bayesian Quadrature for Ratios (Osborne et al)} Osborne et al
+  use GP priors on log-likelihoods. They also consider correlations
+  between shared terms in the numerator and denominator of a ratio,
+  which could also be relevant in the accept-reject Metropolis step for
+  our problem.\\
+\item
+  \textbf{Active Learning of Model Evidence Using Bayesian Quadrature
+  (Osborne et al)} An application of the method from the previous
+  Osborne et al paper.
+\item
+  \textbf{Nonnegativity-Enforced Gaussian Process Regression
+  (Pensoneault et al, 2020)} There has been a variety of work on
+  constraining GPs to satisfy inequality constraints. Most approaches
+  destroy the Gaussian posterior, but Pensoneault et al's approach
+  maintains the Gaussian posterior. Their method allows one to guarantee
+  that the probability that the GP predictive mean is negative is below
+  some user-defined threshold. Fitting the GP now requires an
+  optimization procedure with inequality constraints.
+\item
+  \textbf{Warped Gaussian Processes (Snelson et al)} Considers
+  non-linear transformations of the response variable, which yields
+  non-Gaussian noise.
+\item
+  \textbf{Bayesian nonparametric inference in mechanistic models of
+  complex biological systems (Noe, 2019 PhD Thesis)} The most
+  comprehensive comparison of output emulation vs.~loss emulation that I
+  have found. Their setting appears to be a bit simpler due to the fact
+  that 1.) their ultimate goal is optimization, not sampling and 2.)
+  they do not consider estimation of likelihood parameters. Nonetheless,
+  this is a very helpful resource that specifically considers the
+  question of emulated RSS. Noe does not appear to address the fact that
+  the GP is not constrained to be non-negative.
+\item
+  \textbf{Gaussian process emulation to accelerate parameter estimation
+  in a mechanical model of the left ventricle: a critical step towards
+  clinical end-user relevance (Noe et al, 2019)} Uses ideas from the
+  above thesis, and presents a nice discussion of different emulation
+  options including output emulation vs.~loss emulation, different
+  options for multi-output simulations, and different approximate GP
+  methods.
+\end{itemize}
+
+\hypertarget{ecosystem-model}{%
+\subsection{Ecosystem Model}\label{ecosystem-model}}
+
+The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model
+that models carbon dynamics between three pools (above-ground
+vegetation, below-ground vegetation, and soil organic matter) with one
+forcing variable (PAR - photosynthetically active radiation). The model
+outputs time series for four output variables: the three carbon pools
+and Net Ecosystem Exchange (NEE). I represent the model mathematically
+as \[f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}\]
+where \(\theta \in \mathcal{D}\) denotes the calibration parameters,
+\(n\) the length of the output time series, and \(p\) the number of
+output variables. We can consider \(p = 4\) (NEE, 3 carbon pools) or
+choose to focus on a subset of the outputs (e.g.~just NEE). I utilize
+the notation \(f(i, j, \theta) := [f(\theta)]_{ij}\) to refer to the
+scalar output at the \(i^{th}\) time step of the \(j^{th}\) output
+variable.
+
+\hypertarget{statistical-model-and-likelihood-emulation}{%
+\subsection{Statistical Model and Likelihood
+Emulation}\label{statistical-model-and-likelihood-emulation}}
+
+\hypertarget{likelihood-assumptions}{%
+\subsubsection{Likelihood Assumptions}\label{likelihood-assumptions}}
+
+I simulate data by first simulating a PAR time series, running the
+forward model \(f\) using the simulated PAR forcing data and some true
+fixed values \(\theta^*\) of the calibration parameters. I add Gaussian
+noise to the resulting outputs, resulting in the data-generating process
+\[y_{ij} = f(i, j, \theta) + \epsilon_{ij}\] where \(y_{ij}\) denotes
+the simualted field data observation of the \(j^{th}\) output variable
+at the \(i^{th}\) time step. This document considers a basic independent
+Gaussian error structure, such that
+\(\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})\),
+allowing for the magnitude of the noise to be different across the
+different output variables. In other words, independence is assumed
+across time and outputs. Letting \(Y \in \mathbb{R}^{n \times p}\)
+collect all of the field data observations and
+\(\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}\),
+these assumptions imply the likelihood
+\[p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})\]
+I assume a well-specified model throughout this document, so the above
+likelihood corresponds to the true data-generating process as well as
+the statistical model used in the emulation step.
+
+\hypertarget{likelihood-emulation}{%
+\subsubsection{Likelihood Emulation}\label{likelihood-emulation}}
+
+With regard to the problem of MCMC-based parameter calibration, the
+model outputs \(f(i, j, \theta)\) appear only as a function of the
+likelihood \(p(Y|\theta, \Sigma_\epsilon)\). Therefore, to reduce the
+dimensionality of the emulation problem, we may consider emulating the
+univariate lilkelihood surface \(p(Y|\theta, \Sigma_\epsilon)\) as a
+function of \(\theta\). In fact, given this simple product-form of the
+likelihood we actually need only emulate a sufficient statistic of the
+likelihood. Indeed, the log-likelihood may be written as
+\[\log p(Y|\theta, \Sigma_\epsilon) = C - \frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{1}{\sigma^2_{\epsilon_j}}\sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2 \right]\]
+where \(C\) is a constant. We can then define
+\(T_j(\theta) := \sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2\), the
+squared \(\ell_2\) error for the \(j^{\text{th}}\) output, viewed as a
+function of \(\theta\) (though also implicitly dependent on \(Y_j\)).
+The unnormalized log-likelihod is thus given by
+\[\tilde{\ell}_Y(\theta, \Sigma_\epsilon) := -\frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{T_j(\theta)}{\sigma^2_{\epsilon_j}}\right]\]
+Conveniently, \(T_j(\theta)\) is not a function of \(\Sigma_\epsilon\).
+Thus, we may emulate \(\tilde{\ell}_Y(\theta, \Sigma_\epsilon)\) by
+independently emulating \(T_1(\theta), \dots, T_p(\theta)\). Therefore,
+during a Metropolis-within-Gibbs MCMC calibration scheme, an approximate
+likelihood evaluation may be derived from the emulators for the \(T_j\),
+without needing to emulate the likelihood as a function of
+\(\Sigma_\epsilon\) as well.
+
+\hypertarget{gaussian-process-emulation-details}{%
+\subsubsection{Gaussian Process Emulation
+Details}\label{gaussian-process-emulation-details}}
+
+Given the above derivations, we can fit \(p\) independent GP emulators,
+one for each output. However, note that the \(T_j\) map to the
+non-negative real numbers, while a GP is in general not constrained to
+yield non-negative predictions. We thus arrive at the motivation to
+log-transform the response and instead emulate
+\(L_j(\theta) := \log T_j(\theta)\). The emulation model thus becomes
+\[L_j(\cdot) \sim \mathcal{GP}(\mu_j, k_j(\cdot, \cdot))\] where each
+output is emulated independently. Equivalently, we are modeling the
+squared error as a log-normal process (LNP)
+\[T_j(\cdot) \sim \mathcal{LNP}(\mu_j, k_j(\cdot, \cdot))\] We assume
+constant GP means \(\mu_j\) and exponentiated quadratic kernels
+\[k_j(\theta, \theta^\prime) = \alpha_j^2 \exp\left\{-\frac{1}{2}\sum_{r = 1}^{d} \left(\frac{\theta_r - \theta_r^\prime}{(l_{j})_r}\right)^2 \right\} + \gamma_j^2\delta_{\theta, \theta^\prime}\]
+The structure of the kernel is the same for each output variable, but
+the estimation of the kernel parameters (marginal variance
+\(\alpha_j^2\), lengthscales \((\ell_j)_{r = 1}^{d}\), and nugget
+variance \(\gamma_j^2\)) is performed via MLE independently for each
+output. Note that the \(L_j\) are deterministic functions, so we will
+typically fix the \(\gamma_j^2\) to a small value for numerical
+stability, rather than estimating its value from data. The notation
+\(\delta_{\theta, \theta^\prime}\) is meant to indicate that \(\delta\)
+returns one only if the index of two inputs is the same (not the value
+of the inputs), meaning that \(\gamma_j^2\) is only added to the
+diagonal of the resulting kernel matrix. The specific parameterization
+of the exponentiated quadratic kernel depends on the specific GP package
+used.
+
+\hypertarget{model-parameters-and-synthetic-data-generation}{%
+\section{Model Parameters and Synthetic Data
+Generation}\label{model-parameters-and-synthetic-data-generation}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{random\_seed }\OtherTok{\textless{}{-}} \DecValTok{5}
+\FunctionTok{set.seed}\NormalTok{(random\_seed)}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{true-parameters}{%
+\subsection{True Parameters}\label{true-parameters}}
+
+\hypertarget{calibration-parameters-theta}{%
+\subsubsection{\texorpdfstring{Calibration Parameters
+(\(\theta\))}{Calibration Parameters (\textbackslash theta)}}\label{calibration-parameters-theta}}
+
+\begin{verbatim}
+##            best lower upper calibrate
+## KEXT      0.500 2e-01 1e+00      TRUE
+## LAR       1.500 2e-01 3e+00     FALSE
+## LUE       0.002 5e-04 4e-03     FALSE
+## GAMMA     0.400 2e-01 6e-01     FALSE
+## tauV   1440.000 5e+02 3e+03     FALSE
+## tauS  27370.000 4e+03 5e+04     FALSE
+## tauR   1440.000 5e+02 3e+03     FALSE
+## Av        0.500 2e-01 1e+00     FALSE
+## Cv        3.000 0e+00 4e+02     FALSE
+## Cs       15.000 0e+00 1e+03     FALSE
+## Cr        3.000 0e+00 2e+02     FALSE
+\end{verbatim}
+
+\hypertarget{likelihood-parameters-sigma_epsilon}{%
+\subsubsection{\texorpdfstring{Likelihood Parameters
+(\(\Sigma_\epsilon\))}{Likelihood Parameters (\textbackslash Sigma\_\textbackslash epsilon)}}\label{likelihood-parameters-sigma_epsilon}}
+
+\begin{verbatim}
+##     NEE Cv Cs CR
+## NEE   4  0  0  0
+## Cv    0  4  0  0
+## Cs    0  0  4  0
+## CR    0  0  0  4
+\end{verbatim}
+
+\hypertarget{runing-model-at-design-points}{%
+\section{Runing Model at Design
+Points}\label{runing-model-at-design-points}}
+
+\hypertarget{priors-on-calibration-parameters}{%
+\subsection{Priors on Calibration
+Parameters}\label{priors-on-calibration-parameters}}
+
+\begin{verbatim}
+##         dist param1 param2
+## KEXT Uniform    0.2      1
+\end{verbatim}
+
+\hypertarget{settings-for-sampling-design-points}{%
+\subsection{Settings for sampling design
+points}\label{settings-for-sampling-design-points}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{N\_design\_points }\OtherTok{\textless{}{-}} \DecValTok{12}
+\NormalTok{design\_alg }\OtherTok{\textless{}{-}} \StringTok{"LHS"}
+\NormalTok{N\_test }\OtherTok{\textless{}{-}} \DecValTok{1000}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{single-output-example-below-ground-biomass}{%
+\section{Single-Output Example: Below-ground
+biomass}\label{single-output-example-below-ground-biomass}}
+
+I begin by considering a single output (CR, below-ground biomass) and
+emulate the response as a function of a single parameter (KEXT, the
+extinction coefficient in the Beer-Lambert law).
+
+\includegraphics{log_transformation_tests_files/figure-latex/CR_plot-1.pdf}
+
+\hypertarget{fitting-gp-and-lnp-emulators-for-t_textcrcdot}{%
+\subsection{\texorpdfstring{Fitting GP and LNP emulators for
+\(T_{\text{CR}}(\cdot)\)}{Fitting GP and LNP emulators for T\_\{\textbackslash text\{CR\}\}(\textbackslash cdot)}}\label{fitting-gp-and-lnp-emulators-for-t_textcrcdot}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Design and test points}
+\NormalTok{train\_test\_data }\OtherTok{\textless{}{-}} \FunctionTok{get\_train\_test\_data}\NormalTok{(N\_design\_points, N\_test, theta\_prior\_params, }\AttributeTok{joint =} \ConstantTok{TRUE}\NormalTok{, }\AttributeTok{extrapolate =} \ConstantTok{TRUE}\NormalTok{, ref\_pars, }
+\NormalTok{                                       pars\_cal\_sel, data\_obs, PAR, }\AttributeTok{output\_vars =} \StringTok{"CR"}\NormalTok{, }\AttributeTok{scale\_X =} \ConstantTok{TRUE}\NormalTok{, }\AttributeTok{normalize\_Y =} \ConstantTok{TRUE}\NormalTok{, }\AttributeTok{log\_SSR =} \ConstantTok{TRUE}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{train-and-test-data}{%
+\subsubsection{Train and test data}\label{train-and-test-data}}
+
+In the below plots, we observe that the SSR appears to be monotonically
+decreasing as a function of KEXT, and does not achieve a minimum at the
+true value of KEXT (gray dashed vertical line). However, the large scale
+on the y-axis masks the fact that the curve actually does achieve a
+minimum around 0.75, and around this minimum looks approximately
+quadratic. We observe that this is an issue for the log-transformed
+data, as taking a log of a quadratic will create a funnel shape around
+the minimum with a steep gradient.
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-6-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-7-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-8-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-9-1.pdf}
+
+\hypertarget{naively-fitting-on-train-and-test-data}{%
+\subsubsection{Naively fitting on train and test
+data}\label{naively-fitting-on-train-and-test-data}}
+
+Here I consider fitting the GP and LNP on the training data exactly as
+displayed above. True values (including both the training and testing
+data) are displayed in red, while the GP predictive mean is in blue and
+95\% confidence intervals in gray. Given the plots of the
+log-transformed data above, we certainly do not expect the LNP model to
+work well here. I also expect issues with the GP model, which has to
+choose a single lengthscale across the entire domain, which appears to
+be overly restrictive given the variation of the smoothness of the
+function over the domain.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Fit GP on SSR and log(SSR)}
+\NormalTok{gp\_fit }\OtherTok{\textless{}{-}} \FunctionTok{fit\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train\_preprocessed, train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_train\_preprocessed, }\StringTok{"hetGP"}\NormalTok{, }\StringTok{"Gaussian"}\NormalTok{)}\SpecialCharTok{$}\NormalTok{fit}
+\NormalTok{lnp\_fit }\OtherTok{\textless{}{-}} \FunctionTok{fit\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train\_preprocessed, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train\_preprocessed, }\StringTok{"hetGP"}\NormalTok{, }\StringTok{"Gaussian"}\NormalTok{)}\SpecialCharTok{$}\NormalTok{fit}
+
+\CommentTok{\# Predict with GPs}
+\NormalTok{gp\_pred }\OtherTok{\textless{}{-}} \FunctionTok{predict\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test\_preprocessed, gp\_fit, }\StringTok{"hetGP"}\NormalTok{, }\AttributeTok{cov\_mat =} \ConstantTok{FALSE}\NormalTok{, }\AttributeTok{denormalize\_predictions =} \ConstantTok{TRUE}\NormalTok{,}
+                      \AttributeTok{output\_stats =}\NormalTok{ train\_test\_data}\SpecialCharTok{$}\NormalTok{output\_stats, }\AttributeTok{exponentiate\_predictions =} \ConstantTok{FALSE}\NormalTok{)}
+\NormalTok{lnp\_pred }\OtherTok{\textless{}{-}} \FunctionTok{predict\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test\_preprocessed, lnp\_fit, }\StringTok{"hetGP"}\NormalTok{, }\AttributeTok{cov\_mat =} \ConstantTok{FALSE}\NormalTok{, }\AttributeTok{denormalize\_predictions =} \ConstantTok{TRUE}\NormalTok{,}
+                       \AttributeTok{output\_stats =}\NormalTok{ train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_output\_stats, }\AttributeTok{exponentiate\_predictions =} \ConstantTok{FALSE}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-11-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-12-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-13-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-14-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-15-1.pdf}
+
+\hypertarget{shifting-ssr-data-away-from-0}{%
+\subsubsection{Shifting SSR data away from
+0}\label{shifting-ssr-data-away-from-0}}
+
+I now consider flattening out the funnel by somewhat arbitrarily adding
+a positive constant to the SSR before log-transforming the data. In
+particular, I train a GP emulator on
+\[\tilde{L}_{\text{CR}}(\theta) := \log(T_{\text{CR}}(\theta) + 1000)\]
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{cst\_shift }\OtherTok{\textless{}{-}} \FloatTok{1e3}
+\FunctionTok{plot}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test[test\_order], }\FunctionTok{log}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_test[test\_order]), }\AttributeTok{type =} \StringTok{"l"}\NormalTok{, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }
+     \AttributeTok{main =} \StringTok{"LNP design and validation points"}\NormalTok{, }\AttributeTok{xlab =} \StringTok{"KEXT"}\NormalTok{, }\AttributeTok{ylab =} \StringTok{"log(SSR)"}\NormalTok{)}
+\FunctionTok{lines}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test[test\_order], }\FunctionTok{log}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_test[test\_order] }\SpecialCharTok{+}\NormalTok{ cst\_shift), }
+      \AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{)}
+\FunctionTok{points}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{)}
+\FunctionTok{points}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train, }\FunctionTok{log}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_train }\SpecialCharTok{+}\NormalTok{ cst\_shift), }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{pch =} \DecValTok{20}\NormalTok{)}
+\FunctionTok{abline}\NormalTok{(}\AttributeTok{v =}\NormalTok{ ref\_pars[pars\_cal\_sel, }\StringTok{"best"}\NormalTok{], }\AttributeTok{col =} \StringTok{"gray"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-16-1.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Fit GP on log(SSR) shifted data}
+\NormalTok{train\_test\_data[}\FunctionTok{c}\NormalTok{(}\StringTok{"log\_Y\_train\_shifted\_preprocessed"}\NormalTok{, }\StringTok{"log\_shifted\_output\_stats"}\NormalTok{)] }\OtherTok{\textless{}{-}} \FunctionTok{prep\_GP\_training\_data}\NormalTok{(}\AttributeTok{Y =} \FunctionTok{log}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_train }\SpecialCharTok{+}\NormalTok{ cst\_shift), }\AttributeTok{normalize\_Y =} \ConstantTok{TRUE}\NormalTok{)[}\FunctionTok{c}\NormalTok{(}\StringTok{"Y"}\NormalTok{, }\StringTok{"output\_stats"}\NormalTok{)]}
+\NormalTok{lnp\_fit\_shifted }\OtherTok{\textless{}{-}} \FunctionTok{fit\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train\_preprocessed, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train\_shifted\_preprocessed, }\StringTok{"hetGP"}\NormalTok{, }\StringTok{"Gaussian"}\NormalTok{)}\SpecialCharTok{$}\NormalTok{fit}
+
+\CommentTok{\# Predict with GPs}
+\NormalTok{lnp\_pred\_shifted }\OtherTok{\textless{}{-}} \FunctionTok{predict\_GP}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test\_preprocessed, lnp\_fit\_shifted, }\StringTok{"hetGP"}\NormalTok{, }\AttributeTok{cov\_mat =} \ConstantTok{FALSE}\NormalTok{, }\AttributeTok{denormalize\_predictions =} \ConstantTok{TRUE}\NormalTok{,}
+                               \AttributeTok{output\_stats =}\NormalTok{ train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_shifted\_output\_stats, }\AttributeTok{exponentiate\_predictions =} \ConstantTok{FALSE}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-18-1.pdf}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-19-1.pdf}
+
+\hypertarget{alternative-scaling-of-ssr-prior-to-taking-log}{%
+\subsubsection{Alternative scaling of SSR prior to taking
+log}\label{alternative-scaling-of-ssr-prior-to-taking-log}}
+
+Adding \(1000\) to the SSR before taking the log proved to work well for
+this specific case, but was the result of tinkering with the additive
+constant so that the transformed data looked reasonably smooth. I now
+consider an alterntive scaling more amenable to automation that was
+employed by Osborne et al in their Bayesian quadrature papers.
+\[\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{100\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)\]
+The largest design point now satisfies
+\[\max_i \tilde{L}_{\text{CR}}(\theta_i) = \log(1.01) \approx .0099\]
+and the remaining design points \(\tilde{L}_{\text{CR}}(\theta_i)\) will
+assume values between \(0\) and \(\log(1.01)\). The test points can
+still assume values outside of this range. The log-transformed data will
+look very similar to the data on the linear scale - just on a smaller
+scale - since
+\[\log\left(1 + \frac{y}{M}\right) = \frac{y}{M} - \frac{y^2}{2M^2} + \frac{y^3}{3M^3} - \cdots \approx \frac{y}{M}\]
+when \(y\) is small and \(M\) is large. Therefore, this transformation
+essentially results in the same emulation problem as the original,
+untransformed GP emulation of SSR, but will ensure non-negativity when
+transforming back to the original scale. This isn't necessarily a good
+thing, as the original GP fit performed poorly in regions where the
+gradient was large. Perhaps one approach is to combine the two scalings,
+first performing a multiplicative scaling on SSR to achieve a desired
+scale, then perform an additive scaling (something larger than 1) to
+yield a smoother surface.
+
+The plots below consider a scaling
+\[\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{0.001\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)\]
+which divides SSR by 406.0787583 rather than
+\ensuremath{4.0607876\times 10^{6}} in the current example.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{plot}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test[test\_order], }\FunctionTok{log}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{Y\_test[test\_order]), }\AttributeTok{type =} \StringTok{"l"}\NormalTok{, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }
+     \AttributeTok{main =} \StringTok{"LNP design and validation points"}\NormalTok{, }\AttributeTok{xlab =} \StringTok{"KEXT"}\NormalTok{, }\AttributeTok{ylab =} \StringTok{"log(SSR)"}\NormalTok{, }\AttributeTok{ylim =} \FunctionTok{c}\NormalTok{(}\SpecialCharTok{{-}}\DecValTok{7}\NormalTok{, }\DecValTok{15}\NormalTok{))}
+\FunctionTok{lines}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test[test\_order], train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_test\_shift2[test\_order], }
+      \AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{)}
+\FunctionTok{points}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{)}
+\FunctionTok{points}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train\_shift2, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{pch =} \DecValTok{20}\NormalTok{)}
+\FunctionTok{abline}\NormalTok{(}\AttributeTok{v =}\NormalTok{ ref\_pars[pars\_cal\_sel, }\StringTok{"best"}\NormalTok{], }\AttributeTok{col =} \StringTok{"gray"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-21-1.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{plot}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_test[test\_order], train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_test\_shift2[test\_order], }\AttributeTok{type =} \StringTok{"l"}\NormalTok{, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{,}
+     \AttributeTok{main =} \StringTok{"LNP design and validation points"}\NormalTok{, }\AttributeTok{xlab =} \StringTok{"KEXT"}\NormalTok{, }\AttributeTok{ylab =} \StringTok{"log(SSR)"}\NormalTok{)}
+\FunctionTok{points}\NormalTok{(train\_test\_data}\SpecialCharTok{$}\NormalTok{X\_train, train\_test\_data}\SpecialCharTok{$}\NormalTok{log\_Y\_train\_shift2, }\AttributeTok{col =} \StringTok{"red"}\NormalTok{, }\AttributeTok{pch =} \DecValTok{20}\NormalTok{)}
+\FunctionTok{abline}\NormalTok{(}\AttributeTok{v =}\NormalTok{ ref\_pars[pars\_cal\_sel, }\StringTok{"best"}\NormalTok{], }\AttributeTok{col =} \StringTok{"gray"}\NormalTok{, }\AttributeTok{lty =} \StringTok{"dashed"}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{log_transformation_tests_files/figure-latex/unnamed-chunk-22-1.pdf}
+
+\hypertarget{questions-and-next-steps}{%
+\subsection{Questions and Next Steps}\label{questions-and-next-steps}}
+
+\begin{itemize}
+\tightlist
+\item
+  Emualating non-negative functions:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Shift/scale data in some way and fit GP
+  \item
+    Shift/scale data and fit LNP
+  \item
+    Consider other transformations other than log
+  \end{itemize}
+\item
+  Testing methodology:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    How many cycles of the ODE to use when generating synthetic data?
+  \item
+    Distribution of predictive error as the design input points (X) are
+    varied.
+  \item
+    Distribution of the predictive error as the observed response data
+    (Y) is varied.
+  \item
+    Error metrics to consider: RMSE, RMSE weighted by GP predictive
+    standard deviations, induced error on likelihood.
+  \end{itemize}
+\end{itemize}
+
+\end{document}

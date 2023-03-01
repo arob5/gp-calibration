@@ -489,6 +489,7 @@ calc_SSR <- function(data_obs, model_outputs_list) {
   for(i in seq_along(model_outputs_list)) {
     SSR[i,] <- colSums(data_obs - model_outputs_list[[i]])^2
   }
+  colnames(SSR) <- colnames(data_obs)
   
   return(SSR)
   
@@ -953,8 +954,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   # Run VSEM on train and test sets to obtain outputs
   model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
   model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  Y_train <- calc_SSR(data_obs[[output_vars]], model_outputs_list_train)
-  Y_test <- calc_SSR(data_obs[[output_vars]], model_outputs_list_test)
+  Y_train <- calc_SSR(data_obs[, ..output_vars], model_outputs_list_train)
+  Y_test <- calc_SSR(data_obs[, ..output_vars], model_outputs_list_test)
 
   # Pre-process training data: scale inputs and normalize outputs
   GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
@@ -1117,6 +1118,65 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
   lines(X_pred[order_pred], gp_mean_pred[order_pred] - cst_shift, type = "l", col = "blue")
   
 }
+
+# TODO: need to add frequency/missing values for time series
+generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, ref_pars, output_vars) {
+  # A helper function to generate data associated with a specific VSEM test example. Returns a list of all of the information
+  # necessary to perform a VSEM emulation test. 
+  #
+  # Args:
+  #    random_seed: integer, random seed. `generate_vsem_test_data()` should be the first function called that utilizes the random 
+  #                 seed after the random seed is set in the main script. 
+  #    N_time_steps: integer, number of time steps to integrate the VSEM ODE system. 
+  #    Sig_eps: matrix of shape (p, p), where p is the number of output variables. Must have row and column names set to the 
+  #             names of the associated output variables. 
+  #    pars_cal_names: character(), vector of names of the calibration parameters. 
+  #    pars_cal_vals: numeric(), vector of equal length as `pars_cal_names` with the true values of the calibration parameters
+  #                   to use when generating the synthetic ground truth data. 
+  #    ref_pars: data.frame, containing column "best" and with rownames set to the names of the VSEM parameters. The parameters 
+  #              that are not specified in `pars_cal_names` will be set to their values in the "best" column when 
+  #              generating the synthetic ground truth data.
+  #    output_vars: character(), vector of names of the output variables to consider. Options to include are "NEE", "Cv", "Cs", "CR".
+  #
+  # Returns:
+  #    List containing simulated ground truth data, simulated observed data, data summarizing the parameter values used, etc. 
+  
+  N_outputs <- length(output_vars)
+  N_pars <- length(pars_cal)
+  
+  # Generate time series of photosynthetically active radiation (PAR), which drives the model. 
+  PAR <- VSEMcreatePAR(seq_len(N_time_steps))
+  
+  # Specifying which parameters to calibrate. The remaining are fixed at their best values specified in 
+  # 'ref_pars'. The values of the calibration parameters used to generate the ground truth data 
+  # (the "true parameters") are given by `pars_cal_vals`, which may or may not be the same as the 
+  # value of the calibration parameters in the "best" column of `ref_pars`. 
+  pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal_names)
+  ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal_names
+  ref_pars[ref_pars$calibrate == TRUE, "true_value"] <- pars_cal_vals
+  ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
+  
+  # Run the model to generate the reference data, the ground truth. 
+  data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
+  data_ref <- run_VSEM(pars_cal_vals, ref_pars, pars_cal_sel, PAR, output_vars)
+  
+  # Add observational noise. Assumes Gaussian noise, potentially correlated across output variables. 
+  Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
+  Z <- matrix(rnorm(N_time_steps*N_outputs), N_days, N_outputs) 
+  data_obs <- data_ref + Z %*% Lt
+  
+  return(list(ref_pars = ref_pars, 
+              PAR_data = PAR, 
+              data_ref = data_ref, 
+              data_obs = data_obs, 
+              Sig_eps = Sig_eps, 
+              random_seed = random_seed, 
+              N_time_steps = N_time_steps, 
+              pars_cal_names = pars_cal_names, 
+              output_vars = output_vars))
+  
+}
+
 
 
 
