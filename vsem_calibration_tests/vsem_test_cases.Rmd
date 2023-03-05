@@ -5,3 +5,58 @@ date: '2023-03-05'
 output: html_document
 ---
 
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+```
+
+
+```{r}
+random_seed_1 <- 5
+
+N_time_steps <- 1000
+noise_var <- 4.0
+Sig_eps <- noise_var * diag(1, nrow = 4)
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+pars_cal_names <- c("KEXT")
+
+ref_pars <- VSEMgetDefaults()
+pars_cal_vals <- 0.5
+
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+output_frequencies <- c(1, 1, 1, 7) # rep(1, 4)
+
+
+test1_list <- generate_vsem_test_data(random_seed_1, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+```
+
+
+## Test 1
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test1_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test1_list$Sig_eps)
+```
+
+
+```{r, echo = FALSE}
+print(paste0("Number time steps (days): ", test1_list$N_time_steps))
+```
+
+
+
+
+

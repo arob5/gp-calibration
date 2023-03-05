@@ -1120,7 +1120,8 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
 }
 
 # TODO: need to add frequency/missing values for time series
-generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, ref_pars, output_vars) {
+generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
+                                    ref_pars, output_vars, output_frequencies) {
   # A helper function to generate data associated with a specific VSEM test example. Returns a list of all of the information
   # necessary to perform a VSEM emulation test. 
   #
@@ -1137,12 +1138,15 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   #              that are not specified in `pars_cal_names` will be set to their values in the "best" column when 
   #              generating the synthetic ground truth data.
   #    output_vars: character(), vector of names of the output variables to consider. Options to include are "NEE", "Cv", "Cs", "CR".
+  #    output_frequencies: integer(), vector of length equal to length of `output_vars`. The ith element of this vector is the 
+  #                        frequency with which observations will be generated for the respective output 
+  #                        (1 = daily, 7 = weekly, 30 = monthly, etc.). Daily is the smallest allowed frequency. 
   #
   # Returns:
   #    List containing simulated ground truth data, simulated observed data, data summarizing the parameter values used, etc. 
   
   N_outputs <- length(output_vars)
-  N_pars <- length(pars_cal)
+  N_pars <- length(pars_cal_names)
   
   # Generate time series of photosynthetically active radiation (PAR), which drives the model. 
   PAR <- VSEMcreatePAR(seq_len(N_time_steps))
@@ -1162,18 +1166,31 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   
   # Add observational noise. Assumes Gaussian noise, potentially correlated across output variables. 
   Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
-  Z <- matrix(rnorm(N_time_steps*N_outputs), N_days, N_outputs) 
+  Z <- matrix(rnorm(N_time_steps*N_outputs), N_time_steps, N_outputs) 
   data_obs <- data_ref + Z %*% Lt
+  
+  # Account for observation frequency
+  observation_selector <- matrix(nrow = N_time_steps, ncol = N_outputs)
+  for(j in seq(1, N_outputs)) {
+    obs_idx <- seq(1, N_time_steps, by = output_frequencies[j])
+    obs_sel <- rep(0, N_time_steps)
+    obs_sel[obs_idx] <- 1
+    observation_selector[,j] <- obs_sel
+  }
+  colnames(observation_selector) <- output_vars
+  browser()
   
   return(list(ref_pars = ref_pars, 
               PAR_data = PAR, 
               data_ref = data_ref, 
-              data_obs = data_obs, 
+              data_obs_complete = data_obs, # Includes all daily data
+              data_obs = data_obs, # Might have lower frequency data and/or missing values
               Sig_eps = Sig_eps, 
               random_seed = random_seed, 
               N_time_steps = N_time_steps, 
               pars_cal_names = pars_cal_names, 
-              output_vars = output_vars))
+              output_vars = output_vars, 
+              output_frequencies = output_frequencies))
   
 }
 
