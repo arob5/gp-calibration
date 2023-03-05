@@ -1063,6 +1063,14 @@
         "mvtnorm"
       ]
     },
+    "truncnorm": {
+      "Package": "truncnorm",
+      "Version": "1.0-8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "cc8b5bfa01c930ccb56d3051e515fbd8",
+      "Requirements": []
+    },
     "utf8": {
       "Package": "utf8",
       "Version": "1.2.2",
