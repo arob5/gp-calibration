@@ -64,9 +64,9 @@ $$
 # Test Examples
 
 ## Test 1
-This is the simplest test case, with a single calibration parameter, all outputs observed daily with no missing values, and no output correlation. However, this test case still comes with a variety of challenges, including a high dynamic range for the sum of square errors. The observation variances represent a choice of low signal-to-noise ratio for the carbon pools; this is the same choice given in the example code provided by the BayesianTools package. Also note that the number of time steps (1000) here is smaller than all of the residence time/longevity parameters ($\tau_r$, $\tau_v$, $\tau_s$) so the quantity of carbon in each of the pools only increases on this time frame. 
+This is the simplest test case, with a single calibration parameter, all outputs observed daily with no missing values, and no output correlation. However, this test case still comes with a variety of challenges, including a high dynamic range for the sum of square errors. The observation variances represent a choice of low signal-to-noise ratio for the carbon pools; this is the same choice given in the example code provided by the BayesianTools package. Also note that the number of time steps (1000) here is smaller than all of the residence time/longevity parameters ($\tau_r$, $\tau_v$, $\tau_s$) so the quantity of carbon in each of the pools generally increases over this time frame. 
 ```{r}
-random_seed_1 <- 5
+random_seed_1 <- 1
 test1_list <- generate_vsem_test_1(random_seed_1)
 ```
 
@@ -91,6 +91,93 @@ for(output_var in test1_list$output_vars) {
 }
 ```
 
+
+## Test 2
+Another one-parameter test (LUE), but adds complexity by varying the observation frequency. Also increases the number of days and varies the observation variances.  
+```{r}
+random_seed_2 <- 2
+test2_list <- generate_vsem_test_2(random_seed_2)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test2_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test2_list$Sig_eps)
+```
+
+```{r echo = FALSE}
+for(output_var in test2_list$output_vars) {
+ plotTimeSeries(observed = test2_list$data_obs[, output_var],
+                predicted = test2_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 3
+This test builds on complexity to test 1 by adding an additional calibration parameter $\tau_v$, increasing the number of days, and varying the frequency of observed data. 
+```{r}
+random_seed_3 <- 3
+test3_list <- generate_vsem_test_3(random_seed_3)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test3_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test3_list$Sig_eps)
+```
+
+```{r echo = FALSE}
+for(output_var in test3_list$output_vars) {
+ plotTimeSeries(observed = test3_list$data_obs[, output_var],
+                predicted = test3_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 4
+Another two-parameter test case ($C_v$, $\tau_r$), with a longer time series, varying observation frequencies, increased noise on NEE observations, and small correlation between observation errors for $C_s$ and $C_r$. 
+```{r}
+random_seed_4 <- 4
+test4_list <- generate_vsem_test_4(random_seed_4)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test4_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test4_list$Sig_eps)
+```
+
+```{r echo = FALSE}
+for(output_var in test4_list$output_vars) {
+ plotTimeSeries(observed = test4_list$data_obs[, output_var],
+                predicted = test4_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+
+
+
+
+# Questions/Next Steps
+
+* Making test cases more realistic/useful. 
+    + Magnitude of observation noise? Correlation in observation errors across output variables? 
+    + Altering observation frequencies. 
+    + Staggering observation frequencies so they don't occur on regular periodic schedule. 
+    + Add in missing data due to simulate sensor issues, etc. 
 
 
 

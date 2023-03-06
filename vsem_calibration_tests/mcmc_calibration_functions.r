@@ -1157,9 +1157,9 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   # 'ref_pars'. The values of the calibration parameters used to generate the ground truth data 
   # (the "true parameters") are given by `pars_cal_vals`, which may or may not be the same as the 
   # value of the calibration parameters in the "best" column of `ref_pars`. 
-  pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal_names)
+  pars_cal_sel <- sapply(pars_cal_names, function(par_name) which(rownames(ref_pars) == par_name))
   ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal_names
-  ref_pars[ref_pars$calibrate == TRUE, "true_value"] <- pars_cal_vals
+  ref_pars[pars_cal_sel, "true_value"] <- pars_cal_vals
   ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
   
   # Run the model to generate the reference data, the ground truth. 
@@ -1220,12 +1220,123 @@ generate_vsem_test_1 <- function(random_seed) {
   
   # Single calibration parameter; extinction coefficient in Beer-Lambert law.
   pars_cal_names <- c("KEXT")
-  ref_pars <- VSEMgetDefaults()
   pars_cal_vals <- 0.5
+  ref_pars <- VSEMgetDefaults()
   
   # All outputs are observed daily, with no missing values. 
   output_vars <- c("NEE", "Cv", "Cs", "CR")
   output_frequencies <- rep(1, 4)
+  
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
+                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  return(test_list)
+  
+}
+
+
+generate_vsem_test_2 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 2". This is another 
+  # single calibration parameter test case, but adds complexity by varying the frequency 
+  # of output observations. It also varies the observations variances and increases the 
+  # number of time steps (days). 
+  #
+  # Args:
+  #    random_seed: integer(1), random seed used to generate observation noise. 
+  #
+  # Returns:
+  #    list, the list returned by `generate_vsem_test_data()`. 
+  
+  # Number of days.
+  N_time_steps <- 2048
+  
+  # Diagonal covariance across outputs.
+  Sig_eps <- diag(c(4.0, 1.0, 2.0, 2.0))
+  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  
+  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
+  # and 2.) residence time of above-ground vegetation. 
+  pars_cal_names <- c("LUE")
+  pars_cal_vals <- c(0.002)
+  ref_pars <- VSEMgetDefaults()
+  
+  # All outputs are observed daily, with no missing values. 
+  output_vars <- c("NEE", "Cv", "Cs", "CR")
+  output_frequencies <- c(1, 365, 365, 60)
+  
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
+                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  return(test_list)
+  
+}
+
+
+generate_vsem_test_3 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 3". This builds adds complexity 
+  # to test case 1 by adding an additional calibration parameter, and varying the observation 
+  # frequencies. 
+  #
+  # Args:
+  #    random_seed: integer(1), random seed used to generate observation noise. 
+  #
+  # Returns:
+  #    list, the list returned by `generate_vsem_test_data()`. 
+  
+  # Number of days.
+  N_time_steps <- 2048
+  
+  # Diagonal covariance across outputs.
+  Sig_eps <- diag(c(4.0, 2.0, 2.0, 2.0))
+  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  
+  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
+  # and 2.) residence time of above-ground vegetation. 
+  pars_cal_names <- c("KEXT", "tauV")
+  pars_cal_vals <- c(0.5, 1440)
+  ref_pars <- VSEMgetDefaults()
+  
+  # All outputs are observed daily, with no missing values. 
+  output_vars <- c("NEE", "Cv", "Cs", "CR")
+  output_frequencies <- c(1, 300, 365, 30)
+  
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
+                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  return(test_list)
+  
+}
+
+
+generate_vsem_test_4 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 4". This is another two calibration 
+  # parameter test, which varies observation frequency, and now also includes time-independent correlation 
+  # between observation noise in the output variables. 
+  #
+  # Args:
+  #    random_seed: integer(1), random seed used to generate observation noise. 
+  #
+  # Returns:
+  #    list, the list returned by `generate_vsem_test_data()`. 
+  
+  # Number of days.
+  N_time_steps <- 3065
+  
+  # Diagonal covariance across outputs.
+  Sig_eps <- diag(c(5.0, 2.0, 2.0, 2.0))
+  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  Sig_eps["Cs", "CR"] <- -0.2
+  Sig_eps["CR", "Cs"] <- -0.2
+  
+  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
+  # and 2.) residence time of above-ground vegetation. 
+  pars_cal_names <- c("Cv", "tauR")
+  pars_cal_vals <- c(3.0, 1440)
+  ref_pars <- VSEMgetDefaults()
+  
+  # All outputs are observed daily, with no missing values. 
+  output_vars <- c("NEE", "Cv", "Cs", "CR")
+  output_frequencies <- c(1, 300, 365, 30)
   
   test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
                                        pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
