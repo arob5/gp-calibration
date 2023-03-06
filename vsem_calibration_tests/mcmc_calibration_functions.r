@@ -122,9 +122,9 @@ run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = c("NEE", "Cv"
   theta[par_cal_sel] <- par
   
   # Run forward model, re-scale NEE.
-  pred_model <- as.data.table(VSEM(theta, PAR))[, ..output_vars]
+  pred_model <- as.matrix(VSEM(theta, PAR))[, output_vars]
   if("NEE" %in% output_vars) {
-    pred_model[, NEE := NEE*1000]
+    pred_model[, "NEE"] <- pred_model[, "NEE"] * 1000
   }
   
   return(pred_model)
@@ -457,7 +457,7 @@ adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_r
 }
 
 
-calc_SSR <- function(data_obs, model_outputs_list) {
+calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
   # Computes the sum of squared residuals (SSR) between model runs and observed 
   # data on a per-output basis. Can handle multiple model runs (e.g. one per 
   # design point for emulation) or outputs from single model run (e.g. as required
@@ -467,10 +467,12 @@ calc_SSR <- function(data_obs, model_outputs_list) {
   #    data_obs: data.table of dimension n x p, where n is the length of the time 
   #              series outputs from the model, and p is the number of output variables.
   #              This is Y in my typical notation. 
-  #    model_outputs_list: either a data.table of dimension n x p corresponding to the 
+  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
   #                        model outputs f(theta) from a single model run. Or a list 
-  #                        {f(theta_1), ..., f(theta_N)} of such data.tables, collecting
+  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
   #                        the outputs from multiple model runs. 
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
+  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
   # 
   # Returns:
   #    matrix of dimension N x p, where N is the number of model runs and p is the 
@@ -478,7 +480,7 @@ calc_SSR <- function(data_obs, model_outputs_list) {
   #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
   
   # If model only run at single set of calibration parameter values
-  if(is.data.table(model_outputs_list)) {
+  if(is.matrix(model_outputs_list)) {
     model_outputs_list <- list(model_outputs_list)
   }
   
@@ -487,7 +489,7 @@ calc_SSR <- function(data_obs, model_outputs_list) {
   SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
   
   for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]])^2
+    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
   }
   colnames(SSR) <- colnames(data_obs)
   
@@ -930,7 +932,7 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #             values (not calibrated) are set to their values given in the "best" column. 
   #    par_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
   #                 parameters that will be calibrated. 
-  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
+  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
   #              Colnames set to output variable names. 
   #    output_vars: character vector, used to the select the outputs to be considered in 
   #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
@@ -954,8 +956,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   # Run VSEM on train and test sets to obtain outputs
   model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
   model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  Y_train <- calc_SSR(data_obs[, ..output_vars], model_outputs_list_train)
-  Y_test <- calc_SSR(data_obs[, ..output_vars], model_outputs_list_test)
+  Y_train <- calc_SSR(data_obs[, output_vars], model_outputs_list_train)
+  Y_test <- calc_SSR(data_obs[, output_vars], model_outputs_list_test)
 
   # Pre-process training data: scale inputs and normalize outputs
   GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
@@ -1161,30 +1163,31 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
   
   # Run the model to generate the reference data, the ground truth. 
-  data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
   data_ref <- run_VSEM(pars_cal_vals, ref_pars, pars_cal_sel, PAR, output_vars)
-  
+
   # Add observational noise. Assumes Gaussian noise, potentially correlated across output variables. 
   Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
   Z <- matrix(rnorm(N_time_steps*N_outputs), N_time_steps, N_outputs) 
-  data_obs <- data_ref + Z %*% Lt
+  data_obs_complete <- data_ref + Z %*% Lt
   
   # Account for observation frequency
+  data_obs <- data_obs_complete
   observation_selector <- matrix(nrow = N_time_steps, ncol = N_outputs)
   for(j in seq(1, N_outputs)) {
     obs_idx <- seq(1, N_time_steps, by = output_frequencies[j])
     obs_sel <- rep(0, N_time_steps)
     obs_sel[obs_idx] <- 1
     observation_selector[,j] <- obs_sel
+    data_obs[!obs_sel, j] <- NA
   }
   colnames(observation_selector) <- output_vars
-  browser()
   
   return(list(ref_pars = ref_pars, 
               PAR_data = PAR, 
               data_ref = data_ref, 
-              data_obs_complete = data_obs, # Includes all daily data
+              data_obs_complete = data_obs_complete, # Includes all daily data
               data_obs = data_obs, # Might have lower frequency data and/or missing values
+              obs_selector = observation_selector,
               Sig_eps = Sig_eps, 
               random_seed = random_seed, 
               N_time_steps = N_time_steps, 

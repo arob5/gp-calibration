@@ -32,7 +32,7 @@ ref_pars <- VSEMgetDefaults()
 pars_cal_vals <- 0.5
 
 output_vars <- c("NEE", "Cv", "Cs", "CR")
-output_frequencies <- c(1, 1, 1, 7) # rep(1, 4)
+output_frequencies <- rep(1, 4)
 
 
 test1_list <- generate_vsem_test_data(random_seed_1, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
