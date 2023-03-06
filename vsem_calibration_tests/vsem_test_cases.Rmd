@@ -5,7 +5,7 @@ date: '2023-03-05'
 output: html_document
 ---
 
-```{r}
+```{r, echo = FALSE, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(lhs)
@@ -17,29 +17,59 @@ library(BayesianTools)
 source("mcmc_calibration_functions.r")
 ```
 
+# Review of the VSEM model
 
-```{r}
-random_seed_1 <- 5
+## Variables and Parameters
 
-N_time_steps <- 1000
-noise_var <- 4.0
-Sig_eps <- noise_var * diag(1, nrow = 4)
-rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-pars_cal_names <- c("KEXT")
+* $C_v$: Quantity of carbon ($C/m^2$) in above-ground vegetation pool. 
+* $C_r$: Quantity of carbon ($C/m^2$) in below-ground vegetation (roots) pool.
+* $C_s$: Quantity of carbon ($C/m^2$) in soil pool.
+* $GPP$: Gross primary productivity. 
+* $NPP$: Net Primary Productivity = GPP - Autotrophic Respiration. 
+* $NEE$: -Net Ecosystem Exchange = NPP - Heterotrophic Respiration (notice differing sign convention between NPP and NEE). 
+* $\tau_v$: Residence time of above-ground vegetation (days). 
+* $\tau_r$: Residence time of above-ground vegetation (days). 
+* $\tau_s$: Residence time of soil organic matter (days).
+* $\alpha_v$: Fixed proportion of NPP allocated to above-ground vegetation. 
+* $k$: The extinction coefficient in the Beer-Lambert law. 
+* $LAI$: Leaf-Area Index, the ratio of one-sided leaf area per unit of ground area.
+* $\gamma$: Fixed proportion of GPP lost to autotrophic respiration. 
+* $LAR$: Leaf-area ratio. 
 
-ref_pars <- VSEMgetDefaults()
-pars_cal_vals <- 0.5
+## State Equations
 
-output_vars <- c("NEE", "Cv", "Cs", "CR")
-output_frequencies <- rep(1, 4)
+$$
+\begin{align*}
+\dot{C}_v(t) &= \alpha_v \times \text{NPP}(t) - \frac{C_v(t)}{\tau_v} \\
+\dot{C}_r(t) &= (1.0 - \alpha_v) \times \text{NPP}(t) - \frac{C_r(t)}{\tau_r} \\
+\dot{C}_s(t) &= \frac{C_r(t)}{\tau_r} + \frac{C_v(t)}{\tau_v} - \frac{C_s(t)}{\tau_s} 
+\end{align*}
+$$
+
+## Model Driver
+VSEM is driven by Photosynthetically Active Radiation (PAR) (MJ/$m^2$/day). GPP is assumed to result from a product of 
+
+* The amount of light available for photosynthesis (PAR) (MJ/$m^2$/day).
+* Light-use efficiency (LUE), a measure of the efficiency at which vegetation can use light for photosynthesis. 
+* The rate at which the available light decays as it passes downwards through a canopy of leaves (described by the Beer-Lambert Law). 
+$$
+\begin{align*}
+\text{LAI}(t) &= \text{LAR} \times C_v(t) \\
+\text{GPP}(t) &= \text{PAR}(t) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(t) \right) \right) \\
+\text{NPP}(t) &= (1 - \gamma) \times \text{GPP}(t)
+\end{align*}
+$$
 
 
-test1_list <- generate_vsem_test_data(random_seed_1, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
-```
-
+# Test Examples
 
 ## Test 1
+This is the simplest test case, with a single calibration parameter, all outputs observed daily with no missing values, and no output correlation. However, this test case still comes with a variety of challenges, including a high dynamic range for the sum of square errors. The observation variances represent a choice of low signal-to-noise ratio for the carbon pools; this is the same choice given in the example code provided by the BayesianTools package. Also note that the number of time steps (1000) here is smaller than all of the residence time/longevity parameters ($\tau_r$, $\tau_v$, $\tau_s$) so the quantity of carbon in each of the pools only increases on this time frame. 
+```{r}
+random_seed_1 <- 5
+test1_list <- generate_vsem_test_1(random_seed_1)
+```
+
 
 ```{r, echo = FALSE}
 print("Calibration Parameters:")
@@ -51,11 +81,15 @@ print("Observation Covariance: ")
 print(test1_list$Sig_eps)
 ```
 
-
-```{r, echo = FALSE}
-print(paste0("Number time steps (days): ", test1_list$N_time_steps))
+### Plots of Simulated Observational Data and VSEM outputs.
+The red line is the output from the numerical solution of the VSEM model, while the black plus signs are corrupted 
+versions of this output, representing simulated observation noise. 
+```{r echo = FALSE}
+for(output_var in test1_list$output_vars) {
+ plotTimeSeries(observed = test1_list$data_obs[, output_var],
+                predicted = test1_list$data_ref[, output_var], main = output_var) 
+}
 ```
-
 
 
 

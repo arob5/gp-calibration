@@ -1121,7 +1121,7 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
   
 }
 
-# TODO: need to add frequency/missing values for time series
+# TODO: need to add missing values for time series
 generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
                                     ref_pars, output_vars, output_frequencies) {
   # A helper function to generate data associated with a specific VSEM test example. Returns a list of all of the information
@@ -1194,6 +1194,42 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               pars_cal_names = pars_cal_names, 
               output_vars = output_vars, 
               output_frequencies = output_frequencies))
+  
+}
+
+
+generate_vsem_test_1 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 1". This is the simplest 
+  # test case, with a single calibration parameter, all outputs observed daily with no missing 
+  # values, and no output correlation. 
+  #
+  # Args:
+  #    random_seed: integer(1), random seed used to generate observation noise. 
+  #
+  # Returns:
+  #    list, the list returned by `generate_vsem_test_data()`. 
+  
+  # Number of days.
+  N_time_steps <- 1000
+  
+  # Diagonal covariance across outputs.
+  noise_var <- 4.0
+  Sig_eps <- noise_var * diag(1, nrow = 4)
+  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  
+  # Single calibration parameter; extinction coefficient in Beer-Lambert law.
+  pars_cal_names <- c("KEXT")
+  ref_pars <- VSEMgetDefaults()
+  pars_cal_vals <- 0.5
+  
+  # All outputs are observed daily, with no missing values. 
+  output_vars <- c("NEE", "Cv", "Cs", "CR")
+  output_frequencies <- rep(1, 4)
+  
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
+                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  return(test_list)
   
 }
 
