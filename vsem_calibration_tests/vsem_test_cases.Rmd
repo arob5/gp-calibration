@@ -166,8 +166,53 @@ for(output_var in test4_list$output_vars) {
 }
 ```
 
+# Some Initial Thoughts on Error Metrics to Evaluate GP Emulators
+I suppose there are really two questions here: 1.) developing error metrics to use in tests when the likelihood parameters are known and 
+2.) developing error metrics that can be used in practice to evaluate the emulator fit. Though we are emulating the sum of squared errors $T(\theta)$ 
+(or its log $L(\theta)$) what we are really interested in is the effect of the emulator approximation on the posterior distribution 
+$$\pi(\theta) \propto \pi_0(\theta)p(Y|\theta) = \pi_0(\theta)L(\theta) = \pi_0(\theta)\prod_{j = 1}^{p} N_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j})$$
+Note that I've started writing $N_j$ to specify that sample sizes may be different across outputs, given the fact that significant data imbalances are something we will have to be thinking about. 
+
+In particular, the posterior approximation $\hat{\pi}(\theta) \propto \pi_0(\theta)\hat{L}(\theta)$ is utilized in the MCMC calibration algorithm in two places. 
+
+1. The Accept-Reject ratio in Metropolis-Hastings.
+2. Sampling from an Inverse Gamma in the Gibbs update for the observation variance.  
+
+I briefly review this below. 
+
+## Review of MCMC scheme
+We assume priors 
+$$\sigma_j^2 \overset{ind}{\sim} IG(a_j, b_j)$$
+which results in a conditional posterior $p(\sigma_j^2|\theta, Y) = IG(\sigma_j^2|a_j + N_j/2, b_j + T_j(\theta)/2)$ and thus the opportunity for a Metropolis-within-Gibbs scheme. 
+
+### Updating $\theta$
+Conditional on $\Sigma := \text{diag}(\sigma_1^2, \dots, \sigma_p^2)$, the Metropolis step for updating $\theta$ results in an acceptance ratio (where $q(\cdot, \cdot)$ is the proposal density), 
+$$
+\begin{align*}
+\alpha(\theta, \theta^\prime) &= \frac{p(\theta^\prime|Y, \Sigma)q(\theta^\prime, \theta)}{p(\theta|Y, \Sigma)q(\theta, \theta^\prime)} \\
+                              &= \frac{\pi_0(\theta^\prime)p(Y|\theta^\prime, \Sigma)q(\theta^\prime, \theta)}{\pi_0(\theta)p(Y|\theta, \Sigma)q(\theta, \theta^\prime)} \\
+                              &= \frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta) \prod_{j = 1}^{p} N_{N_j}(Y_j|f_j(\theta^\prime), \sigma_j^2 I_{N_j})}{\pi_0(\theta)q(\theta, \theta^\prime) \prod_{j = 1}^{p} N_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j})} \\
+                              &= \frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta)q(\theta, \theta^\prime)}\prod_{j = 1}^{p} \exp\left\{-\frac{1}{2\sigma_j^2} (T_j(\theta^\prime) - T_j(\theta))\right\} \\
+                              &= \frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta)q(\theta, \theta^\prime)} \exp\left\{ -\frac{1}{2} \sum_{j = 1}^{p} \left(\frac{T_j(\theta^\prime) - T_j(\theta)}{\sigma_j^2}\right)\right\}
+\end{align*}
+$$
+The current PEcAn approach is to approximate $\alpha(\theta, \theta^\prime)$ by sampling from the GP emulator
+$$
+&\tilde{T}_j^\prime \sim N(\mu^*_j(\theta^\prime), k_j^*(\theta^\prime)) \\
+&\tilde{T}_j \sim N(\mu^*_j(\theta), k_j^*(\theta))
+$$
+and then replacing $T_j(\theta^\prime)$ and $T_j(\theta)$ with $\tilde{T}_j^\prime$ and $\tilde{T}_j$, respectively. We have also discussed accounting for GP predictive covariance by drawing these samples jointly 
+$$
+\begin{pmatrix}T_j(\theta^\prime) \\ T_j(\theta) \end{pmatrix} \sim N_2\left(\mu_j^*\begin{pmatrix} \theta^\prime \\ \theta\end{pmatrix}, k_j^*\begin{pmatrix} \theta^\prime \\ \theta\end{pmatrix} \right)
+
+$$
 
 
+Some things to think about: 
+
+* Metric takes into account 
+* Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation 
+variances are unknown, it is not clear how to weight the emulator error for each output. 
 
 
 
