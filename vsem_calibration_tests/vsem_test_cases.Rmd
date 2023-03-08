@@ -197,23 +197,62 @@ $$
 \end{align*}
 $$
 The current PEcAn approach is to approximate $\alpha(\theta, \theta^\prime)$ by sampling from the GP emulator
+
 $$
+\begin{align*}
 &\tilde{T}_j^\prime \sim N(\mu^*_j(\theta^\prime), k_j^*(\theta^\prime)) \\
 &\tilde{T}_j \sim N(\mu^*_j(\theta), k_j^*(\theta))
+\end{align*}
 $$
 and then replacing $T_j(\theta^\prime)$ and $T_j(\theta)$ with $\tilde{T}_j^\prime$ and $\tilde{T}_j$, respectively. We have also discussed accounting for GP predictive covariance by drawing these samples jointly 
 $$
 \begin{pmatrix}T_j(\theta^\prime) \\ T_j(\theta) \end{pmatrix} \sim N_2\left(\mu_j^*\begin{pmatrix} \theta^\prime \\ \theta\end{pmatrix}, k_j^*\begin{pmatrix} \theta^\prime \\ \theta\end{pmatrix} \right)
-
 $$
+Note that a deterministic, rather than a sampling-based approach is also possible here since we know the distribution
+$$T^*_j(\theta^\prime) - T^*_j(\theta) \sim N\left(\mu_j^*(\theta^\prime) - \mu_j^*(\theta), k_j^*(\theta^\prime) + k_j^*(\theta) - 2k_j^*(\theta^\prime, \theta)\right)$$
+In fact, under the GP approximations, the whole exponential term in $\alpha(\theta, \theta^\prime)$ is log-normal
+
+$$\exp\left\{ -\frac{1}{2} \sum_{j = 1}^{p} \left(\frac{T^*_j(\theta^\prime) - T^*_j(\theta)}{\sigma_j^2}\right)\right\} \sim \text{LN}$$
+so we could consider an analytical approximation like
+$$
+\hat{\alpha}(\theta, \theta^\prime) = \frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta)q(\theta, \theta^\prime)} \mathbb{E} \left[\exp\left\{ -\frac{1}{2} \sum_{j = 1}^{p} \left(\frac{T^*_j(\theta^\prime) - T^*_j(\theta)}{\sigma_j^2}\right)\right\}\right]
+$$
+When we instead emulate the log of the $T_j$ using a GP, these analytical expressions go away, but the sampling approach still works. 
+
+### Updating $\Sigma$
+Recall that the observation variances are updated by sampling 
+$$\sigma_j^2 \sim IG(a_j + N_j/2, b_j + T_j(\theta)/2)$$
+The current PEcAn approach is to sample $\tilde{T}_j \sim T_j^*(\theta)$ and then sample from the resulting approximate distribution
+$$ \sigma_j^2 \sim IG(a_j + N_j/2, b_j + \tilde{T}_j/2) $$
+The same procedure can of course be used if we instead emulate the log of $T_j$. 
 
 
-Some things to think about: 
+## Some general notes on potential metrics
 
-* Metric takes into account 
-* Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation 
-variances are unknown, it is not clear how to weight the emulator error for each output. 
+* We want the metric to take into account the GP predictive distribution 
+* Also want the metric to take into account the true posterior (in the case when it is known)
+* Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation variances are unknown, it is not clear how to weight the emulator error for each output. 
 
+## Metrics for numerical experiments (known posterior)
+### GP Emulator
+
+I'll just consider a single-output case for simplicity, where the true vector of squared errors evaluated over some validation points $\theta_1, \dots, \theta_M$, 
+$$ T := \left[T(\theta_1), \dots, T(\theta_M) \right]^T$$
+is approximated by 
+$$ T^* = \left[T^*(\theta_1), \dots, T^*(\theta_M) \right]^T$$ 
+where $T^* \sim \mathcal{GP}(\mu^*, k^*)$. Note that the approximation $T^*$ is stochastic, so metrics will be defined by integrating over the randomness in some manner. A first-pass idea that takes into account the true posterior $\pi(\theta)$ and the pointwise predictive GP distributions (but not GP predictive covariances) is: 
+$$ 
+\begin{align*}
+\sum_{i = 1}^{M} \pi(\theta_i) \mathbb{E}_{T^*(\theta_i)}\left[\left(T(\theta_i) - T^*(\theta_i)\right)^2\right] &= \sum_{i = 1}^{M} \pi(\theta_i) \left[k^*(\theta_i) + (\mu_*(\theta_i) - T(\theta_i))^2 \right] \\ 
+\end{align*}
+$$
+However, this has the effect of punishing emulators with larger predictive variances, even if those predictive variances are well-calibrated; in other words, it can favor over-confident emulators. Moreover, the concept of "well-calibrated variances" isn't really even well-defined in the setting of emulating deterministic functions. An alternative metric that treats the predictive variances in the opposite way is
+$$ \sum_{i = 1}^{M} \pi(\theta_i) \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2$$ 
+Now the squared deviation is penalized more when the predictive variance is smaller. 
+
+Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
+
+### LNP Emulator
 
 
 # Questions/Next Steps
@@ -223,6 +262,8 @@ variances are unknown, it is not clear how to weight the emulator error for each
     + Altering observation frequencies. 
     + Staggering observation frequencies so they don't occur on regular periodic schedule. 
     + Add in missing data due to simulate sensor issues, etc. 
+* Error metrics. 
+    + Need to do a literature review. 
 
 
 
