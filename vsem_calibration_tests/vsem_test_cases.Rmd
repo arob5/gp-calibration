@@ -281,6 +281,22 @@ We can actually extend this idea to derive the distribution of $\alpha^*(\theta,
 $$ \alpha^*(\theta, \theta^\prime) \sim \mathcal{LN}\left(\log\left[\frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta) q(\theta, \theta^\prime)}\right] - \frac{1}{2\sigma^2}\left[\mu^*(\theta^\prime) - \mu^*(\theta)\right], \frac{k^*(\theta^\prime, \theta)}{\sigma^2} - \frac{1}{2\sigma^2} \left[k^*(\theta^\prime) + k^*(\theta)\right]\right)$$
 So larger values of $p_{\alpha^*}(\alpha(\theta, \theta^\prime))$ indicate a better approximation of $\alpha(\theta, \theta^\prime)$. 
 
+### Weighting by the True Posterior
+We also want to weight the error based on the relative frequencies of the $\theta$, captured by the true posterior $\pi(\theta)$. I first consider the error between $T^*(\theta)$ and $T(\theta)$ averaged over $\theta \sim \pi$. The pointwise error on a $\theta$-by-$\theta$ basis will be measured by the predictive density $p_{T^*(\theta)}(T(\theta))$, as detailed above. In this sense, the average error is given by the integral 
+
+$$ 
+\begin{align*}
+\mathbb{E}_\pi \left[p_{T^*(\theta)}(T(\theta))\right] &= \int p_{T^*(\theta)}(T(\theta)) \pi(\theta) d\theta \\
+                                                       &= \int \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta \\
+                                                       &= \frac{1}{\sqrt{2\pi}} \int \frac{1}{\sqrt{k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta
+\end{align*}
+$$
+Or we can consider error on the log-scale via the expected log-density
+$$
+\begin{align*}
+\mathbb{E}_\pi \left[\log p_{T^*(\theta)}(T(\theta))\right] &= -\frac{1}{2}\log(2\pi) - \int \log k^*(\theta) + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2 \pi(\theta)d\theta
+\end{align*}
+$$
 
 
 
