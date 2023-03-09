@@ -1181,6 +1181,7 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
     data_obs[!obs_sel, j] <- NA
   }
   colnames(observation_selector) <- output_vars
+  names(output_frequencies) <- output_vars
   
   return(list(ref_pars = ref_pars, 
               PAR_data = PAR, 
@@ -1213,8 +1214,7 @@ generate_vsem_test_1 <- function(random_seed) {
   N_time_steps <- 1000
   
   # Diagonal covariance across outputs.
-  noise_var <- 4.0
-  Sig_eps <- noise_var * diag(1, nrow = 4)
+  Sig_eps <- diag(c(4.0, 1.0, 4.0, 1.0))
   rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
   colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
   
