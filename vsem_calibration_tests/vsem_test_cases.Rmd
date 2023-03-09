@@ -231,9 +231,38 @@ The same procedure can of course be used if we instead emulate the log of $T_j$.
 
 * We want the metric to take into account the GP predictive distribution 
 * Also want the metric to take into account the true posterior (in the case when it is known)
+* We want the error metric to target the use cases (two places where the approximation is used in MCMC)
 * Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation variances are unknown, it is not clear how to weight the emulator error for each output. 
 
 ## Metrics for numerical experiments (known posterior)
+I begin by focusing on a single output $(p = 1)$ for simplicity. 
+
+### Incorporating the Predictive GP Distribution 
+The approximation $T^*(\theta)$ to the sum of squared errors $T(\theta)$ is a stochastic approximation, with 
+distribution $T^*(\theta) \sim N(\mu^*(\theta), k^*(\theta))$. Thus, in evaluating the emulator performance we seek 
+to integrate whatever error metric we're using over this randomness. To begin, we consider pointwise measures of error 
+between $T^*(\theta)$ and $T(\theta)$. The natural measure to use here is to evaluate the the predictive density of 
+$T^*(\theta)$ at the point $T(\theta)$:
+
+$$ p_{T^*(\theta)}(T(\theta)) = N(T(\theta)|\mu^*(\theta), k^*(\theta)) = \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right)$$
+
+We can also consider predictive density of other functions of $T^*(\theta)$, in order to define specialized error metrics that capture the error in specific use cases of the approximation. For example, note that in the acceptance ratio $\alpha(\theta, \theta^\prime)$, we require an approximation 
+of the difference $T(\theta^\prime) - T(\theta)$. The predictive density of this quantity is given by 
+
+$$ p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta)) = N\left(T(\theta^\prime) - T(\theta)|\mu^*(\theta^\prime) - \mu^*(\theta), k^*(\theta^\prime) + k^*(\theta) - 2k(\theta^\prime, \theta)\right)$$
+
+We can actually extend this idea to derive the distribution of $\alpha^*(\theta, \theta^\prime)$, the approximation of $\alpha(\theta, \theta^\prime)$ resulting from replacing $T$ with $T^*$. Using properties of Gaussians and log-normals we have,
+
+$$ \alpha^*(\theta, \theta^\prime) \sim \mathcal{LN}\left(\log\left[\frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta) q(\theta, \theta^\prime)}\right] - \frac{1}{2\sigma^2}\left[\mu^*(\theta^\prime) - \mu^*(\theta)\right], \frac{k^*(\theta^\prime, \theta)}{\sigma^2} - \frac{1}{2\sigma^2} \left[k^*(\theta^\prime) + k^*(\theta)\right]\right)$$
+So larger values of $p_{\alpha^*}(\alpha(\theta, \theta^\prime))$ indicate a better approximation of $\alpha(\theta, \theta^\prime)$. 
+
+
+
+
+
+
+
+
 ### GP Emulator
 
 I'll just consider a single-output case for simplicity, where the true vector of squared errors evaluated over some validation points $\theta_1, \dots, \theta_M$, 
@@ -252,7 +281,6 @@ Now the squared deviation is penalized more when the predictive variance is smal
 
 Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
 
-### LNP Emulator
 
 
 # Questions/Next Steps
