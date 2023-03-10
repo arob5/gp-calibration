@@ -299,8 +299,9 @@ $$
 $$
 
 We notice that the predictive variance $k^*(\theta)$ plays two roles. The error is smaller when $\int \log k^*(\theta) \pi(\theta) d\theta$ is small; all else equal, this would favor emulators with smaller predictive variances, even if those predictive variances were overconfident. However, the predictive variance appears again in the second term of the integral as $\frac{1}{k^*(\theta)}$, meaning that the squared deviations are penalized less when the predictive variance is larger. Define the loss 
+
 $$ \ell_{T^*}(\theta) := \log k^*(\theta) + \frac{1}{2} \left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2$$
-which modifies $\log p_{T^*(\theta)$ by dropping the constant and then flipping the sign so that now smaller $\ell_{T^*}(\theta)$ is better. To estimate $\mathbb{E}[\ell_{T^*}(\theta)]$ we can utilize a Monte Carlo estimate
+which modifies $\log p_{T^*(\theta)}$ by dropping the constant and then flipping the sign so that now smaller $\ell_{T^*}(\theta)$ is better. To estimate $\mathbb{E}[\ell_{T^*}(\theta)]$ we can utilize a Monte Carlo estimate
 $$ 
 \begin{align*}
 \left(\overline{\ell}_{T^*}\right)_K &:= \sum_{i = 1}^{K} \ell_{T^*}(\theta_i) && \theta_i \overset{iid}{\sim} \pi \\
@@ -311,11 +312,12 @@ $$
 Next we consider an error metric for the difference $T(\theta^\prime) - T(\theta)$, where $\theta^\prime \sim q(\theta, \cdot)$. Recalling the pointwise predictive density $p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta))$, we again take the log, drop the constant, and flip the sign in defining the loss
 $$
 \begin{align*}
-\ell_{T^*}(\theta, \theta^\prime)
+\ell_{T^*}(\theta, \theta^\prime) &:= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2k^*_{\theta, \theta^\prime}} \left[(T(\theta^\prime) - T(\theta)) - (\mu^*(\theta^\prime) - \mu^*(\theta))\right]^2 \\
+                                  &= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2}\left(\frac{T(\theta^\prime) - \mu^*(\theta^\prime)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 - \frac{(T(\theta^\prime) - \mu^*(\theta^\prime))(T(\theta) - \mu^*(\theta))}{k^*_{\theta, \theta^\prime}}
 \end{align*}
 $$
 
-
+where $k^*_{\theta, \theta^\prime} := k^*(\theta^\prime) + k^*(\theta) - 2k^*(\theta^\prime, \theta)$. 
 
 
 
