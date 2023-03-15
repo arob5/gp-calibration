@@ -83,7 +83,7 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   
   if(!is.na(output_vars)) {
     Sig_eps <- Sig_eps[output_vars, output_vars]
-    model_errs <- model_errs[, ..output_vars]
+    model_errs <- model_errs[, output_vars]
   }
   L <- t(chol(Sig_eps))
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
@@ -93,6 +93,63 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   }
   
   return(-0.5 * log_quadratic_form)
+  
+}
+
+
+llik_Gaussian_SSR <- function(SSR, vars_obs, n_obs, normalize = TRUE) {
+  # Evaluate Gaussian log-likelihood assuming independence across time and across
+  # output variables. This is a convenience function that is parameterized in terms
+  # of the sum of squared errors for each output variable. This function evaluates 
+  # the log-likelihood for each output separately and returns the evaluations in 
+  # a vector. `llik_product_Gaussian_SSR()` is essentially the same function 
+  # but sums the log-likelihoods, thus returning the log-likelihood over 
+  # all outputs. 
+  #
+  # Args:
+  #    SSR: numeric(p), vector of sum of squared errors for each output, where p is 
+  #         the number of output variables. 
+  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
+  #    n_obs: integer(p), the number of observations for each output.
+  #
+  # Returns:
+  #    numeric(p), the log-likelihood evaluations for the p outputs. 
+  
+  p <- length(vars_obs)
+  llik_outputs <- vector(mode = "numeric", length = p)
+  
+  for(j in seq(1, p)) {
+    llik_outputs[j] <- -0.5 * n_obs[j] * log(vars_obs[j]) - 0.5 * SSR[j] / vars_obs[j]
+    if(normalize) llik_outputs[j] <- llik_outputs[j] - 0.5 * n_obs[j] * log(2*pi)
+  }
+  
+  return(llik_outputs)
+  
+}
+
+
+llik_product_Gaussian_SSR <- function(SSR, vars_obs, n_obs, normalize = TRUE) {
+  # Evaluate Gaussian log-likelihood assuming independence across time and across
+  # output variables. This is a convenience function that is parameterized in terms
+  # of the sum of squared errors for each output variable. 
+  #
+  # Args:
+  #    SSR: numeric(p), vector of sum of squared errors for each output, where p is 
+  #         the number of output variables. 
+  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
+  #    n_obs: integer(p), the number of observations for each output. 
+  #
+  # Returns:
+  #    numeric(1), the log-likelihood. 
+  
+  p <- length(vars_obs)
+  
+  llik <- -0.5 * sum(n_obs * log(vars_obs)) - 0.5 * sum(SSR / vars_obs)
+  if(normalize) {
+    llik <- llik - 0.5*log(2*pi) * sum(n_obs)
+  }
+  
+  return(llik)
   
 }
 
@@ -162,6 +219,26 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
   return(lprior)  
 
 }
+
+
+calc_posterior_theta <- function(theta, theta_prior_params, log = FALSE) {
+  # Args:
+  #    data_obs: data.table of dimension n x p, where n is the length of the time 
+  #              series outputs from the model, and p is the number of output variables.
+  #              This is Y in my typical notation. 
+  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
+  #                        model outputs f(theta) from a single model run. Or a list 
+  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
+  #                        the outputs from multiple model runs. 
+  
+  # Prior
+  log_prior <- calc_lprior_theta(theta, theta_prior_params)
+  
+  # Likelihood
+  SSR <- calc_SSR(data_obs, model_outputs_list)
+  
+}
+
 
 
 mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
@@ -1186,9 +1263,11 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   return(list(ref_pars = ref_pars, 
               PAR_data = PAR, 
               data_ref = data_ref, 
+              pars_cal_sel = pars_cal_sel, 
               data_obs_complete = data_obs_complete, # Includes all daily data
               data_obs = data_obs, # Might have lower frequency data and/or missing values
               obs_selector = observation_selector,
+              n_obs = colSums(observation_selector),
               Sig_eps = Sig_eps, 
               random_seed = random_seed, 
               N_time_steps = N_time_steps, 
@@ -1345,6 +1424,20 @@ generate_vsem_test_4 <- function(random_seed) {
 }
 
 
+GP_pointwise_loss <- function(val, gp_mean, gp_var) {
+  # This is the negative log-predictive density of a GP evaluated at a single input point, 
+  # up to an additive constant. 
+  #
+  # Args:
+  #    val: numeric, value at which to evaluate the loss/predictive density. 
+  #    gp_mean: numeric, the GP predictive mean. 
+  #    gp_var: numeric, the GP predictive variance. 
+  #
+  # Returns the negative log-predictive density, plus 0.5 * log(2*pi) to remove the constant. 
+  
+  log(gp_var) + 0.5 * (val - gp_mean)^2 / gp_var
+  
+}
 
 
 
