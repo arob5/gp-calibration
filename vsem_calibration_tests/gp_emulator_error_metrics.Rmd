@@ -83,6 +83,13 @@ The current PEcAn approach is to sample $\tilde{T}_j \sim T_j^*(\theta)$ and the
 $$ \sigma_j^2 \sim \mathcal{IG}(a_j + N_j/2, b_j + \tilde{T}_j/2) $$
 The same procedure can of course be used if we instead emulate the log of $T_j$. 
 
+## Some general notes on potential metrics
+
+* We want the metric to take into account the GP predictive distribution 
+* Also want the metric to take into account the true posterior (in the case when it is known)
+* We want the error metric to target the use cases (two places where the approximation is used in MCMC)
+* Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation variances are unknown, it is not clear how to weight the emulator error for each output. 
+
 ## Thinking about the posterior approximation
 Here we take a step back to think a bit more generally about how errors in approximating the sum of squared errors can propagate to 
 errors in the posterior approximation. I'm considering the likelihood parameters $\sigma_j^2$ to be fixed here. 
@@ -107,20 +114,32 @@ $$
 $$
 where I have defined $E(\theta; \epsilon, \sigma) := \frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2}$. Thus,
 $$ \frac{\hat{\pi}(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
-So, in the aggregate, if the GPs underestimate the squared error (i.e. the sum of the $\epsilon_j(\theta)$ is positive, modulo the effect of the variances) then the resulting estimate of $\hat{\pi}(\theta)$ will, unsurprisingly, be too large. The ratio of the approximate to the true posterior at $\theta$ varies exponentially in the additive error $\epsilon_j(\theta)$, for each output $j$. The rate of these exponential deviations is governed by the variances $\sigma_j^2$. If the signal-to-noise ratio is very low for output $j$, then $\sigma_j^2$ will be large, and the approximation error induced in the posterior will be more forgiving. We can also consider the relative error
+So, in the aggregate, if the GPs underestimate the squared error (i.e. the sum of the $\epsilon_j(\theta)$ is positive, modulo the effect of the variances) then the resulting estimate of $\hat{\pi}(\theta)$ will, unsurprisingly, be too large. The ratio of the approximate to the true posterior at $\theta$ varies exponentially in the additive error $\epsilon_j(\theta)$, for each output $j$. The rate of these exponential deviations is governed by the variances $\sigma_j^2$. If the signal-to-noise ratio is very low for output $j$, then $\sigma_j^2$ will be large, and the approximation error induced in the posterior will be more forgiving. Finally, note that the direction of errors across outputs is quite important. Since what actually matters is the sum, errors in different directions tend to cancel, while those in the same direction add together. We can also consider the relative error
 $$ \frac{\pi(\theta) - \hat{\pi}(\theta)}{\pi(\theta)} = 1 - \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
+As mentioned previously, we can consider a distribution on the residuals $\epsilon_j(\theta)$ induced by the GP distribution $T_j^*(\theta) \sim N(\mu_j^*(\theta), k_j^*(\theta))$: 
+$$ \epsilon_j(\theta) = T_j(\theta) - T_j^*(\theta) \sim N(T_j(\theta) - \mu_j^*(\theta), k_j^*(\theta))$$
+Thus, 
+$$E(\theta; \epsilon, \sigma) = \frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2} \sim \mathcal{N}\left(\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)$$
+and so 
+$$\frac{\hat{\pi}(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\} \sim \mathcal{LN}\left(\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$
+and
+$$ \hat{\pi}(\theta) \sim \mathcal{LN}\left(\log\pi(\theta) + \frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$ 
+Thus, in this simple Gaussian setting with L2 error approximated by GPs, we can derive the GP predictive distribution for the approximate posterior in closed-form. The median of $\hat{\pi}(\theta)$ is the true unnormalized posterior $\pi(\theta)$ and the mean and variance are given by
+$$
+\begin{align*}
+\mathbb{E}_{T^*} \hat{\pi}(\theta) &= \pi(\theta)\exp\left\{\frac{1}{8} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} \\
+\text{Var}_{T^*} \left(\hat{\pi}(\theta)\right) &= \exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\}\left[\exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} - 1\right] \left[\pi(\theta)^2 + \sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right]
+\end{align*}
+$$
 
 
 
-## Some general notes on potential metrics
 
-* We want the metric to take into account the GP predictive distribution 
-* Also want the metric to take into account the true posterior (in the case when it is known)
-* We want the error metric to target the use cases (two places where the approximation is used in MCMC)
-* Multiple outputs/data constraints define the likelihood, with the error for each output being approximated by independent GPs. When the observation variances are unknown, it is not clear how to weight the emulator error for each output. 
 
 ## Metrics for numerical experiments (known posterior)
 I begin by focusing on a single output $(p = 1)$ for simplicity. 
+
+
 
 ### Incorporating the Predictive GP Distribution 
 The approximation $T^*(\theta)$ to the sum of squared errors $T(\theta)$ is a stochastic approximation, with 
