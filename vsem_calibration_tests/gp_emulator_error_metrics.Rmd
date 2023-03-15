@@ -83,6 +83,34 @@ The current PEcAn approach is to sample $\tilde{T}_j \sim T_j^*(\theta)$ and the
 $$ \sigma_j^2 \sim \mathcal{IG}(a_j + N_j/2, b_j + \tilde{T}_j/2) $$
 The same procedure can of course be used if we instead emulate the log of $T_j$. 
 
+## Thinking about the posterior approximation
+Here we take a step back to think a bit more generally about how errors in approximating the sum of squared errors can propagate to 
+errors in the posterior approximation. I'm considering the likelihood parameters $\sigma_j^2$ to be fixed here. 
+For now, let $\pi(\theta)$ denote the unnormalized posterior
+$$ 
+\begin{align*}
+\pi(\theta) &:= \pi_0(\theta) \prod_{j = 1}^{p} \mathcal{N}_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j}) \\
+            &= \pi_0(\theta) \left[\prod_{j = 1}^{p} \frac{1}{\sqrt{2\pi\sigma_j^2}}\right]\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \\
+            &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \\
+\end{align*}
+$$
+Now let's consider additive errors in the GP approximation of the sum of squared errors. In particular, define the residuals
+$$ \epsilon_j(\theta) := T_j(\theta) - T_j^*(\theta)$$
+Note that $T_j^*(\theta)$ is random so $\epsilon_j(\theta)$ is as well. Now we consider the posterior approximation with these errors.
+$$
+\begin{align*}
+\hat{\pi}(\theta) &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j^*(\theta)}{\sigma_j^2} \right) \\
+                  &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta) - \epsilon_j(\theta)}{\sigma_j^2} \right) \\
+                  &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \exp\left(\frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2}\right) \\
+                  &= \pi(\theta)\exp\left\{E(\theta; \epsilon, \sigma)\right\}
+\end{align*}
+$$
+where I have defined $E(\theta; \epsilon, \sigma) := \frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2}$. Thus,
+$$ \frac{\hat{\pi}(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
+So, in the aggregate, if the GPs underestimate the squared error (i.e. the sum of the $\epsilon_j(\theta)$ is positive, modulo the effect of the variances) then the resulting estimate of $\hat{\pi}(\theta)$ will, unsurprisingly, be too large. The ratio of the approximate to the true posterior at $\theta$ varies exponentially in the additive error $\epsilon_j(\theta)$, for each output $j$. The rate of these exponential deviations is governed by the variances $\sigma_j^2$. If the signal-to-noise ratio is very low for output $j$, then $\sigma_j^2$ will be large, and the approximation error induced in the posterior will be more forgiving. We can also consider the relative error
+$$ \frac{\pi(\theta) - \hat{\pi}(\theta)}{\pi(\theta)} = 1 - \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
+
+
 
 ## Some general notes on potential metrics
 
@@ -140,6 +168,11 @@ $$
                                      &= \sum_{i = 1}^{K} \left[\log k^*(\theta_i) + \frac{1}{2} \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2\right]
 \end{align*}
 $$
+The above derivations have been for a single output, but since we are considering independent GPs the predictive density is a product of the predictive densities for each output, so we can simply add the losses. 
+$$ \int \sum_{j = 1}^{p} \ell_{T^*} \pi(\theta) d\theta = \sum_{j = 1}^{p} \int \ell_{T^*}(\theta) \pi(\theta) d\theta$$
+
+
+
 
 Next we consider an error metric for the difference $T(\theta^\prime) - T(\theta)$, where $\theta^\prime \sim q(\theta, \cdot)$. Recalling the pointwise predictive density $p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta))$, we again take the log, drop the constant, and flip the sign in defining the loss
 $$
@@ -267,16 +300,30 @@ gp_pred <- predict_independent_GPs(theta_grid_preprocessed, gp_fits, gp_lib, cov
 #
 
 SSR_pred <- sapply(gp_pred, function(pred) pred$mean)
+GP_pred_vars <- sapply(gp_pred, function(pred) pred$sd2)
 
-# Predictive density evaluated at true values
-
+# Predictive negative log density evaluated at true values
+GP_losses <- matrix(nrow = N_test, ncol = length(test1_list$output_vars))
+for(j in seq(1, ncol(GP_losses))) {
+  GP_losses[,j] <- GP_pointwise_loss(SSR_test[,j], SSR_pred[,j], GP_pred_vars[,j])  
+}
 
 # GP approximated posterior
 llik_pred_per_output <- sapply(seq(1, nrow(SSR_pred)), 
                                function(i) llik_Gaussian_SSR(SSR_pred[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
-llik_pred<- colSums(llik_pred_per_output)
+llik_pred <- colSums(llik_pred_per_output)
 lpost_theta_pred <- llik_pred + lprior_theta_test
 ```
+
+```{r, echo = FALSE}
+#
+# Evaluate loss integrals 
+#
+
+# integrate_loss_1d(GP_losses[,j], exp(post), d_theta)
+
+```
+
 
 ```{r, echo = FALSE}
 plot(theta_grid, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
@@ -292,7 +339,9 @@ lines(theta_grid, SSR_test[,j], col = "red")
 points(train_test_data$X_train, train_test_data$Y_train[,j], col = "red")
 ```
 
-
+```{r, echo = FALSE}
+plot(theta_grid, GP_losses[,4], type = "l")
+```
 
 
 

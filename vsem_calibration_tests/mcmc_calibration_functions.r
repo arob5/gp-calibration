@@ -1426,7 +1426,9 @@ generate_vsem_test_4 <- function(random_seed) {
 
 GP_pointwise_loss <- function(val, gp_mean, gp_var) {
   # This is the negative log-predictive density of a GP evaluated at a single input point, 
-  # up to an additive constant. 
+  # up to an additive constant. Can evaluate the loss at a vector of values, in which 
+  # case the three arguments `val`, `gp_mean`, and `gp_var` should all be of the same 
+  # length. 
   #
   # Args:
   #    val: numeric, value at which to evaluate the loss/predictive density. 
@@ -1439,6 +1441,29 @@ GP_pointwise_loss <- function(val, gp_mean, gp_var) {
   
 }
 
+
+integrate_loss_1d <- function(loss, post, d_theta) {
+  # Approximates the integral ell(theta)*post(theta) dtheta over a one-dimensional region, 
+  # where ell() is some loss function and post() is some density (typically the posterior). 
+  # Uses a trapezoidal numerical approximation. This function does not create the grid of theta
+  # values for the approximation, but rather assumes the arguments are vectors of function 
+  # evaluations of ell() and post() at some evenly spaced grid of theta values. 
+  # 
+  # Args:
+  #    loss: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
+  #          N is the number of grid points. 
+  #    post: numeric(N), vector of post() evaluations at the grid of evenly spaced points.
+  #    d_theta: numeric, the length from one grid point to an adjacent point. Points are assumed 
+  #             evenly spaced. 
+  #
+  # Returns:
+  #    numeric, approximation of the integral given by the trapezoidal rule. 
+  #
+  
+  N_grid <- length(loss)
+  0.5 * d_theta * (loss[1]*post[1] + loss[N_grid]*post[N_grid]) + d_theta * sum(loss[2:(N_grid-1)] * post[2:(N_grid-1)])
+  
+}
 
 
 
