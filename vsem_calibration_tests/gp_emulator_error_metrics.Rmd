@@ -12,6 +12,7 @@ library(lhs)
 library(hetGP)
 library(mlegp)
 library(ggplot2)
+library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
@@ -384,8 +385,11 @@ true_param_val <- test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"]
 
 # Plot 1
 gp_plot <- plot_gp_fit_1d_ggplot(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
-                                 main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", true_param = true_param_val, log_scale = TRUE)
-gp_plot # + ylim(-1e5, 1e6)
+                                 main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", vertical_line = true_param_val, log_scale = FALSE)
+gp_plot_trimmed <- gp_plot + ylim(-1e5, 1e6)
+
+print(gp_plot)
+suppressWarnings(print(gp_plot_trimmed))
 ```
 
 

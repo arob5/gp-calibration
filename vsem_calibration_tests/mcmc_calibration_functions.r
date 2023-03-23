@@ -1317,7 +1317,7 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
 
 
 plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
-                                  exponentiate_predictions = FALSE, log_scale = FALSE, true_param = NULL,
+                                  exponentiate_predictions = FALSE, log_scale = FALSE, vertical_line = NULL,
                                   xlab = "", ylab = "", main_title = "") {
   # Core function for producing plots for GP predictions with one-dimensional input space. The function plots
   # the true, known latent function values at the design inputs and test inputs. It also plots the 
@@ -1336,8 +1336,19 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
   #    gp_var_pred: numeric(M), vector of GP predictive variance at the test input points. 
   #    exponentiate_predictions: logical(1), if TRUE, produces a log-normal process plot by exponentiating the 
   #                              GP. Default is FALSE. 
-  #    
+  #    log_scale: logical(1), if TRUE the y-axis of the plot will be on a log base 10 scale. In particular, the 
+  #               plotted y values will be transformed as log10(y) and the y-axis labels will be printed as 
+  #               10^1, 10^2, etc. This has nothing to do with the log-normal process described above; the plot can 
+  #               be displayed on a log-scale whether or not `exponentiate_predictions` is TRUE. w
+  #    vertical_line: numeric(1), if non-NULL this is the x-intercept at which a vertical dashed line will be printed.
+  #                   This typically represents some true/baseline parameter in the input space. If NULL, no vertical 
+  #                   line will be included. 
+  #    xlab: character(1), the label/title for the x-axis. 
+  #    ylab: character(1), the label/title for the y-axis.
+  #    main_title: character(1), the main title for the plot. 
   #
+  # Returns:
+  #    A ggplot2 plot object. This can be used to display or to further modify the plot. 
 
   order_pred <- order(X_test)
   order_train <- order(X_train)
@@ -1384,8 +1395,8 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
               ggtitle(main_title)
   
   # Add vertical line
-  if(!is.null(true_param)) {
-    gp_plot <- gp_plot + geom_vline(xintercept = true_param, linetype = 2, color = "pink1")
+  if(!is.null(vertical_line)) {
+    gp_plot <- gp_plot + geom_vline(xintercept = vertical_line, linetype = 2, color = "pink1")
   }
   
   # Adjust y-axis labels if on log scale
