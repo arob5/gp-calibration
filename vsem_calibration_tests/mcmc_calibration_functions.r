@@ -648,8 +648,7 @@ fit_GP <- function(X_train, y_train, gp_lib, gp_kernel) {
   
 }
 
-
-LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE) {
+LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE, order_1d = FALSE) {
   # Generate a set training (design) points and test/validation points for evaluating a Gaussian 
   # process fit using Latin Hypercube Sampling (LHS). Can generate the train and test sets jointly, 
   # meaning they are sampled together in the LHS procedure. Or they can be sampled independently 
@@ -668,6 +667,10 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
   #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
   #                 truncation is performed to guarantee the samples are within the extent of the 
   #                 training set. Default is TRUE. 
+  #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
+  #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
+  #              the design points will be sorted in increasing order. This is convenient when 
+  #              plotting 1d GP plots. 
   #
   # Returns: 
   #    list, with named elements "X_train" and "X_test", storing the N_train x d and 
@@ -721,6 +724,81 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
     }
     
   }
+  
+  if(order_1d && (d == 1)) {
+    X_train <- X_train[order(X_train),,drop=FALSE]
+    X_test <- X_test[order(X_test),,drop=FALSE]
+  }
+  
+  return(list(X_train = X_train, X_test = X_test))
+  
+}
+
+
+grid_train_test <- function(N_train, N_test, prior_params, extrapolate, tail_prob_excluded = 0.01) {
+  # Note that currently the "extrapolate" argument makes no difference, since grid points are placed
+  # at the edges of the defined bounds. This can be changed if needed, by adding an "extrapolate_prob" 
+  # argument or something like that. 
+  #
+  #
+  
+  
+  # The dimension of the input space.
+  d <- nrow(prior_params)
+  
+  # Number of points marginally for each dimension.
+  N_train_per_dim <- N_train^(1/d)
+  N_test_per_dim <- N_test^(1/d)
+  if((round(N_train_per_dim) != N_train_per_dim) || (round(N_test_per_dim) != N_test_per_dim)) {
+    stop("N_train and N_test must have an integer d^th root; d = ", d)
+  }
+  
+  # Grid of inputs
+  X_train_marginals <- matrix(nrow = N_train_per_dim, ncol = d)
+  X_test_marginals <- matrix(nrow = N_test_per_dim, ncol = d)
+  
+  for(j in seq_len(d)) {
+    
+    if(prior_params[j, "dist"] == "Uniform") {
+      
+      # Train
+      X_train_marginals[,j] <- seq(prior_params[j, "param1"], prior_params[j, "param2"], length.out = N_train_per_dim)
+      
+      # Test
+      if(extrapolate) {
+        lower_bound_test <- prior_params[j, "param1"]
+        upper_bound_test <- prior_params[j, "param2"]
+      } else {
+        lower_bound_test <- min(X_train_marginals[,j])
+        upper_bound_test <- max(X_train_marginals[,j])
+      }
+      X_test_marginals[,j] <- seq(lower_bound_test, upper_bound_test, length.out = N_test_per_dim)
+      
+    } else if(prior_params[j, "dist"] == "Gaussian") {
+      
+      # Train
+      left_bound <- qnorm(tail_prob_excluded/2, prior_params[j, "param1"], prior_params[j, "param2"])
+      right_bound <- left_bound + 2*abs(left_bound)
+      X_train_marginals[,j] <- seq(left_bound, right_bound, length.out = N_train_per_dim)
+      
+      # Test
+      if(extrapolate) {
+        lower_bound_test <- left_bound
+        upper_bound_test <- right_bound
+      } else {
+        lower_bound_test <- min(X_train_marginals[,j])
+        upper_bound_test <- max(X_train_marginals[,j])
+      }
+      X_test_marginals[,j] <- seq(lower_bound_test, upper_bound_test, length.out = N_test_per_dim)
+    }
+    
+  }
+  
+  # Create grids
+  X_train <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_train_marginals[,j])))
+  X_test <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_test_marginals[,j])))
+  colnames(X_train) <- rownames(theta_prior_params)
+  colnames(X_test) <- rownames(theta_prior_params)
   
   return(list(X_train = X_train, X_test = X_test))
   
@@ -986,9 +1064,13 @@ transform_GP_pred_to_LNP <- function(gp_pred_mean = NULL, gp_pred_sd2 = NULL, gp
 }
 
 
-get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolate, ref_pars, pars_cal_sel,
-                                data_obs, PAR, output_vars, scale_X, normalize_Y, log_SSR) {
-  # Generates training (design) dataset and test dataset via Latin Hypercube sampling. 
+get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_pars, pars_cal_sel,
+                                data_obs, PAR, output_vars, scale_X, normalize_Y, log_SSR, 
+                                joint_LHS = FALSE, method = "LHS", order_1d = FALSE) {
+  # Generates training (design) dataset and test dataset via Latin Hypercube sampling or 
+  # via a grid-based approach. Note that the LHS method takes into account the prior, while 
+  # the grid-based approach simply creates a grid of evenly spaced points within the bounds
+  # defined by the prior. 
   # Input points are sampled from the space of calibration parameters, while the outputs 
   # are the squared L2 errors between the observed data and VSEM outputs, or the log 
   # of this quantity. Optionally pre-processes the data by scaling the inputs and 
@@ -1000,7 +1082,6 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #    prior_params: data.frame containing the prior distribution information of the input 
   #                  parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                  for the requirements of this data.frame. 
-  #    joint: logical, if TRUE jointly samples train/test. Default is TRUE. 
   #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
   #                 truncation is performed to guarantee the samples are within the extent of the 
   #                 training set. Default is TRUE. 
@@ -1018,6 +1099,15 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #         term in VSEM.
   #    log_SSR: logical(1), if TRUE includes log-transformed outputs as well, in addition to the
   #             outputs on the original scale. 
+  #    joint_LHS: logical, only relevant if `method` is LHS. If TRUE jointly samples train/test in a single LHS 
+  #               sample. Othwerwise, samples the train and test data separately. Default is FALSE. 
+  #    method: character(1), character string indicating the sampling or deterministic method used to 
+  #            generate the train/test points. Valid options are "LHS" (latin hypercube sampling, the default), 
+  #            or "grid". 
+  #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
+  #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
+  #              the design points will be sorted in increasing order, with the training response 
+  #              values ordered accordingly. This is convenient when plotting 1d GP plots. 
   #
   # Returns:
   #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
@@ -1025,8 +1115,12 @@ get_train_test_data <- function(N_train, N_test, prior_params, joint, extrapolat
   #    The latter two encode the transformations applied to the inputs and outputs, respectively 
   #    (see prep_GP_training_data()). 
   
-  # Generate train and test input datasets via Latin Hypercube Sampling
-  X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate)
+  # Generate train and test input datasets
+  if(method == "LHS") {
+    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate, order_1d)
+  } else if(method == "grid") {
+    X_train_test <- grid_train_test(N_train, N_test, prior_params, extrapolate, order_1d)
+  }
   X_train <- X_train_test$X_train
   X_test <- X_train_test$X_test
   
@@ -1172,7 +1266,8 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 }
 
 
-plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, exponentiate_predictions = FALSE, cst_shift = 0, ...) {
+plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, 
+                           exponentiate_predictions = FALSE, log_scale = FALSE, cst_shift = 0, ...) {
   
   order_pred <- order(X_pred)
   order_train <- order(X_train)
@@ -1190,13 +1285,120 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
     CI_upper <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
   }
   
-  plot(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red", ...)
+  ylim_already_specified <- ("ylim" %in% names(list(...)))
+  if(!ylim_already_specified) {
+    ylim <- c(min(CI_lower), max(CI_upper))
+  }
+  
+  if(log_scale) {
+    shift <- -ylim[1] + 1
+    y_pred <- log(y_pred + shift)
+    CI_lower <- log(CI_lower + shift)
+    CI_upper <- log(CI_upper + shift)
+    y_train <- log(y_train + shift)
+    gp_mean_pred <- log(gp_mean_pred + shift)
+    if(!ylim_already_specified) {
+      ylim <- log(ylim + shift)
+    }
+  }
+  
+  if(ylim_already_specified) {
+    plot(X_pred[order_pred], y_pred[order_pred], type = "l", col = "red", ...)
+  } else {
+    plot(X_pred[order_pred], y_pred[order_pred], type = "l", ylim = ylim, col = "red", ...)
+  }
+  
   lines(X_pred[order_pred], CI_lower[order_pred] - cst_shift, col = "gray")
   lines(X_pred[order_pred], CI_upper[order_pred] - cst_shift, col = "gray")
   points(X_train[order_train], y_train[order_train], col = "red")
   lines(X_pred[order_pred], gp_mean_pred[order_pred] - cst_shift, type = "l", col = "blue")
   
 }
+
+
+plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
+                                  exponentiate_predictions = FALSE, log_scale = FALSE, true_param = NULL,
+                                  xlab = "", ylab = "", main_title = "") {
+  # Core function for producing plots for GP predictions with one-dimensional input space. The function plots
+  # the true, known latent function values at the design inputs and test inputs. It also plots the 
+  # GP predictive mean and confidence bands at the test inputs. This function can also produce log-normal process (LNP)
+  # plots when `exponentiate_predictions` is TRUE. In this case, the assumption is that the arguments correspond to 
+  # a GP, but the desired plot corresponds to the LNP produced by exponentiating the GP. The plot can also optionally include
+  # a vertical line corresponding to some "true" parameter in the input space. By setting `log_scale` to TRUE, the plot will 
+  # 
+  # 
+  # Args:
+  #    X_test: matrix, of dimension M x 1 where M is the number of test input points. 
+  #    y_test: numeric(M), the vector of true outputs at the M test points. 
+  #    X_train: matrix, of dimension N x 1, where N is the number of design/training points. 
+  #    y_train: numeric(N), the vector of true outputs at the N design points (the training response values). 
+  #    gp_mean_pred: numeric(M), vector of GP predictive mean at the test input points. 
+  #    gp_var_pred: numeric(M), vector of GP predictive variance at the test input points. 
+  #    exponentiate_predictions: logical(1), if TRUE, produces a log-normal process plot by exponentiating the 
+  #                              GP. Default is FALSE. 
+  #    
+  #
+
+  order_pred <- order(X_test)
+  order_train <- order(X_train)
+  gp_sd_pred <- sqrt(gp_var_pred)
+  
+  # Confidence intervals
+  if(exponentiate_predictions) {
+    CI_lower <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+    transformed_predictions <- transform_GP_pred_to_LNP(gp_pred_mean = gp_mean_pred, gp_pred_sd2 = gp_var_pred)
+    gp_mean_pred <- transformed_predictions$mean
+    gp_var_pred <- transformed_predictions$sd2
+  } else {
+    CI_lower <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+  }
+  
+  if(log_scale) {
+    shift <- -min(CI_lower) + 1
+    y_test <- log10(y_test + shift)
+    CI_lower <- log10(CI_lower + shift)
+    CI_upper <- log10(CI_upper + shift)
+    y_train <- log10(y_train + shift)
+    gp_mean_pred <- log10(gp_mean_pred + shift)
+  }
+  
+  df <- data.frame(x_test = X_test[order_pred,1], 
+                   y_test = y_test[order_pred], 
+                   y_test_pred = gp_mean_pred[order_pred],
+                   CI_lower = CI_lower[order_pred,1], 
+                   CI_upper = CI_upper[order_pred,1], 
+                   x_train = X_train[order_train,1], 
+                   y_train = y_train[order_train])
+  
+  gp_plot <- ggplot(data=df, aes(x = x_test, y = y_test_pred)) + 
+              geom_line(color = "blue") + 
+              geom_line(aes(y = y_test), color = "red") + 
+              geom_line(aes(y = CI_lower), color = "gray") + 
+              geom_line(aes(y = CI_upper), color = "gray") + 
+              geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
+              geom_point(aes(x = x_train, y = y_train), color = "red") + 
+              xlab(xlab) + 
+              ylab(ylab) + 
+              ggtitle(main_title)
+  
+  # Add vertical line
+  if(!is.null(true_param)) {
+    gp_plot <- gp_plot + geom_vline(xintercept = true_param, linetype = 2, color = "pink1")
+  }
+  
+  # Adjust y-axis labels if on log scale
+  if(log_scale) {
+    y_axis_labels <- ggplot_build(gp_plot)$layout$panel_params[[1]]$y$get_labels()
+    y_axis_labels[!is.na(y_axis_labels)] <- paste0("10^", y_axis_labels[!is.na(y_axis_labels)])
+    gp_plot <- gp_plot + scale_y_continuous(labels = y_axis_labels)
+  }
+  
+  return(gp_plot)
+  
+}
+
 
 # TODO: need to add missing values for time series
 generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
@@ -1438,6 +1640,49 @@ GP_pointwise_loss <- function(val, gp_mean, gp_var) {
   # Returns the negative log-predictive density, plus 0.5 * log(2*pi) to remove the constant. 
   
   log(gp_var) + 0.5 * (val - gp_mean)^2 / gp_var
+  
+}
+
+
+gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred) {
+  # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
+  # the sum of squared errors for each output. For numerical stability, the data is shifted so that the density 
+  # is always evaluated at the point 1.0, with the log-normal distribution appropriately scaled to account for 
+  # this. 
+  #
+  # Args:
+  #    log_vals: numeric(M), vector of (the log of) the points at which to evaluate the predictive density.
+  #              This vector typically looks like [log pi(theta1), ..., log pi(thetaM)], where theta1, ..., thetaM
+  #              are the test/validation inputs. This function takes the log of the evaluation points instead of the 
+  #              values itself so that it can appropriately shift the data before exponentiating to avoid 
+  #              numerical overflow/underflow. 
+  #    sig2_outputs: numeric(p), vector of the observation variances for each output, where p is the number of 
+  #                  outputs. 
+  #    lprior_theta: numeric(M), vector of log prior evaluations at test points theta_1, ..., thetaM. 
+  #    gp_mean_pred: matrix, of dimension M x p. The ith row contains the GP posterior mean evaluations 
+  #                  mu^*_1(theta_i), ..., mu^*_p(theta_i) at test input theta_i. 
+  #    gp_var_pred: matrix, of dimension M x p. The ith row contains the GP posterior variance evaluations 
+  #                  k^*_1(theta_i), ..., k^*_p(theta_i) at test input theta_i. 
+  #
+  # Returns:
+  #    numeric(M), the log predictive density evaluations log p(pi(theta_i)|pi_hat(theta_i)) for the M input points
+  #    theta_i. Note that the randomness is only coming from the p independent GPs used to approximate the posterior. 
+  #    The GP posterior Gaussian distributions on the L2 error of each output induces a log-normal distribution on 
+  #    the approximate posterior. 
+  
+  # Avoiding overflow/underflow 
+  scaling_factors <- -log_vals
+  
+  p <- length(sig2_outputs)
+  log_C <- -0.5 * p * log(2*pi) - 0.5 * sum(log(sig2_outputs))
+  
+  gp_scaled_means <- gp_mean_pred %*% diag(1/sig2_outputs)
+  gp_scaled_vars <- gp_var_pred %*% diag(1/sig2_outputs^2)
+  
+  lnorm_mean <- log_C + lprior_theta - 0.5 * rowSums(gp_scaled_means)
+  lnorm_var <- 0.25 * rowSums(gp_scaled_vars)
+  
+  return(dlnorm(1.0, lnorm_mean + scaling_factors, lnorm_var, log = TRUE))
   
 }
 
