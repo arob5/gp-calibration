@@ -1266,8 +1266,8 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 }
 
 
-plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, 
-                           exponentiate_predictions = FALSE, log_scale = FALSE, cst_shift = 0, ...) {
+plot_gp_fit_1d_old <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_var_pred, 
+                               exponentiate_predictions = FALSE, log_scale = FALSE, cst_shift = 0, ...) {
   
   order_pred <- order(X_pred)
   order_train <- order(X_train)
@@ -1316,9 +1316,9 @@ plot_gp_fit_1d <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, gp_va
 }
 
 
-plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
-                                  exponentiate_predictions = FALSE, log_scale = FALSE, vertical_line = NULL,
-                                  xlab = "", ylab = "", main_title = "") {
+plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
+                           exponentiate_predictions = FALSE, log_scale = FALSE, vertical_line = NULL,
+                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9) {
   # Core function for producing plots for GP predictions with one-dimensional input space. The function plots
   # the true, known latent function values at the design inputs and test inputs. It also plots the 
   # GP predictive mean and confidence bands at the test inputs. This function can also produce log-normal process (LNP)
@@ -1335,17 +1335,24 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
   #    gp_mean_pred: numeric(M), vector of GP predictive mean at the test input points. 
   #    gp_var_pred: numeric(M), vector of GP predictive variance at the test input points. 
   #    exponentiate_predictions: logical(1), if TRUE, produces a log-normal process plot by exponentiating the 
-  #                              GP. Default is FALSE. 
+  #                              GP. Default is FALSE. Note that if `exponentiate_predictions` is TRUE then the 
+  #                              assumption is that the GP predictions must be exponentiated, but the baseline 
+  #                              data (X_test, y_test, X_train, y_train) is on the right scale and is not modified 
+  #                              fpr the plot. 
   #    log_scale: logical(1), if TRUE the y-axis of the plot will be on a log base 10 scale. In particular, the 
   #               plotted y values will be transformed as log10(y) and the y-axis labels will be printed as 
   #               10^1, 10^2, etc. This has nothing to do with the log-normal process described above; the plot can 
-  #               be displayed on a log-scale whether or not `exponentiate_predictions` is TRUE. w
+  #               be displayed on a log-scale whether or not `exponentiate_predictions` is TRUE. To avoid taking the 
+  #               log of non-positive values, the actual transformation performed is log10(y + C), for a constant 
+  #               C determined by the data to plot. 
   #    vertical_line: numeric(1), if non-NULL this is the x-intercept at which a vertical dashed line will be printed.
   #                   This typically represents some true/baseline parameter in the input space. If NULL, no vertical 
   #                   line will be included. 
   #    xlab: character(1), the label/title for the x-axis. 
   #    ylab: character(1), the label/title for the y-axis.
   #    main_title: character(1), the main title for the plot. 
+  #    CI_prob: numeric(1), value in (0, 1) determining the confidence intervals that will be plotted. e.g. 0.9 means
+  #             90% confidence intervals (the default). 
   #
   # Returns:
   #    A ggplot2 plot object. This can be used to display or to further modify the plot. 
@@ -1355,15 +1362,17 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
   gp_sd_pred <- sqrt(gp_var_pred)
   
   # Confidence intervals
+  CI_tail_prob <- 0.5 * (1 - CI_prob)
+  CI_plot_label <- paste0(CI_prob * 100, "% CI")
   if(exponentiate_predictions) {
-    CI_lower <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
-    CI_upper <- qlnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+    CI_lower <- qlnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qlnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
     transformed_predictions <- transform_GP_pred_to_LNP(gp_pred_mean = gp_mean_pred, gp_pred_sd2 = gp_var_pred)
     gp_mean_pred <- transformed_predictions$mean
     gp_var_pred <- transformed_predictions$sd2
   } else {
-    CI_lower <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
-    CI_upper <- qnorm(0.05, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
+    CI_lower <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
+    CI_upper <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
   }
   
   if(log_scale) {
@@ -1378,8 +1387,8 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
   df <- data.frame(x_test = X_test[order_pred,1], 
                    y_test = y_test[order_pred], 
                    y_test_pred = gp_mean_pred[order_pred],
-                   CI_lower = CI_lower[order_pred,1], 
-                   CI_upper = CI_upper[order_pred,1], 
+                   CI_lower = CI_lower[order_pred], 
+                   CI_upper = CI_upper[order_pred], 
                    x_train = X_train[order_train,1], 
                    y_train = y_train[order_train])
   
@@ -1391,7 +1400,7 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
               geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
               geom_point(aes(x = x_train, y = y_train), color = "red") + 
               xlab(xlab) + 
-              ylab(ylab) + 
+              ylab(paste0(ylab, " (", CI_plot_label, ")")) + 
               ggtitle(main_title)
   
   # Add vertical line
@@ -1409,6 +1418,47 @@ plot_gp_fit_1d_ggplot <- function(X_test, y_test, X_train, y_train, gp_mean_pred
   return(gp_plot)
   
 }
+
+
+# plot_lnp_fit_1d <- function(X_test, y_test, X_train, y_train, lnp_log_mean_pred, lnp_log_var_pred, 
+#                            vertical_line = NULL, xlab = "", ylab = "", main_title = "", CI_prob = 0.9) {
+# 
+#   order_pred <- order(X_test)
+#   order_train <- order(X_train)
+#   lnp_log_sd_pred <- sqrt(lnp_log_var_pred)
+#   
+#   # Confidence Intervals
+#   CI_tail_prob <- 0.5 * (1 - CI_prob)
+#   CI_plot_label <- paste0(CI_prob * 100, "% CI")
+#   CI_lower <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = TRUE)
+#   CI_upper <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = FALSE)
+#   
+#   # ggplot 
+#   df <- data.frame(x_test = X_test[order_pred,1], 
+#                    y_test = y_test[order_pred], 
+#                    y_test_pred = lnp_log_mean_pred[order_pred],
+#                    CI_lower = CI_lower[order_pred], 
+#                    CI_upper = CI_upper[order_pred], 
+#                    x_train = X_train[order_train,1], 
+#                    y_train = y_train[order_train])
+#   
+#   lnp_plot <- ggplot(data=df, aes(x = x_test, y = y_test_pred)) + 
+#                 geom_line(color = "blue") + 
+#                 geom_line(aes(y = y_test), color = "red") + 
+#                 geom_line(aes(y = CI_lower), color = "gray") + 
+#                 geom_line(aes(y = CI_upper), color = "gray") + 
+#                 geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
+#                 geom_point(aes(x = x_train, y = y_train), color = "red") + 
+#                 xlab(xlab) + 
+#                 ylab(paste0(ylab, " (", CI_plot_label, ")")) + 
+#                 ggtitle(main_title)
+#   
+#   # Add vertical line
+#   if(!is.null(vertical_line)) {
+#     gp_plot <- gp_plot + geom_vline(xintercept = vertical_line, linetype = 2, color = "pink1")
+#   }
+#   
+# }  
 
 
 # TODO: need to add missing values for time series
@@ -1651,6 +1701,41 @@ GP_pointwise_loss <- function(val, gp_mean, gp_var) {
   # Returns the negative log-predictive density, plus 0.5 * log(2*pi) to remove the constant. 
   
   log(gp_var) + 0.5 * (val - gp_mean)^2 / gp_var
+  
+}
+
+
+get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred) {
+  # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
+  # the sum of squared errors for each output. Under these assumptions, the approximation to the true 
+  # posterior resulting from the GP approximations of the squared L2 error has a log-normal distribution. 
+  # This function calculates the log mean and log variance of this log-normal process evaluated at some 
+  # test inputs theta_1, ..., theta_M. 
+  #
+  # Args:
+  #    sig2_outputs: numeric(p), vector of the observation variances for each output, where p is the number of 
+  #                  outputs. 
+  #    lprior_theta: numeric(M), vector of log prior evaluations at test points theta_1, ..., theta_M. 
+  #    gp_mean_pred: matrix, of dimension M x p. The ith row contains the GP posterior mean evaluations 
+  #                  mu^*_1(theta_i), ..., mu^*_p(theta_i) at test input theta_i. 
+  #    gp_var_pred: matrix, of dimension M x p. The ith row contains the GP posterior variance evaluations 
+  #                 k^*_1(theta_i), ..., k^*_p(theta_i) at test input theta_i. 
+  #
+  # Returns:
+  #    list, with elements "mean_log" and "var_log". Each are numeric vectors of length M containing 
+  #    the mean and variance, respectively, of the log of the GP posterior approximation at the 
+  #    test inputs theta_1, ..., theta_M. 
+  
+  p <- length(sig2_outputs)
+  log_C <- -0.5 * p * log(2*pi) - 0.5 * sum(log(sig2_outputs))
+  
+  gp_scaled_means <- gp_mean_pred %*% diag(1/sig2_outputs)
+  gp_scaled_vars <- gp_var_pred %*% diag(1/sig2_outputs^2)
+  
+  mean_log_lnorm <- log_C + lprior_theta - 0.5 * rowSums(gp_scaled_means)
+  var_log_lnorm <- 0.25 * rowSums(gp_scaled_vars)
+  
+  return(list(mean_log = mean_log_lnorm, var_log = var_log_lnorm))
   
 }
 

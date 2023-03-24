@@ -140,98 +140,33 @@ $$
 \hat{\alpha}(\theta, \theta^\prime) &= \frac{\hat{\pi}(\theta^\prime)q(\theta^\prime, \theta)}{\hat{\pi}(\theta)q(\theta, \theta^\prime)} \\
                                     &= \frac{\pi(\theta^\prime)\exp\left\{E(\theta^\prime; \epsilon, \sigma)\right\}q(\theta^\prime, \theta)}{\pi(\theta)\exp\left\{E(\theta; \epsilon, \sigma)\right\}q(\theta, \theta^\prime)} \\
                                     &= \alpha(\theta, \theta^\prime)\exp\left\{E(\theta^\prime; \epsilon, \sigma) - E(\theta; \epsilon, \sigma)\right\} \\
-                                    &= \alpha(\theta, \theta^\prime)\exp\left\{\frac{1}{2} \sum_{j = 1}^{p} \frac{\epsilon_j(\theta^\prime) - \epsilon_j(\theta)}{\sigma_j^2}\right\}
+                                    &= \alpha(\theta, \theta^\prime)\exp\left\{\frac{1}{2} \sum_{j = 1}^{p} \frac{\epsilon_j(\theta^\prime) - \epsilon_j(\theta)}{\sigma_j^2}\right\} \\
+                                    &= \alpha(\theta, \theta^\prime)\exp\left\{\frac{1}{2} \sum_{j = 1}^{p} 
+                                    \frac{\left[T_j(\theta^\prime) - T_j(\theta)\right] - \left[T^*_j(\theta^\prime) - T^*_j(\theta)\right]}{\sigma_j^2} \right\}
+                                    
 \end{align*}
 $$
+Thus, accurate approximation of $\alpha(\theta, \theta^\prime)$ requires accurately predicting SSR increments - the difference in L2 error at two different parameter values. The distribution of $\hat{\alpha}(\theta, \theta^\prime)$ is also Gaussian, and now depends on the predictive covariances $k^*(\theta, \theta^\prime)$. 
 
-## Metrics for numerical experiments (known posterior)
-I begin by focusing on a single output $(p = 1)$ for simplicity. 
-
-
-
-### Incorporating the Predictive GP Distribution 
-The approximation $T^*(\theta)$ to the sum of squared errors $T(\theta)$ is a stochastic approximation, with 
-distribution $T^*(\theta) \sim \mathcal{N}(\mu^*(\theta), k^*(\theta))$. Thus, in evaluating the emulator performance we seek 
-to integrate whatever error metric we're using over this randomness. To begin, we consider pointwise measures of error 
-between $T^*(\theta)$ and $T(\theta)$. The natural measure to use here is to evaluate the the predictive density of 
-$T^*(\theta)$ at the point $T(\theta)$:
-
-$$ p_{T^*(\theta)}(T(\theta)) = \mathcal{N}(T(\theta)|\mu^*(\theta), k^*(\theta)) = \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right)$$
-
-We can also consider predictive density of other functions of $T^*(\theta)$, in order to define specialized error metrics that capture the error in specific use cases of the approximation. For example, note that in the acceptance ratio $\alpha(\theta, \theta^\prime)$, we require an approximation 
-of the difference $T(\theta^\prime) - T(\theta)$. The predictive density of this quantity is given by 
-
-$$ p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta)) = \mathcal{N}\left(T(\theta^\prime) - T(\theta)|\mu^*(\theta^\prime) - \mu^*(\theta), k^*(\theta^\prime) + k^*(\theta) - 2k(\theta^\prime, \theta)\right)$$
-
-We can actually extend this idea to derive the distribution of $\alpha^*(\theta, \theta^\prime)$, the approximation of $\alpha(\theta, \theta^\prime)$ resulting from replacing $T$ with $T^*$. Using properties of Gaussians and log-normals we have,
-
-$$ \alpha^*(\theta, \theta^\prime) \sim \mathcal{LN}\left(\log\left[\frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta) q(\theta, \theta^\prime)}\right] - \frac{1}{2\sigma^2}\left[\mu^*(\theta^\prime) - \mu^*(\theta)\right], \frac{k^*(\theta^\prime, \theta)}{\sigma^2} - \frac{1}{2\sigma^2} \left[k^*(\theta^\prime) + k^*(\theta)\right]\right)$$
-So larger values of $p_{\alpha^*}(\alpha(\theta, \theta^\prime))$ indicate a better approximation of $\alpha(\theta, \theta^\prime)$. 
-
-### Weighting by the True Posterior
-We also want to weight the error based on the relative frequencies of the $\theta$, captured by the true posterior $\pi(\theta)$. I first consider the error between $T^*(\theta)$ and $T(\theta)$ averaged over $\theta \sim \pi$. The pointwise error on a $\theta$-by-$\theta$ basis will be measured by the predictive density $p_{T^*(\theta)}(T(\theta))$, as detailed above. In this sense, the average error is given by the integral 
-
-$$ 
-\begin{align*}
-\mathbb{E}_\pi \left[p_{T^*(\theta)}(T(\theta))\right] &= \int p_{T^*(\theta)}(T(\theta)) \pi(\theta) d\theta \\
-                                                       &= \int \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta \\
-                                                       &= \frac{1}{\sqrt{2\pi}} \int \frac{1}{\sqrt{k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta
-\end{align*}
+# Summary of Predictive Distributions 
 $$
-Or we can consider error on the log-scale via the expected log-density
-$$
-\begin{align*}
-\mathbb{E}_\pi \left[\log p_{T^*(\theta)}(T(\theta))\right] &= -\frac{1}{2}\log(2\pi) - \int \log k^*(\theta) + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2 \pi(\theta)d\theta
-\end{align*}
+\hat{\pi}(\theta) \sim \mathcal{LN}\left(-\frac{p}{2}\log(2\pi) - \frac{1}{2}\sum_{j = 1}^{p} \log(\sigma_j^2) + \log\pi(\theta) - \frac{1}{2} \sum_{j = 1}^{p} \frac{\mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)
 $$
 
-We notice that the predictive variance $k^*(\theta)$ plays two roles. The error is smaller when $\int \log k^*(\theta) \pi(\theta) d\theta$ is small; all else equal, this would favor emulators with smaller predictive variances, even if those predictive variances were overconfident. However, the predictive variance appears again in the second term of the integral as $\frac{1}{k^*(\theta)}$, meaning that the squared deviations are penalized less when the predictive variance is larger. Define the loss 
+# Quantifying Emulator Error
 
-$$ \ell_{T^*}(\theta) := \log k^*(\theta) + \frac{1}{2} \left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2$$
-which modifies $\log p_{T^*(\theta)}$ by dropping the constant and then flipping the sign so that now smaller $\ell_{T^*}(\theta)$ is better. To estimate $\mathbb{E}[\ell_{T^*}(\theta)]$ we can utilize a Monte Carlo estimate
-$$ 
-\begin{align*}
-\left(\overline{\ell}_{T^*}\right)_K &:= \sum_{i = 1}^{K} \ell_{T^*}(\theta_i) && \theta_i \overset{iid}{\sim} \pi \\
-                                     &= \sum_{i = 1}^{K} \left[\log k^*(\theta_i) + \frac{1}{2} \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2\right]
-\end{align*}
+## Integrating (log) predictive density with respect to true posterior
+Consider a pointwise loss given by the negative log of the predictive density 
+$$ L(\theta) := L(\theta; T^*_1, \dots, T^*_p) = -\log p_{\hat{\pi}(\theta)}[\pi(\theta)]$$
+We can average this over $\theta$, weighting by the true posterior. 
 $$
-The above derivations have been for a single output, but since we are considering independent GPs the predictive density is a product of the predictive densities for each output, so we can simply add the losses. 
-$$ \int \sum_{j = 1}^{p} \ell_{T^*} \pi(\theta) d\theta = \sum_{j = 1}^{p} \int \ell_{T^*}(\theta) \pi(\theta) d\theta$$
-
-
-
-
-Next we consider an error metric for the difference $T(\theta^\prime) - T(\theta)$, where $\theta^\prime \sim q(\theta, \cdot)$. Recalling the pointwise predictive density $p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta))$, we again take the log, drop the constant, and flip the sign in defining the loss
+\mathbb{E}_{\pi}\left[L(\theta)\right] = \int L(\theta) \pi(\theta) d\theta
 $$
-\begin{align*}
-\ell_{T^*}(\theta, \theta^\prime) &:= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2k^*_{\theta, \theta^\prime}} \left[(T(\theta^\prime) - T(\theta)) - (\mu^*(\theta^\prime) - \mu^*(\theta))\right]^2 \\
-                                  &= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2}\left(\frac{T(\theta^\prime) - \mu^*(\theta^\prime)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 - \frac{(T(\theta^\prime) - \mu^*(\theta^\prime))(T(\theta) - \mu^*(\theta))}{k^*_{\theta, \theta^\prime}}
-\end{align*}
-$$
+which we can approximate via a Monte Carlo approach, or numerical integration for simple one-dimensional examples. Similar pointwise losses $L(\theta)$ can be defined for the individual $T^*_j$, as well as the acceptance ratio $\hat{\alpha}(\theta, \theta^\prime)$ or other quantities of interest. Weighting by the true posterior does not necessarily seem like the right thing to do here; we can imagine a situation where the true posterior at an input $\theta$ is essentially zero, yet error in the approximation $\hat{\pi}(\theta)$ causes the approximate posterior to be larger and hence will affect inference. This error would be ignored by the above measure. We could instead consider weighting by the prior. 
 
-where $k^*_{\theta, \theta^\prime} := k^*(\theta^\prime) + k^*(\theta) - 2k^*(\theta^\prime, \theta)$. Instead of directly integrating $\ell_{T^*}(\theta, \theta^\prime)$ with respect to $\pi$ we must recall that we are interested in the error introduced in the Metropolis accept-reject ratio. Thus, we should consider 
-$\theta \sim \pi$ and $\theta^\prime \sim q(\theta, \cdot)$. This amounts to defining the error as
-$$ \int \int \ell_{T^*}(\theta, \theta^\prime) q(\theta, \theta^\prime)\pi(\theta) d\theta^\prime d\theta$$
-
-
-
-### GP Emulator
-
-I'll just consider a single-output case for simplicity, where the true vector of squared errors evaluated over some validation points $\theta_1, \dots, \theta_M$, 
-$$ T := \left[T(\theta_1), \dots, T(\theta_M) \right]^T$$
-is approximated by 
-$$ T^* = \left[T^*(\theta_1), \dots, T^*(\theta_M) \right]^T$$ 
-where $T^* \sim \mathcal{GP}(\mu^*, k^*)$. Note that the approximation $T^*$ is stochastic, so metrics will be defined by integrating over the randomness in some manner. A first-pass idea that takes into account the true posterior $\pi(\theta)$ and the pointwise predictive GP distributions (but not GP predictive covariances) is: 
-$$ 
-\begin{align*}
-\sum_{i = 1}^{M} \pi(\theta_i) \mathbb{E}_{T^*(\theta_i)}\left[\left(T(\theta_i) - T^*(\theta_i)\right)^2\right] &= \sum_{i = 1}^{M} \pi(\theta_i) \left[k^*(\theta_i) + (\mu_*(\theta_i) - T(\theta_i))^2 \right] \\ 
-\end{align*}
-$$
-However, this has the effect of punishing emulators with larger predictive variances, even if those predictive variances are well-calibrated; in other words, it can favor over-confident emulators. Moreover, the concept of "well-calibrated variances" isn't really even well-defined in the setting of emulating deterministic functions. An alternative metric that treats the predictive variances in the opposite way is
-$$ \sum_{i = 1}^{M} \pi(\theta_i) \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2$$ 
-Now the squared deviation is penalized more when the predictive variance is smaller. 
-
-Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
+When considering error in the acceptance ratio, we should also take into account the proposal distribution. Letting 
+$L(\theta, \theta^\prime) := -\log p_{\hat{\alpha}(\theta, \theta^\prime)}[\alpha(\theta, \theta^\prime)]$, we could consider
+$$ \int \int L(\theta, \theta^\prime) q(\theta, \theta^\prime)\pi(\theta) d\theta^\prime d\theta$$
 
 # Numerical Tests
 
@@ -356,48 +291,61 @@ lpost_theta_pred <- llik_pred + lprior_theta_test
 # Calculate log predictive density of posterior 
 lpred_pi_test <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars)
 lpred_pi_train <- gp_approx_posterior_pred_log_density(lpost_theta_train, diag(test1_list$Sig_eps), lprior_theta_train, SSR_pred_train_floor, GP_pred_vars_train)
+
+# Log mean and log variance of predictive distribution
+post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars)
+post_approx_LNP_log_mean_test <- post_approx_LNP_params_test$mean_log
+post_approx_LNP_log_var_test <- post_approx_LNP_params_test$var_log
 ```
 
 ### Individual Output Plots
+
+#### Original Scale
 ```{r, echo = FALSE}
-par(mfrow = c(1, 3))
-
-j <- 1
-# Plot 1
-plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
-               main = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR")
-abline(v = test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"], col = "gray", lty = "dashed")
-
-# Plot 2: Truncate y axis
-plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
-               main = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", ylim = c(0, 1e6))
-abline(v = test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"], col = "gray", lty = "dashed")
-
-# Plot 3: Log Scale
-plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
-               main = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", log_scale = TRUE)
-abline(v = test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"], col = "gray", lty = "dashed")
-```
-```{r, echo = FALSE}
-j <- 1
-
 true_param_val <- test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"]
 
-# Plot 1
-gp_plot <- plot_gp_fit_1d_ggplot(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
-                                 main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", vertical_line = true_param_val, log_scale = FALSE)
-gp_plot_trimmed <- gp_plot + ylim(-1e5, 1e6)
+gp_plots <- vector(mode = "list", length = length(test1_list$output_vars))
+for(j in seq_along(gp_plots)) {
+  gp_plots[[j]] <- plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
+                                  main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", vertical_line = true_param_val, log_scale = FALSE)
+  print(gp_plots[[j]])
+}
 
-print(gp_plot)
-suppressWarnings(print(gp_plot_trimmed))
 ```
 
-
+#### Cutting off large values
 ```{r, echo = FALSE}
-j <- 1
+pct_y_keep <- .1
+for(j in seq_along(gp_plots)) {
+  plot_y_scale <- layer_scales(gp_plots[[j]] )$y$range$range
+  ylim_min <- plot_y_scale[1]
+  ylim_max <- ylim_min + pct_y_keep * diff(plot_y_scale)
+  gp_plot_trimmed <- gp_plots[[j]] + ylim(ylim_min , ylim_max)
+  suppressWarnings(print(gp_plot_trimmed))
+}
 
 ```
 
+#### Log-Scale
+```{r, echo = FALSE}
+
+for(j in seq_along(gp_plots)) {
+  gp_plot <- plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
+                            main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", 
+                            ylab = "SSR", vertical_line = true_param_val, log_scale = TRUE)
+  print(gp_plot)
+}
+
+```
+
+
+### Posterior Plots
+```{r, echo = FALSE}
+post_approx_plot <- plot_gp_fit_1d(theta_grid, lpost_theta_pred, train_test_data$X_train, lpost_theta_train, post_approx_LNP_log_mean_test, 
+                                   post_approx_LNP_log_var_test, main_title = "GP Log Posterior Approximation", xlab = "KEXT",
+                                   ylab = "Log Posterior Density", vertical_line = true_param_val, log_scale = FALSE, exponentiate_predictions = FALSE)
+print(post_approx_plot)
+```
 
 
 ```{r, echo = FALSE}
@@ -409,7 +357,7 @@ lines(theta_grid, lpost_theta_pred, col = "blue")
 points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
 
 # Plot 2: Posterior loss, negative loss predictive density
-plot(theta_grid, -lpred_pi_test, type = "l", main = "Posterior Loss", xlab = "theta", ylab = "Negative Predictive Density of Posterior Approx")
+plot(theta_grid, -lpred_pi_test, type = "l", main = "Posterior Loss", xlab = "theta", ylab = "Negative Log Predictive Density of Posterior Approx")
 points(train_test_data$X_train, -lpred_pi_train, col = "red", pch = 16)
 
 
@@ -448,45 +396,93 @@ the interval it changes very slowly. The GP fit ends up being too wiggly, presum
 regimes; the left portion drives the lengthscale to be smaller, which results in an overly wiggly fit in the remainder of the interval. I don't think this fully captures the issue either though; it seems like the optimal kernel parameters on the lefthand portion would be a very large range and a pretty large lengthscale as well. It seems like this portion could be well-approximated by a function that is pretty linear. The righthand side has 
 
 
+# Old Notes
+
+## Metrics for numerical experiments (known posterior)
+I begin by focusing on a single output $(p = 1)$ for simplicity. 
+
+### Incorporating the Predictive GP Distribution 
+The approximation $T^*(\theta)$ to the sum of squared errors $T(\theta)$ is a stochastic approximation, with 
+distribution $T^*(\theta) \sim \mathcal{N}(\mu^*(\theta), k^*(\theta))$. Thus, in evaluating the emulator performance we seek 
+to integrate whatever error metric we're using over this randomness. To begin, we consider pointwise measures of error 
+between $T^*(\theta)$ and $T(\theta)$. The natural measure to use here is to evaluate the the predictive density of 
+$T^*(\theta)$ at the point $T(\theta)$:
+
+$$ p_{T^*(\theta)}(T(\theta)) = \mathcal{N}(T(\theta)|\mu^*(\theta), k^*(\theta)) = \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right)$$
+
+We can also consider predictive density of other functions of $T^*(\theta)$, in order to define specialized error metrics that capture the error in specific use cases of the approximation. For example, note that in the acceptance ratio $\alpha(\theta, \theta^\prime)$, we require an approximation 
+of the difference $T(\theta^\prime) - T(\theta)$. The predictive density of this quantity is given by 
+
+$$ p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta)) = \mathcal{N}\left(T(\theta^\prime) - T(\theta)|\mu^*(\theta^\prime) - \mu^*(\theta), k^*(\theta^\prime) + k^*(\theta) - 2k(\theta^\prime, \theta)\right)$$
+
+We can actually extend this idea to derive the distribution of $\alpha^*(\theta, \theta^\prime)$, the approximation of $\alpha(\theta, \theta^\prime)$ resulting from replacing $T$ with $T^*$. Using properties of Gaussians and log-normals we have,
+
+$$ \alpha^*(\theta, \theta^\prime) \sim \mathcal{LN}\left(\log\left[\frac{\pi_0(\theta^\prime)q(\theta^\prime, \theta)}{\pi_0(\theta) q(\theta, \theta^\prime)}\right] - \frac{1}{2\sigma^2}\left[\mu^*(\theta^\prime) - \mu^*(\theta)\right], \frac{k^*(\theta^\prime, \theta)}{\sigma^2} - \frac{1}{2\sigma^2} \left[k^*(\theta^\prime) + k^*(\theta)\right]\right)$$
+So larger values of $p_{\alpha^*}(\alpha(\theta, \theta^\prime))$ indicate a better approximation of $\alpha(\theta, \theta^\prime)$. 
+
+### Weighting by the True Posterior
+We also want to weight the error based on the relative frequencies of the $\theta$, captured by the true posterior $\pi(\theta)$. I first consider the error between $T^*(\theta)$ and $T(\theta)$ averaged over $\theta \sim \pi$. The pointwise error on a $\theta$-by-$\theta$ basis will be measured by the predictive density $p_{T^*(\theta)}(T(\theta))$, as detailed above. In this sense, the average error is given by the integral 
+
+$$ 
+\begin{align*}
+\mathbb{E}_\pi \left[p_{T^*(\theta)}(T(\theta))\right] &= \int p_{T^*(\theta)}(T(\theta)) \pi(\theta) d\theta \\
+                                                       &= \int \frac{1}{\sqrt{2\pi k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta \\
+                                                       &= \frac{1}{\sqrt{2\pi}} \int \frac{1}{\sqrt{k^*(\theta)}} \exp\left(-\frac{(T(\theta) - \mu^*(\theta))^2}{2k^*(\theta)} \right) \pi(\theta) d\theta
+\end{align*}
+$$
+Or we can consider error on the log-scale via the expected log-density
+$$
+\begin{align*}
+\mathbb{E}_\pi \left[\log p_{T^*(\theta)}(T(\theta))\right] &= -\frac{1}{2}\log(2\pi) - \int \log k^*(\theta) + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2 \pi(\theta)d\theta
+\end{align*}
+$$
+
+We notice that the predictive variance $k^*(\theta)$ plays two roles. The error is smaller when $\int \log k^*(\theta) \pi(\theta) d\theta$ is small; all else equal, this would favor emulators with smaller predictive variances, even if those predictive variances were overconfident. However, the predictive variance appears again in the second term of the integral as $\frac{1}{k^*(\theta)}$, meaning that the squared deviations are penalized less when the predictive variance is larger. Define the loss 
+
+$$ \ell_{T^*}(\theta) := \log k^*(\theta) + \frac{1}{2} \left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*(\theta)}}\right)^2$$
+which modifies $\log p_{T^*(\theta)}$ by dropping the constant and then flipping the sign so that now smaller $\ell_{T^*}(\theta)$ is better. To estimate $\mathbb{E}[\ell_{T^*}(\theta)]$ we can utilize a Monte Carlo estimate
+$$ 
+\begin{align*}
+\left(\overline{\ell}_{T^*}\right)_K &:= \sum_{i = 1}^{K} \ell_{T^*}(\theta_i) && \theta_i \overset{iid}{\sim} \pi \\
+                                     &= \sum_{i = 1}^{K} \left[\log k^*(\theta_i) + \frac{1}{2} \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2\right]
+\end{align*}
+$$
+The above derivations have been for a single output, but since we are considering independent GPs the predictive density is a product of the predictive densities for each output, so we can simply add the losses. 
+$$ \int \sum_{j = 1}^{p} \ell_{T^*} \pi(\theta) d\theta = \sum_{j = 1}^{p} \int \ell_{T^*}(\theta) \pi(\theta) d\theta$$
 
 
 
 
+Next we consider an error metric for the difference $T(\theta^\prime) - T(\theta)$, where $\theta^\prime \sim q(\theta, \cdot)$. Recalling the pointwise predictive density $p_{T^*(\theta^\prime) - T^*(\theta)}(T(\theta^\prime) - T(\theta))$, we again take the log, drop the constant, and flip the sign in defining the loss
+$$
+\begin{align*}
+\ell_{T^*}(\theta, \theta^\prime) &:= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2k^*_{\theta, \theta^\prime}} \left[(T(\theta^\prime) - T(\theta)) - (\mu^*(\theta^\prime) - \mu^*(\theta))\right]^2 \\
+                                  &= \frac{1}{2}\log k^*_{\theta, \theta^\prime} + \frac{1}{2}\left(\frac{T(\theta^\prime) - \mu^*(\theta^\prime)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 + \frac{1}{2}\left(\frac{T(\theta) - \mu^*(\theta)}{\sqrt{k^*_{\theta, \theta^\prime}}}\right)^2 - \frac{(T(\theta^\prime) - \mu^*(\theta^\prime))(T(\theta) - \mu^*(\theta))}{k^*_{\theta, \theta^\prime}}
+\end{align*}
+$$
+
+where $k^*_{\theta, \theta^\prime} := k^*(\theta^\prime) + k^*(\theta) - 2k^*(\theta^\prime, \theta)$. Instead of directly integrating $\ell_{T^*}(\theta, \theta^\prime)$ with respect to $\pi$ we must recall that we are interested in the error introduced in the Metropolis accept-reject ratio. Thus, we should consider 
+$\theta \sim \pi$ and $\theta^\prime \sim q(\theta, \cdot)$. This amounts to defining the error as
+$$ \int \int \ell_{T^*}(\theta, \theta^\prime) q(\theta, \theta^\prime)\pi(\theta) d\theta^\prime d\theta$$
 
 
 
+### GP Emulator
 
+I'll just consider a single-output case for simplicity, where the true vector of squared errors evaluated over some validation points $\theta_1, \dots, \theta_M$, 
+$$ T := \left[T(\theta_1), \dots, T(\theta_M) \right]^T$$
+is approximated by 
+$$ T^* = \left[T^*(\theta_1), \dots, T^*(\theta_M) \right]^T$$ 
+where $T^* \sim \mathcal{GP}(\mu^*, k^*)$. Note that the approximation $T^*$ is stochastic, so metrics will be defined by integrating over the randomness in some manner. A first-pass idea that takes into account the true posterior $\pi(\theta)$ and the pointwise predictive GP distributions (but not GP predictive covariances) is: 
+$$ 
+\begin{align*}
+\sum_{i = 1}^{M} \pi(\theta_i) \mathbb{E}_{T^*(\theta_i)}\left[\left(T(\theta_i) - T^*(\theta_i)\right)^2\right] &= \sum_{i = 1}^{M} \pi(\theta_i) \left[k^*(\theta_i) + (\mu_*(\theta_i) - T(\theta_i))^2 \right] \\ 
+\end{align*}
+$$
+However, this has the effect of punishing emulators with larger predictive variances, even if those predictive variances are well-calibrated; in other words, it can favor over-confident emulators. Moreover, the concept of "well-calibrated variances" isn't really even well-defined in the setting of emulating deterministic functions. An alternative metric that treats the predictive variances in the opposite way is
+$$ \sum_{i = 1}^{M} \pi(\theta_i) \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sqrt{k^*(\theta_i)}}\right)^2$$ 
+Now the squared deviation is penalized more when the predictive variance is smaller. 
 
-
-
-
-```{r, echo = FALSE}
-#
-# Evaluate loss integrals 
-#
-
-# integrate_loss_1d(GP_losses[,j], exp(post), d_theta)
-
-```
-
-
-
-
-
-```{r}
-j <- 4
-plot(theta_grid, SSR_pred[,j], type = "l", col = "blue")
-lines(theta_grid, SSR_test[,j], col = "red")
-points(train_test_data$X_train, train_test_data$Y_train[,j], col = "red")
-```
-
-```{r, echo = FALSE}
-plot(theta_grid, GP_losses[,4], type = "l")
-```
-
-
-
-
-
+Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
 
 
