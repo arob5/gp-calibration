@@ -25,7 +25,9 @@ I suppose there are really two questions here: 1.) developing error metrics to u
 2.) developing error metrics that can be used in practice to evaluate the emulator fit. Though we are emulating the sum of squared errors $T(\theta)$ 
 (or its log $L(\theta)$) what we are really interested in is the effect of the emulator approximation on the posterior distribution 
 $$\pi(\theta) \propto \pi_0(\theta)p(Y|\theta) = \pi_0(\theta)\mathcal{L}(\theta) = \pi_0(\theta)\prod_{j = 1}^{p} \mathcal{N}_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j})$$
-Note that I've started writing $N_j$ to specify that sample sizes may be different across outputs, given the fact that significant data imbalances are something we will have to be thinking about. 
+This yields the unnormalized log posterior:
+$$ \log\pi(\theta) = \log\pi_0(\theta) - \frac{\log(2\pi)}{2}\sum_{j = 1}^{p} N_j - \frac{1}{2}\sum_{j = 1}^{p} N_j \log(\sigma_j^2) - \frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2}$$
+
 Here are some general thoughts on error metrics: 
 
 * We want the metric to take into account the GP predictive distribution 
@@ -98,7 +100,7 @@ For now, let $\pi(\theta)$ denote the unnormalized posterior and $\pi_0(\theta)$
 $$ 
 \begin{align*}
 \pi(\theta) &:= \pi_0(\theta) \prod_{j = 1}^{p} \mathcal{N}_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j}) \\
-            &= \pi_0(\theta) \left[\prod_{j = 1}^{p} \frac{1}{\sqrt{2\pi\sigma_j^2}}\right]\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \\
+            &= \pi_0(\theta) \left[\prod_{j = 1}^{p} (2\pi \sigma_j^2)^{-N_j/2}\right]\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \\
             &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \\
 \end{align*}
 $$
@@ -134,7 +136,7 @@ $$
 \text{Var}_{T^*} \left(\hat{\pi}(\theta)\right) &= \exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\}\left[\exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} - 1\right] \left[\pi(\theta)^2 + \sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right]
 \end{align*}
 $$
-We can perform similar calculations for the approximate acceptance ratio in the Metropolis accept-reject step. 
+We can perform similar calculations for the approximate acceptance ratio in the Metropolis accept-reject step.
 $$
 \begin{align*}
 \hat{\alpha}(\theta, \theta^\prime) &= \frac{\hat{\pi}(\theta^\prime)q(\theta^\prime, \theta)}{\hat{\pi}(\theta)q(\theta, \theta^\prime)} \\
@@ -150,7 +152,7 @@ Thus, accurate approximation of $\alpha(\theta, \theta^\prime)$ requires accurat
 
 # Summary of Predictive Distributions 
 $$
-\hat{\pi}(\theta) \sim \mathcal{LN}\left(-\frac{p}{2}\log(2\pi) - \frac{1}{2}\sum_{j = 1}^{p} \log(\sigma_j^2) + \log\pi(\theta) - \frac{1}{2} \sum_{j = 1}^{p} \frac{\mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)
+\hat{\pi}(\theta) \sim \mathcal{LN}\left(-\frac{\log(2\pi)}{2}\sum_{j = 1}^{p} N_j - \frac{1}{2}\sum_{j = 1}^{p} N_j \log(\sigma_j^2) + \log\pi_0(\theta) - \frac{1}{2} \sum_{j = 1}^{p} \frac{\mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)
 $$
 
 # Quantifying Emulator Error
@@ -224,23 +226,24 @@ gp_fits <- fit_independent_GPs(train_test_data$X_train_preprocessed, train_test_
 # Grid points for numerical approximation of integral over loss
 # rng <- qunif(c(.01, .99), min = theta_prior_params$param1, max = theta_prior_params$param2)
 # theta_grid <- matrix(seq(rng[1], rng[2], length.out = N_test), ncol = 1)
-theta_grid <- matrix(seq(min(train_test_data$X_train), max(train_test_data$X_train), length.out = N_test), ncol = 1)
-theta_grid_preprocessed <- scale_input_data(theta_grid, train_test_data$input_bounds)
-d_theta <- theta_grid[2,] - theta_grid[1,]
+# theta_grid <- matrix(seq(min(train_test_data$X_train), max(train_test_data$X_train), length.out = N_test), ncol = 1)
+# theta_grid_preprocessed <- scale_input_data(theta_grid, train_test_data$input_bounds)
+# d_theta <- theta_grid[2,] - theta_grid[1,]
 
 # True SSR and log-likelihood evaluations
-model_outputs_list <- lapply(theta_grid, function(theta) run_VSEM(theta, test1_list$ref_pars, test1_list$pars_cal_sel, test1_list$PAR_data, test1_list$output_vars))
+model_outputs_list <- lapply(train_test_data$X_test, 
+                             function(theta) run_VSEM(theta, test1_list$ref_pars, test1_list$pars_cal_sel, test1_list$PAR_data, test1_list$output_vars))
 SSR_test <- calc_SSR(test1_list$data_obs, model_outputs_list, na.rm = TRUE) 
 llik_test_per_output <- sapply(seq(1, nrow(SSR_test)), 
-                               function(i) llik_Gaussian_SSR(SSR_test[i,], 
-                                                             diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
+                               function(i) llik_Gaussian_SSR(SSR_test[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
+                                                             
 llik_test<- colSums(llik_test_per_output)
 llik_train<- sapply(seq(1, nrow(train_test_data$Y_train)), 
                                 function(i) llik_product_Gaussian_SSR(train_test_data$Y_train[i,], 
                                                                       diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
 
 # Log-prior evaluations
-lprior_theta_test <- sapply(seq(1, nrow(theta_grid)), function(i) calc_lprior_theta(theta_grid[i,], theta_prior_params))
+lprior_theta_test <- sapply(seq(1, nrow(train_test_data$X_test)), function(i) calc_lprior_theta(train_test_data$X_test[i,], theta_prior_params))
 lprior_theta_train <- sapply(seq(1, nrow(train_test_data$X_train)), 
                              function(i) calc_lprior_theta(train_test_data$X_train[i,], theta_prior_params))
 
@@ -252,7 +255,7 @@ lpost_theta_train <- llik_train + lprior_theta_train
 
 ```{r, include = FALSE}
 # Predict with GPs
-gp_pred <- predict_independent_GPs(theta_grid_preprocessed, gp_fits, gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
+gp_pred <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fits, gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
                                    output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
 gp_pred_train <- predict_independent_GPs(train_test_data$X_train_preprocessed, gp_fits, gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
                                          output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
@@ -281,10 +284,9 @@ for(j in seq(1, ncol(GP_losses))) {
 }
 
 # GP approximated posterior
-llik_pred_per_output <- sapply(seq(1, nrow(SSR_pred)), 
-                               function(i) llik_Gaussian_SSR(SSR_pred[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
-llik_pred <- colSums(llik_pred_per_output)
-lpost_theta_pred <- llik_pred + lprior_theta_test
+llik_test_per_output <- sapply(seq(1, nrow(SSR_pred)), function(i) llik_Gaussian_SSR(SSR_pred[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
+llik_test <- colSums(llik_test_per_output)
+lpost_theta_test <- llik_test + lprior_theta_test
 ```
 
 ```{r, echo = FALSE}
@@ -293,7 +295,7 @@ lpred_pi_test <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(tes
 lpred_pi_train <- gp_approx_posterior_pred_log_density(lpost_theta_train, diag(test1_list$Sig_eps), lprior_theta_train, SSR_pred_train_floor, GP_pred_vars_train)
 
 # Log mean and log variance of predictive distribution
-post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars)
+post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars, test1_list$n_obs)
 post_approx_LNP_log_mean_test <- post_approx_LNP_params_test$mean_log
 post_approx_LNP_log_var_test <- post_approx_LNP_params_test$var_log
 ```
@@ -306,7 +308,7 @@ true_param_val <- test1_list$ref_pars[test1_list$pars_cal_sel, "true_value"]
 
 gp_plots <- vector(mode = "list", length = length(test1_list$output_vars))
 for(j in seq_along(gp_plots)) {
-  gp_plots[[j]] <- plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
+  gp_plots[[j]] <- plot_gp_fit_1d(train_test_data$X_test, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
                                   main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", ylab = "SSR", vertical_line = true_param_val, log_scale = FALSE)
   print(gp_plots[[j]])
 }
@@ -330,7 +332,7 @@ for(j in seq_along(gp_plots)) {
 ```{r, echo = FALSE}
 
 for(j in seq_along(gp_plots)) {
-  gp_plot <- plot_gp_fit_1d(theta_grid, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
+  gp_plot <- plot_gp_fit_1d(train_test_data$X_test, SSR_test[,j], train_test_data$X_train, train_test_data$Y_train[,j], gp_pred[[j]]$mean, gp_pred[[j]]$sd2, 
                             main_title = paste0("GP SSR Fit: ", test1_list$output_vars[[j]]), xlab = "KEXT", 
                             ylab = "SSR", vertical_line = true_param_val, log_scale = TRUE)
   print(gp_plot)
@@ -341,10 +343,26 @@ for(j in seq_along(gp_plots)) {
 
 ### Posterior Plots
 ```{r, echo = FALSE}
-post_approx_plot <- plot_gp_fit_1d(theta_grid, lpost_theta_pred, train_test_data$X_train, lpost_theta_train, post_approx_LNP_log_mean_test, 
+post_approx_plot <- plot_gp_fit_1d(train_test_data$X_test, lpost_theta_test, train_test_data$X_train, lpost_theta_train, post_approx_LNP_log_mean_test, 
                                    post_approx_LNP_log_var_test, main_title = "GP Log Posterior Approximation", xlab = "KEXT",
                                    ylab = "Log Posterior Density", vertical_line = true_param_val, log_scale = FALSE, exponentiate_predictions = FALSE)
 print(post_approx_plot)
+```
+
+```{r, echo = FALSE}
+pct_y_keep <- .1
+plot_y_scale <- layer_scales(post_approx_plot)$y$range$range
+ylim_max <- plot_y_scale[2]
+ylim_min <- ylim_max - pct_y_keep * diff(plot_y_scale)
+suppressWarnings(print(post_approx_plot + ylim(ylim_min, ylim_max)))
+```
+
+```{r, echo = FALSE}
+pct_y_keep <- .04
+plot_y_scale <- layer_scales(post_approx_plot)$y$range$range
+ylim_max <- plot_y_scale[2]
+ylim_min <- ylim_max - pct_y_keep * diff(plot_y_scale)
+suppressWarnings(print(post_approx_plot + ylim(ylim_min, ylim_max)))
 ```
 
 
@@ -352,12 +370,13 @@ print(post_approx_plot)
 par(mfrow = c(1, 2))
 
 # Plot 1: true vs. approximate log posterior
-plot(theta_grid, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
-lines(theta_grid, lpost_theta_pred, col = "blue")
+plot(train_test_data$X_test, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior", 
+     ylim = c(ylim_min, ylim_max))
+lines(train_test_data$X_test, post_approx_LNP_log_mean_test, col = "blue")
 points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
 
 # Plot 2: Posterior loss, negative loss predictive density
-plot(theta_grid, -lpred_pi_test, type = "l", main = "Posterior Loss", xlab = "theta", ylab = "Negative Log Predictive Density of Posterior Approx")
+plot(train_test_data$X_test, -lpred_pi_test, type = "l", main = "Posterior Loss", xlab = "theta", ylab = "Negative Log Predictive Density of Posterior Approx")
 points(train_test_data$X_train, -lpred_pi_train, col = "red", pch = 16)
 
 
@@ -371,22 +390,22 @@ points(train_test_data$X_train, -lpred_pi_train, col = "red", pch = 16)
 ```{r, echo = FALSE}
 par(mfrow = c(1, 3))
 
-# Plot 1: true vs. approximate log posterior
-plot(theta_grid, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
-lines(theta_grid, lpost_theta_pred, col = "blue")
-points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
-
-# Plot 2: Zoom in
-select_subset <- (theta_grid >= 0.4)
-plot(theta_grid[select_subset], lpost_theta_test[select_subset], type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
-lines(theta_grid, lpost_theta_pred, col = "blue")
-points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
-
-# Plot 3: Zoom in
-select_subset <- (theta_grid >= 0.4) & (theta_grid < 0.45)
-plot(theta_grid[select_subset], lpost_theta_test[select_subset], type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
-lines(theta_grid, lpost_theta_pred, col = "blue")
-points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
+# # Plot 1: true vs. approximate log posterior
+# plot(train_test_data$X_test, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
+# lines(train_test_data$X_test, lpost_theta_pred, col = "blue")
+# points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
+# 
+# # Plot 2: Zoom in
+# select_subset <- (train_test_data$X_test >= 0.4)
+# plot(train_test_data$X_test[select_subset], lpost_theta_test[select_subset], type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
+# lines(train_test_data$X_test, lpost_theta_pred, col = "blue")
+# points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
+# 
+# # Plot 3: Zoom in
+# select_subset <- (train_test_data$X_test >= 0.4) & (train_test_data$X_test < 0.45)
+# plot(train_test_data$X_test[select_subset], lpost_theta_test[select_subset], type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior")
+# lines(train_test_data$X_test, lpost_theta_pred, col = "blue")
+# points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
 ```
 
 ### Some initial takeaways

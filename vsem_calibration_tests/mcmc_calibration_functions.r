@@ -1705,7 +1705,7 @@ GP_pointwise_loss <- function(val, gp_mean, gp_var) {
 }
 
 
-get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred) {
+get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred, n_obs) {
   # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
   # the sum of squared errors for each output. Under these assumptions, the approximation to the true 
   # posterior resulting from the GP approximations of the squared L2 error has a log-normal distribution. 
@@ -1720,6 +1720,7 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
   #                  mu^*_1(theta_i), ..., mu^*_p(theta_i) at test input theta_i. 
   #    gp_var_pred: matrix, of dimension M x p. The ith row contains the GP posterior variance evaluations 
   #                 k^*_1(theta_i), ..., k^*_p(theta_i) at test input theta_i. 
+  #    n_obs: integer(p), the number of observations for each output. 
   #
   # Returns:
   #    list, with elements "mean_log" and "var_log". Each are numeric vectors of length M containing 
@@ -1727,7 +1728,7 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
   #    test inputs theta_1, ..., theta_M. 
   
   p <- length(sig2_outputs)
-  log_C <- -0.5 * p * log(2*pi) - 0.5 * sum(log(sig2_outputs))
+  log_C <- -0.5 * log(2*pi) * sum(n_obs) - 0.5 * sum(n_obs * log(sig2_outputs)) 
   
   gp_scaled_means <- gp_mean_pred %*% diag(1/sig2_outputs)
   gp_scaled_vars <- gp_var_pred %*% diag(1/sig2_outputs^2)
