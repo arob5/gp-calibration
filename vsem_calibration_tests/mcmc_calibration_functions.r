@@ -240,10 +240,10 @@ calc_posterior_theta <- function(theta, theta_prior_params, log = FALSE) {
 }
 
 
-
+# TODO: update this; I believe data_obs should now be treated as a matrix
 mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
                            theta_init = NA, theta_prior_params, 
-                           learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = NA, diag_cov = FALSE, 
+                           learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = list(), diag_cov = FALSE, 
                            N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay, proposal_scale_init) {
   # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
   # between the different output variables, but assumes independence across time. Samples from posterior over both  
@@ -302,7 +302,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   par_cal_names <- rownames(par_ref)[par_cal_sel]
   theta_samp <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
   colnames(theta_samp) <- par_cal_names
-  if(isTRUE(Sig_eps_prior_params$dist == "IG")) {
+  if(learn_Sig_eps && isTRUE(Sig_eps_prior_params$dist == "IG")) {
     diag_cov <- TRUE
   }
   if(diag_cov) {
@@ -315,8 +315,10 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   if(is.na(theta_init)) {
     theta_init <- sample_prior_theta(theta_prior_params)
   }
-  if(is.na(Sig_eps_init)) {
+  if(learn_Sig_eps && is.na(Sig_eps_init)) {
     Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+  } else {
+    Sig_eps_init <- diag(1, nrow = p, ncol = p)
   }
   
   theta_samp[1,] <- theta_init
@@ -327,7 +329,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   }
   
   Sig_eps_curr <- Sig_eps_init
-  model_errs_curr <- data_obs[, ..output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars)
+  model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars)
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -368,7 +370,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     prop_sd[itr] <- as.numeric(L_prop * sqrt(exp(log_scale_prop)))
 
     # Calculate log-likelihoods for current and proposed theta
-    model_errs_prop <- data_obs[, ..output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
+    model_errs_prop <- data_obs[, output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
     llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
     llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
 
@@ -1789,7 +1791,36 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_
 }
 
 
-integrate_loss_1d <- function(loss, weights, d_theta) {
+# TODO: I think the range of the y-axis is just too large 
+integrate_loss_1d_log_weights <- function(loss_vals, log_weights, thetas, max_range = log(.Machine$double.xmax), equally_spaced) {
+  
+  min_idx <- 1
+  max_idx <- length(thetas)
+
+  if(diff(range(log_weights)) < max_range) {
+    return(loss_vals, exp(log_weights), thetas)
+  }
+  
+  integral_approx <- 0
+  max_idx <- floor(max_idx / 2)
+  while(max_idx < length(thetas)) {
+    m <- min(log_weights[min_idx:max_idx])
+    M <- max(log_weights[min_idx:max_idx])
+    
+    if(M - m > max_range) {
+      max_idx <- max(floor(max_idx / 2), min_idx + 1)
+    } else {
+      shifted_log_weights <- log_weights[min_idx:max_idx] - m
+      val <- integrate_loss_1d(loss_vals[min_idx:max_idx], exp(shifted_log_weights), ) 
+    }
+    
+  }  
+
+  
+}
+
+
+integrate_loss_1d <- function(loss_vals, weights, thetas, equally_spaced) {
   # Approximates the integral ell(theta)* w(theta) dtheta over a one-dimensional region, 
   # where ell() is some loss function and w() is some density function (typically the posterior). 
   # Uses a trapezoidal numerical approximation. This function does not create the grid of theta
@@ -1797,22 +1828,26 @@ integrate_loss_1d <- function(loss, weights, d_theta) {
   # evaluations of ell() and w() at some evenly spaced grid of theta values. 
   # 
   # Args:
-  #    loss: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
+  #    loss_vals: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
   #          N is the number of grid points. 
   #    weights: numeric(N), vector of weights for integral; this is often the post() evaluations 
   #             at the grid of evenly spaced points.
-  #    d_theta: numeric, the length from one grid point to an adjacent point. Points are assumed 
-  #             evenly spaced. 
+  #    thetas: numeric(N), the grid points. 
+  #    equally_spaced: logical(1), is the grid `thetas` equally spaced or not? 
   #
   # Returns:
   #    numeric, approximation of the integral given by the trapezoidal rule. 
-  #
   
-  N_grid <- length(loss)
-  0.5 * d_theta * (loss[1]*post[1] + loss[N_grid]*post[N_grid]) + d_theta * sum(loss[2:(N_grid-1)] * post[2:(N_grid-1)])
+  if(equally_spaced) {
+    d_theta <- thetas[2] - thetas[1]
+  } else {
+    stop("Non equally spaced grid not currently supported.")
+  }
+  
+  N_grid <- length(loss_vals)
+  0.5 * d_theta * (loss_vals[1]*weights[1] + loss_vals[N_grid]*weights[N_grid]) + d_theta * sum(loss_vals[2:(N_grid-1)] * weights[2:(N_grid-1)])
   
 }
-
 
 
 

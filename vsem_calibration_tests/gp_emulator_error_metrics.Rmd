@@ -167,16 +167,18 @@ $$
 which we can approximate via a Monte Carlo approach, or numerical integration for simple one-dimensional examples. Similar pointwise losses $L(\theta)$ can be defined for the individual $T^*_j$, as well as the acceptance ratio $\hat{\alpha}(\theta, \theta^\prime)$ or other quantities of interest. Weighting by the true posterior does not necessarily seem like the right thing to do here; we can imagine a situation where the true posterior at an input $\theta$ is essentially zero, yet error in the approximation $\hat{\pi}(\theta)$ causes the approximate posterior to be larger and hence will affect inference. This error would be ignored by the above measure. We could instead consider weighting by the prior. 
 
 When considering error in the acceptance ratio, we should also take into account the proposal distribution. Letting 
-$L(\theta, \theta^\prime) := -\log p_{\hat{\alpha}(\theta, \theta^\prime)}[\alpha(\theta, \theta^\prime)]$, we could consider
+$L(\theta, \theta^\prime) := -\log p_{\alpha^*}(\theta, \theta^\prime)[\alpha(\theta, \theta^\prime)]$, we could consider
 $$ \int \int L(\theta, \theta^\prime) q(\theta, \theta^\prime)\pi(\theta) d\theta^\prime d\theta$$
+
 ### A Note on Computation
+
 To approximate the integrals above I consider either traditional deterministic numerical schemes or Monte Carlo approaches. An important thing to keep in mind is that 
 $\pi(\theta)$ is an unnormalized density. I have been a bit loose with notation but note that the true loss looks like 
 $$
 \mathbb{E}_{\pi}\left[L(\theta)\right] = \frac{1}{Z} \int L(\theta) \pi(\theta) d\theta
 $$
 If we are comparing a bunch of different models with respect to this error measure, each model will result in a different loss function $L(\theta)$, but $\pi(\theta)$ will remain constant. Thus, in this setting there is no issue with approximating $\mathbb{E}_{\pi}\left[L(\theta)\right]$ with a numerical, grid-based approach using the unnormalized density. The estimates will be off by a constant, but they will all be off by the same constant and thus may be compared. Suppose, instead that we compute an approximate posterior as $\hat{\pi}(\theta) := \mathbb{E}\left[\pi^*(\theta)\right]$; or, more explicitly
-$$\hat{\pi}(\theta) \propto \pi_0(\theta)\mathbb{E}_{\pi}\left[\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T^*_j(\theta)}{\sigma_j^2} \right) \right]$$
+$$\hat{\pi}(\theta) \propto \pi_0(\theta)\mathbb{E}\left[\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T^*_j(\theta)}{\sigma_j^2} \right) \right]$$
 and then wanted to compute the error with respect to the approximate posterior 
 $$
 \mathbb{E}_{\pi}\left[L(\theta)\right] = \frac{1}{\hat{Z}} \int L(\theta) \hat{\pi}(\theta) d\theta
@@ -405,28 +407,26 @@ ggplot(data=df, aes(x = x_test, y = loss_test)) +
   ggtitle("Negative Log Predictive Density of Posterior Approximation")
 ```
 
-
-
-```{r, echo = FALSE}
-par(mfrow = c(1, 2))
-
-# Plot 1: true vs. approximate log posterior
-plot(train_test_data$X_test, lpost_theta_test, type = "l", col = "red", main = "True vs. Approximate Log Posterior", xlab = "theta", ylab = "Log Posterior", 
-     ylim = c(ylim_min, ylim_max))
-lines(train_test_data$X_test, post_approx_LNP_log_mean_test, col = "blue")
-points(train_test_data$X_train, lpost_theta_train, col = "red", pch = 16)
-
-# Plot 2: Posterior loss, negative loss predictive density
-plot(train_test_data$X_test, -lpred_pi_test, type = "l", main = "Posterior Loss", xlab = "theta", ylab = "Negative Log Predictive Density of Posterior Approx")
-points(train_test_data$X_train, -lpred_pi_train, col = "red", pch = 16)
-
-
-# TODO: 
-#    1.) add confidence intervals to first plot.
-#    2.) figure out why training points are off in the third plot.
-#    3.) maybe want to illustrate without extrapolation first, as the plots are much nicer that way. 
-#    4.) figure out way to plot exp(-lpred_pi_train) * pi(theta)
+```{r}
+integrated_loss_uniform_weights <- integrate_loss_1d(-lpred_pi_test, rep(1, length(lpred_pi_test)), train_test_data$X_test[,1], equally_spaced = TRUE)
+print(paste0("Integrated Loss (Uniform weights): ", integrated_loss_uniform_weights))
 ```
+
+```{r}
+post_samples <- mcmc_calibrate(test1_list$ref_pars, test1_list$pars_cal_sel, test1_list$data_obs, test1_list$output_vars, test1_list$PAR_data,
+                               theta_prior_params = theta_prior_params, learn_Sig_eps = FALSE, diag_cov = TRUE, 
+                               N_mcmc = 100000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                               proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
+```
+
+```{r}
+# Trace plot
+plot(post_samples$theta[,1], type = "l")
+```
+
+
+
+
 
 ```{r, echo = FALSE}
 par(mfrow = c(1, 3))
