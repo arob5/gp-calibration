@@ -1741,11 +1741,13 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
 }
 
 
-gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred) {
+gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred, n_obs, 
+                                                 lnorm_log_mean = NULL, lnorm_log_var = NULL) {
   # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
-  # the sum of squared errors for each output. For numerical stability, the data is shifted so that the density 
-  # is always evaluated at the point 1.0, with the log-normal distribution appropriately scaled to account for 
-  # this. 
+  # the sum of squared errors for each output. The first argument is the log of the values at which to evaluate the density. 
+  # Exponentiating these values will typically result in numerical underflow, so for numerical stability the data is 
+  # shifted so that the density  # is always evaluated at the point 1.0, with the log-normal distribution appropriately 
+  # scaled to account for this.
   #
   # Args:
   #    log_vals: numeric(M), vector of (the log of) the points at which to evaluate the predictive density.
@@ -1760,6 +1762,11 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_
   #                  mu^*_1(theta_i), ..., mu^*_p(theta_i) at test input theta_i. 
   #    gp_var_pred: matrix, of dimension M x p. The ith row contains the GP posterior variance evaluations 
   #                  k^*_1(theta_i), ..., k^*_p(theta_i) at test input theta_i. 
+  #    n_obs: integer(p), the number of observations for each output.
+  #    lnorm_log_mean: numeric(M), the first parameter (the mean of the log) for the lognormal distribution evaluated at the M 
+  #                    points. If NULL, the log mean and variance will be computed. Default is NULL. 
+  #    lnorm_log_var: numeric(M), the first parameter (the variance of the log) for the lognormal distribution evaluated at the M 
+  #                   points. If NULL, the log mean and variance will be computed. Default is NULL.
   #
   # Returns:
   #    numeric(M), the log predictive density evaluations log p(pi(theta_i)|pi_hat(theta_i)) for the M input points
@@ -1770,31 +1777,30 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_
   # Avoiding overflow/underflow 
   scaling_factors <- -log_vals
   
-  p <- length(sig2_outputs)
-  log_C <- -0.5 * p * log(2*pi) - 0.5 * sum(log(sig2_outputs))
+  # Calculate log mean and log variance, if not passed as arguments. 
+  if(is.null(lnorm_log_mean) || is.null(lnorm_log_var)) {
+    lnorm_params <- get_gp_approx_posterior_LNP_params(sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred, n_obs)
+    lnorm_log_mean <- lnorm_params$mean_log
+    lnorm_log_var <- lnorm_params$var_log
+  }
   
-  gp_scaled_means <- gp_mean_pred %*% diag(1/sig2_outputs)
-  gp_scaled_vars <- gp_var_pred %*% diag(1/sig2_outputs^2)
-  
-  lnorm_mean <- log_C + lprior_theta - 0.5 * rowSums(gp_scaled_means)
-  lnorm_var <- 0.25 * rowSums(gp_scaled_vars)
-  
-  return(dlnorm(1.0, lnorm_mean + scaling_factors, lnorm_var, log = TRUE))
+  return(dlnorm(1.0, lnorm_log_mean + scaling_factors, sqrt(lnorm_log_var), log = TRUE))
   
 }
 
 
-integrate_loss_1d <- function(loss, post, d_theta) {
-  # Approximates the integral ell(theta)*post(theta) dtheta over a one-dimensional region, 
-  # where ell() is some loss function and post() is some density (typically the posterior). 
+integrate_loss_1d <- function(loss, weights, d_theta) {
+  # Approximates the integral ell(theta)* w(theta) dtheta over a one-dimensional region, 
+  # where ell() is some loss function and w() is some density function (typically the posterior). 
   # Uses a trapezoidal numerical approximation. This function does not create the grid of theta
   # values for the approximation, but rather assumes the arguments are vectors of function 
-  # evaluations of ell() and post() at some evenly spaced grid of theta values. 
+  # evaluations of ell() and w() at some evenly spaced grid of theta values. 
   # 
   # Args:
   #    loss: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
   #          N is the number of grid points. 
-  #    post: numeric(N), vector of post() evaluations at the grid of evenly spaced points.
+  #    weights: numeric(N), vector of weights for integral; this is often the post() evaluations 
+  #             at the grid of evenly spaced points.
   #    d_theta: numeric, the length from one grid point to an adjacent point. Points are assumed 
   #             evenly spaced. 
   #

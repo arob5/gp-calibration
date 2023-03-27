@@ -109,7 +109,7 @@ $$ \epsilon_j(\theta) := T_j(\theta) - T_j^*(\theta)$$
 Note that $T_j^*(\theta)$ is random so $\epsilon_j(\theta)$ is as well. Now we consider the posterior approximation with these errors.
 $$
 \begin{align*}
-\hat{\pi}(\theta) &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j^*(\theta)}{\sigma_j^2} \right) \\
+\pi^*(\theta) &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j^*(\theta)}{\sigma_j^2} \right) \\
                   &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta) - \epsilon_j(\theta)}{\sigma_j^2} \right) \\
                   &= C\pi_0(\theta)\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T_j(\theta)}{\sigma_j^2} \right) \exp\left(\frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2}\right) \\
                   &= \pi(\theta)\exp\left\{E(\theta; \epsilon, \sigma)\right\}
@@ -118,28 +118,28 @@ $$
 where I have defined 
 $$E(\theta; \epsilon, \sigma) := \frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2} = \frac{1}{2}\sum_{j = 1}^{p} \frac{T_j(\theta) - T_j^*(\theta)}{\sigma_j^2}$$
 Thus,
-$$ \frac{\hat{\pi}(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
+$$ \frac{\pi^*(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
 So, in the aggregate, if the GPs underestimate the squared error (i.e. the sum of the $\epsilon_j(\theta)$ is positive, modulo the effect of the variances) then the resulting estimate of $\hat{\pi}(\theta)$ will, unsurprisingly, be too large. The ratio of the approximate to the true posterior at $\theta$ varies exponentially in the additive error $\epsilon_j(\theta)$, for each output $j$. The rate of these exponential deviations is governed by the variances $\sigma_j^2$. If the signal-to-noise ratio is very low for output $j$, then $\sigma_j^2$ will be large, and the approximation error induced in the posterior will be more forgiving. Finally, note that the direction of errors across outputs is quite important. Since what actually matters is the sum, errors in different directions tend to cancel, while those in the same direction add together. We can also consider the relative error
-$$ \frac{\pi(\theta) - \hat{\pi}(\theta)}{\pi(\theta)} = 1 - \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
+$$ \frac{\pi(\theta) - \pi^*(\theta)}{\pi(\theta)} = 1 - \exp\left\{E(\theta; \epsilon, \sigma)\right\}$$
 As mentioned previously, we can consider a distribution on the residuals $\epsilon_j(\theta)$ induced by the GP distribution $T_j^*(\theta) \sim N(\mu_j^*(\theta), k_j^*(\theta))$: 
 $$ \epsilon_j(\theta) = T_j(\theta) - T_j^*(\theta) \sim N(T_j(\theta) - \mu_j^*(\theta), k_j^*(\theta))$$
 Thus, 
 $$E(\theta; \epsilon, \sigma) = \frac{1}{2}\sum_{j = 1}^{p} \frac{\epsilon_j(\theta)}{\sigma_j^2} \sim \mathcal{N}\left(\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)$$
 since the GPs are independent so $\text{Cov}(T^*_j(\theta), T^*_k(\theta)) = 0$ for $j \neq k$. Thus,  
-$$\frac{\hat{\pi}(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\} \sim \mathcal{LN}\left(\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$
+$$\frac{\pi^*(\theta)}{\pi(\theta)} = \exp\left\{E(\theta; \epsilon, \sigma)\right\} \sim \mathcal{LN}\left(\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$
 and
-$$ \hat{\pi}(\theta) \sim \mathcal{LN}\left(\log\pi(\theta) + \frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$ 
+$$ \pi^*(\theta) \sim \mathcal{LN}\left(\log\pi(\theta) + \frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right)$$ 
 Thus, in this simple Gaussian setting with L2 error approximated by GPs, we can derive the GP predictive distribution for the approximate posterior in closed-form. The median of $\hat{\pi}(\theta)$ is the true unnormalized posterior $\pi(\theta)$ and the mean and variance are given by
 $$
 \begin{align*}
-\mathbb{E}_{T^*} \hat{\pi}(\theta) &= \pi(\theta)\exp\left\{\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right\}\exp\left\{\frac{1}{8} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} \\
-\text{Var}_{T^*} \left(\hat{\pi}(\theta)\right) &= \exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\}\left[\exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} - 1\right] \left[\pi(\theta)^2 + \sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right]
+\mathbb{E} \pi^*(\theta) &= \pi(\theta)\exp\left\{\frac{1}{2}\sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right\}\exp\left\{\frac{1}{8} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} \\
+\text{Var} \left(\pi^*(\theta)\right) &= \exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\}\left[\exp\left\{\frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4}\right\} - 1\right] \left[\pi(\theta)^2 + \sum_{j=1}^{p} \frac{T_j(\theta) - \mu_j^*(\theta)}{\sigma_j^2}\right]
 \end{align*}
 $$
 We can perform similar calculations for the approximate acceptance ratio in the Metropolis accept-reject step.
 $$
 \begin{align*}
-\hat{\alpha}(\theta, \theta^\prime) &= \frac{\hat{\pi}(\theta^\prime)q(\theta^\prime, \theta)}{\hat{\pi}(\theta)q(\theta, \theta^\prime)} \\
+\hat{\alpha}(\theta, \theta^\prime) &= \frac{\pi^*(\theta^\prime)q(\theta^\prime, \theta)}{\hat{\pi}(\theta)q(\theta, \theta^\prime)} \\
                                     &= \frac{\pi(\theta^\prime)\exp\left\{E(\theta^\prime; \epsilon, \sigma)\right\}q(\theta^\prime, \theta)}{\pi(\theta)\exp\left\{E(\theta; \epsilon, \sigma)\right\}q(\theta, \theta^\prime)} \\
                                     &= \alpha(\theta, \theta^\prime)\exp\left\{E(\theta^\prime; \epsilon, \sigma) - E(\theta; \epsilon, \sigma)\right\} \\
                                     &= \alpha(\theta, \theta^\prime)\exp\left\{\frac{1}{2} \sum_{j = 1}^{p} \frac{\epsilon_j(\theta^\prime) - \epsilon_j(\theta)}{\sigma_j^2}\right\} \\
@@ -152,14 +152,14 @@ Thus, accurate approximation of $\alpha(\theta, \theta^\prime)$ requires accurat
 
 # Summary of Predictive Distributions 
 $$
-\hat{\pi}(\theta) \sim \mathcal{LN}\left(-\frac{\log(2\pi)}{2}\sum_{j = 1}^{p} N_j - \frac{1}{2}\sum_{j = 1}^{p} N_j \log(\sigma_j^2) + \log\pi_0(\theta) - \frac{1}{2} \sum_{j = 1}^{p} \frac{\mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)
+\pi^*(\theta) \sim \mathcal{LN}\left(-\frac{\log(2\pi)}{2}\sum_{j = 1}^{p} N_j - \frac{1}{2}\sum_{j = 1}^{p} N_j \log(\sigma_j^2) + \log\pi_0(\theta) - \frac{1}{2} \sum_{j = 1}^{p} \frac{\mu_j^*(\theta)}{\sigma_j^2}, \frac{1}{4} \sum_{j = 1}^{p} \frac{k_j^*(\theta)}{\sigma_j^4} \right)
 $$
 
 # Quantifying Emulator Error
 
 ## Integrating (log) predictive density with respect to true posterior
 Consider a pointwise loss given by the negative log of the predictive density 
-$$ L(\theta) := L(\theta; T^*_1, \dots, T^*_p) = -\log p_{\hat{\pi}(\theta)}[\pi(\theta)]$$
+$$ L(\theta) := L(\theta; T^*_1, \dots, T^*_p) = -\log p_{\pi^*(\theta)}[\pi(\theta)]$$
 We can average this over $\theta$, weighting by the true posterior. 
 $$
 \mathbb{E}_{\pi}\left[L(\theta)\right] = \int L(\theta) \pi(\theta) d\theta
@@ -169,6 +169,26 @@ which we can approximate via a Monte Carlo approach, or numerical integration fo
 When considering error in the acceptance ratio, we should also take into account the proposal distribution. Letting 
 $L(\theta, \theta^\prime) := -\log p_{\hat{\alpha}(\theta, \theta^\prime)}[\alpha(\theta, \theta^\prime)]$, we could consider
 $$ \int \int L(\theta, \theta^\prime) q(\theta, \theta^\prime)\pi(\theta) d\theta^\prime d\theta$$
+### A Note on Computation
+To approximate the integrals above I consider either traditional deterministic numerical schemes or Monte Carlo approaches. An important thing to keep in mind is that 
+$\pi(\theta)$ is an unnormalized density. I have been a bit loose with notation but note that the true loss looks like 
+$$
+\mathbb{E}_{\pi}\left[L(\theta)\right] = \frac{1}{Z} \int L(\theta) \pi(\theta) d\theta
+$$
+If we are comparing a bunch of different models with respect to this error measure, each model will result in a different loss function $L(\theta)$, but $\pi(\theta)$ will remain constant. Thus, in this setting there is no issue with approximating $\mathbb{E}_{\pi}\left[L(\theta)\right]$ with a numerical, grid-based approach using the unnormalized density. The estimates will be off by a constant, but they will all be off by the same constant and thus may be compared. Suppose, instead that we compute an approximate posterior as $\hat{\pi}(\theta) := \mathbb{E}\left[\pi^*(\theta)\right]$; or, more explicitly
+$$\hat{\pi}(\theta) \propto \pi_0(\theta)\mathbb{E}_{\pi}\left[\exp\left(-\frac{1}{2} \sum_{j = 1}^{p} \frac{T^*_j(\theta)}{\sigma_j^2} \right) \right]$$
+and then wanted to compute the error with respect to the approximate posterior 
+$$
+\mathbb{E}_{\pi}\left[L(\theta)\right] = \frac{1}{\hat{Z}} \int L(\theta) \hat{\pi}(\theta) d\theta
+$$
+In this case, the normalizing constant $\hat{Z}$ changes for each model under consideration, so we cannot use grid-based integration schemes that only leverage the unnormalized density. Instead, we must resort to Monte Carlo methods, which can sample from $\hat{\pi}$ using the unnormalized density and then compute a sample-based approximation to the integral. 
+
+## Other Statistical Distances
+One commonly used metric in the Bayesian inverse problem literature is the Hellinger distance. Let $\hat{\pi}(\theta)$ be a density that is trying to approximate $\pi(\theta)$. 
+$$ H(\pi, \hat{\pi}) := \left[\int_\theta\left(\sqrt{\frac{\pi(\theta)}{Z}} - \sqrt{\frac{\hat{\pi}(\theta)}{\hat{Z}}}\right)^{2} \pi(d\theta)\right]^{1/2}$$
+As an illustration the integral is with respect to the true posterior, but we could also consider integrating with respect to $\hat{\pi}$ or something else (e.g. Lebesgue measure). The issue here is that the normalizing constants are required to compute the Hellinger distance, which are typically unavailable to us and difficult to estimate. Dealing with this issue is a challenging problem in itself, but I wanted to present this here to keep in mind, as a lot of the theory in the literature establishes bounds in terms of Hellinger distance. The dissertation "Quantifying Model Error in Bayesian Parameter Estimation" listed in the references is an excellent resource for looking deeper into this issues. 
+
+
 
 # Numerical Tests
 
@@ -291,13 +311,18 @@ lpost_theta_test <- llik_test + lprior_theta_test
 
 ```{r, echo = FALSE}
 # Calculate log predictive density of posterior 
-lpred_pi_test <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars)
-lpred_pi_train <- gp_approx_posterior_pred_log_density(lpost_theta_train, diag(test1_list$Sig_eps), lprior_theta_train, SSR_pred_train_floor, GP_pred_vars_train)
+# lpred_pi_test <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars)
+# lpred_pi_train <- gp_approx_posterior_pred_log_density(lpost_theta_train, diag(test1_list$Sig_eps), lprior_theta_train, SSR_pred_train_floor, GP_pred_vars_train)
 
 # Log mean and log variance of predictive distribution
 post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars, test1_list$n_obs)
 post_approx_LNP_log_mean_test <- post_approx_LNP_params_test$mean_log
 post_approx_LNP_log_var_test <- post_approx_LNP_params_test$var_log
+
+# Log predictive density of posterior approximation
+lpred_pi_test <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars, test1_list$n_obs, 
+                                                      lnorm_log_mean = post_approx_LNP_log_mean_test, lnorm_log_var = post_approx_LNP_log_var_test)
+lpred_pi_train <- gp_approx_posterior_pred_log_density(lpost_theta_train, diag(test1_list$Sig_eps), lprior_theta_train, SSR_pred_train_floor, GP_pred_vars_train, test1_list$n_obs)
 ```
 
 ### Individual Output Plots
@@ -367,6 +392,22 @@ suppressWarnings(print(post_approx_plot + ylim(ylim_min, ylim_max)))
 
 
 ```{r, echo = FALSE}
+df <- data.frame(x_test = train_test_data$X_test[,1], 
+                 x_train = train_test_data$X_train[,1],
+                 loss_test = -lpred_pi_test, 
+                 loss_train = -lpred_pi_train)
+ggplot(data=df, aes(x = x_test, y = loss_test)) + 
+  geom_line(color = "blue") + 
+  geom_point(aes(x = x_train, y = loss_train), color = "red") + 
+  geom_vline(xintercept = true_param_val, linetype = 2, color = "pink1") + 
+  xlab("KEXT") + 
+  ylab("Negative Log Predictive Density") + 
+  ggtitle("Negative Log Predictive Density of Posterior Approximation")
+```
+
+
+
+```{r, echo = FALSE}
 par(mfrow = c(1, 2))
 
 # Plot 1: true vs. approximate log posterior
@@ -413,6 +454,16 @@ TODO: Need to adapt this to apply to the actually GP fits on SSR, but I believe 
 The stationarity assumption appears to be somewhat of an issue here. In the left part of the interval the true function changes rapidly, while on the remaining part of 
 the interval it changes very slowly. The GP fit ends up being too wiggly, presumably because it has to choose a single lengthscale to compromise between these two 
 regimes; the left portion drives the lengthscale to be smaller, which results in an overly wiggly fit in the remainder of the interval. I don't think this fully captures the issue either though; it seems like the optimal kernel parameters on the lefthand portion would be a very large range and a pretty large lengthscale as well. It seems like this portion could be well-approximated by a function that is pretty linear. The righthand side has 
+
+# References
+
+* Quantifying Model Error in Bayesian Parameter Estimation (Stacy A. White's Dissertation) 
+* Posterior Consistency for Gaussian Process Approximations of Bayesian Posterior Distributions (Stuart and Teckenstrup) 
+* Introduction To Gaussian Process Regression In Bayesian Inverse Problems, With New Results On Experimental Design For Weighted Error Measures (Helin et al) 
+* On the well-posedness of Bayesian Inverse Problems (Latz) 
+* Random forward models and log-likelihoods in Bayesian inverse problems (Lie et al)
+
+
 
 
 # Old Notes
@@ -503,5 +554,10 @@ $$ \sum_{i = 1}^{M} \pi(\theta_i) \left(\frac{T(\theta_i) - \mu^*(\theta_i)}{\sq
 Now the squared deviation is penalized more when the predictive variance is smaller. 
 
 Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
+
+
+
+
+
 
 
