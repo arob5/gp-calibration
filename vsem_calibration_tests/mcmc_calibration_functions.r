@@ -1129,8 +1129,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_
   # Run VSEM on train and test sets to obtain outputs
   model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
   model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  Y_train <- calc_SSR(data_obs[, output_vars], model_outputs_list_train)
-  Y_test <- calc_SSR(data_obs[, output_vars], model_outputs_list_test)
+  Y_train <- calc_SSR(data_obs[, output_vars], model_outputs_list_train, na.rm = TRUE)
+  Y_test <- calc_SSR(data_obs[, output_vars], model_outputs_list_test, na.rm = TRUE)
 
   # Pre-process training data: scale inputs and normalize outputs
   GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
@@ -1743,7 +1743,7 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
 }
 
 
-gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs, lprior_theta, gp_mean_pred, gp_var_pred, n_obs, 
+gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, lprior_theta = NULL, gp_mean_pred = NULL, gp_var_pred = NULL, n_obs = NULL, 
                                                  lnorm_log_mean = NULL, lnorm_log_var = NULL) {
   # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
   # the sum of squared errors for each output. The first argument is the log of the values at which to evaluate the density. 
@@ -1849,6 +1849,120 @@ integrate_loss_1d <- function(loss_vals, weights, thetas, equally_spaced) {
   
 }
 
+
+calculate_ground_truth_quantities <- function(theta_train_test_data, computer_model_data, theta_prior_params) {
+  
+  # True log likelihood evaluations at test inputs
+  llik_test_per_output <- sapply(seq(1, nrow(theta_train_test_data$Y_test)), 
+                                 function(i) llik_Gaussian_SSR(theta_train_test_data$Y_test[i,], diag(computer_model_data$Sig_eps), computer_model_data$n_obs, normalize = TRUE)) 
+  llik_test<- colSums(llik_test_per_output)                               
+  
+  # True log likelihood evaluations at design points
+  llik_train_per_output <- sapply(seq(1, nrow(theta_train_test_data$Y_train)), 
+                                  function(i) llik_Gaussian_SSR(theta_train_test_data$Y_train[i,], diag(computer_model_data$Sig_eps), computer_model_data$n_obs, normalize = TRUE)) 
+  llik_train <- colSums(llik_train_per_output) 
+  
+  # Log prior evaluations
+  lprior_theta_test <- sapply(seq(1, nrow(theta_train_test_data$X_test)), function(i) calc_lprior_theta(theta_train_test_data$X_test[i,], theta_prior_params))
+  lprior_theta_train <- sapply(seq(1, nrow(theta_train_test_data$X_train)), function(i) calc_lprior_theta(theta_train_test_data$X_train[i,], theta_prior_params))
+  
+  # Log posterior evaluations
+  lpost_theta_test <- llik_test + lprior_theta_test
+  lpost_theta_train <- llik_train + lprior_theta_train
+  
+  return(list(llik_test = llik_test, 
+              llik_train = llik_train, 
+              lprior_test = lprior_theta_test, 
+              lprior_train = lprior_theta_train, 
+              lpost_test = lpost_theta_test, 
+              lpost_train = lpost_theta_train, 
+              llik_test_per_output = llik_test_per_output, 
+              llik_train_per_output = llik_train_per_output))
+  
+}
+
+
+run_emulator_comparison <- function(vsem_test_case, emulator_settings, theta_prior_params, train_test_data_settings) {
+  # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
+  
+  output_list <- list()
+  
+  # Synthetic data generation
+  random_seed_1 <- 1
+  computer_model_data <- generate_vsem_test_1(random_seed_1)
+  
+  for(i in seq(1, nrow(emulator_settings))) {
+    emulator_setting <- emulator_settings[i, ]
+    log_SSR = (emulator_setting["target"] == "log_SSR")
+    emulator_setting_name <- paste0("emulator_setting_", i)
+    list[[emulator_setting_name]] <- list()
+    for(j in seq(1, nrow(train_test_data_settings))) {
+      train_test_data <- get_train_test_data(N_train = train_test_data_settings[j, "N_train"], 
+                                             N_test = train_test_data_settings[j, "N_test"], 
+                                             prior_params = theta_prior_params,
+                                             extrapolate = train_test_data_settings[j, "extrapolate"], 
+                                             ref_pars = computer_model_data$ref_pars,
+                                             pars_cal_sel = computer_model_data$pars_cal_sel,
+                                             data_obs = computer_model_data$data_obs, 
+                                             PAR = computer_model_data$PAR_data,
+                                             output_vars = computer_model_data$output_vars,
+                                             scale_X = train_test_data_settings[j, "scale_X"], 
+                                             normalize_Y = train_test_data_settings[j, "normalize_Y"],
+                                             log_SSR = log_SSR, 
+                                             joint_LHS = train_test_data_settings[j, "joint_LHS"], 
+                                             method = train_test_data_settings[j, "method"], 
+                                             order_1d = TRUE)
+    }
+  }
+  
+  
+}
+
+
+# TODO: generalize to LNP
+run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data) {
+  
+  Sig_eps <- computer_model_data$Sig_eps
+  if(!all(Sig_eps[!diag(nrow(Sig_eps))] == 0)) stop("Non-diagonal output covariances not supported yet.")
+  sig2_outputs <- diag(Sig_eps)
+  
+  # Calculate the ground truth quantities (likelihood, posterior, etc.)
+  ground_truth_quantities <- calculate_ground_truth_quantities(theta_train_test_data, computer_model_data, theta_prior_params)
+  
+  # Fit GPs
+  fit_LNP <- (emulator_settings$target == "log_SSR")
+  if(fit_LNP) stop("LNP not supported yet.")
+  gp_fits_list <- fit_independent_GPs(theta_train_test_data$X_train_preprocessed, theta_train_test_data$Y_train_preprocessed, emulator_settings$gp_lib, emulator_settings$kernel)
+  gp_fit_times <- gp_fits_list$times
+  gp_fits <- gp_fits_list$fits
+  
+  # Predict with GPs
+  gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
+                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP)
+  gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
+                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP)
+  
+  SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
+  SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)
+  SSR_pred_mean_train <- sapply(gp_pred_train, function(pred) pred$mean)
+  SSR_pred_var_train <- sapply(gp_pred_train, function(pred) pred$sd2)
+  
+  # Compute GP predictive density of posterior approximation at test points
+  post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
+  lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
+  lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
+  
+  return(list(ground_truth_quantities = ground_truth_quantities, 
+              gp_fits = gp_fits, 
+              gp_times = gp_fit_times, 
+              gp_pred_list_test = gp_pred_test, 
+              gp_pred_list_train = gp_pred_train, 
+              SSR_pred_mean_test = SSR_pred_mean_test, 
+              SSR_pred_var_test = SSR_pred_var_test, 
+              SSR_pred_mean_train = SSR_pred_mean_train, 
+              SSR_pred_var_train = SSR_pred_var_train))  
+  
+}
 
 
 

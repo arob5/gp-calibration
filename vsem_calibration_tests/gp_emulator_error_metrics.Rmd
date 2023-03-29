@@ -306,9 +306,9 @@ for(j in seq(1, ncol(GP_losses))) {
 }
 
 # GP approximated posterior
-llik_test_per_output <- sapply(seq(1, nrow(SSR_pred)), function(i) llik_Gaussian_SSR(SSR_pred[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
-llik_test <- colSums(llik_test_per_output)
-lpost_theta_test <- llik_test + lprior_theta_test
+llik_pred_test_per_output <- sapply(seq(1, nrow(SSR_pred)), function(i) llik_Gaussian_SSR(SSR_pred[i,], diag(test1_list$Sig_eps), test1_list$n_obs, normalize = TRUE))
+llik_pred_test <- colSums(llik_pred_test_per_output)
+lpost_theta_pred_test <- llik_pred_test + lprior_theta_test
 ```
 
 ```{r, echo = FALSE}
@@ -412,20 +412,29 @@ integrated_loss_uniform_weights <- integrate_loss_1d(-lpred_pi_test, rep(1, leng
 print(paste0("Integrated Loss (Uniform weights): ", integrated_loss_uniform_weights))
 ```
 
+# Sampling from Posterior to Estimate Error Metrics 
 ```{r}
+N_mcmc <- 100000
 post_samples <- mcmc_calibrate(test1_list$ref_pars, test1_list$pars_cal_sel, test1_list$data_obs, test1_list$output_vars, test1_list$PAR_data,
                                theta_prior_params = theta_prior_params, learn_Sig_eps = FALSE, diag_cov = TRUE, 
-                               N_mcmc = 100000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                               N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
 ```
 
 ```{r}
 # Trace plot
-plot(post_samples$theta[,1], type = "l")
+idx_samples_keep <- floor(N_mcmc / 2)
+theta_samples <- post_samples$theta[idx_samples_keep:N_mcmc, 1]
+plot(theta_samples, type = "l", main = "Trace Plot: KEXT", ylab = "KEXT")
+acf(theta_samples, lag = 50, col = "red", main = "Autocorrelation Plot: KEXT")
+hist(theta_samples, 100, main = "Histogram: KEXT MCMC Samples", xlab = "KEXT")
 ```
 
-
-
+```{r, echo = FALSE}
+# Estimate loss 
+lpred_pi_mcmc_samples <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars, test1_list$n_obs, 
+                                                              lnorm_log_mean = post_approx_LNP_log_mean_test, lnorm_log_var = post_approx_LNP_log_var_test)
+```
 
 
 ```{r, echo = FALSE}
