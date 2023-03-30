@@ -1542,6 +1542,13 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   
 }
 
+generate_vsem_test_case <- function(test_case_number) {
+  random_seed <- test_case_number
+  f <- get(paste0("generate_vsem_test_", test_case_number))
+  
+  return(f(random_seed))
+}
+
 
 generate_vsem_test_1 <- function(random_seed) {
   # A convenience function to generate the VSEM data for "test case 1". This is the simplest 
@@ -1882,39 +1889,56 @@ calculate_ground_truth_quantities <- function(theta_train_test_data, computer_mo
 }
 
 
-run_emulator_comparison <- function(vsem_test_case, emulator_settings, theta_prior_params, train_test_data_settings) {
+run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta_prior_params, train_test_data_settings) {
   # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
   
   output_list <- list()
+  output_list[["emulator_settings"]] <- emulator_settings
+  output_list[["theta_prior_params"]] <- theta_prior_params
   
-  # Synthetic data generation
-  random_seed_1 <- 1
-  computer_model_data <- generate_vsem_test_1(random_seed_1)
+  # Synthetic data generation for VSEM model
+  computer_model_data <- generate_vsem_test_case(vsem_test_case_num)
+  output_list[["computer_model_data"]] <- computer_model_data
   
+  # Design data and test data
+  output_list[["train_test_data_settings"]] <- train_test_data_settings
+  output_list[["theta_train_test_data"]] <- list()
+  any_log_SSR = any(emulator_settings["target"] == "log_SSR")
+  for(j in seq(1, nrow(train_test_data_settings))) {
+    data_setting_name <- paste0("data_setting_", j)
+    theta_train_test_data <- get_train_test_data(N_train = train_test_data_settings[j, "N_train"], 
+                                                 N_test = train_test_data_settings[j, "N_test"], 
+                                                 prior_params = theta_prior_params,
+                                                 extrapolate = train_test_data_settings[j, "extrapolate"], 
+                                                 ref_pars = computer_model_data$ref_pars,
+                                                 pars_cal_sel = computer_model_data$pars_cal_sel,
+                                                 data_obs = computer_model_data$data_obs, 
+                                                 PAR = computer_model_data$PAR_data,
+                                                 output_vars = computer_model_data$output_vars,
+                                                 scale_X = train_test_data_settings[j, "scale_X"], 
+                                                 normalize_Y = train_test_data_settings[j, "normalize_Y"],
+                                                 log_SSR = any_log_SSR, 
+                                                 joint_LHS = train_test_data_settings[j, "joint_LHS"], 
+                                                 method = train_test_data_settings[j, "method"], 
+                                                 order_1d = TRUE)
+    output_list[["theta_train_test_data"]][[j]] <- theta_train_test_data
+  }
+  
+  # Run tests; each test is defined by an emulator setting/train_test_data setting combination.
+  output_list[["test_results"]] <- list()
   for(i in seq(1, nrow(emulator_settings))) {
     emulator_setting <- emulator_settings[i, ]
     log_SSR = (emulator_setting["target"] == "log_SSR")
-    emulator_setting_name <- paste0("emulator_setting_", i)
-    list[[emulator_setting_name]] <- list()
+    output_list[["test_results"]][[i]] <- list()
+    
     for(j in seq(1, nrow(train_test_data_settings))) {
-      train_test_data <- get_train_test_data(N_train = train_test_data_settings[j, "N_train"], 
-                                             N_test = train_test_data_settings[j, "N_test"], 
-                                             prior_params = theta_prior_params,
-                                             extrapolate = train_test_data_settings[j, "extrapolate"], 
-                                             ref_pars = computer_model_data$ref_pars,
-                                             pars_cal_sel = computer_model_data$pars_cal_sel,
-                                             data_obs = computer_model_data$data_obs, 
-                                             PAR = computer_model_data$PAR_data,
-                                             output_vars = computer_model_data$output_vars,
-                                             scale_X = train_test_data_settings[j, "scale_X"], 
-                                             normalize_Y = train_test_data_settings[j, "normalize_Y"],
-                                             log_SSR = log_SSR, 
-                                             joint_LHS = train_test_data_settings[j, "joint_LHS"], 
-                                             method = train_test_data_settings[j, "method"], 
-                                             order_1d = TRUE)
+      data_setting_name <- paste0("data_setting_", j)
+      output_list[["test_results"]][[i]][[j]] <- run_emulator_test(computer_model_data, emulator_setting, theta_prior_params,
+                                                                   output_list[["theta_train_test_data"]][[j]])
     }
   }
   
+  return(output_list)
   
 }
 
@@ -1960,7 +1984,11 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
               SSR_pred_mean_test = SSR_pred_mean_test, 
               SSR_pred_var_test = SSR_pred_var_test, 
               SSR_pred_mean_train = SSR_pred_mean_train, 
-              SSR_pred_var_train = SSR_pred_var_train))  
+              SSR_pred_var_train = SSR_pred_var_train, 
+              post_pred_mean_log_test = post_approx_LNP_params_test$mean_log, 
+              post_pred_var_log_test = post_approx_LNP_params_test$var_log, 
+              lpost_pred_density_test = lpred_pi_test, 
+              lpost_pred_density_train = lpred_pi_train))  
   
 }
 

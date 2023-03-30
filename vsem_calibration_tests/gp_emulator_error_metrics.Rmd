@@ -232,6 +232,42 @@ train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_para
                                        normalize_Y = TRUE, log_SSR = FALSE, method = "grid", order_1d = TRUE)
 ```
 
+```{r, include = FALSE}
+# TEST
+train_test_data_settings <- data.frame(N_train = c(5, 8), 
+                                       N_test = c(1000), 
+                                       extrapolate = FALSE, 
+                                       scale_X = TRUE, 
+                                       normalize_Y = TRUE, 
+                                       joint_LHS = FALSE, 
+                                       method = "grid",
+                                       order_1d = TRUE)
+
+emulator_tests <- run_emulator_comparison(vsem_test_case_num = 1, emulator_settings, theta_prior_params, train_test_data_settings)
+
+
+# test <- run_emulator_test(computer_model_data = test1_list, emulator_settings[1,], theta_prior_params, train_test_data)
+
+```
+
+```{r, echo = FALSE}
+# Print posterior plots 
+
+for(i in seq(1, nrow(emulator_settings))) {
+  for(j in seq(1, nrow(train_test_data_settings))) {
+    post_approx_plot <- plot_gp_fit_1d(emulator_tests$theta_train_test_data[[j]]$X_test, 
+                                       emulator_tests$test_results[[i]][[j]]$ground_truth_quantities$lpost_test, 
+                                       emulator_tests$theta_train_test_data[[j]]$X_train,
+                                       emulator_tests$test_results[[i]][[j]]$ground_truth_quantities$lpost_train, 
+                                       emulator_tests$test_results[[i]][[j]]$post_pred_mean_log_test,
+                                       emulator_tests$test_results[[i]][[j]]$post_pred_var_log_test,
+                                       main_title = "GP Log Posterior Approximation", xlab = "KEXT",
+                                       ylab = "Log Posterior Density", vertical_line = true_param_val, log_scale = FALSE, exponentiate_predictions = FALSE)
+    print(post_approx_plot)
+  }
+}
+```
+
 
 ```{r, include = FALSE}
 # Fit GPs
@@ -470,8 +506,8 @@ regimes; the left portion drives the lengthscale to be smaller, which results in
 * Posterior Consistency for Gaussian Process Approximations of Bayesian Posterior Distributions (Stuart and Teckenstrup) 
 * Introduction To Gaussian Process Regression In Bayesian Inverse Problems, With New Results On Experimental Design For Weighted Error Measures (Helin et al) 
 * On the well-posedness of Bayesian Inverse Problems (Latz) 
-* Random forward models and log-likelihoods in Bayesian inverse problems (Lie et al)
-
+* Random forward models and log-likelihoods in Bayesian inverse problems (Lie et al) 
+* Bayesian Posterior Perturbation Analysis with Integral Probability Metrics (Inigo et al, 2023)
 
 
 
