@@ -10,24 +10,45 @@
 library(truncnorm)
 library(LaplacesDemon)
 
-llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, 
-                                  SSR, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
+llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, output_vars = NULL, 
+                                  SSR = NULL, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
   # Evaluate Gaussian log-likelihood assuming independence across time and across
-  # output variables. This is a convenience function that is parameterized in terms
-  # of the sum of squared errors for each output variable. This function evaluates 
-  # the log-likelihood for each output separately and returns the evaluations in 
-  # a vector. `llik_product_Gaussian_SSR()` is essentially the same function 
-  # but sums the log-likelihoods, thus returning the log-likelihood over 
-  # all outputs. 
+  # output variables. In order to calculate the log-likelihood, the forward model must be run and then 
+  # the L2 difference between the forward model outputs and the observed data evaluated. This function can 
+  # perform all of those steps, or the L2 error can be passed directly using the `SSR` argument to avoid 
+  # running the forward model when it is not necessary. For the forward model to be run, the arguments 
+  # `theta_vals`, `par_ref`, `par_cal_sel`, `PAR_data`, `data_obs`, and `output_vars` must all be passed. Otherwise, these are 
+  # not needed if `SSR` is provided. This function is vectorized in that it can evaluate 
+  # the log-likelihood at multiple input parameter values, `theta_vals`. 
   #
   # Args:
-  #    SSR: numeric(p), vector of sum of squared errors for each output, where p is 
-  #         the number of output variables. 
+  #    theta_vals: matrix, of dimension M x d, where M is the number of calibration parameter values
+  #                and d is the number of claibration parameters. These are the parameter inputs at which 
+  #                to run the forward to evaluate log-likelihood. 
+  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
+  #             Must contain column named "best". Parameters that are fixed at nominal 
+  #             values (not calibrated) are set to their values given in the "best" column. 
+  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
+  #                 parameters that will be calibrated. 
+  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
+  #         term in VSEM.
+  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
+  #              Colnames set to output variable names. 
+  #    output_vars: character vector, used to the select the outputs to be considered in 
+  #                 the likelihood.
+  #    SSR: matrix, of dimension M x p. The (m, j) entry is the sum of squared errors for the 
+  #         jth output variable and mth input parameter. 
   #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
   #    n_obs: integer(p), the number of observations for each output.
+  #    normalize: logical(1), whether or not to include the portion of the Gaussian normalization constant
+  #               that doesn't depend on the theta or variance parameters. 
+  #    na.rm: logical(1), if TRUE ignores missing data when calculating the sum of squared errors. 
+  #    sum_output_lliks: logical(1), if TRUE returns matrix of dimension M x p containing the log-likelihood 
+  #                      evaluations for each input parameter and each output separately. Otherwise, sums across 
+  #                      the rows to calculate the overall likelihood, and thus returns a numeric vector of length M. 
   #
   # Returns:
-  #    numeric(p), the log-likelihood evaluations for the p outputs. 
+  #    See `sum_output_lliks` in the Args section above. 
   
   # Run forward model. 
   if(is.null(SSR)) {
@@ -39,8 +60,8 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
   llik_outputs <- matrix(nrow = nrow(SSR), ncol = ncol(SSR))
   
   for(j in seq(1, p)) {
-    llik_outputs[j] <- -0.5 * n_obs[j] * log(vars_obs[j]) - 0.5 * SSR[,j] / vars_obs[j]
-    if(normalize) llik_outputs[j] <- llik_outputs[j] - 0.5 * n_obs[j] * log(2*pi)
+    llik_outputs[,j] <- -0.5 * n_obs[j] * log(vars_obs[j]) - 0.5 * SSR[,j] / vars_obs[j]
+    if(normalize) llik_outputs[,j] <- llik_outputs[,j] - 0.5 * n_obs[j] * log(2*pi)
   }
   
   # Either return likelihood for each output seperately, or return single likelihood across all outputs. 
