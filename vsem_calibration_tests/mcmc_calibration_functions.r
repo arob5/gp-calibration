@@ -10,89 +10,45 @@
 library(truncnorm)
 library(LaplacesDemon)
 
-llik_Gaussian <- function(par, Sig_eps, par_ref, par_cal_sel, output_vars, PAR, data_obs) {
-  # Unnormalized Gaussian log-likelihood. Assumes independence across time, but allows 
-  # for correlation across the p outputs by specifying the p x p covariance matrix 
-  # Sig_eps. Runs the full forward model to obtain model outputs and calculate likelihood. 
+llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, 
+                                  SSR, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
+  # Evaluate Gaussian log-likelihood assuming independence across time and across
+  # output variables. This is a convenience function that is parameterized in terms
+  # of the sum of squared errors for each output variable. This function evaluates 
+  # the log-likelihood for each output separately and returns the evaluations in 
+  # a vector. `llik_product_Gaussian_SSR()` is essentially the same function 
+  # but sums the log-likelihoods, thus returning the log-likelihood over 
+  # all outputs. 
   #
   # Args:
-  #    par: numeric vector, calibration parameters at which to evaluate log-likelihood. 
-  #    Sig_eps: matrix, dimension pxp, covariance between output variables (assumed 
-  #             fixed across time). Rownames and colnames must be set to names of 
-  #             the output variables. 
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
-  #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM. 
-  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
+  #    SSR: numeric(p), vector of sum of squared errors for each output, where p is 
+  #         the number of output variables. 
+  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
+  #    n_obs: integer(p), the number of observations for each output.
   #
   # Returns:
-  #   Unnormalized log-likelihood across all observations and over the output variables
-  #   specified in 'output_vars'. 
+  #    numeric(p), the log-likelihood evaluations for the p outputs. 
   
-  # Parameters not calibrated are fixed at default values
-  theta <- par_ref$best
-  theta[par_cal_sel] <- par
-  
-  # Run forward model, re-scale NEE.
-  pred_model <- as.data.table(VSEM(theta, PAR))[, ..output_vars]
-  if("NEE" %in% output_vars) {
-    pred_model[, NEE := NEE*1000]
+  # Run forward model. 
+  if(is.null(SSR)) {
+    model_outputs_list <- run_VSEM(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = output_vars) 
+    SSR <- calc_SSR(data_obs, model_outputs_list, na.rm = na.rm)
   }
   
-  # Evaluate sum (y_i - f_i)^T Sig_eps^{-1} (y_i - f_i) over i.
-  Sig_eps <- Sig_eps[output_vars, output_vars]
-  L <- t(chol(Sig_eps))
-  model_errs <- data_obs[, ..output_vars] - pred_model
-  log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
+  p <- length(vars_obs)
+  llik_outputs <- matrix(nrow = nrow(SSR), ncol = ncol(SSR))
   
-  return(-0.5 * log_quadratic_form)
-  
-}
-
-
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = FALSE) {
-  # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
-  # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
-  # the forward model has already been run, unlike llik_Gaussian(),  which runs
-  # the model in order to calculate the likelihood. 
-  #
-  # Args:
-  #     model_errs: matrix of dimensions n x p, where n = number observations in time 
-  #                 series and p = number output variables. This is the model error matrix
-  #                 Y - f(theta). 
-  #     Sig_eps: matrix of dimensions p x p, the covariance matrix used in the 
-  #              multivariate Gaussian likelihood calculation. 
-  #     output_vars: character vector, containing names of output variables to be selected.
-  #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
-  #                  associated with the output variables, as well as column names of `model_errs`.
-  #                  If NA, uses entire matrix. 
-  #    normalize: logical, if TRUE returns the normalized log-density, which requires calculation of 
-  #               the determinant term. Otherwise, excludes this term, thus returning an unnormalized
-  #               log density (where Sig_eps is treated as a constant). Default is FALSE. 
-  #
-  # Returns:
-  #    numeric, the unnormalized log-likelihood. 
-  
-  if(!is.na(output_vars)) {
-    Sig_eps <- Sig_eps[output_vars, output_vars]
-    model_errs <- model_errs[, output_vars]
-  }
-  L <- t(chol(Sig_eps))
-  log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
-  
-  if(normalize) {
-    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
+  for(j in seq(1, p)) {
+    llik_outputs[j] <- -0.5 * n_obs[j] * log(vars_obs[j]) - 0.5 * SSR[,j] / vars_obs[j]
+    if(normalize) llik_outputs[j] <- llik_outputs[j] - 0.5 * n_obs[j] * log(2*pi)
   }
   
-  return(-0.5 * log_quadratic_form)
+  # Either return likelihood for each output seperately, or return single likelihood across all outputs. 
+  if(sum_output_lliks) {
+    return(rowSums(llik_outputs))
+  }
+  
+  return(llik_outputs)
   
 }
 
@@ -154,18 +110,182 @@ llik_product_Gaussian_SSR <- function(SSR, vars_obs, n_obs, normalize = TRUE) {
 }
 
 
-run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = c("NEE", "Cv", "Cs", "CR")) {
-  # Runs the VSEM model using specified parameter settings, returning the outputs 
-  # of the model. 
+calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
+  # Computes the sum of squared residuals (SSR) between model runs and observed 
+  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
+  # design point for emulation) or outputs from single model run (e.g. as required
+  # during MCMC).
   #
   # Args:
-  #    par: numeric vector, values of calibration parameters used to run the model. 
+  #    data_obs: data.table of dimension n x p, where n is the length of the time 
+  #              series outputs from the model, and p is the number of output variables.
+  #              This is Y in my typical notation. 
+  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
+  #                        model outputs f(theta) from a single model run. Or a list 
+  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
+  #                        the outputs from multiple model runs. 
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
+  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
+  # 
+  # Returns:
+  #    matrix of dimension N x p, where N is the number of model runs and p is the 
+  #    number of output variables. The (i, j) entry of the matrix is the SSR
+  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
+  
+  # If model only run at single set of calibration parameter values
+  if(is.matrix(model_outputs_list)) {
+    model_outputs_list <- list(model_outputs_list)
+  }
+  
+  N_param_runs <- length(model_outputs_list)
+  N_outputs <- ncol(model_outputs_list[[1]])
+  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
+  
+  for(i in seq_along(model_outputs_list)) {
+    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
+  }
+  colnames(SSR) <- colnames(data_obs)
+  
+  return(SSR)
+  
+}
+
+# TODO: need to debug this function.
+llik_Gaussian <- function(theta_vals, Sig_eps, par_ref, par_cal_sel, output_vars, PAR_data, data_obs, n_obs, normalize = TRUE) {
+  # Unnormalized Gaussian log-likelihood. Assumes independence across time, but allows 
+  # for correlation across the p outputs by specifying the p x p covariance matrix 
+  # Sig_eps. Runs the full forward model to obtain model outputs and calculate likelihood. 
+  #
+  # Args:
+  #    theta_vals: matrix, of dimension M x d, where M is the number of calibration parameter values
+  #                and d is the number of claibration parameters. These are the parameter inputs at which 
+  #                to run the forward to evaluate log-likelihood. 
+  #    Sig_eps: matrix, dimension pxp, covariance between output variables (assumed 
+  #             fixed across time). Rownames and colnames must be set to names of 
+  #             the output variables. 
   #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "best". Parameters that are fixed at nominal 
   #             values (not calibrated) are set to their values given in the "best" column. 
   #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
   #                 parameters that will be calibrated. 
+  #    output_vars: character vector, used to the select the outputs to be considered in 
+  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
+  #                 correct columns of 'data_obs'. 
   #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
+  #         term in VSEM. 
+  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
+  #              Colnames set to output variable names. 
+  #
+  # Returns:
+  #   Unnormalized log-likelihood across all observations and over the output variables
+  #   specified in 'output_vars'. 
+  
+  n_max <- nrow(data_obs)
+  
+  # Run forward model.
+  VSEM_outputs <- run_VSEM(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = output_vars) 
+  
+  # Compute forward model error with respect to observed data (weighted L2 error). 
+  model_errs_list <- lapply(VSEM_outputs, function(model_outputs) data_obs[, output_vars] - model_outputs)  
+  
+  # Cholesky factor of covariance matrix over outputs
+  Sig_eps <- Sig_eps[output_vars, output_vars]
+  L <- t(chol(Sig_eps))
+  
+  # log det(Sigma) term. This part is the same for each theta. 
+  log_det_term <- sum(n_obs * diag(L))
+  
+  # L2 error term. Different for each theta. 
+  M <- nrow(theta_vals)
+  log_L2_term <- vector(mode = "numeric", length = M)
+  for(i in seq(1, n_max)) {
+    non_missing_data_sel <- !is.na(data_obs[i,])
+    L_i <- L[non_missing_data_sel, non_missing_data_sel]
+    
+    for(m in seq(1, M)) {
+      err_i <- model_errs_list[[m]][i, non_missing_data_sel]
+      log_L2_term[m] <- log_L2_term[m] + sum((forwardsolve(L_i, err_i))^2)
+    }
+  }
+  
+  # Compute log likelihood up to normalizing constant. 
+  llik <- -log_det_term - 0.5 * log_L2_term
+ 
+  # Optionally normalize the density. Normalization constant also doesn't depend on theta. 
+  if(normalize) {
+    llik <- llik - 0.5 * log(2*pi) * sum(n_obs)
+  }
+  
+  # TEST
+  llik2 <- sapply(model_errs_list, function(model_errs) llik_Gaussian_err(model_errs, Sig_eps, output_vars = NA, normalize = TRUE))
+  
+  return(list(llik = llik, llik2 = llik2))
+  
+}
+
+
+llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = FALSE) {
+  # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
+  # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
+  # the forward model has already been run, unlike llik_Gaussian(),  which runs
+  # the model in order to calculate the likelihood. 
+  #
+  # Args:
+  #     model_errs: matrix of dimensions n x p, where n = number observations in time 
+  #                 series and p = number output variables. This is the model error matrix
+  #                 Y - f(theta). 
+  #     Sig_eps: matrix of dimensions p x p, the covariance matrix used in the 
+  #              multivariate Gaussian likelihood calculation. 
+  #     output_vars: character vector, containing names of output variables to be selected.
+  #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
+  #                  associated with the output variables, as well as column names of `model_errs`.
+  #                  If NA, uses entire matrix. 
+  #    normalize: logical, if TRUE returns the normalized log-density, which requires calculation of 
+  #               the determinant term. Otherwise, excludes this term, thus returning an unnormalized
+  #               log density (where Sig_eps is treated as a constant). Default is FALSE. 
+  #
+  # Returns:
+  #    numeric, the unnormalized log-likelihood. 
+  
+  if(!is.na(output_vars)) {
+    Sig_eps <- Sig_eps[output_vars, output_vars]
+    model_errs <- model_errs[, output_vars]
+  }
+  L <- t(chol(Sig_eps))
+  log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
+  
+  if(normalize) {
+    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
+  }
+  
+  return(-0.5 * log_quadratic_form)
+  
+}
+
+
+run_VSEM <- function(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = c("NEE", "Cv", "Cs", "CR")) {
+  
+  if(isTRUE(nrow(theta_vals) > 1)) {
+    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, par_ref, par_cal_sel, PAR_data, output_vars)))
+  } else {
+    return(run_VSEM_single_input(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars))
+  }
+  
+}
+
+
+run_VSEM_single_input <- function(par_val, par_ref, par_cal_sel, PAR_data, output_vars = c("NEE", "Cv", "Cs", "CR")) {
+  # Runs the VSEM model using specified parameter settings, returning the outputs 
+  # of the model. 
+  #
+  # Args:
+  #    theta: numeric vector, values of calibration parameters used to run the model. 
+  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
+  #             Must contain column named "best". Parameters that are fixed at nominal 
+  #             values (not calibrated) are set to their values given in the "best" column. 
+  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
+  #                 parameters that will be calibrated. 
+  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
   #         term in VSEM. 
   #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
@@ -173,18 +293,18 @@ run_VSEM <- function(par, par_ref, par_cal_sel, PAR, output_vars = c("NEE", "Cv"
   # Returns:
   #   matrix of dimensions n x p where n is the length of the time series and p is the number
   #   of output variables. 
-  
+
   # Parameters not calibrated are fixed at default values
-  theta <- par_ref$best
-  theta[par_cal_sel] <- par
+  theta <- par_ref$true_value
+  theta[par_cal_sel] <- par_val
   
   # Run forward model, re-scale NEE.
-  pred_model <- as.matrix(VSEM(theta, PAR))[, output_vars]
+  VSEM_output <- as.matrix(VSEM(theta, PAR_data))[, output_vars]
   if("NEE" %in% output_vars) {
-    pred_model[, "NEE"] <- pred_model[, "NEE"] * 1000
+    VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
   }
   
-  return(pred_model)
+  return(VSEM_output)
   
 }
 
@@ -220,8 +340,13 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 
 }
 
-
-calc_posterior_theta <- function(theta, theta_prior_params, log = FALSE) {
+# TODO: in the middle of working on this 
+calc_lpost_theta <- function(theta, theta_prior_params, normalize_lik = TRUE, log = FALSE) {
+  # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
+  # Given input calibration parameters (theta), runs the forward model, then calculates the 
+  # L2 error between VSEM outputs and observed data to compute log likelihood. 
+  #
+  #
   # Args:
   #    data_obs: data.table of dimension n x p, where n is the length of the time 
   #              series outputs from the model, and p is the number of output variables.
@@ -232,10 +357,20 @@ calc_posterior_theta <- function(theta, theta_prior_params, log = FALSE) {
   #                        the outputs from multiple model runs. 
   
   # Prior
-  log_prior <- calc_lprior_theta(theta, theta_prior_params)
+  lprior <- calc_lprior_theta(theta, theta_prior_params)
   
   # Likelihood
-  SSR <- calc_SSR(data_obs, model_outputs_list)
+  SSR <- data_obs[, output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
+  llik_curr <- llik_Gaussian_err(SSR, Sig_eps_curr) 
+  
+  # Calculate log-likelihoods for current and proposed theta
+  # Y_test <- calc_SSR(data_obs[, output_vars], model_outputs_list_test, na.rm = TRUE)
+  
+  llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
+  
+  lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+  log_theta_post_curr <- llik_curr + lprior_theta_curr
+  log_theta_post_prop <- llik_prop + lprior_theta_prop
   
 }
 
@@ -535,46 +670,6 @@ adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_r
   }
 }
 
-
-calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
-  # Computes the sum of squared residuals (SSR) between model runs and observed 
-  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
-  # design point for emulation) or outputs from single model run (e.g. as required
-  # during MCMC).
-  #
-  # Args:
-  #    data_obs: data.table of dimension n x p, where n is the length of the time 
-  #              series outputs from the model, and p is the number of output variables.
-  #              This is Y in my typical notation. 
-  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
-  #                        model outputs f(theta) from a single model run. Or a list 
-  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
-  #                        the outputs from multiple model runs. 
-  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
-  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
-  # 
-  # Returns:
-  #    matrix of dimension N x p, where N is the number of model runs and p is the 
-  #    number of output variables. The (i, j) entry of the matrix is the SSR
-  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
-  
-  # If model only run at single set of calibration parameter values
-  if(is.matrix(model_outputs_list)) {
-    model_outputs_list <- list(model_outputs_list)
-  }
-  
-  N_param_runs <- length(model_outputs_list)
-  N_outputs <- ncol(model_outputs_list[[1]])
-  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
-  
-  for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
-  }
-  colnames(SSR) <- colnames(data_obs)
-  
-  return(SSR)
-  
-}
 
 # TODO: Parallelize independent GP fitting
 fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
@@ -1753,9 +1848,13 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
 gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, lprior_theta = NULL, gp_mean_pred = NULL, gp_var_pred = NULL, n_obs = NULL, 
                                                  lnorm_log_mean = NULL, lnorm_log_var = NULL) {
   # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
-  # the sum of squared errors for each output. The first argument is the log of the values at which to evaluate the density. 
+  # the sum of squared errors for each output. The density evaluated is the predictive density of the posterior 
+  # approximation ("pi star"). Under the stated assumptions, this is a log-normal density. Either the two parameters 
+  # of this density may be passed (log mean and log var), or this function can calculate these paramneters first, then 
+  # evaluate the density. 
+  # The first argument is the log of the values at which to evaluate the density. 
   # Exponentiating these values will typically result in numerical underflow, so for numerical stability the data is 
-  # shifted so that the density  # is always evaluated at the point 1.0, with the log-normal distribution appropriately 
+  # shifted so that the density is always evaluated at the point 1.0, with the log-normal distribution appropriately 
   # scaled to account for this.
   #
   # Args:
@@ -1972,9 +2071,12 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   SSR_pred_var_train <- sapply(gp_pred_train, function(pred) pred$sd2)
   
   # Compute GP predictive density of posterior approximation at test points
-  post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
-  lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
-  lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
+  post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, 
+                                                                    SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
+  lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, 
+                                                        lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
+  lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, 
+                                                         ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
   
   return(list(ground_truth_quantities = ground_truth_quantities, 
               gp_fits = gp_fits, 
