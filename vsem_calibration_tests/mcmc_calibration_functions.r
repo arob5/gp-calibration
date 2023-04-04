@@ -247,7 +247,7 @@ calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
 # }
 
 
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = FALSE) {
+llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = TRUE) {
   # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
   # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
   # the forward model has already been run, unlike llik_Gaussian(),  which runs
@@ -265,7 +265,7 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   #                  If NA, uses entire matrix. 
   #    normalize: logical, if TRUE returns the normalized log-density, which requires calculation of 
   #               the determinant term. Otherwise, excludes this term, thus returning an unnormalized
-  #               log density (where Sig_eps is treated as a constant). Default is FALSE. 
+  #               log density (where Sig_eps is treated as a constant). Default is TRUE. 
   #
   # Returns:
   #    numeric, the unnormalized log-likelihood. 
@@ -276,7 +276,7 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   }
   L <- t(chol(Sig_eps))
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
-  
+
   if(normalize) {
     return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
   }
@@ -386,19 +386,24 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 
 calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, 
                                          output_vars = NULL, SSR = NULL, vars_obs = NULL, n_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
-                                         theta_prior_params = NULL) {
+                                         theta_prior_params = NULL, return_list = TRUE) {
   # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
-  # Given input calibration parameters (theta), runs the forward model, then calculates the 
-  # L2 error between VSEM outputs and observed data to compute log likelihood. 
+  # This functions provides the option to calculate the log prior and log likelihood from scrath, at the given parameter values `theta_vals` 
+  # and other necessary arguments for computing these quantities. Or if these quantities have already been calculated, they can be passed 
+  # directly. 
   #
   # Args:
-  #    data_obs: data.table of dimension n x p, where n is the length of the time 
-  #              series outputs from the model, and p is the number of output variables.
-  #              This is Y in my typical notation. 
-  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
-  #                        model outputs f(theta) from a single model run. Or a list 
-  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
-  #                        the outputs from multiple model runs. 
+  #    See `llik_product_Gaussian()` for args required to calculate log likelihood. 
+  #    See `calc_lprior_theta()` for args required to calculate log prior. 
+  #    theta_vals: matrix of dimension M x d, where d is the dimension of the input space. The vector of calibration parameter values 
+  #                at which to evaluate the posterior. Not required if prior and likelihood are provided as arguments.   
+  #    lprior_vals: numeric(M), vector of log prior evaluations. If NULL, these will be computed. 
+  #    llik_vals: numeric(M). vector of log likelihood evaluations. If NULL, these will be computed. 
+  #    return_list: logical(1), if TRUE returns list which contains log prior, likelihood, and posterior evaluations. Otherwise just 
+  #                 returns numeric vector of log posterior evaluations. 
+  #
+  # Returns:
+  #    See `return_list` argument above. 
   
   # Prior
   if(is.null(lprior_vals)) {
@@ -412,7 +417,11 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
                                        na.rm = na.rm, sum_output_lliks = TRUE)
   }
   
-  return(lprior_vals + llik_vals)
+  if(!return_list) return(lprior_vals + llik_vals)
+  
+  return(list(lpost = lprior_vals + llik_vals, 
+              lprior = lprior_vals, 
+              llik = llik_vals))
   
 }
 
@@ -435,7 +444,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #             values (not calibrated) are set to their values given in the "best" column. 
   #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
   #                 parameters that will be calibrated. 
-  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
+  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
   #              Colnames set to output variable names. 
   #    output_vars: character vector, used to the select the outputs to be considered in 
   #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
@@ -486,6 +495,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
   } else {
     Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+    stop("Need to fix correlated Gaussian likelihood function to work with missing data.")
   }
 
   # Set initial values
@@ -506,7 +516,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   }
   
   Sig_eps_curr <- Sig_eps_init
-  model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars)
+  model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars) # SSR here instead? 
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -515,10 +525,6 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
   
-  # TEMP
-  prop_vals <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
-  prop_sd <- vector(length = N_mcmc, mode = "numeric")
-
   for(itr in seq(2, N_mcmc)) {
 
     #
@@ -538,13 +544,8 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
       accept_count <- 0
     }
     
-    # theta proposal
-    # print(sqrt(exp(log_scale_prop)) * as.numeric(L_prop))
+    # theta proposals
     theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
-    
-    # TEMP
-    prop_vals[itr,] <- theta_prop
-    prop_sd[itr] <- as.numeric(L_prop * sqrt(exp(log_scale_prop)))
 
     # Calculate log-likelihoods for current and proposed theta
     model_errs_prop <- data_obs[, output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
@@ -583,7 +584,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
   }
   
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp, prop_vals = prop_vals, prop_sd = prop_sd))
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
 
 }
 
@@ -787,7 +788,7 @@ fit_GP <- function(X_train, y_train, gp_lib, gp_kernel) {
   
 }
 
-LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE, order_1d = FALSE) {
+LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE, order_1d = FALSE, true_theta_samples = NULL) {
   # Generate a set training (design) points and test/validation points for evaluating a Gaussian 
   # process fit using Latin Hypercube Sampling (LHS). Can generate the train and test sets jointly, 
   # meaning they are sampled together in the LHS procedure. Or they can be sampled independently 
@@ -810,6 +811,8 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
   #              the design points will be sorted in increasing order. This is convenient when 
   #              plotting 1d GP plots. 
+  #    true_theta_samples: matrix, containing samples from the true posterior over the calibration parameters. If this is provided 
+  #                        (non-NULL) it overrides the other test data settings. The train data is unaffected. 
   #
   # Returns: 
   #    list, with named elements "X_train" and "X_test", storing the N_train x d and 
@@ -864,6 +867,10 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
     
   }
   
+  if(!is.null(true_theta_samples)) {
+    X_test <- true_theta_samples
+  }
+  
   if(order_1d && (d == 1)) {
     X_train <- X_train[order(X_train),,drop=FALSE]
     X_test <- X_test[order(X_test),,drop=FALSE]
@@ -874,14 +881,11 @@ LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapol
 }
 
 
-grid_train_test <- function(N_train, N_test, prior_params, extrapolate, tail_prob_excluded = 0.01) {
+grid_train_test <- function(N_train, N_test, prior_params, extrapolate, tail_prob_excluded = 0.01, true_theta_samples = NULL) {
   # Note that currently the "extrapolate" argument makes no difference, since grid points are placed
   # at the edges of the defined bounds. This can be changed if needed, by adding an "extrapolate_prob" 
   # argument or something like that. 
-  #
-  #
-  
-  
+
   # The dimension of the input space.
   d <- nrow(prior_params)
   
@@ -935,7 +939,12 @@ grid_train_test <- function(N_train, N_test, prior_params, extrapolate, tail_pro
   
   # Create grids
   X_train <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_train_marginals[,j])))
-  X_test <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_test_marginals[,j])))
+  
+  if(is.null(true_theta_samples)) {
+    X_test <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_test_marginals[,j])))
+  } else {
+    X_test <- true_theta_samples
+  }
   colnames(X_train) <- rownames(theta_prior_params)
   colnames(X_test) <- rownames(theta_prior_params)
   
@@ -1049,7 +1058,7 @@ normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, 
                                     denormalize_predictions = FALSE, output_stats = NULL, 
-                                    exponentiate_predictions = FALSE) {
+                                    exponentiate_predictions = FALSE, throw_neg_pred_err = FALSE) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -1078,14 +1087,14 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    to each GP in `gp_obj_list`). 
   
   lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, denormalize_predictions, 
-                                                        output_stats[,j,drop=FALSE], exponentiate_predictions))
+                                                        output_stats[,j,drop=FALSE], exponentiate_predictions, throw_neg_pred_err = throw_neg_pred_err))
   
 }
 
 
 # TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
-                       output_stats = NULL, exponentiate_predictions = FALSE) {
+                       output_stats = NULL, exponentiate_predictions = FALSE, throw_neg_pred_err = FALSE) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -1143,6 +1152,15 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list_exp <- transform_GP_pred_to_LNP(pred_list$mean, pred_list$sd2, pred_list$cov)
     pred_list_exp[["sd2_nug"]] <- transform_GP_pred_to_LNP(gp_pred_mean = pred_list$mean, gp_pred_sd2 = pred_list$sd2_nug)$sd2
     pred_list <- pred_list_exp
+  }
+  
+  # Deal with negative predictions
+  if(any(pred_list[["mean"]] < 0)) {
+    neg_mean_selector <- (pred_list[["mean"]] < 0)
+    err_msg <- paste0("Detected ", sum(neg_mean_selector), " negative SSR prediction(s).")
+    if(throw_neg_pred_err) stop(err_msg)
+    pred_list[["mean"]][neg_mean_selector] <- 0
+    message(err_msg)
   }
   
   return(pred_list)
@@ -1205,7 +1223,7 @@ transform_GP_pred_to_LNP <- function(gp_pred_mean = NULL, gp_pred_sd2 = NULL, gp
 
 get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_pars, pars_cal_sel,
                                 data_obs, PAR, output_vars, scale_X, normalize_Y, log_SSR, 
-                                joint_LHS = FALSE, method = "LHS", order_1d = FALSE) {
+                                joint_LHS = FALSE, method = "LHS", order_1d = FALSE, true_theta_samples = NULL) {
   # Generates training (design) dataset and test dataset via Latin Hypercube sampling or 
   # via a grid-based approach. Note that the LHS method takes into account the prior, while 
   # the grid-based approach simply creates a grid of evenly spaced points within the bounds
@@ -1247,6 +1265,8 @@ get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
   #              the design points will be sorted in increasing order, with the training response 
   #              values ordered accordingly. This is convenient when plotting 1d GP plots. 
+  #    true_theta_samples: matrix, containing samples from the true posterior over the calibration parameters. If this is provided 
+  #                        (non-NULL) it overrides the other test data settings. The train data is unaffected. 
   #
   # Returns:
   #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
@@ -1256,9 +1276,9 @@ get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_
   
   # Generate train and test input datasets
   if(method == "LHS") {
-    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate, order_1d)
+    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate, order_1d, true_theta_samples = true_theta_samples)
   } else if(method == "grid") {
-    X_train_test <- grid_train_test(N_train, N_test, prior_params, extrapolate, order_1d)
+    X_train_test <- grid_train_test(N_train, N_test, prior_params, extrapolate, order_1d, true_theta_samples = true_theta_samples)
   }
   X_train <- X_train_test$X_train
   X_test <- X_train_test$X_test
@@ -1523,21 +1543,21 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
     gp_mean_pred <- log10(gp_mean_pred + shift)
   }
   
-  df <- data.frame(x_test = X_test[order_pred,1], 
-                   y_test = y_test[order_pred], 
-                   y_test_pred = gp_mean_pred[order_pred],
-                   CI_lower = CI_lower[order_pred], 
-                   CI_upper = CI_upper[order_pred], 
-                   x_train = X_train[order_train,1], 
-                   y_train = y_train[order_train])
+  df_test <- data.frame(x_test = X_test[order_pred,1], 
+                        y_test = y_test[order_pred], 
+                        y_test_pred = gp_mean_pred[order_pred],
+                        CI_lower = CI_lower[order_pred], 
+                        CI_upper = CI_upper[order_pred])
+  df_train <- data.frame(x_train = X_train[order_train,1], 
+                         y_train = y_train[order_train])
   
-  gp_plot <- ggplot(data=df, aes(x = x_test, y = y_test_pred)) + 
+  gp_plot <- ggplot(data=df_test, aes(x = x_test, y = y_test_pred)) + 
               geom_line(color = "blue") + 
               geom_line(aes(y = y_test), color = "red") + 
               geom_line(aes(y = CI_lower), color = "gray") + 
               geom_line(aes(y = CI_upper), color = "gray") + 
               geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
-              geom_point(aes(x = x_train, y = y_train), color = "red") + 
+              geom_point(data = df_train, aes(x = x_train, y = y_train), color = "red") + 
               xlab(xlab) + 
               ylab(paste0(ylab, " (", CI_plot_label, ")")) + 
               ggtitle(main_title)
@@ -1678,6 +1698,7 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               output_frequencies = output_frequencies))
   
 }
+
 
 generate_vsem_test_case <- function(test_case_number) {
   random_seed <- test_case_number
@@ -1897,7 +1918,7 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, 
   # The first argument is the log of the values at which to evaluate the density. 
   # Exponentiating these values will typically result in numerical underflow, so for numerical stability the data is 
   # shifted so that the density is always evaluated at the point 1.0, with the log-normal distribution appropriately 
-  # scaled to account for this.
+  # scaled to account for this. Important note: this density is defined for the normalized 
   #
   # Args:
   #    log_vals: numeric(M), vector of (the log of) the points at which to evaluate the predictive density.
@@ -1999,16 +2020,27 @@ integrate_loss_1d <- function(loss_vals, weights, thetas, equally_spaced) {
 
 
 calculate_ground_truth_quantities <- function(theta_train_test_data, computer_model_data, theta_prior_params) {
-  
+  # A convenience function used in emulator comparison tests that computes the ground truth log prior, likelihood, and posterior
+  # to be used for comparison with the emulated analogs. 
+  #
+  # Args:
+  #    theta_train_test_data: list, as returned by `get_train_test_data()`. 
+  #    computer_model_data: list, as returned by `generate_vsem_test_case()`. 
+  #    theta_prior_params: data.frame, containing prior information for calibration parameters. 
+  # 
+  # Returns:
+  #    list, containing the calcualted ground truth log density evaluations (log prior, log likelihood, log posterior up to normalizing constant). 
+
   # True log likelihood evaluations at test inputs
-  llik_test_per_output <- sapply(seq(1, nrow(theta_train_test_data$Y_test)), 
-                                 function(i) llik_Gaussian_SSR(theta_train_test_data$Y_test[i,], diag(computer_model_data$Sig_eps), computer_model_data$n_obs, normalize = TRUE)) 
-  llik_test<- colSums(llik_test_per_output)                               
-  
+  vars_obs <- diag(computer_model_data$Sig_eps)
+  llik_test_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_test, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
+                                                normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
+  llik_test <- rowSums(llik_test_per_output)
+                                                  
   # True log likelihood evaluations at design points
-  llik_train_per_output <- sapply(seq(1, nrow(theta_train_test_data$Y_train)), 
-                                  function(i) llik_Gaussian_SSR(theta_train_test_data$Y_train[i,], diag(computer_model_data$Sig_eps), computer_model_data$n_obs, normalize = TRUE)) 
-  llik_train <- colSums(llik_train_per_output) 
+  llik_train_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_train, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
+                                                 normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
+  llik_train <- rowSums(llik_train_per_output)
   
   # Log prior evaluations
   lprior_theta_test <- sapply(seq(1, nrow(theta_train_test_data$X_test)), function(i) calc_lprior_theta(theta_train_test_data$X_test[i,], theta_prior_params))
@@ -2030,7 +2062,7 @@ calculate_ground_truth_quantities <- function(theta_train_test_data, computer_mo
 }
 
 
-run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta_prior_params, train_test_data_settings) {
+run_emulator_comparison <- function(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = NULL, throw_neg_pred_err = TRUE) {
   # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
   
   output_list <- list()
@@ -2038,7 +2070,6 @@ run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta
   output_list[["theta_prior_params"]] <- theta_prior_params
   
   # Synthetic data generation for VSEM model
-  computer_model_data <- generate_vsem_test_case(vsem_test_case_num)
   output_list[["computer_model_data"]] <- computer_model_data
   
   # Design data and test data
@@ -2061,7 +2092,8 @@ run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta
                                                  log_SSR = any_log_SSR, 
                                                  joint_LHS = train_test_data_settings[j, "joint_LHS"], 
                                                  method = train_test_data_settings[j, "method"], 
-                                                 order_1d = TRUE)
+                                                 order_1d = TRUE, 
+                                                 true_theta_samples = true_theta_samples)
     output_list[["theta_train_test_data"]][[j]] <- theta_train_test_data
   }
   
@@ -2075,7 +2107,7 @@ run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta
     for(j in seq(1, nrow(train_test_data_settings))) {
       data_setting_name <- paste0("data_setting_", j)
       output_list[["test_results"]][[i]][[j]] <- run_emulator_test(computer_model_data, emulator_setting, theta_prior_params,
-                                                                   output_list[["theta_train_test_data"]][[j]])
+                                                                   output_list[["theta_train_test_data"]][[j]], throw_neg_pred_err)
     }
   }
   
@@ -2085,7 +2117,7 @@ run_emulator_comparison <- function(vsem_test_case_num, emulator_settings, theta
 
 
 # TODO: generalize to LNP
-run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data) {
+run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data, throw_neg_pred_err = TRUE) {
   
   Sig_eps <- computer_model_data$Sig_eps
   if(!all(Sig_eps[!diag(nrow(Sig_eps))] == 0)) stop("Non-diagonal output covariances not supported yet.")
@@ -2103,9 +2135,9 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   
   # Predict with GPs
   gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP)
+                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, throw_neg_pred_err = throw_neg_pred_err)
   gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP)
+                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, throw_neg_pred_err = throw_neg_pred_err)
   
   SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
   SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)

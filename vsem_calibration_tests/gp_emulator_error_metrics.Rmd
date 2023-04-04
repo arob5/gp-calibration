@@ -211,37 +211,29 @@ emulator_settings <- data.frame(gp_lib = c("mlegp", "hetGP"),
 print(emulator_settings)
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE} 
 # Priors 
 theta_prior_params <- test1_list$ref_pars[test1_list$pars_cal_sel,]
 theta_prior_params[, "dist"] <- "Uniform"
-theta_prior_params[,"param1"] <- theta_prior_params[,"lower"]
-theta_prior_params[,"param2"] <- theta_prior_params[,"upper"]
+theta_prior_params[,"param1"] <- 0.4 # theta_prior_params[,"lower"]
+theta_prior_params[,"param2"] <- 0.6 # theta_prior_params[,"upper"]
 theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
 
 print(theta_prior_params)
 ```
-
-```{r, include = FALSE}
-# TEST
-train_test_data_settings <- data.frame(N_train = c(5, 8), 
-                                       N_test = c(1000), 
-                                       extrapolate = FALSE, 
-                                       scale_X = TRUE, 
-                                       normalize_Y = TRUE, 
-                                       joint_LHS = FALSE, 
-                                       method = "grid",
-                                       order_1d = TRUE)
-
-emulator_tests <- run_emulator_comparison(vsem_test_case_num = 1, emulator_settings, theta_prior_params, train_test_data_settings)
-theta_param_name <- emulator_tests$computer_model_data$pars_cal_names
+```{r}
+# Computer model data
+vsem_test_case_num <- 1
+computer_model_data <- generate_vsem_test_case(vsem_test_case_num)
+theta_param_name <- computer_model_data$pars_cal_names
 ```
+
 
 # Sampling from Posterior to Estimate Error Metrics 
 ```{r}
 N_mcmc <- 100000
-post_samples <- mcmc_calibrate(emulator_tests$computer_model_data$ref_pars, emulator_tests$computer_model_data$pars_cal_sel, emulator_tests$computer_model_data$data_obs, 
-                               emulator_tests$computer_model_data$output_vars, emulator_tests$computer_model_data$PAR_data,
+post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                               computer_model_data$output_vars, computer_model_data$PAR_data,
                                theta_prior_params = theta_prior_params, learn_Sig_eps = FALSE, diag_cov = TRUE, 
                                N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
@@ -256,19 +248,24 @@ acf(theta_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: "
 hist(theta_samples, 100, main = "Histogram: MCMC Samples", xlab = theta_param_name)
 ```
 
-```{r, echo = FALSE}
-# Evaluate predictive density at MCMC theta samples  
-lpred_pi_mcmc_samples <- gp_approx_posterior_pred_log_density(lpost_theta_test, diag(test1_list$Sig_eps), lprior_theta_test, SSR_pred_floor, GP_pred_vars, test1_list$n_obs, 
-                                                              lnorm_log_mean = post_approx_LNP_log_mean_test, lnorm_log_var = post_approx_LNP_log_var_test)
+```{r, include = FALSE}
+train_test_data_settings <- data.frame(N_train = c(5, 8), 
+                                       N_test = c(1000), 
+                                       extrapolate = FALSE, 
+                                       scale_X = TRUE, 
+                                       normalize_Y = TRUE, 
+                                       joint_LHS = FALSE, 
+                                       method = "grid",
+                                       order_1d = TRUE)
+
+emulator_tests <- run_emulator_comparison(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = theta_samples, throw_neg_pred_err = FALSE)
+theta_param_name <- emulator_tests$computer_model_data$pars_cal_names
 ```
-
-
-
 
 
 ```{r, echo = FALSE}
 # Print posterior plots 
-
+true_param_val <- emulator_tests$computer_model_data$ref_pars[emulator_tests$computer_model_data$pars_cal_sel, "true_value"]
 for(i in seq(1, nrow(emulator_settings))) {
   for(j in seq(1, nrow(train_test_data_settings))) {
     post_approx_plot <- plot_gp_fit_1d(emulator_tests$theta_train_test_data[[j]]$X_test, 
