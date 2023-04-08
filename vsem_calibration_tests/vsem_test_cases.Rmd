@@ -17,9 +17,6 @@ library(BayesianTools)
 source("mcmc_calibration_functions.r")
 ```
 
-
-# TODO: change R scientific notation settings 
-
 # Review of the VSEM model
 
 ## Variables and Parameters
@@ -63,14 +60,23 @@ $$
 \end{align*}
 $$
 
+# Literature Review
+Fer et al (2018) shows plots of NEE data with conservative error bars. The range of NEE in the growing season months looks to be around .02 kg C $m^{-2}$ $\text{day}^{-1}$. 
+In my VSEM tests I scale NEE by 1000, so this would correspond to a range of around 20. Setting the NEE observation variance to $4$ leads to a range of around $20$ so seems 
+reasonable. In the VSEM model, this leads to a range of observations of around $12$ in the winter months, or $.012$ on the original scale. This is a much larger range than in 
+the paper, which shows almost no variability in the measurements in the winter months. The study site for this paper was Bartlett Experimental Forest, which is typical of a 
+northern hardwood forest. 
+
+I have not been able to find literature to help guide the choice of noise level in the observations of the carbon pools. 
+
+
 
 # Test Examples
 
-## Test 1
+## Test 1: *Unrealistic idealized example*
 This is the simplest test case, with a single calibration parameter, all outputs observed daily with no missing values, and no output correlation. However, this test case still comes with a variety of challenges, including a high dynamic range for the sum of square errors. The observation variances represent a choice of low signal-to-noise ratio for the carbon pools; this is the same choice given in the example code provided by the BayesianTools package. Also note that the number of time steps (1000) here is smaller than all of the residence time/longevity parameters ($\tau_r$, $\tau_v$, $\tau_s$) so the quantity of carbon in each of the pools generally increases over this time frame. 
 ```{r}
-random_seed_1 <- 1
-test1_list <- generate_vsem_test_1(random_seed_1)
+test1_list <- generate_vsem_test_case(1)
 ```
 
 
@@ -100,11 +106,10 @@ for(output_var in test1_list$output_vars) {
 ```
 
 
-## Test 2
-Another one-parameter test (LUE), but adds complexity by varying the observation frequency. Also increases the number of days and varies the observation variances.  
+## Test 2: *Grassland Parameterization*
+Another one-parameter test (LUE), but adds complexity by varying the observation frequency. This test considers 2048 time steps (about 5.5 years). NEE is observed daily with no missing values, while above-ground vegetation is every 60 days starting on March 1st. Soil and roots are observed annually on August 1st. 
 ```{r}
-random_seed_2 <- 2
-test2_list <- generate_vsem_test_2(random_seed_2)
+test2_list <- generate_vsem_test_case(2)
 ```
 
 ```{r, echo = FALSE}
@@ -122,6 +127,11 @@ print("Observation frequency: ")
 print(test2_list$output_frequencies)
 ```
 
+```{r, echo = FALSE}
+print("Observation start day: ")
+print(test2_list$obs_start_day)
+```
+
 ```{r echo = FALSE}
 for(output_var in test2_list$output_vars) {
  plotTimeSeries(observed = test2_list$data_obs[, output_var],
@@ -129,12 +139,12 @@ for(output_var in test2_list$output_vars) {
 }
 ```
 
-
-## Test 3
-This test builds on complexity to test 1 by adding an additional calibration parameter $\tau_v$, increasing the number of days, and varying the frequency of observed data. 
+## Test 3: *High Frequency LAI Constraint*
+This test considers only NEE (measured daily) and LAI (measured every three days) constraints. We consider calibrating Leaf Area Ratio (LAR). Recall that LAI is calculated as 
+$$\text{LAI}(t; C_v) = \text{LAR} \times C_v(t)$$
+meaning that the calibration parameter is closely tied to the observational constraint. This test considers a 10 year period (3650 time steps). I'm currently specifying a standard error of 0.6 on LAI measurements, corresponding to the MODIS estimate. Currently, the parameterization of this model leads to some very large LAI values outside of the $[0, 6]$ range that Mike says is typical. 
 ```{r}
-random_seed_3 <- 3
-test3_list <- generate_vsem_test_3(random_seed_3)
+test3_list <- generate_vsem_test_case(3)
 ```
 
 ```{r, echo = FALSE}
@@ -152,6 +162,11 @@ print("Observation frequency: ")
 print(test3_list$output_frequencies)
 ```
 
+```{r, echo = FALSE}
+print("Observation start day: ")
+print(test3_list$obs_start_day)
+```
+
 ```{r echo = FALSE}
 for(output_var in test3_list$output_vars) {
  plotTimeSeries(observed = test3_list$data_obs[, output_var],
@@ -161,10 +176,9 @@ for(output_var in test3_list$output_vars) {
 
 
 ## Test 4
-Another two-parameter test case ($C_v$, $\tau_r$), with a longer time series, varying observation frequencies, increased noise on NEE observations, and small correlation between observation errors for $C_s$ and $C_r$. 
+This test builds on complexity to test 1 by adding an additional calibration parameter $\tau_v$, increasing the number of days, and varying the frequency of observed data. 
 ```{r}
-random_seed_4 <- 4
-test4_list <- generate_vsem_test_4(random_seed_4)
+test4_list <- generate_vsem_test_case(4)
 ```
 
 ```{r, echo = FALSE}
@@ -186,6 +200,35 @@ print(test4_list$output_frequencies)
 for(output_var in test4_list$output_vars) {
  plotTimeSeries(observed = test4_list$data_obs[, output_var],
                 predicted = test4_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 5
+Another two-parameter test case ($C_v$, $\tau_r$), with a longer time series, varying observation frequencies, increased noise on NEE observations, and small correlation between observation errors for $C_s$ and $C_r$. 
+```{r}
+test5_list <- generate_vsem_test_case(5)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test5_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test5_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test5_list$output_frequencies)
+```
+
+```{r echo = FALSE}
+for(output_var in test5_list$output_vars) {
+ plotTimeSeries(observed = test5_list$data_obs[, output_var],
+                predicted = test5_list$data_ref[, output_var], main = output_var) 
 }
 ```
 

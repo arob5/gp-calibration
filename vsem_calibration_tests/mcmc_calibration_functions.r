@@ -342,10 +342,20 @@ run_VSEM_single_input <- function(par_val, par_ref, par_cal_sel, PAR_data, outpu
   theta[par_cal_sel] <- par_val
   
   # Run forward model, re-scale NEE.
-  VSEM_output <- as.matrix(VSEM(theta, PAR_data))[, output_vars]
+  VSEM_output <- as.matrix(VSEM(theta, PAR_data))
   if("NEE" %in% output_vars) {
     VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
   }
+  
+  # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
+  # at time t. 
+  if("LAI" %in% output_vars) {
+    VSEM_output <- cbind(VSEM_output, theta[rownames(par_ref) == "LAR"] * VSEM_output[, "Cv"])
+    colnames(VSEM_output)[ncol(VSEM_output)] <- "LAI"
+  }
+  
+  # Select only the output variables 
+  VSEM_output <- VSEM_output[, output_vars]
   
   return(VSEM_output)
   
@@ -1058,7 +1068,7 @@ normalize_output_data <- function(Y, output_stats, inverse = FALSE) {
 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, 
                                     denormalize_predictions = FALSE, output_stats = NULL, 
-                                    exponentiate_predictions = FALSE, throw_neg_pred_err = FALSE) {
+                                    exponentiate_predictions = FALSE, sampling_method = "default") {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -1080,6 +1090,8 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
   #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
   #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
+  #    sampling_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
+  #                     it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0).
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
@@ -1087,14 +1099,17 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    to each GP in `gp_obj_list`). 
   
   lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, denormalize_predictions, 
-                                                        output_stats[,j,drop=FALSE], exponentiate_predictions, throw_neg_pred_err = throw_neg_pred_err))
+                                                        output_stats[,j,drop=FALSE], exponentiate_predictions, sampling_method = sampling_method))
   
 }
 
 
-# TODO: look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
+# TODO: 
+#    - Look into rebuild(robust=TRUE) for hetGP prediction (using ginv rather than Cholesky for matrix inverse).
+#    - Currently sd2_nug should not be trusted; e.g. it is not corrected in the case of truncation/rectification. Might just be easier to 
+#      drop this or combine it with the pointwise variance predictions. 
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
-                       output_stats = NULL, exponentiate_predictions = FALSE, throw_neg_pred_err = FALSE) {
+                       output_stats = NULL, exponentiate_predictions = FALSE, sampling_method = "default") {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -1114,6 +1129,8 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
   #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
   #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
+  #    sampling_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
+  #                     it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0).
   #
   # Returns:
   #    list, with named elements "mean", "sd2", "sd2_nug", "cov". 
@@ -1137,6 +1154,22 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
+  # Make adjustments for truncated or rectified Gaussian predictive distribution. 
+  if(!exponentiate_predictions && ((sampling_method == "truncated") || (sampling_method == "rectified"))) {
+    trunc_Gaussian_moments <- compute_zero_truncated_Gaussian_moments(pred_list[["mean"]], pred_list[["sd2"]])
+    
+    if(sampling_method == "truncated") {
+      pred_list[["mean"]] <- trunc_Gaussian_moments[["mean"]]
+      pred_list[["sd2"]] <- trunc_Gaussian_moments[["var"]]
+    } else if(sampling_method == "rectified") {
+      rect_Gaussian_moments <- compute_rectified_Gaussian_moments(pred_list[["mean"]], pred_list[["sd2"]], mu_trunc = trunc_Gaussian_moments[["mean"]], 
+                                                                  sig2_trunc = trunc_Gaussian_moments[["var"]], Z = trunc_Gaussian_moments[["mean"]])
+      pred_list[["mean"]] <- rect_Gaussian_moments[["mean"]]
+      pred_list[["sd2"]] <- rect_Gaussian_moments[["var"]]
+    }
+    
+  }
+  
   # Invert Z-score transformation.
   if(denormalize_predictions) {
     pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
@@ -1147,24 +1180,77 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     }
   }
   
-  # Transform log-transformed predictions back to original scale. 
+  # Transform log-transformed predictions back to original scale (for log-normal process predictions). 
   if(exponentiate_predictions) {
     pred_list_exp <- transform_GP_pred_to_LNP(pred_list$mean, pred_list$sd2, pred_list$cov)
     pred_list_exp[["sd2_nug"]] <- transform_GP_pred_to_LNP(gp_pred_mean = pred_list$mean, gp_pred_sd2 = pred_list$sd2_nug)$sd2
     pred_list <- pred_list_exp
-  }
-  
-  # Deal with negative predictions
-  if(any(pred_list[["mean"]] < 0)) {
-    neg_mean_selector <- (pred_list[["mean"]] < 0)
-    err_msg <- paste0("Detected ", sum(neg_mean_selector), " negative SSR prediction(s).")
-    if(throw_neg_pred_err) stop(err_msg)
-    pred_list[["mean"]][neg_mean_selector] <- 0
-    message(err_msg)
-  }
-  
+  } 
+
   return(pred_list)
   
+}
+
+
+compute_zero_truncated_Gaussian_moments <- function(mu, sig2) {
+  # Compute the mean and variance of the distribution of the conditional random variable X|X > 0, 
+  # where X ~ N(mu, sig2). This is vectorized so that the arguments `mu` and `sig2` can be vectors 
+  # where the ith element pertains to a random variable X_i ~ N(mu_i, sig2_i). 
+  #
+  # Args:
+  #    mu: numeric(), vector of means of the Gaussian variables X_i. 
+  #    sig2: numeric(), vector of equal length as `mu` of variances of the Gaussian variables X_i. 
+  #
+  # Returns:
+  #    list, with elements "mean", "var", and "Z". The first two contain vectors storing the mean and 
+  #    variance, respectively, of the truncated Gaussian distribution. The third is a vector of 
+  #    evaluations of the form P(X_i > 0). This is returned primarily as it can be used to compute 
+  #    the moments of the rectified Gaussian. 
+  
+  sig <- sqrt(sig2)
+  alpha <- -mu / sig
+  phi_alpha <- dnorm(alpha)
+  Z <- 1 - pnorm(alpha)
+  
+  mu_trunc <- mu + sig * phi_alpha / Z
+  sig2_trunc <- sig2 * (1 + (alpha * phi_alpha) / Z - (phi_alpha / Z)^2)
+  
+  return(list(mean = mu, var = sig2, Z = Z))
+  
+}
+
+
+compute_rectified_Gaussian_moments <- function(mu, sig2, mu_trunc = NULL, sig2_trunc = NULL, Z = NULL) {
+  # Compute the mean and variance of the distribution of the random max(X, 0), 
+  # where X ~ N(mu, sig2). This is vectorized so that the arguments `mu` and `sig2` can be vectors 
+  # where the ith element pertains to a random variable X_i ~ N(mu_i, sig2_i). The rectified Gaussian 
+  # moments are closely related to the truncated Gaussian moments, so optionally computations from the 
+  # latter can be passed in to avoid additional computation. In this case, either all of the arguments 
+  # `mu_trunc`, `sig2_trunc`, and `Z` must be provided. 
+  #
+  # Args:
+  #    mu: numeric(), vector of means of the Gaussian variables X_i. 
+  #    sig2: numeric(), vector of equal length as `mu` of variances of the Gaussian variables X_i. 
+  #    mu_trunc: numeric(), vector of equal length as `mu` of the means of the truncated Gaussian 
+  #              variables X_i|X_i > 0. If NULL, will not use partial computations from the truncated 
+  #              Gaussian computation. 
+  #    sig2_trunc: numeric(), same as `mu_trunc` but containing the truncated Gaussian variances. 
+  #    Z: numeric(), same as `mu_trunc` but containing vector of evaluations P(X_i > 0). 
+  #
+  # Returns:
+  #    list, with elements "mean" and "var"; the vectors storing the mean and 
+  #    variance, respectively, of the rectified Gaussian distribution.
+  
+  if(is.null(mu_trunc)) {
+    trunc_Gaussian_moments <- compute_zero_truncated_Gaussian_moments(mu, sig2)
+    mu_trunc <- trunc_Gaussian_moments$mean
+    sig2_trunc <- trunc_Gaussian_moments$var
+    Z <- trunc_Gaussian_moments$Z
+  }
+  
+  mu_rect = mu_trunc * Z
+  return(list(mean = mu_rect, 
+              var = (sig2_trunc + mu_trunc^2) * Z - mu_rect^2))
 }
 
 
@@ -1620,9 +1706,8 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
 # }  
 
 
-# TODO: need to add missing values for time series
 generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
-                                    ref_pars, output_vars, output_frequencies) {
+                                    ref_pars, output_vars, output_frequencies, obs_start_day) {
   # A helper function to generate data associated with a specific VSEM test example. Returns a list of all of the information
   # necessary to perform a VSEM emulation test. 
   #
@@ -1642,6 +1727,11 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   #    output_frequencies: integer(), vector of length equal to length of `output_vars`. The ith element of this vector is the 
   #                        frequency with which observations will be generated for the respective output 
   #                        (1 = daily, 7 = weekly, 30 = monthly, etc.). Daily is the smallest allowed frequency. 
+  #    obs_start_day: integer(), vector of length equal to length of `output_vars`. The ith element of this vector is the time step 
+  #                   at which the observations will begin. For example, 1 indicates the observations will begin immediately, while 
+  #                   10 will start observations at the 10th time step. The observation frequency will be unaffected by the start 
+  #                   day. For example, a start day of 213 and observation frequency of 365 will imply annual observations 
+  #                   on August 1st (assuming non leap-year). 
   #
   # Returns:
   #    List containing simulated ground truth data, simulated observed data, data summarizing the parameter values used, etc. 
@@ -1673,7 +1763,7 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   data_obs <- data_obs_complete
   observation_selector <- matrix(nrow = N_time_steps, ncol = N_outputs)
   for(j in seq(1, N_outputs)) {
-    obs_idx <- seq(1, N_time_steps, by = output_frequencies[j])
+    obs_idx <- seq(obs_start_day[j], N_time_steps, by = output_frequencies[j])
     obs_sel <- rep(0, N_time_steps)
     obs_sel[obs_idx] <- 1
     observation_selector[,j] <- obs_sel
@@ -1681,6 +1771,7 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   }
   colnames(observation_selector) <- output_vars
   names(output_frequencies) <- output_vars
+  names(obs_start_day) <- output_vars
   
   return(list(ref_pars = ref_pars, 
               PAR_data = PAR, 
@@ -1695,12 +1786,23 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               N_time_steps = N_time_steps, 
               pars_cal_names = pars_cal_names, 
               output_vars = output_vars, 
-              output_frequencies = output_frequencies))
+              output_frequencies = output_frequencies, 
+              obs_start_day = obs_start_day))
   
 }
 
 
 generate_vsem_test_case <- function(test_case_number) {
+  # A convenience function that loads the VSEM test case given the number of the test case. 
+  # First sets the random seed to the test case number and then loads the test case data.
+  #
+  # Args:
+  #    integer(1), the test case number. 
+  #
+  # Returns:
+  #    list, containing VSEM data for the test case. See `generate_vsem_test()` for details on 
+  #    this list. 
+  
   random_seed <- test_case_number
   f <- get(paste0("generate_vsem_test_", test_case_number))
   
@@ -1735,9 +1837,10 @@ generate_vsem_test_1 <- function(random_seed) {
   # All outputs are observed daily, with no missing values. 
   output_vars <- c("NEE", "Cv", "Cs", "CR")
   output_frequencies <- rep(1, 4)
+  obs_start_day <- rep(1, 4)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
-                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
   return(test_list)
   
 }
@@ -1769,19 +1872,61 @@ generate_vsem_test_2 <- function(random_seed) {
   pars_cal_vals <- c(0.002)
   ref_pars <- VSEMgetDefaults()
   
-  # All outputs are observed daily, with no missing values. 
+  # NEE is observed daily with no missing values. Soil and roots are observed annually on 
+  # August 1st (assuming non leap-year). Above-ground vegetation is measured 6 times a year 
+  # starting on March 1st (assuming non leap-year). 
   output_vars <- c("NEE", "Cv", "Cs", "CR")
-  output_frequencies <- c(1, 365, 365, 60)
+  output_frequencies <- c(1, 60, 365, 365)
+  obs_start_day <- c(1, 60, 213, 213)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
-                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
   return(test_list)
   
 }
 
 
 generate_vsem_test_3 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 3". This builds adds complexity 
+  # A convenience function to generate the VSEM data for "test case 3". This is another 
+  # single calibration parameter test case, but adds complexity by varying the frequency 
+  # of output observations. It also varies the observations variances and increases the 
+  # number of time steps (days). 
+  #
+  # Args:
+  #    random_seed: integer(1), random seed used to generate observation noise. 
+  #
+  # Returns:
+  #    list, the list returned by `generate_vsem_test_data()`. 
+  
+  # Number of days.
+  N_time_steps <- 3650
+  
+  # Diagonal covariance across outputs.
+  Sig_eps <- diag(c(4.0, 0.36))
+  rownames(Sig_eps) <- c("NEE", "LAI")
+  colnames(Sig_eps) <- c("NEE", "LAI")
+  
+  # Single calibration parameter: Leaf Area Ratio (LAR)
+  pars_cal_names <- c("LAR")
+  pars_cal_vals <- c(1.500)
+  ref_pars <- VSEMgetDefaults()
+  
+  # NEE is observed daily with no missing values. LAI is observed every three days.   
+  output_vars <- c("NEE", "LAI")
+  output_frequencies <- c(1, 3)
+  obs_start_day <- c(1, 1)
+  
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
+  return(test_list)
+  
+}
+
+
+
+
+generate_vsem_test_4 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 4". This builds adds complexity 
   # to test case 1 by adding an additional calibration parameter, and varying the observation 
   # frequencies. 
   #
@@ -1808,16 +1953,17 @@ generate_vsem_test_3 <- function(random_seed) {
   # All outputs are observed daily, with no missing values. 
   output_vars <- c("NEE", "Cv", "Cs", "CR")
   output_frequencies <- c(1, 300, 365, 30)
+  obs_start_day <- c(1, 1, 1, 1)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
-                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
   return(test_list)
   
 }
 
 
-generate_vsem_test_4 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 4". This is another two calibration 
+generate_vsem_test_5 <- function(random_seed) {
+  # A convenience function to generate the VSEM data for "test case 5". This is another two calibration 
   # parameter test, which varies observation frequency, and now also includes time-independent correlation 
   # between observation noise in the output variables. 
   #
@@ -1846,9 +1992,10 @@ generate_vsem_test_4 <- function(random_seed) {
   # All outputs are observed daily, with no missing values. 
   output_vars <- c("NEE", "Cv", "Cs", "CR")
   output_frequencies <- c(1, 300, 365, 30)
+  obs_start_day <- c(1, 1, 1, 1)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, 
-                                       pars_cal_names, pars_cal_vals, ref_pars, output_vars, output_frequencies)
+  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
+                                       ref_pars, output_vars, output_frequencies, obs_start_day <- c(1, 1, 1, 1))
   return(test_list)
   
 }
@@ -2135,9 +2282,11 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   
   # Predict with GPs
   gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, throw_neg_pred_err = throw_neg_pred_err)
+                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, 
+                                          sampling_method = emulator_settings$sampling_method)
   gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, throw_neg_pred_err = throw_neg_pred_err)
+                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, 
+                                           sampling_method = emulator_settings$sampling_method)
   
   SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
   SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)

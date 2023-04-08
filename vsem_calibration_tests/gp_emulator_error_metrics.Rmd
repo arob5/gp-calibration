@@ -201,11 +201,13 @@ random_seed_1 <- 1
 test1_list <- generate_vsem_test_1(random_seed_1)
 ```
 
+# Sampling method can be be "rectified" or "truncated". Anything else will be standard sampling. 
 ```{r, echo = FALSE}
 # Emulator settings
 emulator_settings <- data.frame(gp_lib = c("mlegp", "hetGP"), 
                                 target = c("SSR", "SSR"), 
                                 kernel = "Gaussian", 
+                                sampling_method = c("rectified", "truncated"),
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
 print(emulator_settings)
