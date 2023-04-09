@@ -1154,16 +1154,19 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
+  
   # Make adjustments for truncated or rectified Gaussian predictive distribution. 
   if(!exponentiate_predictions && ((sampling_method == "truncated") || (sampling_method == "rectified"))) {
-    trunc_Gaussian_moments <- compute_zero_truncated_Gaussian_moments(pred_list[["mean"]], pred_list[["sd2"]])
+    n <- length(pred_list[["mean"]])
+    mu_trunc <- sapply(seq(1, n), function(i) etruncnorm(a=0, b=Inf, mean = pred_list[["mean"]][i], sd = sqrt(pred_list[["sd2"]][i])))
+    var_trunc <- sapply(seq(1, n), function(i) vtruncnorm(a=0, b=Inf, mean = pred_list[["mean"]][i], sd = sqrt(pred_list[["sd2"]][i])))
     
     if(sampling_method == "truncated") {
-      pred_list[["mean"]] <- trunc_Gaussian_moments[["mean"]]
-      pred_list[["sd2"]] <- trunc_Gaussian_moments[["var"]]
+      pred_list[["mean"]] <- mu_trunc
+      pred_list[["sd2"]] <- var_trunc
     } else if(sampling_method == "rectified") {
-      rect_Gaussian_moments <- compute_rectified_Gaussian_moments(pred_list[["mean"]], pred_list[["sd2"]], mu_trunc = trunc_Gaussian_moments[["mean"]], 
-                                                                  sig2_trunc = trunc_Gaussian_moments[["var"]], Z = trunc_Gaussian_moments[["mean"]])
+      rect_Gaussian_moments <- compute_rectified_Gaussian_moments(pred_list[["mean"]], pred_list[["sd2"]], mu_trunc = mu_trunc, sig2_trunc = var_trunc)
+                                                                  
       pred_list[["mean"]] <- rect_Gaussian_moments[["mean"]]
       pred_list[["sd2"]] <- rect_Gaussian_moments[["var"]]
     }
@@ -1215,7 +1218,7 @@ compute_zero_truncated_Gaussian_moments <- function(mu, sig2) {
   mu_trunc <- mu + sig * phi_alpha / Z
   sig2_trunc <- sig2 * (1 + (alpha * phi_alpha) / Z - (phi_alpha / Z)^2)
   
-  return(list(mean = mu, var = sig2, Z = Z))
+  return(list(mean = mu_trunc, var = sig2_trunc, Z = Z))
   
 }
 
@@ -1226,7 +1229,7 @@ compute_rectified_Gaussian_moments <- function(mu, sig2, mu_trunc = NULL, sig2_t
   # where the ith element pertains to a random variable X_i ~ N(mu_i, sig2_i). The rectified Gaussian 
   # moments are closely related to the truncated Gaussian moments, so optionally computations from the 
   # latter can be passed in to avoid additional computation. In this case, either all of the arguments 
-  # `mu_trunc`, `sig2_trunc`, and `Z` must be provided. 
+  # `mu_trunc`, `sig2_trunc`. 
   #
   # Args:
   #    mu: numeric(), vector of means of the Gaussian variables X_i. 
@@ -1241,11 +1244,15 @@ compute_rectified_Gaussian_moments <- function(mu, sig2, mu_trunc = NULL, sig2_t
   #    list, with elements "mean" and "var"; the vectors storing the mean and 
   #    variance, respectively, of the rectified Gaussian distribution.
   
-  if(is.null(mu_trunc)) {
+  if(is.null(mu_trunc) || is.null(sig2_trunc)) {
     trunc_Gaussian_moments <- compute_zero_truncated_Gaussian_moments(mu, sig2)
     mu_trunc <- trunc_Gaussian_moments$mean
     sig2_trunc <- trunc_Gaussian_moments$var
     Z <- trunc_Gaussian_moments$Z
+  }
+  
+  if(is.null(Z)) {
+    Z <- 1 - pnorm(-mu / sig)
   }
   
   mu_rect = mu_trunc * Z
@@ -1563,14 +1570,16 @@ plot_gp_fit_1d_old <- function(X_pred, y_pred, X_train, y_train, gp_mean_pred, g
 
 plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
                            exponentiate_predictions = FALSE, log_scale = FALSE, vertical_line = NULL,
-                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9) {
+                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9, transformation = "default") {
   # Core function for producing plots for GP predictions with one-dimensional input space. The function plots
   # the true, known latent function values at the design inputs and test inputs. It also plots the 
-  # GP predictive mean and confidence bands at the test inputs. This function can also produce log-normal process (LNP)
-  # plots when `exponentiate_predictions` is TRUE. In this case, the assumption is that the arguments correspond to 
-  # a GP, but the desired plot corresponds to the LNP produced by exponentiating the GP. The plot can also optionally include
-  # a vertical line corresponding to some "true" parameter in the input space. By setting `log_scale` to TRUE, the plot will 
-  # 
+  # GP predictive mean and confidence bands at the test inputs. This function assunmes that `gp_mean_pred` and 
+  # `gp_var_pred` are the means and variances of a Gaussian process, but allows these predictions to be transformed
+  # by 1.) exponentiating the predictions, resulting in a log-normal process, 2.) converting the Gaussian predictive 
+  # distribution to a left-truncated (at zero) Gaussian distribution, or 3.) converting the Gaussian predictive 
+  # distribution to a rectified Gaussian distribution. The plot can also optionally include
+  # a vertical line corresponding to some "true" parameter in the input space. By setting `log_scale` to TRUE, the y-axis
+  # will be set to a log base 10 sdale. 
   # 
   # Args:
   #    X_test: matrix, of dimension M x 1 where M is the number of test input points. 
@@ -1598,6 +1607,9 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   #    main_title: character(1), the main title for the plot. 
   #    CI_prob: numeric(1), value in (0, 1) determining the confidence intervals that will be plotted. e.g. 0.9 means
   #             90% confidence intervals (the default). 
+  #    transformation: character(1), if "truncated", will convert the GP predictive distribution to truncated Gaussian distribution. 
+  #                    If "rectified", will instead transform to rectified Gaussian. If "default", will not transform the predictive 
+  #                    distribution. 
   #
   # Returns:
   #    A ggplot2 plot object. This can be used to display or to further modify the plot. 
@@ -1605,6 +1617,7 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   order_pred <- order(X_test)
   order_train <- order(X_train)
   gp_sd_pred <- sqrt(gp_var_pred)
+  n <- length(gp_mean_pred)
   
   # Confidence intervals
   CI_tail_prob <- 0.5 * (1 - CI_prob)
@@ -1615,6 +1628,17 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
     transformed_predictions <- transform_GP_pred_to_LNP(gp_pred_mean = gp_mean_pred, gp_pred_sd2 = gp_var_pred)
     gp_mean_pred <- transformed_predictions$mean
     gp_var_pred <- transformed_predictions$sd2
+  } else if(transformation == "truncated") {
+    CI_lower <- qtruncnorm(CI_tail_prob, a = 0, b = Inf, mean = gp_mean_pred, sd = sqrt(gp_var_pred))
+    CI_upper <- qtruncnorm(1 - CI_tail_prob, a = 0, b = Inf, mean = gp_mean_pred, sd = sqrt(gp_var_pred))
+    gp_mean_pred_trunc <- sapply(seq(1, n), function(i) etruncnorm(a=0, b=Inf, mean = gp_mean_pred[i], sd = sqrt(gp_var_pred[i])))
+    gp_var_pred <- sapply(seq(1, n), function(i) vtruncnorm(a=0, b=Inf, mean = gp_mean_pred[i], sd = sqrt(gp_var_pred[i])))
+    gp_mean_pred <- gp_mean_pred_trunc
+  } else if(transformation == "rectified") {
+    # TODO: CIs for rectified Gaussian
+    transformed_predictions <- compute_rectified_Gaussian_moments(gp_mean_pred, gp_var_pred)
+    gp_mean_pred <- transformed_predictions$mean
+    gp_var_pred <- transformed_predictions$var
   } else {
     CI_lower <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
     CI_upper <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
@@ -2209,7 +2233,7 @@ calculate_ground_truth_quantities <- function(theta_train_test_data, computer_mo
 }
 
 
-run_emulator_comparison <- function(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = NULL, throw_neg_pred_err = TRUE) {
+run_emulator_comparison <- function(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = NULL) {
   # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
   
   output_list <- list()
@@ -2254,7 +2278,7 @@ run_emulator_comparison <- function(computer_model_data, emulator_settings, thet
     for(j in seq(1, nrow(train_test_data_settings))) {
       data_setting_name <- paste0("data_setting_", j)
       output_list[["test_results"]][[i]][[j]] <- run_emulator_test(computer_model_data, emulator_setting, theta_prior_params,
-                                                                   output_list[["theta_train_test_data"]][[j]], throw_neg_pred_err)
+                                                                   output_list[["theta_train_test_data"]][[j]])
     }
   }
   
@@ -2264,7 +2288,7 @@ run_emulator_comparison <- function(computer_model_data, emulator_settings, thet
 
 
 # TODO: generalize to LNP
-run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data, throw_neg_pred_err = TRUE) {
+run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data) {
   
   Sig_eps <- computer_model_data$Sig_eps
   if(!all(Sig_eps[!diag(nrow(Sig_eps))] == 0)) stop("Non-diagonal output covariances not supported yet.")
@@ -2276,17 +2300,25 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   # Fit GPs
   fit_LNP <- (emulator_settings$target == "log_SSR")
   if(fit_LNP) stop("LNP not supported yet.")
-  gp_fits_list <- fit_independent_GPs(theta_train_test_data$X_train_preprocessed, theta_train_test_data$Y_train_preprocessed, emulator_settings$gp_lib, emulator_settings$kernel)
+  gp_fits_list <- fit_independent_GPs(theta_train_test_data$X_train_preprocessed, theta_train_test_data$Y_train_preprocessed, 
+                                      emulator_settings$gp_lib, emulator_settings$kernel)
   gp_fit_times <- gp_fits_list$times
   gp_fits <- gp_fits_list$fits
   
-  # Predict with GPs
+  # Predict with GPs: returns predictions from GP without performing transformations (exponentiating, truncating, rectifying). These transformations 
+  # are intended to be performed later, e.g. when plotting with plot_gp_1d(). 
   gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, 
-                                          sampling_method = emulator_settings$sampling_method)
+                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
+                                          sampling_method = "default")
   gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = fit_LNP, 
-                                           sampling_method = emulator_settings$sampling_method)
+                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
+                                           sampling_method = "default")
+  
+  # TODO: left off here:
+  #    - Need to update the below lines of code since need to perform the transformations before calculating SSR. 
+  #    - Should probably have a calc_SSR() function that allows the transformations to be performed. Or I should 
+  #      just perform the transformations and store them as separate elements of the list. Should probably have a 
+  #      "transform_gp_predictions()" function that accounts for all of the transformations.
   
   SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
   SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)
@@ -2294,12 +2326,12 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   SSR_pred_var_train <- sapply(gp_pred_train, function(pred) pred$sd2)
   
   # Compute GP predictive density of posterior approximation at test points
-  post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, 
-                                                                    SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
-  lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, 
-                                                        lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
-  lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, 
-                                                         ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
+  # post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, 
+  #                                                                   SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
+  # lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, 
+  #                                                       lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
+  # lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, 
+  #                                                        ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
   
   return(list(ground_truth_quantities = ground_truth_quantities, 
               gp_fits = gp_fits, 
@@ -2309,11 +2341,12 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
               SSR_pred_mean_test = SSR_pred_mean_test, 
               SSR_pred_var_test = SSR_pred_var_test, 
               SSR_pred_mean_train = SSR_pred_mean_train, 
-              SSR_pred_var_train = SSR_pred_var_train, 
-              post_pred_mean_log_test = post_approx_LNP_params_test$mean_log, 
-              post_pred_var_log_test = post_approx_LNP_params_test$var_log, 
-              lpost_pred_density_test = lpred_pi_test, 
-              lpost_pred_density_train = lpred_pi_train))  
+              SSR_pred_var_train = SSR_pred_var_train))
+              
+              # post_pred_mean_log_test = post_approx_LNP_params_test$mean_log, 
+              # post_pred_var_log_test = post_approx_LNP_params_test$var_log, 
+              # lpost_pred_density_test = lpred_pi_test, 
+              # lpost_pred_density_train = lpred_pi_train))  
   
 }
 

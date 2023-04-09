@@ -260,7 +260,7 @@ train_test_data_settings <- data.frame(N_train = c(5, 8),
                                        method = "grid",
                                        order_1d = TRUE)
 
-emulator_tests <- run_emulator_comparison(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = theta_samples, throw_neg_pred_err = FALSE)
+emulator_tests <- run_emulator_comparison(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = theta_samples)
 theta_param_name <- emulator_tests$computer_model_data$pars_cal_names
 ```
 

@@ -1,0 +1,54 @@
+---
+title: "Code Validation"
+author: "Andrew Roberts"
+date: '2023-04-08'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+```
+
+# This document contains code validation for emulator/calibration related functions. 
+
+```{r}
+Gaussian_means <- c(0, -.5)
+Gaussian_vars <- c(1, 2)
+
+# Compute means and variances
+moments <- compute_rectified_Gaussian_moments(Gaussian_means, Gaussian_vars)
+
+# Monte Carlo approximation of means and variances
+N_samp <- 1000000
+samp <- matrix(nrow = N_samp, ncol = length(Gaussian_means))
+for(j in seq_along(Gaussian_means)) {
+  samp[,j] <- pmax(rnorm(N_samp, mean = Gaussian_means[j], sd = sqrt(Gaussian_vars[j])), 0)
+}
+sample_means <- colMeans(samp)
+sample_vars <- colMeans(samp^2) - sample_means^2
+
+print("Means computed:")
+print(moments$mean)
+
+print("Sample means:")
+print(sample_means)
+
+print("Variances:")
+print(moments$var)
+
+print("Sample vars:")
+print(sample_vars)
+
+```
+
+
