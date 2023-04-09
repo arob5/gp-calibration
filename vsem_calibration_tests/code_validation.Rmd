@@ -17,16 +17,19 @@ library(data.table)
 library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
+source("gp_emulator_functions.r")
 ```
 
 # This document contains code validation for emulator/calibration related functions. 
 
+## Testing GP Transformation Functions
+#### Comparing Rectified Gaussian moment calculations with sample estimates. 
 ```{r}
 Gaussian_means <- c(0, -.5)
 Gaussian_vars <- c(1, 2)
 
 # Compute means and variances
-moments <- compute_rectified_Gaussian_moments(Gaussian_means, Gaussian_vars)
+moments <- transform_GP_to_rectified_GP(Gaussian_means, Gaussian_vars)
 
 # Monte Carlo approximation of means and variances
 N_samp <- 1000000
@@ -50,5 +53,12 @@ print("Sample vars:")
 print(sample_vars)
 
 ```
+#### Comparing two different functions that compute truncated Gaussian moments. 
+```{r}
+print("Method 1:")
+print(transform_GP_to_truncated_GP(Gaussian_means, Gaussian_vars))
 
+print("Method 2:")
+print(compute_zero_truncated_Gaussian_moments(Gaussian_means, Gaussian_vars))
+```
 

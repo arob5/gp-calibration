@@ -944,7 +944,7 @@ get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_
   
   # Generate train and test input datasets
   if(method == "LHS") {
-    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint, extrapolate, order_1d, true_theta_samples = true_theta_samples)
+    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint_LHS, extrapolate, order_1d, true_theta_samples = true_theta_samples)
   } else if(method == "grid") {
     X_train_test <- grid_train_test(N_train, N_test, prior_params, extrapolate, order_1d, true_theta_samples = true_theta_samples)
   }
@@ -1713,10 +1713,10 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
   # are intended to be performed later, e.g. when plotting with plot_gp_1d(). 
   gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                          sampling_method = "default")
+                                          transformation_method = "default")
   gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
                                            output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                           sampling_method = "default")
+                                           transformation_method = "default")
   
   # TODO: left off here:
   #    - Need to update the below lines of code since need to perform the transformations before calculating SSR. 

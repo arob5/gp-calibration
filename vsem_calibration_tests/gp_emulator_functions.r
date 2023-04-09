@@ -198,7 +198,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
 #    - Currently sd2_nug should not be trusted; e.g. it is not corrected in the case of truncation/rectification. Might just be easier to 
 #      drop this or combine it with the pointwise variance predictions. 
 predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
-                       output_stats = NULL, exponentiate_predictions = FALSE, transformation_method = NA_character_) {
+                       output_stats = NULL, transformation_method = NA_character_) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -215,16 +215,14 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
   #                  variance of the output variable used to compute the Z-scores. This object is 
   #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
-  #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
-  #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
-  #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
-  #    sampling_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
-  #                     it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0).
+  #    transformation_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
+  #                           it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0). If 
+  #                           "LNP", exponentiates the GP, resulting in a log-normal process. 
   #
   # Returns:
-  #    list, with named elements "mean", "sd2", "sd2_nug", "cov". 
+  #    list, with named elements "mean", "var", "var_nug", "cov". 
   
-  pred_list_names <- c("mean", "sd2", "sd2_nug", "cov")
+  pred_list_names <- c("mean", "var", "var_nug", "cov")
   pred_list <- vector(mode = "list", length = length(pred_list_names))
   names(pred_list) <- pred_list_names
   
@@ -232,7 +230,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   if(gp_lib == "mlegp") {
     mlegp_pred <- predict(gp_obj, newData = X_pred, se.fit = TRUE)
     pred_list[["mean"]] <- mlegp_pred[["fit"]]
-    pred_list[["sd2"]] <- mlegp_pred[["se.fit"]]^2
+    pred_list[["var"]] <- mlegp_pred[["se.fit"]]^2
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
     if(cov_mat) {
@@ -244,59 +242,32 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
-  
-  # Make adjustments for truncated or rectified Gaussian predictive distribution. 
-  if(!exponentiate_predictions && ((sampling_method == "truncated") || (sampling_method == "rectified"))) {
-    n <- length(pred_list[["mean"]])
-    mu_trunc <- sapply(seq(1, n), function(i) etruncnorm(a=0, b=Inf, mean = pred_list[["mean"]][i], sd = sqrt(pred_list[["sd2"]][i])))
-    var_trunc <- sapply(seq(1, n), function(i) vtruncnorm(a=0, b=Inf, mean = pred_list[["mean"]][i], sd = sqrt(pred_list[["sd2"]][i])))
-    
-    if(sampling_method == "truncated") {
-      pred_list[["mean"]] <- mu_trunc
-      pred_list[["sd2"]] <- var_trunc
-    } else if(sampling_method == "rectified") {
-      rect_Gaussian_moments <- transform_GP_to_rectified_GP(pred_list[["mean"]], pred_list[["sd2"]], mu_trunc = mu_trunc, sig2_trunc = var_trunc)
-      
-      pred_list[["mean"]] <- rect_Gaussian_moments[["mean"]]
-      pred_list[["sd2"]] <- rect_Gaussian_moments[["var"]]
-    }
-    
-  }
-  
   # Invert Z-score transformation of response variable. 
   if(denormalize_predictions) {
     pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
-    pred_list[["sd2"]] <- output_stats["var_Y",1] * pred_list[["sd2"]]
-    pred_list[["sd2_nug"]] <- output_stats["var_Y",1] * pred_list[["sd2_nug"]]
+    pred_list[["var"]] <- output_stats["var_Y",1] * pred_list[["var"]]
+    pred_list[["var_nug"]] <- output_stats["var_Y",1] * pred_list[["var_nug"]]
     if(cov_mat) {
       pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
     }
   }
   
-  
   # Apply transformation to GP predictions. 
   if(!is.na(transformation_method)) {
-    
+    pred_list_transformed <- transform_GP_predictions(pred_list$mean, pred_list$var, transformation_method, gp_cov = pred_list$cov)
+    pred_list_transformed[["var_nug"]] <- transform_GP_predictions(pred_list$mean, pred_list$var_nug, transformation_method)$var
+    pred_list <- pred_list_transformed
   }
-  
-  
-  
-  
-  # Transform log-transformed predictions back to original scale (for log-normal process predictions). 
-  if(exponentiate_predictions) {
-    pred_list_exp <- transform_GP_to_LNP(pred_list$mean, pred_list$sd2, pred_list$cov)
-    pred_list_exp[["sd2_nug"]] <- transform_GP_to_LNP(gp_mean = pred_list$mean, gp_var = pred_list$sd2_nug)$var
-    pred_list <- pred_list_exp
-  } 
   
   return(pred_list)
   
 }
 
 
+# TODO: gp_lib, transformation_method, etc. should be allowed to be vectors here. 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, 
                                     denormalize_predictions = FALSE, output_stats = NULL, 
-                                    exponentiate_predictions = FALSE, sampling_method = "default") {
+                                    exponentiate_predictions = FALSE, transformation_method = "default") {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -318,7 +289,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    exponentiate_predictions: logical(1), if TRUE converts Gaussian predictive mean/variance to log-normal 
   #                              predictive mean variance. This is useful if the GP model was fit to a log-transformed
   #                              response variable, but one wants predictions on the original scale. Default is FALSE. 
-  #    sampling_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
+  #    transformation_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
   #                     it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0).
   # 
   # Returns:
@@ -327,7 +298,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    to each GP in `gp_obj_list`). 
   
   lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, denormalize_predictions, 
-                                                        output_stats[,j,drop=FALSE], exponentiate_predictions, sampling_method = sampling_method))
+                                                        output_stats[,j,drop=FALSE], exponentiate_predictions, transformation_method = transformation_method))
   
 }
 
@@ -337,13 +308,28 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
 # ------------------------------------------------------------------------------
 
 transform_GP_predictions <- function(gp_mean, gp_var, transformation_method, ...) {
+  # A convenience function for applying a transformation to GP distribution. In particular, this 
+  # function takes GP means and variances, and computes the means and variances of the transformed 
+  # distribution. 
+  #
+  # Args:
+  #    gp_mean: numeric, vector of GP mean predictions. 
+  #    gp_var: numeric, vector of GP variance predictions. Must be ordered to correspond to `gp_mean`.
+  #    transformation_method: character(1), specifies the transformation to apply. The current valid options
+  #                           are "LNP" (exponentiates the GP, resulting in a log-normal process), "truncated"
+  #                           (transforms the GP to a left-truncated (at 0) GP) and "rectified" (transforms the 
+  #                           GP to a rectified Gaussian). 
+  #    ...: optional arguments that can be passed along to the specific transformation functions. 
+  #
+  # Returns:
+  #    
   
   if(transformation_method == "LNP") {
-    return(transform_GP_to_LNP(gp_mean, gp_var))
-  } else if(tranformation_method == "truncated") {
+    return(transform_GP_to_LNP(gp_mean, gp_var, ...))
+  } else if(transformation_method == "truncated") {
     return(transform_GP_to_truncated_GP(gp_mean, gp_var))
   } else if(transformation_method == "rectified") {
-    return(transform_GP_to_rectified_GP(gp_mean, gp_var))
+    return(transform_GP_to_rectified_GP(gp_mean, gp_var, ...))
   }
   
 }
@@ -395,14 +381,14 @@ compute_zero_truncated_Gaussian_moments <- function(gp_mean, gp_var) {
   Z <- 1 - pnorm(alpha)
   
   mu_trunc <- gp_mean + sig * phi_alpha / Z
-  sig2_trunc <- sig2 * (1 + (alpha * phi_alpha) / Z - (phi_alpha / Z)^2)
+  sig2_trunc <- gp_var * (1 + (alpha * phi_alpha) / Z - (phi_alpha / Z)^2)
   
   return(list(mean = mu_trunc, var = sig2_trunc, Z = Z))
   
 }
 
 
-transform_GP_to_rectified_GP <- function(gp_mean, gp_var, gp_mean_trunc = NULL, gp_var_trunc = NULL, Z = NULL) {
+transform_GP_to_rectified_GP <- function(gp_mean, gp_var, gp_mean_trunc = NULL, gp_var_trunc = NULL, Z = NULL, ...) {
   # Compute the mean and variance of the distribution of the random max(X, 0), 
   # where X ~ N(mu, sig2). This is vectorized so that the arguments `mu` and `sig2` can be vectors 
   # where the ith element pertains to a random variable X_i ~ N(mu_i, sig2_i). The rectified Gaussian 
@@ -441,7 +427,7 @@ transform_GP_to_rectified_GP <- function(gp_mean, gp_var, gp_mean_trunc = NULL, 
 }
 
 
-transform_GP_to_LNP <- function(gp_mean = NULL, gp_var = NULL, gp_cov = NULL) {
+transform_GP_to_LNP <- function(gp_mean = NULL, gp_var = NULL, gp_cov = NULL, ...) {
   # Transforms distribution y ~ GP to exp(y) ~ LNP. The optional arguments are predictive means, 
   # variances, and covariance matrix from a Gaussian Process. This function will transform 
   # these into the means, variances, and covariance matrix of the log-normal process obtained
