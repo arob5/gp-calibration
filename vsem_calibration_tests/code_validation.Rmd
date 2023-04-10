@@ -78,6 +78,8 @@ print(computed_quantiles)
 ```
 
 # One-Dimensional GP Tests
+
+### No output transformation
 ```{r}
 
 # Training and testing input data. 
@@ -103,6 +105,49 @@ gp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs
                           xlab = "X", ylab = "Y", main_title = "GP Plot", CI_prob = 0.9)
 print(gp_plot)
 ```
+### Truncated Gaussian 
+```{r}
+# Plot truncated GP.
+gp_trunc_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "Truncated GP Plot", CI_prob = 0.9, transformation_method = "truncated")
+print(gp_trunc_plot)
+```
+
+### Rectified Gaussian 
+```{r}
+# Plot rectified GP.
+gp_rect_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "Rectified GP Plot", CI_prob = 0.9, transformation_method = "rectified")
+print(gp_rect_plot)
+```
+
+### Log-Normal Process (shifting training data up so everything is positive). 
+```{r}
+# Add log-transformed responses to training and testing input data. 
+shift <- abs(min(train_data$outputs)) + 1
+train_data[["log_outputs"]] <- log(train_data[["outputs"]] + shift)
+train_data[c("log_outputs_normalized", "log_output_stats")] <- prep_GP_training_data(Y = train_data$log_outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+test_data[["log_outputs"]] <- log(test_data[["outputs"]] + shift)
+test_data[["log_outputs_normalized"]] <- normalize_output_data(test_data$log_outputs, output_stats = train_data$log_output_stats)
+
+# Fit log-normal process. 
+lnp <- fit_GP(train_data$inputs_scaled, train_data$log_outputs_normalized, "mlegp", "Gaussian")$fit
+
+# Predict at test locations. 
+lnp_pred <- predict_GP(test_data$inputs_scaled, lnp, "mlegp", denormalize_predictions = TRUE, output_stats = train_data$log_output_stats) 
+
+# Plot rectified GP.
+lnp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs + shift, train_data$inputs, train_data$outputs + shift, lnp_pred$mean, lnp_pred$var,
+                           xlab = "X", ylab = "Y", main_title = "LNP Plot", CI_prob = 0.9, transformation_method = "LNP")
+
+print(lnp_plot)
+```
+
+
+
+
+
+
 
 
 
