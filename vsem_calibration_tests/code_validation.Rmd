@@ -77,6 +77,32 @@ computed_quantiles <- sapply(p_vals, function(p) quantile_rectified_norm(p, mean
 print(computed_quantiles)
 ```
 
+# One-Dimensional GP Tests
+```{r}
+
+# Training and testing input data. 
+prior_params <- data.frame(dist = "Uniform", param1 = -10, param2 = 10)
+train_data <- get_input_design(12, prior_params, "LHS", scale_inputs = TRUE, order_1d = TRUE)
+test_data <- get_input_design(151, prior_params, "grid", scale_inputs = TRUE, param_ranges = train_data$input_bounds)
+
+# Latent function; producing training and testing response data. 
+f <- function(x) cos(x) + sin(x)
+train_data$outputs <- f(train_data$inputs)
+test_data$outputs <- f(test_data$inputs)
+train_data[c("outputs_normalized", "output_stats")] <- prep_GP_training_data(Y = train_data$outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+test_data[["outputs_normalized"]] <- normalize_output_data(test_data$outputs, output_stats = train_data$output_stats)
+
+# Fit GP. 
+gp <- fit_GP(train_data$inputs_scaled, train_data$outputs_normalized, "mlegp", "Gaussian")$fit
+
+# Predict at test locations. 
+gp_pred <- predict_GP(test_data$inputs_scaled, gp, "mlegp", denormalize_predictions = TRUE, output_stats = train_data$output_stats) 
+           
+# Plot GP.
+gp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "GP Plot", CI_prob = 0.9)
+print(gp_plot)
+```
 
 
 
