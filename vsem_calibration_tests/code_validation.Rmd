@@ -32,7 +32,7 @@ Gaussian_vars <- c(1, 2)
 moments <- transform_GP_to_rectified_GP(Gaussian_means, Gaussian_vars)
 
 # Monte Carlo approximation of means and variances
-N_samp <- 1000000
+N_samp <- 10000000
 samp <- matrix(nrow = N_samp, ncol = length(Gaussian_means))
 for(j in seq_along(Gaussian_means)) {
   samp[,j] <- pmax(rnorm(N_samp, mean = Gaussian_means[j], sd = sqrt(Gaussian_vars[j])), 0)
@@ -61,4 +61,25 @@ print(transform_GP_to_truncated_GP(Gaussian_means, Gaussian_vars))
 print("Method 2:")
 print(compute_zero_truncated_Gaussian_moments(Gaussian_means, Gaussian_vars))
 ```
+#### Validating quantile function for rectified Gaussian distribution using simulation. 
+```{r}
+p_vals <- seq(0.1, 1.0, by = 0.1)
+
+# Sample quantiles.
+print("Sample Quantiles:")
+for(j in seq(1, ncol(samp))) {
+  print(quantile(samp[,j], p_vals))
+}
+
+# Computed quantiles.
+print("Computed Quantiles:")
+computed_quantiles <- sapply(p_vals, function(p) quantile_rectified_norm(p, mean = Gaussian_means, sd = sqrt(Gaussian_vars)))
+print(computed_quantiles)
+```
+
+
+
+
+
+
 

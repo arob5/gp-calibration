@@ -322,7 +322,9 @@ transform_GP_predictions <- function(gp_mean, gp_var, transformation_method, ...
   #    ...: optional arguments that can be passed along to the specific transformation functions. 
   #
   # Returns:
-  #    
+  #    list, typically with elements "mean" and "var" containing vectors of the means and variances of the 
+  #    transformed distributions. The elements of the list can differ slightly depending on the transformation. 
+  #    See the transformation-specific functions for details. 
   
   if(transformation_method == "LNP") {
     return(transform_GP_to_LNP(gp_mean, gp_var, ...))
@@ -482,12 +484,11 @@ transform_GP_to_LNP <- function(gp_mean = NULL, gp_var = NULL, gp_cov = NULL, ..
 # Plotting GPs
 # ------------------------------------------------------------------------------
 
-plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, 
-                           exponentiate_predictions = FALSE, log_scale = FALSE, vertical_line = NULL,
-                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9, transformation = "default") {
+plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, log_scale = FALSE, vertical_line = NULL,
+                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9, transformation_method = NA_character_) {
   # Core function for producing plots for GP predictions with one-dimensional input space. The function plots
   # the true, known latent function values at the design inputs and test inputs. It also plots the 
-  # GP predictive mean and confidence bands at the test inputs. This function assunmes that `gp_mean_pred` and 
+  # GP predictive mean and confidence bands at the test inputs. This function assumes that `gp_mean_pred` and 
   # `gp_var_pred` are the means and variances of a Gaussian process, but allows these predictions to be transformed
   # by 1.) exponentiating the predictions, resulting in a log-normal process, 2.) converting the Gaussian predictive 
   # distribution to a left-truncated (at zero) Gaussian distribution, or 3.) converting the Gaussian predictive 
@@ -502,11 +503,6 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   #    y_train: numeric(N), the vector of true outputs at the N design points (the training response values). 
   #    gp_mean_pred: numeric(M), vector of GP predictive mean at the test input points. 
   #    gp_var_pred: numeric(M), vector of GP predictive variance at the test input points. 
-  #    exponentiate_predictions: logical(1), if TRUE, produces a log-normal process plot by exponentiating the 
-  #                              GP. Default is FALSE. Note that if `exponentiate_predictions` is TRUE then the 
-  #                              assumption is that the GP predictions must be exponentiated, but the baseline 
-  #                              data (X_test, y_test, X_train, y_train) is on the right scale and is not modified 
-  #                              fpr the plot. 
   #    log_scale: logical(1), if TRUE the y-axis of the plot will be on a log base 10 scale. In particular, the 
   #               plotted y values will be transformed as log10(y) and the y-axis labels will be printed as 
   #               10^1, 10^2, etc. This has nothing to do with the log-normal process described above; the plot can 
@@ -521,9 +517,9 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   #    main_title: character(1), the main title for the plot. 
   #    CI_prob: numeric(1), value in (0, 1) determining the confidence intervals that will be plotted. e.g. 0.9 means
   #             90% confidence intervals (the default). 
-  #    transformation: character(1), if "truncated", will convert the GP predictive distribution to truncated Gaussian distribution. 
-  #                    If "rectified", will instead transform to rectified Gaussian. If "default", will not transform the predictive 
-  #                    distribution. 
+  #    transformation_method: character(1), if "truncated", will convert the GP predictive distribution to truncated Gaussian distribution. 
+  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
+  #                           log-normal process. The default is not to perform any transformation. 
   #
   # Returns:
   #    A ggplot2 plot object. This can be used to display or to further modify the plot. 
@@ -533,31 +529,20 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   gp_sd_pred <- sqrt(gp_var_pred)
   n <- length(gp_mean_pred)
   
-  # Confidence intervals
-  CI_tail_prob <- 0.5 * (1 - CI_prob)
+  # Confidence intervals. 
   CI_plot_label <- paste0(CI_prob * 100, "% CI")
-  if(exponentiate_predictions) {
-    CI_lower <- qlnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
-    CI_upper <- qlnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
-    transformed_predictions <- transform_GP_to_LNP(gp_mean = gp_mean_pred, gp_var = gp_var_pred)
-    gp_mean_pred <- transformed_predictions$mean
-    gp_var_pred <- transformed_predictions$sd2
-  } else if(transformation == "truncated") {
-    CI_lower <- qtruncnorm(CI_tail_prob, a = 0, b = Inf, mean = gp_mean_pred, sd = sqrt(gp_var_pred))
-    CI_upper <- qtruncnorm(1 - CI_tail_prob, a = 0, b = Inf, mean = gp_mean_pred, sd = sqrt(gp_var_pred))
-    gp_mean_pred_trunc <- sapply(seq(1, n), function(i) etruncnorm(a=0, b=Inf, mean = gp_mean_pred[i], sd = sqrt(gp_var_pred[i])))
-    gp_var_pred <- sapply(seq(1, n), function(i) vtruncnorm(a=0, b=Inf, mean = gp_mean_pred[i], sd = sqrt(gp_var_pred[i])))
-    gp_mean_pred <- gp_mean_pred_trunc
-  } else if(transformation == "rectified") {
-    # TODO: CIs for rectified Gaussian
-    transformed_predictions <- transform_GP_to_rectified_GP(gp_mean_pred, gp_var_pred)
+  confidence_intervals <- get_GP_confidence_intervals(CI_prob, gp_mean_pred, gp_var_pred, transformation_method = transformation_method)
+  CI_lower <- confidence_intervals$lower
+  CI_upper <- confidence_intervals$upper
+  
+  # Transform GP mean predictions. 
+  if(!is.na(transformation_method)) {
+    transformed_predictions <- transform_GP_predictions(gp_mean = gp_mean_pred, gp_var = gp_var_pred, transformation_method = transformation_method)
     gp_mean_pred <- transformed_predictions$mean
     gp_var_pred <- transformed_predictions$var
-  } else {
-    CI_lower <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = TRUE)
-    CI_upper <- qnorm(CI_tail_prob, gp_mean_pred, sqrt(gp_var_pred), lower.tail = FALSE)
   }
   
+  # Plot y-axis on log base 10 scale. 
   if(log_scale) {
     shift <- -min(CI_lower) + 1
     y_test <- log10(y_test + shift)
@@ -567,6 +552,7 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
     gp_mean_pred <- log10(gp_mean_pred + shift)
   }
   
+  # Generate plot. 
   df_test <- data.frame(x_test = X_test[order_pred,1], 
                         y_test = y_test[order_pred], 
                         y_test_pred = gp_mean_pred[order_pred],
@@ -603,7 +589,109 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
 }
 
 
+get_GP_confidence_intervals <- function(CI_prob, gp_mean, gp_var, transformation_method = NA_character_) {
+  # Computes pointwise upper and lower confidence bounds for a GP or transformed GP. Note that the mean and variance 
+  # arguments always correspond to the GP, not the transformed GP. 
+  #
+  # Args:
+  #    CI_prob: numeric(1), value in (0, 1) determining the confidence intervals that will be plotted. e.g. 0.9 means
+  #             90% confidence intervals (the default). 
+  #    gp_mean: numeric(), vector of means of Gaussian distributions (not the means of the transformed GPs). 
+  #    gp_var: numeric(), vector of variances of the Gaussian distributions. 
+  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
+  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
+  #                           log-normal process. The default is not to perform any transformation. 
+  #
+  # Returns:
+  #    list, with named elements "lower" and "upper". Each corresponds to a vector of length equal to the length of `gp_mean` and `gp_var` 
+  #    containing the lower and upper 100*`CI_prob`% confidence bounds. 
+  
+  CI_tail_prob <- 0.5 * (1 - CI_prob)
+  gp_sd <- sqrt(gp_var)
+  
+  if(transformation_method == "LNP") {
+    CI_lower <- qlnorm(CI_tail_prob, gp_mean, gp_sd, lower.tail = TRUE)
+    CI_upper <- qlnorm(CI_tail_prob, gp_mean, gp_sd, lower.tail = FALSE)
+  } else if(transformation_method == "truncated") {
+    CI_lower <- qtruncnorm(CI_tail_prob, a = 0, b = Inf, mean = gp_mean, sd = gp_sd)
+    CI_upper <- qtruncnorm(1 - CI_tail_prob, a = 0, b = Inf, mean = gp_mean, sd = gp_sd)
+  } else if(transformation_method == "rectified") {
+    CI_lower <- quantile_rectified_norm(CI_tail_prob, mean = gp_mean, sd = gp_sd)
+    CI_upper <- quantile_rectified_norm(1 - CI_tail_prob, mean = gp_mean, sd = gp_sd)
+  } else {
+    CI_lower <- qnorm(CI_tail_prob, gp_mean, gp_sd, lower.tail = TRUE)
+    CI_upper <- qnorm(CI_tail_prob, gp_mean, gp_sd, lower.tail = FALSE)
+  }
+ 
+  return(list(lower = CI_lower, 
+              upper = CI_upper))
+   
+}
 
+quantile_zero_trunc_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
+  # This performs the same calculation as `qtruncnorm(p, a = 0, b = Inf, mean = mean, sd = sd)`
+  # in the `truncnorm` package. Computes the quantile for the zero-truncated Gaussian. 
+  #
+  # Args:
+  #    p: numeric(1), probability between 0 and 1. A probability of the form p = P(X <= t), for which this 
+  #       function will return the value t. 
+  #    mean: numeric(), vector of means of the underlying Gaussian distributions (not the means of the truncated
+  #          Gaussians). 
+  #    sd: numeric(), vector of standard deviations of the underlying Gaussian distributions. 
+  #    lower.tail: logical(1), if TRUE the probability p is of the form P(X <= t). Otherwise, it is interpreted as 
+  #                P(X > t). Note that: 
+  #                quantile_zero_trunc_norm(p, lower.tail = TRUE) == quantile_zero_trunc_norm(1 - p, lower.tail = FALSE). 
+  #
+  # Returns: 
+  #    numeric(), vector of equal length as `mean` and `sd` containing the evaluations of the truncated Gaussian quantile function. 
+  
+  if((p < 0) || (p > 1)) stop("p = ", p, " must be in range [0, 1].")
+  
+  if(!lower.tail) {
+    p <- 1 - p
+  }
+  
+  P <- pnorm(-mean/sd)
+  sd * qnorm((1 - P) * p + P) + mean
+  
+}
+
+
+quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
+  # The quantile function for the rectified Gaussian distribution. That is, 
+  # the quantile distribution for the random variable Y = max(0, X), where 
+  # X ~ N(mean, sd). 
+  #
+  # Args:
+  #    p: numeric(1), probability between 0 and 1. A probability of the form p = P(X <= t), for which this 
+  #       function will return the value t. 
+  #    mean: numeric(), vector of means of the underlying Gaussian distributions (not the means of the truncated
+  #          Gaussians). 
+  #    sd: numeric(), vector of standard deviations of the underlying Gaussian distributions. 
+  #    lower.tail: logical(1), if TRUE the probability p is of the form P(X <= t). Otherwise, it is interpreted as 
+  #                P(X > t). 
+  #
+  # Returns:
+  #    numeric(), vector of equal length as `mean` and `sd` containing the evaluations of the rectified Gaussian quantile function. 
+  
+  if((p < 0) || (p > 1)) stop("p = ", p, " must be in range [0, 1].")
+  
+  if(!lower.tail) {
+    p <- 1 - p
+  }
+  
+  # Probability that the Gaussian is negative. 
+  prob_neg <- pnorm(0, mean = mean, sd = sd)
+  zero_selector <- (p <= prob_neg)
+  
+  # Compute quantiles.
+  quantiles_rect_norm <- vector(mode = "numeric", length = length(mean))
+  quantiles_rect_norm[zero_selector] <- 0
+  quantiles_rect_norm[!zero_selector] <- qnorm(p, mean = mean[!zero_selector], sd = sd[!zero_selector])
+  
+  return(quantiles_rect_norm)
+  
+}
 
 
 
