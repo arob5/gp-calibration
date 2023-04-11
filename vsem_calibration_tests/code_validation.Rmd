@@ -143,7 +143,46 @@ lnp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs + shift, train_da
 print(lnp_plot)
 ```
 
+### Multiple Output Independent GP Testing using VSEM test case. 
+```{r}
 
+# VSEM data. 
+computer_model_data <- generate_vsem_test_case(1)
+
+# Prior. 
+theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+theta_prior_params[, "dist"] <- "Uniform"
+theta_prior_params[,"param1"] <- 0.4
+theta_prior_params[,"param2"] <- 0.6
+theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
+
+# Get design points. 
+N_train <- 5
+design_list <- get_input_output_design(N_train, theta_prior_params, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                                       computer_model_data$PAR_data, computer_model_data$output_vars, design_method = "LHS", transformation_method = "LNP")
+
+# Get test points. 
+N_test <- 301
+test_list <- get_input_output_design(N_test, theta_prior_params, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                                     computer_model_data$PAR_data, computer_model_data$output_vars, 
+                                     param_ranges = design_list$input_bounds, output_stats = design_list$output_stats, design_method = "grid", 
+                                     transformation_method = "LNP", log_output_stats = design_list$log_output_stats)
+
+# Fit GPs. 
+gp_fits <- fit_independent_GPs(design_list$inputs_scaled, design_list$log_outputs_normalized, "hetGP", "Gaussian")$fits
+
+# Predict with GPs. 
+gp_pred_list <- predict_independent_GPs(test_list$inputs_scaled, gp_fits, "hetGP", include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                        output_stats = design_list$log_output_stats)
+
+# Plot GPs. 
+for(j in seq_along(gp_pred_list)) {
+  gp_plot <- plot_gp_fit_1d(test_list$inputs, test_list$outputs[,j], design_list$inputs, design_list$outputs[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, log_scale = FALSE,
+                            xlab = "Parameter", ylab = "SSR", main_title = computer_model_data$output_vars[j], CI_prob = 0.9, transformation_method = "LNP")
+  print(gp_plot)
+}
+
+```
 
 
 

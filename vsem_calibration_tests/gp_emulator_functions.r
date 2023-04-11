@@ -153,7 +153,7 @@ fit_GP <- function(X_train, y_train, gp_lib, gp_kernel) {
 }
 
  
-# TODO: Parallelize independent GP fitting
+# TODO: Parallelize independent GP fitting.
 fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
   # Builds on top of `fit_GP()` to generalize to multivariate GP regression. Simply 
   # fits independent GPs for each output (where the same input points are used for each GP).
@@ -197,7 +197,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
 # TODO: 
 #    - Currently sd2_nug should not be trusted; e.g. it is not corrected in the case of truncation/rectification. Might just be easier to 
 #      drop this or combine it with the pointwise variance predictions. 
-predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
+predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
                        output_stats = NULL, transformation_method = NA_character_) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
@@ -214,7 +214,8 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
   #    output_stats: If not NULL, then a matrix of dimensions 2x1. The matrix 
   #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
   #                  variance of the output variable used to compute the Z-scores. This object is 
-  #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
+  #                  returned by prep_GP_training_data(). Only required if `denormalize_predictions` is TRUE. Note that `output_stats` 
+  #                  is assumed to be on the correct scale; e.g. for the log-normal process, `output_stats` should be on the log-scale. 
   #    transformation_method: character(1), if "default" treats the predictive GP distribution as Gaussian. If "rectified", treats
   #                           it as rectified Gaussian and if "truncated" treats it as truncated Gaussian (truncated at 0). If 
   #                           "LNP", exponentiates the GP, resulting in a log-normal process. 
@@ -233,7 +234,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list[["var"]] <- mlegp_pred[["se.fit"]]^2
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
-    if(cov_mat) {
+    if(include_cov_mat) {
       X_prime <- X_pred
     } else {
       X_prime <- NULL
@@ -247,7 +248,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
     pred_list[["mean"]] <- output_stats["mean_Y",1] + sqrt(output_stats["var_Y",1]) * pred_list[["mean"]]
     pred_list[["var"]] <- output_stats["var_Y",1] * pred_list[["var"]]
     pred_list[["var_nug"]] <- output_stats["var_Y",1] * pred_list[["var_nug"]]
-    if(cov_mat) {
+    if(include_cov_mat) {
       pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
     }
   }
@@ -265,7 +266,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, cov_mat = FALSE, denormalize_pred
 
 
 # TODO: gp_lib, transformation_method, etc. should be allowed to be vectors here. 
-predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE, denormalize_predictions = FALSE,
+predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
                                     output_stats = NULL, transformation_method = NA_character_) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
@@ -277,14 +278,16 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #                differ based on the specific GP library used for fitting. All of the objects in the list must have 
   #                been fit using the same library. 
   #    gp_lib: character(1), the library used to fit the GP. Currently supports "mlegp" or "hetGP". 
-  #    cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
+  #    include_cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances. 
   #    denormalize_predictions: logical(1), if TRUE, applies linear transformation to predictions, 
   #                             inverting the Z-score transformation.
   #    output_stats: If not NULL, then a matrix of dimensions 2xp, where p is the number of output variables. The matrix 
   #                  must have rownames "mean_Y" and "var_Y" storing the mean and 
   #                  variance of each output variable used to compute the Z-scores. This object is 
-  #                  returned by prep_GP_training_data(). Only required if `transform_predictions` is TRUE. 
+  #                  returned by prep_GP_training_data(). Only required if `denormalize_predictions` is TRUE. 
+  #                  Note that `output_stats` is assumed to be on the correct scale; i.e. for log-normal process,
+  #                  `output_stats` should be on log-scale. 
   #    transformation_method: character(1), specifies the transformation to apply. The current valid options
   #                           are "LNP" (exponentiates the GP, resulting in a log-normal process), "truncated"
   #                           (transforms the GP to a left-truncated (at 0) GP) and "rectified" (transforms the 
@@ -295,7 +298,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, cov_mat = FALSE
   #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). 
   
-  lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, cov_mat, denormalize_predictions, 
+  lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, include_cov_mat, denormalize_predictions, 
                                                         output_stats[,j,drop=FALSE], transformation_method = transformation_method))
   
 }
@@ -699,14 +702,96 @@ quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
 # Design Points
 # ------------------------------------------------------------------------------
 
+# TODO: update comments and think about a better way of handling log output stats. 
 get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR_data, output_vars, 
-                                    scale_inputs, normalize_response, transformation_method = NA_character_, design_method = "LHS", 
-                                    order_1d = FALSE) {
+                                    scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01) {
+  # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
+  # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
+  # in the case of the log-normal process. 
+  #
+  # Args:
+  #    N_points: integer(1), the number of input points to generate. 
+  #    theta_prior_params: data.frame containing the prior distribution information of the input 
+  #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                        for the requirements of this data.frame. 
+  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
+  #              Must contain column named "best". Parameters that are fixed at nominal 
+  #              values (not calibrated) are set to their values given in the "best" column. 
+  #    pars_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
+  #                  parameters that will be calibrated. 
+  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
+  #              Colnames set to output variable names. 
+  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
+  #              term in VSEM.
+  #    output_vars: character vector, used to the select the outputs to be considered in 
+  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
+  #                 correct columns of 'data_obs'. 
+  #    scale_inputs: logical(1), if TRUE will linearly scale the samples to the unit hypercube. Will return the scaled 
+  #             sample in addition to the un-scaled one, and will also return the information used for the scaling 
+  #             so that the transformation can be inverted. 
   #    normalize_response: logical(1), if TRUE will compute a Z-score transformation of the response/output variable. Will return the normalized 
   #                        variable in addition to the unnormalized one and will return the information used for the normalization so that the 
   #                        transformation can be inverted.
-  #    
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The rows correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
+  #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
+  #                  distributions.
+  #    output_stats: matrix of means/variances used for normalizing response, as returned by `prep_GP_training_data()`. If non-NULL and 
+  #                  `normalize_response` if TRUE, then uses this information for the normalization. If NULL, then will instead compute 
+  #                   the means/variances of the response data and use those computations for the normalization. 
+  #    log_output_stats: the log-transformed analog of `output_stats`. This is only used when `transformation_method` is "LNP".  
+  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
+  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
+  #                           log-normal process. The default is not to perform any transformation. 
+  #    design_method: character(1), the algorithm used to generate the inputs. Currently supports "LHS" or "grid". 
+  #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
+  #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
+  #              the design points will be sorted in increasing order, with the training response 
+  #              values ordered accordingly. This is convenient when plotting 1d GP plots. 
+  #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
+  #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
+  #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
+  #
+  # Returns:
+  #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
+  #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 
+  #    "log_outputs", "log_outputs_normalized", and "log_output_stats". 
   
+  # Input points. 
+  design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
+  
+  # Run model at inputs to produce outputs. 
+  model_outputs_list <- run_VSEM(design_list$inputs, ref_pars, pars_cal_sel, PAR_data, output_vars)
+  design_list[["outputs"]] <- calc_SSR(data_obs[, output_vars], model_outputs_list, na.rm = TRUE)
+  
+  # Normalize outputs. 
+  if(normalize_response) {
+    if(is.null(output_stats)) {
+      design_list[c("outputs_normalized", "output_stats")] <- prep_GP_training_data(Y = design_list$outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+    } else {
+      design_list[["outputs_normalized"]] <- normalize_output_data(Y = design_list$outputs, output_stats) 
+    }
+  }
+  
+  # Include log-transformed data for log-normal process. 
+  if(isTRUE(transformation_method == "LNP")) {
+    design_list[["log_outputs"]] <- log(design_list$outputs)
+    
+    if(is.null(log_output_stats)) {
+      design_list[c("log_outputs_normalized", "log_output_stats")] <- prep_GP_training_data(Y = design_list$log_outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+    } else {
+      design_list[["log_outputs_normalized"]] <- normalize_output_data(Y = design_list$log_outputs, log_output_stats)
+    }
+    
+  }
+  
+  if(!is.null(output_stats) && isTRUE(transformation_method == "LNP") && is.null(log_output_stats)) {
+    message("output_stats is non-NULL but log_output_stats is NULL; may be a mistake.")
+  }
+  
+  return(design_list)
   
 }
 
@@ -891,268 +976,101 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
 }
 
 
-get_train_test_data <- function(N_train, N_test, prior_params, extrapolate, ref_pars, pars_cal_sel,
-                                data_obs, PAR, output_vars, scale_X, normalize_Y, log_SSR, 
-                                joint_LHS = FALSE, method = "LHS", order_1d = FALSE, true_theta_samples = NULL) {
-  # Generates training (design) dataset and test dataset via Latin Hypercube sampling or 
-  # via a grid-based approach. Note that the LHS method takes into account the prior, while 
-  # the grid-based approach simply creates a grid of evenly spaced points within the bounds
-  # defined by the prior. 
-  # Input points are sampled from the space of calibration parameters, while the outputs 
-  # are the squared L2 errors between the observed data and VSEM outputs, or the log 
-  # of this quantity. Optionally pre-processes the data by scaling the inputs and 
-  # normalizing the outputs. 
+# ------------------------------------------------------------------------------
+# Sampling GPs
+# ------------------------------------------------------------------------------
+
+
+sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_character_) {
+  # Draws a single n-dimensional sample from a GP (or transformation of a GP) at a set of n input locations. 
+  # This sample does not consider correlation across input points, hence the "pointwise" in the function name. 
   #
   # Args:
-  #    N_train: Number of design points. 
-  #    N_test: Number of test points. 
-  #    prior_params: data.frame containing the prior distribution information of the input 
-  #                  parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
-  #                  for the requirements of this data.frame. 
-  #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
-  #                 truncation is performed to guarantee the samples are within the extent of the 
-  #                 training set. Default is TRUE. 
-  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
-  #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM.
-  #    log_SSR: logical(1), if TRUE includes log-transformed outputs as well, in addition to the
-  #             outputs on the original scale. 
-  #    joint_LHS: logical, only relevant if `method` is LHS. If TRUE jointly samples train/test in a single LHS 
-  #               sample. Othwerwise, samples the train and test data separately. Default is FALSE. 
-  #    method: character(1), character string indicating the sampling or deterministic method used to 
-  #            generate the train/test points. Valid options are "LHS" (latin hypercube sampling, the default), 
-  #            or "grid". 
-  #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
-  #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
-  #              the design points will be sorted in increasing order, with the training response 
-  #              values ordered accordingly. This is convenient when plotting 1d GP plots. 
-  #    true_theta_samples: matrix, containing samples from the true posterior over the calibration parameters. If this is provided 
-  #                        (non-NULL) it overrides the other test data settings. The train data is unaffected. 
+  #    gp_mean: numeric(), vector of means of Gaussian distributions (not the means of the transformed GPs). 
+  #    gp_var: numeric(), vector of variances of the Gaussian distributions. 
+  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
+  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
+  #                           log-normal process. The default is not to perform any transformation. 
   #
   # Returns:
-  #    list, with names "X_train", "X_test", "X_train_preprocessed", "X_test_preprocessed", 
-  #    "Y_train", "Y_train_preprocessed", "Y_test", "input_bounds", and "output_stats".
-  #    The latter two encode the transformations applied to the inputs and outputs, respectively 
-  #    (see prep_GP_training_data()). 
+  #    numeric(), vector of length equal to length(gp_means) = length(gp_vars). The GP (or transformed GP) samples. 
   
-  # Generate train and test input datasets
-  if(method == "LHS") {
-    X_train_test <- LHS_train_test(N_train, N_test, prior_params, joint_LHS, extrapolate, order_1d, true_theta_samples = true_theta_samples)
-  } else if(method == "grid") {
-    X_train_test <- grid_train_test(N_train, N_test, prior_params, extrapolate, order_1d, true_theta_samples = true_theta_samples)
-  }
-  X_train <- X_train_test$X_train
-  X_test <- X_train_test$X_test
-  
-  # Run VSEM on train and test sets to obtain outputs
-  model_outputs_list_train <- lapply(X_train, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
-  Y_train <- calc_SSR(data_obs[, output_vars], model_outputs_list_train, na.rm = TRUE)
-  Y_test <- calc_SSR(data_obs[, output_vars], model_outputs_list_test, na.rm = TRUE)
-  
-  # Pre-process training data: scale inputs and normalize outputs
-  GP_data_preprocessed <- prep_GP_training_data(X_train, Y_train, scale_X, normalize_Y)
-  X_train_preprocessed <- GP_data_preprocessed$X
-  Y_train_preprocessed <- GP_data_preprocessed$Y
-  
-  # Pre-process testing input data
-  X_test_preprocessed <- scale_input_data(X_test, GP_data_preprocessed$input_bounds)
-  
-  # Pre-process testing output data
-  Y_test_preprocessed <- normalize_output_data(Y = Y_test, output_stats = GP_data_preprocessed$output_stats)
-  
-  output_list <- list(X_train = X_train, X_test = X_test, X_train_preprocessed = X_train_preprocessed, 
-                      X_test_preprocessed = X_test_preprocessed, Y_train = Y_train, 
-                      Y_train_preprocessed = Y_train_preprocessed, Y_test = Y_test,
-                      Y_test_preprocessed = Y_test_preprocessed,
-                      input_bounds = GP_data_preprocessed$input_bounds, 
-                      output_stats = GP_data_preprocessed$output_stats)
-  
-  # Include log-transformed L2 error
-  if(log_SSR) {
-    output_list[["log_Y_train"]] <- log(output_list$Y_train)
-    output_list[["log_Y_test"]] <- log(output_list$Y_test)
-    output_list[c("log_Y_train_preprocessed", "log_output_stats")] <- prep_GP_training_data(Y = output_list$log_Y_train, normalize_Y = TRUE)[c("Y", "output_stats")]
-    output_list[["log_Y_test_preprocessed"]] <- normalize_output_data(Y = output_list$log_Y_test, output_stats = output_list$log_output_stats)
+  if(length(gp_means) != length(gp_vars)) {
+    stop("gp_means and gp_vars must have equal length.")
   }
   
-  return(output_list)
+  n <- length(gp_means)
+  
+  if(is.na(transformation_method)) {
+    return(gp_means + sqrt(gp_vars) * rnorm(n))
+  } else if(transformation_method == "truncated") {
+    return(rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars)))
+  } else if(transformation_method == "rectified") {
+    return(pmax(0, gp_means + sqrt(gp_vars) * rnorm(n)))
+  } else if(transformation_method == "LNP") {
+    return(rlnorm(1, meanlog = gp_means, sdlog = sqrt(gp_vars)))
+  } else {
+    stop("Invalid transformation method: ", transformation_method)
+  }
   
 }
 
 
-LHS_train_test <- function(N_train, N_test, prior_params, joint = TRUE, extrapolate = TRUE, order_1d = FALSE, true_theta_samples = NULL) {
-  # Generate a set training (design) points and test/validation points for evaluating a Gaussian 
-  # process fit using Latin Hypercube Sampling (LHS). Can generate the train and test sets jointly, 
-  # meaning they are sampled together in the LHS procedure. Or they can be sampled independently 
-  # using two separate LHS schemes. Also allows the option to ensure that the test points are 
-  # within the extent of the training points, if only the interpolation accuracy of the GP 
-  # is of interest. In this case, the truncation means that the test points will not exactly
-  # be distributed as specified in `prior_params`.
+sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_) {
+  # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
+  # Allows for potentially different output transformations for each GP. 
   #
   # Args:
-  #    N_train: integer, the number of training points to sample. 
-  #    N_test: integer, the number of test points to sample. 
-  #    prior_params: data.frame containing the prior distribution information of the input 
-  #                  parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
-  #                  for the requirements of this data.frame. 
-  #    joint: logical, if TRUE jointly samples train/test. Default is TRUE. 
-  #    extrapolate: logical, if TRUE no truncation is performed for the test samples. Otherwise 
-  #                 truncation is performed to guarantee the samples are within the extent of the 
-  #                 training set. Default is TRUE. 
-  #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
-  #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
-  #              the design points will be sorted in increasing order. This is convenient when 
-  #              plotting 1d GP plots. 
-  #    true_theta_samples: matrix, containing samples from the true posterior over the calibration parameters. If this is provided 
-  #                        (non-NULL) it overrides the other test data settings. The train data is unaffected. 
-  #
+  #    gp_pred_list: list, with one element per GP. Each element must itself be a list with elements "mean" and "var"
+  #                  storing numeric vectors for the GP means and variances, respectively. These are always the means and variances
+  #                  of the GP, not the transformed GP. 
+  #    transformation_methods: either a numeric vector of equal length as `gp_pred_list` storing the transformation to apply to each 
+  #                            GP ("truncated", "rectified", "LNP", or NA_character_ for no transformation). If a single element, will 
+  #                            use the same method for all GPs. 
+  # 
   # Returns: 
-  #    list, with named elements "X_train" and "X_test", storing the N_train x d and 
-  #    N_test x d matrices of samples, respectively. 
+  #    matrix, of dimension N x length(gp_pred_list) where N is the number of input points. The matrix stores the samples for each GP in the 
+  #    columns of the matrix. This will work even if the number of input points differs per GP, but note that this will result in NAs for the 
+  #    GPs with fewer input points. 
   
-  # The dimension of the input space
-  d <- nrow(prior_params)
+  N_GPs <- length(gp_pred_list)
+  if(length(transformation_methods) == 1) {
+    transformation_methods <- rep(transformation_methods, N_GPs)
+  } 
   
-  # Generate train and test sets
-  if(joint) {
-    X_combined <- randomLHS(N_train + N_test, d)
-    X_train <- X_combined[1:N_train,,drop=FALSE]
-    X_test <- X_combined[-(1:N_train),,drop=FALSE]
-  } else {
-    X_train <- randomLHS(N_train, d)
-    X_test <- randomLHS(N_test, d)
+  N_inputs <- sapply(gp_pred_list, function(x) length(x$mean))
+  N_max_inputs <- max(N_inputs)
+  if(!all(N_inputs == N_max_inputs)) {
+    message("Returned matrix with samples will have NAs due to different numbers of input locations across GPs.")
   }
   
-  # Apply inverse CDS transform using prior distributions.
-  for(j in seq_len(d)) {
-    
-    if(prior_params[j, "dist"] == "Uniform") {
-      
-      # Train
-      X_train[,j] <- qunif(X_train[,j], prior_params[j, "param1"], prior_params[j, "param2"])
-      
-      # Test
-      if(extrapolate) {
-        lower_bound_test <- prior_params[j, "param1"]
-        upper_bound_test <- prior_params[j, "param2"]
-      } else {
-        lower_bound_test <- min(X_train[,j])
-        upper_bound_test <- max(X_train[,j])
-      }
-      X_test[,j] <- qunif(X_test[,j], lower_bound_test, upper_bound_test)
-      
-    } else if(prior_params[j, "dist"] == "Gaussian") {
-      
-      # Train
-      X_train[,j] <- qnorm(X_train[,j], mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
-      
-      # Test
-      if(extrapolate) {
-        lower_bound_test <- -Inf
-        upper_bound_test <- Inf
-      } else {
-        lower_bound_test <- min(X_train[,j])
-        upper_bound_test <- max(X_train[,j])
-      }
-      X_test[,j] <- qtruncnorm(X_test[,j], a = lower_bound_test, b = upper_bound_test, mean = prior_params[j, "param1"], sd = prior_params[j, "param2"])
-    }
-    
+  gp_samples <- matrix(nrow = N_max_inputs, ncol = N_GPs)
+  for(j in seq_len(N_GPs)) {
+    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_methods[j])
   }
   
-  if(!is.null(true_theta_samples)) {
-    X_test <- true_theta_samples
-  }
-  
-  if(order_1d && (d == 1)) {
-    X_train <- X_train[order(X_train),,drop=FALSE]
-    X_test <- X_test[order(X_test),,drop=FALSE]
-  }
-  
-  return(list(X_train = X_train, X_test = X_test))
+  return(gp_samples)
   
 }
 
 
-grid_train_test <- function(N_train, N_test, prior_params, extrapolate, tail_prob_excluded = 0.01, true_theta_samples = NULL) {
-  # Note that currently the "extrapolate" argument makes no difference, since grid points are placed
-  # at the edges of the defined bounds. This can be changed if needed, by adding an "extrapolate_prob" 
-  # argument or something like that. 
-  
-  # The dimension of the input space.
-  d <- nrow(prior_params)
-  
-  # Number of points marginally for each dimension.
-  N_train_per_dim <- N_train^(1/d)
-  N_test_per_dim <- N_test^(1/d)
-  if((round(N_train_per_dim) != N_train_per_dim) || (round(N_test_per_dim) != N_test_per_dim)) {
-    stop("N_train and N_test must have an integer d^th root; d = ", d)
-  }
-  
-  # Grid of inputs
-  X_train_marginals <- matrix(nrow = N_train_per_dim, ncol = d)
-  X_test_marginals <- matrix(nrow = N_test_per_dim, ncol = d)
-  
-  for(j in seq_len(d)) {
-    
-    if(prior_params[j, "dist"] == "Uniform") {
-      
-      # Train
-      X_train_marginals[,j] <- seq(prior_params[j, "param1"], prior_params[j, "param2"], length.out = N_train_per_dim)
-      
-      # Test
-      if(extrapolate) {
-        lower_bound_test <- prior_params[j, "param1"]
-        upper_bound_test <- prior_params[j, "param2"]
-      } else {
-        lower_bound_test <- min(X_train_marginals[,j])
-        upper_bound_test <- max(X_train_marginals[,j])
-      }
-      X_test_marginals[,j] <- seq(lower_bound_test, upper_bound_test, length.out = N_test_per_dim)
-      
-    } else if(prior_params[j, "dist"] == "Gaussian") {
-      
-      # Train
-      left_bound <- qnorm(tail_prob_excluded/2, prior_params[j, "param1"], prior_params[j, "param2"])
-      right_bound <- left_bound + 2*abs(left_bound)
-      X_train_marginals[,j] <- seq(left_bound, right_bound, length.out = N_train_per_dim)
-      
-      # Test
-      if(extrapolate) {
-        lower_bound_test <- left_bound
-        upper_bound_test <- right_bound
-      } else {
-        lower_bound_test <- min(X_train_marginals[,j])
-        upper_bound_test <- max(X_train_marginals[,j])
-      }
-      X_test_marginals[,j] <- seq(lower_bound_test, upper_bound_test, length.out = N_test_per_dim)
-    }
-    
-  }
-  
-  # Create grids
-  X_train <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_train_marginals[,j])))
-  
-  if(is.null(true_theta_samples)) {
-    X_test <- as.matrix(expand.grid(lapply(seq(1, d), function(j) X_test_marginals[,j])))
-  } else {
-    X_test <- true_theta_samples
-  }
-  colnames(X_train) <- rownames(theta_prior_params)
-  colnames(X_test) <- rownames(theta_prior_params)
-  
-  return(list(X_train = X_train, X_test = X_test))
-  
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
