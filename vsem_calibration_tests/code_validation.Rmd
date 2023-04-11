@@ -184,7 +184,31 @@ for(j in seq_along(gp_pred_list)) {
 
 ```
 
+# Sampling GPs
 
+#### Sample at input locations, not taking into account correlations so will not be smooth. 
+```{r}
+j <- 2
+gp_sample <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_method = "LNP")
+plot(test_list$inputs, gp_sample, type = "l")
+```
+
+#### Sample independent GPs at single input location
+```{r}
+input_loc_inx <- floor(nrow(test_list$inputs) / 2)
+print(paste0("Input location: ", test_list$inputs[input_loc_inx,1]))
+
+N_samples <- 10000
+samples <- matrix(nrow = N_samples, ncol = length(gp_pred_list))
+for(i in seq_len(N_samples)) {
+  samples[i,] <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = "LNP", idx_selector = input_loc_inx)
+}
+
+# Histograms
+for(j in seq_along(gp_pred_list)) {
+  print(hist(samples[,j], 50, main = paste0("Output #", j, " at input loc ", test_list$inputs[input_loc_inx,1])))
+}
+```
 
 
 

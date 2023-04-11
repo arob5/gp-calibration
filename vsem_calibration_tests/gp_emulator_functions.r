@@ -981,7 +981,7 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
 # ------------------------------------------------------------------------------
 
 
-sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_character_) {
+sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_character_, idx_selector = NULL) {
   # Draws a single n-dimensional sample from a GP (or transformation of a GP) at a set of n input locations. 
   # This sample does not consider correlation across input points, hence the "pointwise" in the function name. 
   #
@@ -991,6 +991,7 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
   #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
   #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
   #                           log-normal process. The default is not to perform any transformation. 
+  #    idx_selector: integer(), vector of indices of which to select in `gp_means` and `gp_vars`. Default selects all indices. 
   #
   # Returns:
   #    numeric(), vector of length equal to length(gp_means) = length(gp_vars). The GP (or transformed GP) samples. 
@@ -999,7 +1000,12 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
     stop("gp_means and gp_vars must have equal length.")
   }
   
+  if(!is.null(idx_selector)) {
+    gp_means <- gp_means[idx_selector]
+    gp_vars <- gp_vars[idx_selector]
+  }
   n <- length(gp_means)
+  
   
   if(is.na(transformation_method)) {
     return(gp_means + sqrt(gp_vars) * rnorm(n))
@@ -1008,7 +1014,7 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
   } else if(transformation_method == "rectified") {
     return(pmax(0, gp_means + sqrt(gp_vars) * rnorm(n)))
   } else if(transformation_method == "LNP") {
-    return(rlnorm(1, meanlog = gp_means, sdlog = sqrt(gp_vars)))
+    return(exp(gp_means + sqrt(gp_vars) * rnorm(n)))
   } else {
     stop("Invalid transformation method: ", transformation_method)
   }
@@ -1016,7 +1022,7 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
 }
 
 
-sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_) {
+sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL) {
   # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
   # Allows for potentially different output transformations for each GP. 
   #
@@ -1027,6 +1033,8 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   #    transformation_methods: either a numeric vector of equal length as `gp_pred_list` storing the transformation to apply to each 
   #                            GP ("truncated", "rectified", "LNP", or NA_character_ for no transformation). If a single element, will 
   #                            use the same method for all GPs. 
+  #    idx_selector: integer(), vector of indices of which to select in the mean/variance numeric vectors. Default selects all indices. Note that 
+  #                  the same indices will be selected across all GPs.
   # 
   # Returns: 
   #    matrix, of dimension N x length(gp_pred_list) where N is the number of input points. The matrix stores the samples for each GP in the 
@@ -1038,15 +1046,19 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
     transformation_methods <- rep(transformation_methods, N_GPs)
   } 
   
-  N_inputs <- sapply(gp_pred_list, function(x) length(x$mean))
-  N_max_inputs <- max(N_inputs)
-  if(!all(N_inputs == N_max_inputs)) {
-    message("Returned matrix with samples will have NAs due to different numbers of input locations across GPs.")
+  if(!is.null(idx_selector)) {
+    N_row <- length(idx_selector)
+  } else {
+    N_inputs <- sapply(gp_pred_list, function(x) length(x$mean))
+    N_row <- max(N_inputs)
+    if(!all(N_inputs == N_row)) {
+      message("Returned matrix with samples will have NAs due to different numbers of input locations across GPs.")
+    }
   }
   
-  gp_samples <- matrix(nrow = N_max_inputs, ncol = N_GPs)
+  gp_samples <- matrix(nrow = N_row, ncol = N_GPs)
   for(j in seq_len(N_GPs)) {
-    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_methods[j])
+    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_methods[j], idx_selector)
   }
   
   return(gp_samples)
