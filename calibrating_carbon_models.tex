@@ -429,6 +429,28 @@ Note that evaluation of the likelihood requires $d_s$ evaluations of the forward
 
 \section{Appendix}
 
+\subsection{Metropolis-within-Gibbs Calculations: Product Likelihood}
+Here we consider the single-site model with an assumption of independent residuals across time and across output variables.
+\begin{align*}
+Y_j|\theta, \sigma_j^2 &\overset{ind}{\sim} \mathcal{N}_{N_j}(f_j(\theta), \sigma_j^2 I_{N_j}), \ j = 1, \dots, p \\
+\sigma_j^2 |\theta &\overset{ind}{\sim} \mathcal{IG}(a_j, b_j) \\
+\theta &\sim \pi_0 
+\end{align*}
+
+\subsubsection{$\theta$ Conditional Posterior}
+
+\subsubsection{$\sigma_j^2$ Conditional Posteriors}
+For notational convenience, let $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_p^2 \right)$. Note that 
+\[p(\Sigma|\theta, Y) \propto p(Y|\theta, \Sigma)p(\Sigma|\theta)\]
+so we can obtain $p(\Sigma|\theta, Y)$ by dropping terms without $\Sigma$-dependence in the full posterior. To this end, consider 
+\begin{align*}
+p(Y|\theta, \Sigma)p(\Sigma|\theta) &= \prod_{j = 1}^{p} \mathcal{N}_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j}) \cdot \prod_{j = 1}^{p} \mathcal{IG}(\sigma_j^2|a_j, b_j) \\
+						      &= \prod_{j = 1}^{p} \prod_{i = 1}^{N_j} \left(2\pi \sigma_j^2\right)^{1/2} \exp\left(-\frac{1}{2\sigma_j^2}(y_{ij} - f_{ij}(\theta))^2 \right) \cdot \\
+						      &\qquad \prod_{j = 1}^{p} \frac{b_j^{a_j}}{\Gamma(a_j)} \left(\sigma_j^2\right)^{-a_j - 1} \exp\left(\frac{b_j}{-\sigma_j^2}\right)
+\end{align*}	
+
+
+
 \subsection{Correlated Gaussian Likelihood Implementation} \label{corr_output_lik_implementation}
 We consider coding the log of [\ref{corr_output_lik}] efficiently, which is especially important when it will need to be evaluated at each iteration of an
 MCMC algorithm. The full log-likelihood is given by 
