@@ -1,0 +1,457 @@
+---
+title: "Log-Normal Process Emulator of Squared Error"
+output:
+  html_document: default
+  pdf_document: default
+date: '2023-02-25'
+---
+
+# Introduction
+In this document, I investigate the effect of log-transforming the output variable when using Gaussian Processes (GPs) to emulate a deterministic function. While log-transformations are common in regression settings to correct for distributional assumptions in the error model, it is less obvious why one would want to apply transformations in the deterministic setting, when there is no underlying distribution. The desire to do so here stems from the problem of emulating the squared L2 error between a deterministic model and field observations, so the log-transformation ensures that predictions of L2 error are non-negative. Details on the deterministic model used in these tests and the emulation framework are provided below. 
+
+## Background Literature 
+There is a small body of literature on the effect of transformations of the response variable in the deterministic setting. I also discuss papers that more generally discuss loss/likelihood emulation. 
+
+* __Transformation and Additivity in Gaussian Processes (Lin and Joseph, 2020)__
+The authors note that log-transformations are often used to ensure non-negativity, but often at the cost of accuracy. They consider a transformation of the response variable parameterized as a Box-Cox transform and optimize to choose the transformation. 
+* __Bayesian Quadrature for Ratios (Osborne et al)__
+Osborne et al use GP priors on log-likelihoods. They also consider correlations between shared terms in the numerator and denominator of a ratio, which could also be relevant in the accept-reject Metropolis step for our problem.  
+* __Active Learning of Model Evidence Using Bayesian Quadrature (Osborne et al)__
+An application of the method from the previous Osborne et al paper. 
+* __Nonnegativity-Enforced Gaussian Process Regression (Pensoneault et al, 2020)__
+There has been a variety of work on constraining GPs to satisfy inequality constraints. Most approaches destroy the Gaussian posterior, but Pensoneault et al's approach maintains the Gaussian posterior. Their method allows one to guarantee that the probability that the GP predictive mean is 
+negative is below some user-defined threshold. Fitting the GP now requires an optimization procedure with inequality constraints. 
+* __Warped Gaussian Processes (Snelson et al)__ 
+Considers non-linear transformations of the response variable, which yields non-Gaussian noise. 
+* __Bayesian nonparametric inference in mechanistic models of complex biological systems (Noe, 2019 PhD Thesis)__
+The most comprehensive comparison of output emulation vs. loss emulation that I have found. Their setting appears to be a bit simpler due to the fact that 1.) their ultimate goal is optimization, not sampling and 2.) they do not consider estimation of likelihood parameters. Nonetheless, this is a very helpful resource that specifically considers the question of emulated RSS. Noe does not appear to address the fact that the GP is not constrained to be non-negative. 
+* __Gaussian process emulation to accelerate parameter estimation in a mechanical model of the left ventricle: a critical step towards clinical end-user relevance (Noe et al, 2019)__
+Uses ideas from the above thesis, and presents a nice discussion of different emulation options including output emulation vs. loss emulation, different options for multi-output simulations, and different approximate GP methods. 
+ 
+ 
+## Ecosystem Model
+The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that models carbon dynamics between three pools (above-ground vegetation, below-ground vegetation, 
+and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
+pools and Net Ecosystem Exchange (NEE). I represent the model mathematically as 
+$$f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}$$
+where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ (NEE, 3 carbon pools) or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
+
+## Statistical Model and Likelihood Emulation
+
+### Likelihood Assumptions
+I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
+parameters. I add Gaussian noise to the resulting outputs, resulting in the data-generating process
+$$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
+where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \mathbb{R}^{n \times p}$ collect all of the field data observations and 
+$\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply the likelihood
+$$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
+I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as well as the statistical model used in the emulation step. 
+
+### Likelihood Emulation
+With regard to the problem of MCMC-based parameter calibration, the model outputs $f(i, j, \theta)$ appear only as a function of the 
+likelihood $p(Y|\theta, \Sigma_\epsilon)$. Therefore, to reduce the dimensionality of the emulation problem, we may consider emulating the univariate lilkelihood 
+surface $p(Y|\theta, \Sigma_\epsilon)$ as a function of $\theta$. In fact, given this simple product-form of the likelihood we actually need only emulate a sufficient
+statistic of the likelihood. Indeed, the log-likelihood may be written as
+$$\log p(Y|\theta, \Sigma_\epsilon) = C - \frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{1}{\sigma^2_{\epsilon_j}}\sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2 \right]$$
+where $C$ is a constant. We can then define $T_j(\theta) := \sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2$, the squared $\ell_2$ error for the $j^{\text{th}}$ output, viewed as a function of $\theta$ (though also implicitly dependent on $Y_j$). The unnormalized log-likelihod is thus given by 
+$$\tilde{\ell}_Y(\theta, \Sigma_\epsilon) := -\frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{T_j(\theta)}{\sigma^2_{\epsilon_j}}\right]$$
+Conveniently, $T_j(\theta)$ is not a function of $\Sigma_\epsilon$. Thus, we may emulate $\tilde{\ell}_Y(\theta, \Sigma_\epsilon)$ by independently emulating $T_1(\theta), \dots, T_p(\theta)$. Therefore, during a Metropolis-within-Gibbs MCMC calibration scheme, an approximate likelihood evaluation may be derived from 
+the emulators for the $T_j$, without needing to emulate the likelihood as a function of $\Sigma_\epsilon$ as well. 
+
+### Gaussian Process Emulation Details
+Given the above derivations, we can fit $p$ independent GP emulators, one for each output. However, note that the $T_j$ map to the non-negative real numbers, while
+a GP is in general not constrained to yield non-negative predictions. We thus arrive at the motivation to log-transform the response and instead emulate $L_j(\theta) := \log T_j(\theta)$. The emulation model thus becomes
+$$L_j(\cdot) \sim \mathcal{GP}(\mu_j, k_j(\cdot, \cdot))$$
+where each output is emulated independently. Equivalently, we are modeling the squared error as a log-normal process (LNP)
+$$T_j(\cdot) \sim \mathcal{LNP}(\mu_j, k_j(\cdot, \cdot))$$
+We assume constant GP means $\mu_j$ and exponentiated quadratic kernels
+$$k_j(\theta, \theta^\prime) = \alpha_j^2 \exp\left\{-\frac{1}{2}\sum_{r = 1}^{d} \left(\frac{\theta_r - \theta_r^\prime}{(l_{j})_r}\right)^2 \right\} + \gamma_j^2\delta_{\theta, \theta^\prime}$$
+The structure of the kernel is the same for each output variable, but the estimation of the kernel parameters (marginal variance $\alpha_j^2$, lengthscales 
+$(\ell_j)_{r = 1}^{d}$, and nugget variance $\gamma_j^2$) is performed via MLE independently for each output. Note that the $L_j$ are deterministic functions, 
+so we will typically fix the $\gamma_j^2$ to a small value for numerical stability, rather than estimating its value from data. The notation $\delta_{\theta, \theta^\prime}$ is meant to indicate that $\delta$ returns one only if the index of two inputs is the same (not the value of the inputs), meaning that 
+$\gamma_j^2$ is only added to the diagonal of the resulting kernel matrix. The specific parameterization of
+the exponentiated quadratic kernel depends on the specific GP package used. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+```
+
+
+```{r run_params, include = FALSE}
+#
+# Model and data generation settings
+#
+
+
+# Number days in time series 
+N_days <- 1000
+
+# The covariance matrix between the outputs. Note that the NEE output of the
+# model VSEM() is scalesd by 1000, so the observation error magnitude should correspond 
+# to this scale. In this basic example, we assume equal noise variance for each output.
+noise_var <- 4.0
+Sig_eps <- noise_var * diag(1, nrow = 4)
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+
+# Assuming iid Inverse Gamma priors on each sig_eps_j
+sig_eps_prior_mean <- noise_var
+sig_eps_prior_sd <- 0.4
+
+# Names of parameters to calibrate.
+pars_cal <- c("KEXT")
+N_pars <- length(pars_cal)
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+N_outputs <- length(output_vars)
+```
+
+```{r, echo = FALSE}
+#
+# GP Emulator Settings
+#
+
+emulator_settings <- data.frame(gp_lib = c("mlegp", "mlegp", "hetGP", "hetGP"), 
+                                target = c("SSR", "log_SSR", "SSR", "log_SSR"), 
+                                kernel = "Gaussian", 
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+```
+
+
+# Model Parameters and Synthetic Data Generation
+
+```{r}
+random_seed <- 5
+set.seed(random_seed)
+```
+
+```{r data_gen, include = FALSE}
+# Create time series of Phosynthetically Active Radiation (PAR) which is the forcing variable
+# for the VSEM model. 
+PAR <- VSEMcreatePAR(seq_len(N_days))
+
+# The "best" column of the reference parameters are used to generate the "true" 
+# output data. We will add noise to this data to simulate the field observations.
+ref_pars <- VSEMgetDefaults()
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal
+
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
+data_ref <- run_VSEM(ref_pars[pars_cal_sel, "best"], ref_pars, pars_cal_sel, PAR, output_vars)
+
+# Add observational noise. For now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
+Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z %*% Lt
+
+```
+
+## True Parameters
+
+### Calibration Parameters ($\theta$)
+```{r true_params, echo = FALSE}
+print(ref_pars)
+```
+
+### Likelihood Parameters ($\Sigma_\epsilon$)
+```{r true_lik_params, echo = FALSE}
+print(Sig_eps)
+```
+
+# Runing Model at Design Points
+
+## Priors on Calibration Parameters
+```{r, echo = FALSE}
+ref_pars[pars_cal_sel, "dist"] <- "Uniform"
+ref_pars[pars_cal_sel, "param1"] <- ref_pars[pars_cal_sel, "lower"]
+ref_pars[pars_cal_sel, "param2"] <- ref_pars[pars_cal_sel, "upper"]
+
+theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
+print(theta_prior_params)
+```
+
+## Settings for sampling design points
+```{r}
+N_design_points <- 12
+design_alg <- "LHS"
+N_test <- 1000
+```
+
+# Single-Output Example: Below-ground biomass
+I begin by considering a single output (CR, below-ground biomass) and emulate the response as a function of a single parameter 
+(KEXT, the extinction coefficient in the Beer-Lambert law). 
+
+```{r CR_plot, echo = FALSE}
+plotTimeSeries(observed = data_obs[["CR"]], 
+               predicted = data_ref[["CR"]], main = "CR")
+```
+
+## Fitting GP and LNP emulators for $T_{\text{CR}}(\cdot)$
+```{r}
+
+# Design and test points
+train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = TRUE, ref_pars, 
+                                       pars_cal_sel, data_obs, PAR, output_vars = "CR", scale_X = TRUE, normalize_Y = TRUE, log_SSR = TRUE)
+```
+
+### Train and test data
+In the below plots, we observe that the SSR appears to be monotonically decreasing as a function of KEXT, and does not achieve a minimum 
+at the true value of KEXT (gray dashed vertical line). However, the large scale on the y-axis masks the fact that the curve actually does 
+achieve a minimum around 0.75, and around this minimum looks approximately quadratic. We observe that this is an issue for the log-transformed 
+data, as taking a log of a quadratic will create a funnel shape around the minimum with a steep gradient. 
+
+```{r, echo = FALSE}
+test_order <- order(train_test_data$X_test)
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR")
+points(train_test_data$X_train, train_test_data$Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+y_max <- 500
+plot(train_test_data$X_test[test_order], train_test_data$Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "SSR", ylim = c(0, y_max))
+points(train_test_data$X_train, train_test_data$Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+test_order <- order(train_test_data$X_test)
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test[test_order], type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test[test_order], type = "l", col = "red", 
+     main = "GP design and validation points", xlab = "KEXT", ylab = "log(SSR)", ylim = c(min(train_test_data$log_Y_test[test_order]), log(y_max)))
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+### Naively fitting on train and test data
+Here I consider fitting the GP and LNP on the training data exactly as displayed above. True values (including both the training and testing 
+data) are displayed in red, while the GP predictive mean is in blue and 95% confidence intervals in gray. Given the plots of the log-transformed data above, we certainly do not expect the LNP model to work well here. I also expect issues with the GP model, which has to choose a single lengthscale across the entire domain, which appears to be overly restrictive given the variation of the smoothness of the function over the domain. 
+
+```{r}
+# Fit GP on SSR and log(SSR)
+gp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")$fit
+lnp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_train_preprocessed, "hetGP", "Gaussian")$fit
+
+# Predict with GPs
+gp_pred <- predict_GP(train_test_data$X_test_preprocessed, gp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                      output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
+lnp_pred <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                       output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
+```
+
+```{r, echo = FALSE}
+x_lim <- range(train_test_data$X_train)
+x_len <- x_lim[2] - x_lim[1]
+x_lim[1] <- x_lim[1] - .05 * x_len
+x_lim[2] <- x_lim[2] + .05 * x_len
+y_lim <- c(0, 1e5)
+
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2, 
+               main = "GP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = c(0, 1e5))
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2, 
+               main = "GP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", ylim = c(-200, y_max), xlim = x_lim)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", xlim = x_lim, ylim = y_lim, exponentiate_predictions = TRUE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values", xlab = "KEXT", ylab = "SSR", ylim = c(-100, 1000), xlim = x_lim, exponentiate_predictions = TRUE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, 
+               lnp_pred$mean, lnp_pred$sd2, 
+               main = "LNP Predictions vs. True Values on log scale", xlab = "KEXT", ylab = "log(SSR)", xlim = x_lim, exponentiate_predictions = FALSE)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+### Shifting SSR data away from 0
+I now consider flattening out the funnel by somewhat arbitrarily adding a positive constant to the SSR before log-transforming the data. In particular, 
+I train a GP emulator on 
+$$\tilde{L}_{\text{CR}}(\theta) := \log(T_{\text{CR}}(\theta) + 1000)$$
+
+```{r}
+cst_shift <- 1e3
+plot(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order]), type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+lines(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order] + cst_shift), 
+      col = "red", lty = "dashed")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+points(train_test_data$X_train, log(train_test_data$Y_train + cst_shift), col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r}
+# Fit GP on log(SSR) shifted data
+train_test_data[c("log_Y_train_shifted_preprocessed", "log_shifted_output_stats")] <- prep_GP_training_data(Y = log(train_test_data$Y_train + cst_shift), normalize_Y = TRUE)[c("Y", "output_stats")]
+lnp_fit_shifted <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_train_shifted_preprocessed, "hetGP", "Gaussian")$fit
+
+# Predict with GPs
+lnp_pred_shifted <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit_shifted, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                               output_stats = train_test_data$log_shifted_output_stats, exponentiate_predictions = FALSE)
+```
+
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred_shifted$mean, lnp_pred_shifted$sd2, 
+               main = "LNP Predictions vs. True Values, Shifted Data", xlab = "KEXT", ylab = "SSR", 
+               xlim = x_lim, ylim = y_lim, exponentiate_predictions = TRUE, cst_shift = cst_shift)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred_shifted$mean, lnp_pred_shifted$sd2, 
+               main = "LNP Predictions vs. True Values, Fit on Shifted Data", xlab = "KEXT", ylab = "SSR", 
+               xlim = x_lim, ylim = c(0, y_max), exponentiate_predictions = TRUE, cst_shift = cst_shift)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+### Alternative scaling of SSR prior to taking log
+Adding $1000$ to the SSR before taking the log proved to work well for this specific case, but was the result of tinkering with the additive constant so that the transformed data looked reasonably smooth. I now consider an alterntive scaling more amenable to automation that was employed by Osborne et al in their Bayesian quadrature papers. 
+$$\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{100\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)$$
+The largest design point now satisfies 
+$$\max_i \tilde{L}_{\text{CR}}(\theta_i) = \log(1.01) \approx .0099$$
+and the remaining design points $\tilde{L}_{\text{CR}}(\theta_i)$ will assume values between $0$ and $\log(1.01)$. The test points can still assume values outside of this range. The log-transformed data will look very similar to the data on the linear scale - just on a smaller scale - since
+$$\log\left(1 + \frac{y}{M}\right) = \frac{y}{M} - \frac{y^2}{2M^2} + \frac{y^3}{3M^3} - \cdots \approx \frac{y}{M}$$
+when $y$ is small and $M$ is large. Therefore, this transformation essentially results in the same emulation problem as the original, untransformed GP emulation of SSR, but will ensure non-negativity when transforming back to the original scale. This isn't necessarily a good thing, as the original GP fit performed poorly in regions where the gradient was large. Perhaps one approach is to combine the two scalings, first performing a multiplicative scaling on SSR to achieve a desired scale, then perform an additive scaling (something larger than 1) to yield a smoother surface.
+
+```{r, echo = FALSE}
+max_SSR <- max(train_test_data$Y_train)
+train_test_data$log_Y_train_shift2 <- log(train_test_data$Y_train / (max_SSR/100) + 1)
+train_test_data$log_Y_test_shift2 <- log(train_test_data$Y_test / (max_SSR/100) + 1)
+```
+
+
+The plots below consider a scaling 
+$$\tilde{L}_{\text{CR}}(\theta) := \log\left(\frac{T_{\text{CR}}(\theta)}{0.001\max_{i} T_{\text{CR}(\theta_i)}} + 1\right)$$
+which divides SSR by `r max_SSR/100` rather than `r max_SSR*100` in the current example. 
+
+
+```{r}
+plot(train_test_data$X_test[test_order], log(train_test_data$Y_test[test_order]), type = "l", col = "red", 
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)", ylim = c(-7, 15))
+lines(train_test_data$X_test[test_order], train_test_data$log_Y_test_shift2[test_order], 
+      col = "red", lty = "dashed")
+points(train_test_data$X_train, train_test_data$log_Y_train, col = "red")
+points(train_test_data$X_train, train_test_data$log_Y_train_shift2, col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r}
+plot(train_test_data$X_test[test_order], train_test_data$log_Y_test_shift2[test_order], type = "l", col = "red", lty = "dashed",
+     main = "LNP design and validation points", xlab = "KEXT", ylab = "log(SSR)")
+points(train_test_data$X_train, train_test_data$log_Y_train_shift2, col = "red", pch = 20)
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+# Investigating the SSR for the other output variables 
+
+```{r}
+train_test_data_other <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = TRUE, ref_pars, 
+                                             pars_cal_sel, data_obs, PAR, output_vars = c("NEE", "Cv", "Cs"), scale_X = TRUE, normalize_Y = TRUE, log_SSR = TRUE)
+```
+
+
+## Net Ecosystem Exchange (NEE)
+```{r, echo = FALSE}
+test_order <- order(train_test_data_other$X_test)
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "NEE"], type = "l", col = "red", 
+     main = "GP design and validation points: NEE", xlab = "KEXT", ylab = "NEE SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "NEE"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "NEE"], type = "l", col = "red", 
+     main = "GP design and validation points: NEE", xlab = "KEXT", ylab = "NEE log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "NEE"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+## Above-Ground Vegetation (Cv)
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "Cv"], type = "l", col = "red", 
+     main = "GP design and validation points: Cv", xlab = "KEXT", ylab = "Cv SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "Cv"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "Cv"], type = "l", col = "red", 
+     main = "GP design and validation points: Cv", xlab = "KEXT", ylab = "Cv log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "Cv"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+## Soil (Cs)
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$Y_test[test_order, "Cs"], type = "l", col = "red", 
+     main = "GP design and validation points: Cs", xlab = "KEXT", ylab = "Cs SSR")
+points(train_test_data_other$X_train, train_test_data_other$Y_train[, "Cs"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+```{r, echo = FALSE}
+plot(train_test_data_other$X_test[test_order], train_test_data_other$log_Y_test[test_order, "Cs"], type = "l", col = "red", 
+     main = "GP design and validation points: Cs", xlab = "KEXT", ylab = "Cs log(SSR)")
+points(train_test_data_other$X_train, train_test_data_other$log_Y_train[, "Cs"], col = "red")
+abline(v = ref_pars[pars_cal_sel, "best"], col = "gray", lty = "dashed")
+```
+
+## Questions and Next Steps
+
+* Emualating non-negative functions:
+    + Shift/scale data in some way and fit GP
+    + Shift/scale data and fit LNP
+    + Consider other transformations other than log
+* Testing methodology: 
+    + How many cycles of the ODE to use when generating synthetic data? 
+    + Distribution of predictive error as the design input points (X) are varied. 
+    + Distribution of the predictive error as the observed response data (Y) is varied. 
+    + Error metrics to consider: RMSE, RMSE weighted by GP predictive standard deviations, induced error on likelihood.
+
+
+
+
+
+
+
+
+
+

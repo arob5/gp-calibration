@@ -1,0 +1,250 @@
+---
+title: "VSEM Test Cases"
+author: "Andrew Roberts"
+date: '2023-03-05'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+```
+
+# Review of the VSEM model
+
+## Variables and Parameters
+
+* $C_v$: Quantity of carbon ($C/m^2$) in above-ground vegetation pool. 
+* $C_r$: Quantity of carbon ($C/m^2$) in below-ground vegetation (roots) pool.
+* $C_s$: Quantity of carbon ($C/m^2$) in soil pool.
+* $GPP$: Gross primary productivity. 
+* $NPP$: Net Primary Productivity = GPP - Autotrophic Respiration. 
+* $NEE$: -Net Ecosystem Exchange = NPP - Heterotrophic Respiration (notice differing sign convention between NPP and NEE). 
+* $\tau_v$: Residence time of above-ground vegetation (days). 
+* $\tau_r$: Residence time of above-ground vegetation (days). 
+* $\tau_s$: Residence time of soil organic matter (days).
+* $\alpha_v$: Fixed proportion of NPP allocated to above-ground vegetation. 
+* $k$: The extinction coefficient in the Beer-Lambert law. 
+* $LAI$: Leaf-Area Index, the ratio of one-sided leaf area per unit of ground area.
+* $\gamma$: Fixed proportion of GPP lost to autotrophic respiration. 
+* $LAR$: Leaf-area ratio. 
+
+## State Equations
+
+$$
+\begin{align*}
+\dot{C}_v(t) &= \alpha_v \times \text{NPP}(t; C_v) - \frac{C_v(t)}{\tau_v} \\
+\dot{C}_r(t) &= (1.0 - \alpha_v) \times \text{NPP}(t; C_v) - \frac{C_r(t)}{\tau_r} \\
+\dot{C}_s(t) &= \frac{C_r(t)}{\tau_r} + \frac{C_v(t)}{\tau_v} - \frac{C_s(t)}{\tau_s} 
+\end{align*}
+$$
+
+## Model Driver
+VSEM is driven by Photosynthetically Active Radiation (PAR) (MJ/$m^2$/day). GPP is assumed to result from a product of 
+
+* The amount of light available for photosynthesis (PAR) (MJ/$m^2$/day).
+* Light-use efficiency (LUE), a measure of the efficiency at which vegetation can use light for photosynthesis. 
+* The rate at which the available light decays as it passes downwards through a canopy of leaves (described by the Beer-Lambert Law). 
+$$
+\begin{align*}
+\text{LAI}(t; C_v) &= \text{LAR} \times C_v(t) \\
+\text{GPP}(t; C_v) &= \text{PAR}(t) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(t; C_v) \right) \right) \\
+\text{NPP}(t; C_v) &= (1 - \gamma) \times \text{GPP}(t; C_v)
+\end{align*}
+$$
+
+# Literature Review
+Fer et al (2018) shows plots of NEE data with conservative error bars. The range of NEE in the growing season months looks to be around .02 kg C $m^{-2}$ $\text{day}^{-1}$. 
+In my VSEM tests I scale NEE by 1000, so this would correspond to a range of around 20. Setting the NEE observation variance to $4$ leads to a range of around $20$ so seems 
+reasonable. In the VSEM model, this leads to a range of observations of around $12$ in the winter months, or $.012$ on the original scale. This is a much larger range than in 
+the paper, which shows almost no variability in the measurements in the winter months. The study site for this paper was Bartlett Experimental Forest, which is typical of a 
+northern hardwood forest. 
+
+I have not been able to find literature to help guide the choice of noise level in the observations of the carbon pools. 
+
+
+
+# Test Examples
+
+## Test 1: *Unrealistic idealized example*
+This is the simplest test case, with a single calibration parameter, all outputs observed daily with no missing values, and no output correlation. However, this test case still comes with a variety of challenges, including a high dynamic range for the sum of square errors. The observation variances represent a choice of low signal-to-noise ratio for the carbon pools; this is the same choice given in the example code provided by the BayesianTools package. Also note that the number of time steps (1000) here is smaller than all of the residence time/longevity parameters ($\tau_r$, $\tau_v$, $\tau_s$) so the quantity of carbon in each of the pools generally increases over this time frame. 
+```{r}
+test1_list <- generate_vsem_test_case(1)
+```
+
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test1_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test1_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test1_list$output_frequencies)
+```
+
+### Plots of Simulated Observational Data and VSEM outputs.
+The red line is the output from the numerical solution of the VSEM model, while the black plus signs are corrupted 
+versions of this output, representing simulated observation noise. 
+```{r echo = FALSE}
+for(output_var in test1_list$output_vars) {
+ plotTimeSeries(observed = test1_list$data_obs[, output_var],
+                predicted = test1_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 2: *Grassland Parameterization*
+Another one-parameter test (LUE), but adds complexity by varying the observation frequency. This test considers 2048 time steps (about 5.5 years). NEE is observed daily with no missing values, while above-ground vegetation is every 60 days starting on March 1st. Soil and roots are observed annually on August 1st. 
+```{r}
+test2_list <- generate_vsem_test_case(2)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test2_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test2_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test2_list$output_frequencies)
+```
+
+```{r, echo = FALSE}
+print("Observation start day: ")
+print(test2_list$obs_start_day)
+```
+
+```{r echo = FALSE}
+for(output_var in test2_list$output_vars) {
+ plotTimeSeries(observed = test2_list$data_obs[, output_var],
+                predicted = test2_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+## Test 3: *High Frequency LAI Constraint*
+This test considers only NEE (measured daily) and LAI (measured every three days) constraints. We consider calibrating Leaf Area Ratio (LAR). Recall that LAI is calculated as 
+$$\text{LAI}(t; C_v) = \text{LAR} \times C_v(t)$$
+meaning that the calibration parameter is closely tied to the observational constraint. This test considers a 10 year period (3650 time steps). I'm currently specifying a standard error of 0.6 on LAI measurements, corresponding to the MODIS estimate. Currently, the parameterization of this model leads to some very large LAI values outside of the $[0, 6]$ range that Mike says is typical. 
+```{r}
+test3_list <- generate_vsem_test_case(3)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test3_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test3_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test3_list$output_frequencies)
+```
+
+```{r, echo = FALSE}
+print("Observation start day: ")
+print(test3_list$obs_start_day)
+```
+
+```{r echo = FALSE}
+for(output_var in test3_list$output_vars) {
+ plotTimeSeries(observed = test3_list$data_obs[, output_var],
+                predicted = test3_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 4
+This test builds on complexity to test 1 by adding an additional calibration parameter $\tau_v$, increasing the number of days, and varying the frequency of observed data. 
+```{r}
+test4_list <- generate_vsem_test_case(4)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test4_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test4_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test4_list$output_frequencies)
+```
+
+```{r echo = FALSE}
+for(output_var in test4_list$output_vars) {
+ plotTimeSeries(observed = test4_list$data_obs[, output_var],
+                predicted = test4_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+## Test 5
+Another two-parameter test case ($C_v$, $\tau_r$), with a longer time series, varying observation frequencies, increased noise on NEE observations, and small correlation between observation errors for $C_s$ and $C_r$. 
+```{r}
+test5_list <- generate_vsem_test_case(5)
+```
+
+```{r, echo = FALSE}
+print("Calibration Parameters:")
+print(test5_list$ref_pars)
+```
+
+```{r, echo = FALSE}
+print("Observation Covariance: ")
+print(test5_list$Sig_eps)
+```
+
+```{r, echo = FALSE}
+print("Observation frequency: ")
+print(test5_list$output_frequencies)
+```
+
+```{r echo = FALSE}
+for(output_var in test5_list$output_vars) {
+ plotTimeSeries(observed = test5_list$data_obs[, output_var],
+                predicted = test5_list$data_ref[, output_var], main = output_var) 
+}
+```
+
+
+
+
+
+# Questions/Next Steps
+
+* Making test cases more realistic/useful. 
+    + Magnitude of observation noise? Correlation in observation errors across output variables? 
+    + Altering observation frequencies. 
+    + Staggering observation frequencies so they don't occur on regular periodic schedule. 
+    + Add in missing data due to simulate sensor issues, etc. 
+* Error metrics. 
+    + Need to do a literature review. 
+
+
+

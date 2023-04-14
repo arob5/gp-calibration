@@ -1,0 +1,219 @@
+---
+title: "Code Validation"
+author: "Andrew Roberts"
+date: '2023-04-08'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+source("gp_emulator_functions.r")
+```
+
+# This document contains code validation for emulator/calibration related functions. 
+
+## Testing GP Transformation Functions
+#### Comparing Rectified Gaussian moment calculations with sample estimates. 
+```{r}
+Gaussian_means <- c(0, -.5)
+Gaussian_vars <- c(1, 2)
+
+# Compute means and variances
+moments <- transform_GP_to_rectified_GP(Gaussian_means, Gaussian_vars)
+
+# Monte Carlo approximation of means and variances
+N_samp <- 10000000
+samp <- matrix(nrow = N_samp, ncol = length(Gaussian_means))
+for(j in seq_along(Gaussian_means)) {
+  samp[,j] <- pmax(rnorm(N_samp, mean = Gaussian_means[j], sd = sqrt(Gaussian_vars[j])), 0)
+}
+sample_means <- colMeans(samp)
+sample_vars <- colMeans(samp^2) - sample_means^2
+
+print("Means computed:")
+print(moments$mean)
+
+print("Sample means:")
+print(sample_means)
+
+print("Variances:")
+print(moments$var)
+
+print("Sample vars:")
+print(sample_vars)
+
+```
+#### Comparing two different functions that compute truncated Gaussian moments. 
+```{r}
+print("Method 1:")
+print(transform_GP_to_truncated_GP(Gaussian_means, Gaussian_vars))
+
+print("Method 2:")
+print(compute_zero_truncated_Gaussian_moments(Gaussian_means, Gaussian_vars))
+```
+#### Validating quantile function for rectified Gaussian distribution using simulation. 
+```{r}
+p_vals <- seq(0.1, 1.0, by = 0.1)
+
+# Sample quantiles.
+print("Sample Quantiles:")
+for(j in seq(1, ncol(samp))) {
+  print(quantile(samp[,j], p_vals))
+}
+
+# Computed quantiles.
+print("Computed Quantiles:")
+computed_quantiles <- sapply(p_vals, function(p) quantile_rectified_norm(p, mean = Gaussian_means, sd = sqrt(Gaussian_vars)))
+print(computed_quantiles)
+```
+
+# One-Dimensional GP Tests
+
+### No output transformation
+```{r}
+
+# Training and testing input data. 
+prior_params <- data.frame(dist = "Uniform", param1 = -10, param2 = 10)
+train_data <- get_input_design(12, prior_params, "LHS", scale_inputs = TRUE, order_1d = TRUE)
+test_data <- get_input_design(151, prior_params, "grid", scale_inputs = TRUE, param_ranges = train_data$input_bounds)
+
+# Latent function; producing training and testing response data. 
+f <- function(x) cos(x) + sin(x)
+train_data$outputs <- f(train_data$inputs)
+test_data$outputs <- f(test_data$inputs)
+train_data[c("outputs_normalized", "output_stats")] <- prep_GP_training_data(Y = train_data$outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+test_data[["outputs_normalized"]] <- normalize_output_data(test_data$outputs, output_stats = train_data$output_stats)
+
+# Fit GP. 
+gp <- fit_GP(train_data$inputs_scaled, train_data$outputs_normalized, "mlegp", "Gaussian")$fit
+
+# Predict at test locations. 
+gp_pred <- predict_GP(test_data$inputs_scaled, gp, "mlegp", denormalize_predictions = TRUE, output_stats = train_data$output_stats) 
+           
+# Plot GP.
+gp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "GP Plot", CI_prob = 0.9)
+print(gp_plot)
+```
+### Truncated Gaussian 
+```{r}
+# Plot truncated GP.
+gp_trunc_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "Truncated GP Plot", CI_prob = 0.9, transformation_method = "truncated")
+print(gp_trunc_plot)
+```
+
+### Rectified Gaussian 
+```{r}
+# Plot rectified GP.
+gp_rect_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs, train_data$inputs, train_data$outputs, gp_pred$mean, gp_pred$var,
+                          xlab = "X", ylab = "Y", main_title = "Rectified GP Plot", CI_prob = 0.9, transformation_method = "rectified")
+print(gp_rect_plot)
+```
+
+### Log-Normal Process (shifting training data up so everything is positive). 
+```{r}
+# Add log-transformed responses to training and testing input data. 
+shift <- abs(min(train_data$outputs)) + 1
+train_data[["log_outputs"]] <- log(train_data[["outputs"]] + shift)
+train_data[c("log_outputs_normalized", "log_output_stats")] <- prep_GP_training_data(Y = train_data$log_outputs, normalize_Y = TRUE)[c("Y", "output_stats")]
+test_data[["log_outputs"]] <- log(test_data[["outputs"]] + shift)
+test_data[["log_outputs_normalized"]] <- normalize_output_data(test_data$log_outputs, output_stats = train_data$log_output_stats)
+
+# Fit log-normal process. 
+lnp <- fit_GP(train_data$inputs_scaled, train_data$log_outputs_normalized, "mlegp", "Gaussian")$fit
+
+# Predict at test locations. 
+lnp_pred <- predict_GP(test_data$inputs_scaled, lnp, "mlegp", denormalize_predictions = TRUE, output_stats = train_data$log_output_stats) 
+
+# Plot rectified GP.
+lnp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs + shift, train_data$inputs, train_data$outputs + shift, lnp_pred$mean, lnp_pred$var,
+                           xlab = "X", ylab = "Y", main_title = "LNP Plot", CI_prob = 0.9, transformation_method = "LNP")
+
+print(lnp_plot)
+```
+
+### Multiple Output Independent GP Testing using VSEM test case. 
+```{r}
+
+# VSEM data. 
+computer_model_data <- generate_vsem_test_case(1)
+
+# Prior. 
+theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+theta_prior_params[, "dist"] <- "Uniform"
+theta_prior_params[,"param1"] <- 0.4
+theta_prior_params[,"param2"] <- 0.6
+theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
+
+# Get design points. 
+N_train <- 5
+design_list <- get_input_output_design(N_train, theta_prior_params, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                                       computer_model_data$PAR_data, computer_model_data$output_vars, design_method = "LHS", transformation_method = "LNP")
+
+# Get test points. 
+N_test <- 301
+test_list <- get_input_output_design(N_test, theta_prior_params, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                                     computer_model_data$PAR_data, computer_model_data$output_vars, 
+                                     param_ranges = design_list$input_bounds, output_stats = design_list$output_stats, design_method = "grid", 
+                                     transformation_method = "LNP", log_output_stats = design_list$log_output_stats)
+
+# Fit GPs. 
+gp_fits <- fit_independent_GPs(design_list$inputs_scaled, design_list$log_outputs_normalized, "hetGP", "Gaussian")$fits
+
+# Predict with GPs. 
+gp_pred_list <- predict_independent_GPs(test_list$inputs_scaled, gp_fits, "hetGP", include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                        output_stats = design_list$log_output_stats)
+
+# Plot GPs. 
+for(j in seq_along(gp_pred_list)) {
+  gp_plot <- plot_gp_fit_1d(test_list$inputs, test_list$outputs[,j], design_list$inputs, design_list$outputs[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, log_scale = FALSE,
+                            xlab = "Parameter", ylab = "SSR", main_title = computer_model_data$output_vars[j], CI_prob = 0.9, transformation_method = "LNP")
+  print(gp_plot)
+}
+
+```
+
+# Sampling GPs
+
+#### Sample at input locations, not taking into account correlations so will not be smooth. 
+```{r}
+j <- 2
+gp_sample <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_method = "LNP")
+plot(test_list$inputs, gp_sample, type = "l")
+```
+
+#### Sample independent GPs at single input location
+```{r}
+input_loc_inx <- floor(nrow(test_list$inputs) / 2)
+print(paste0("Input location: ", test_list$inputs[input_loc_inx,1]))
+
+N_samples <- 10000
+samples <- matrix(nrow = N_samples, ncol = length(gp_pred_list))
+for(i in seq_len(N_samples)) {
+  samples[i,] <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = "LNP", idx_selector = input_loc_inx)
+}
+
+# Histograms
+for(j in seq_along(gp_pred_list)) {
+  print(hist(samples[,j], 50, main = paste0("Output #", j, " at input loc ", test_list$inputs[input_loc_inx,1])))
+}
+```
+
+
+
+
+
+
+
+

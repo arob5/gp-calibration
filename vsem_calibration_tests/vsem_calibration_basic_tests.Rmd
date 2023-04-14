@@ -11,8 +11,7 @@ The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that mod
 and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
 pools and Net Ecosystem Exchange (NEE). I represent the model mathematically as 
 $$f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}$$
-where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ as 
-described above or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
+where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ (NEE, 3 carbon pools) or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
 
 ## Statistical Model
 I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
@@ -21,7 +20,7 @@ $$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
 where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \mathbb{R}^{n \times p}$ collect all of the field data observations and 
 $\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply the likelihood
 $$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
-I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as statistical model used to perform calibration.
+I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as well as the statistical model used to perform calibration.
 
 
 ```{r setup, include=FALSE}
@@ -31,8 +30,11 @@ library(data.table)
 library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
+```
 
-set.seed(5)
+```{r}
+random_seed <- 5
+set.seed(random_seed)
 ```
 
 
@@ -42,13 +44,19 @@ N_days <- 1000
 
 # The covariance matrix between the outputs. Note that the NEE output of the
 # model VSEM() is scalesd by 1000, so the observation error magnitude should correspond 
-# to this scale. 
-Sig_eps <- diag(c(4.0, 4.0, 4.0, 4.0))
+# to this scale. In this basic example, we assume equal noise variance for each output.
+noise_var <- 4.0
+Sig_eps <- noise_var * diag(1, nrow = 4)
 rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
 
+# Assuming iid Inverse Gamma priors on each sig_eps_j
+sig_eps_prior_mean <- noise_var
+sig_eps_prior_sd <- 0.4
+
 # Names of parameters to calibrate.
 pars_cal <- c("KEXT")
+N_pars <- length(pars_cal)
 
 # Whether or not to fix Sig_eps at known value, or to treat as random and infer from data.  
 learn_lik_par <- FALSE
@@ -70,18 +78,21 @@ PAR <- VSEMcreatePAR(seq_len(N_days))
 # The "best" column of the reference parameters are used to generate the "true" 
 # output data. We will add noise to this data to simulate the field observations.
 ref_pars <- VSEMgetDefaults()
-data_ref <- as.data.table(VSEM(ref_pars$best, PAR))
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
 
 # Add observational noise; NEE is scaled by 1000. Fow now considering independent 
 # outputs, but can consider models that fill in the off-diagonal Sig_eps values
 # in the future. 
-data_ref[, NEE := NEE*1000]
+if("NEE" %in% output_vars) {
+  data_ref[, NEE := NEE*1000]
+}
 Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
 Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
 data_obs <- data_ref + Z %*% Lt
 
 # Index selector for calibration parameters
 pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal
 ```
 
 
@@ -143,17 +154,155 @@ legend(x = "bottomright",
        col = c("red", "blue")) 
 ```
 
-### Likelihood Plot
+
+# Priors
+
+## Calibration Parameters
 ```{r, echo = FALSE}
-k_ext_vals <- seq(ref_pars["KEXT", "lower"], ref_pars["KEXT", "upper"], length.out = 100)
-llik_vals <- vector(mode = "numeric", length = length(k_ext_vals))
-for(i in seq_along(llik_vals)) {
-  llik_vals[i] <- llik_Gaussian(k_ext_vals[i], Sig_eps, ref_pars, pars_cal_sel, output_vars, PAR, data_obs)
+ref_pars["KEXT", "dist"] <- "Uniform"
+ref_pars["KEXT", "param1"] <- 0.3
+ref_pars["KEXT", "param2"] <- 0.7
+theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
+print(theta_prior_params)
+```
+## Observation Covariance Matrix
+
+```{r, echo = FALSE}
+# Define inverse Gamma hyperparameters, in order to achieve mean and sd specified above
+inv_gamma_a <- 2 + (sig_eps_prior_mean / sig_eps_prior_sd)^2
+inv_gamma_b <- sig_eps_prior_mean + sig_eps_prior_mean^3 / sig_eps_prior_sd^2
+
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = rep(inv_gamma_a, N_outputs), 
+                             IG_scale = rep(inv_gamma_b, N_outputs))
+```
+
+Recall that the true noise variances $\sigma^2_{\epsilon_j}$ $j = 1, \dots, 4$ were all set to the value `r noise_var`. In this example, I define iid priors
+$$\sigma^2_{\epsilon_j} \overset{iid}{\sim} IG(a, b)$$
+where a = `r inv_gamma_a` and b = `r inv_gamma_b` which center the priors on the true values, with standard deviations `r sig_eps_prior_sd`. Note that this defines iid priors, but the 
+variances are not constrained to be equal across outputs. 
+
+# Likelihood, prior, and posterior plots
+
+```{r, echo = FALSE}
+k_ext_vals <- seq(theta_prior_params["KEXT", "param1"], theta_prior_params["KEXT", "param1"], length.out = 100)
+n_Sig_eps_prior_samp <- 10
+
+# Samples from Sig_eps prior
+Sig_eps_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = N_outputs)
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  Sig_eps_vals[j,] <- diag(sample_prior_Sig_eps(Sig_eps_prior_params))
 }
 
-plot(k_ext_vals, llik_vals, type = "l", xlab = "KEXT", ylab = "Unnormalized Log-Likelihood", main = "Log-Likelihood 1D Projection")
-abline(v = ref_pars["KEXT", "best"], col = "red")
+# Calibration parameter priors
+lprior_vals <- vector(mode = "numeric", length = length(k_ext_vals))
+
+# Likelihood and posterior evaluations at different values 
+llik_vals_true <- vector(mode = "numeric", length = length(k_ext_vals))
+log_post_vals_true <- vector(mode = "numeric", length = length(k_ext_vals))
+llik_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = length(k_ext_vals))
+log_post_vals <- matrix(nrow = n_Sig_eps_prior_samp, ncol = length(k_ext_vals))
+
+for(i in seq_along(k_ext_vals)) {
+  
+  # Run forward model at specific calibration parameter value
+  model_outputs <- run_VSEM(k_ext_vals[i], ref_pars, pars_cal_sel, PAR, output_vars)
+  model_errs <- data_obs[, ..output_vars] - model_outputs
+  
+  # Density evaluations using true value of Sig_eps.
+  llik_vals_true[i] <- llik_Gaussian_err(model_errs, Sig_eps)
+  lprior_vals[i] <- calc_lprior_theta(k_ext_vals[i], theta_prior_params)
+  log_post_vals_true[i] <- llik_vals_true[i] + lprior_vals[i]
+  
+  # Density evaluations at sampled values of Sig_eps. 
+  for(j in seq_len(n_Sig_eps_prior_samp)) {
+    llik_vals[j,i] <- llik_Gaussian_err(model_errs, diag(Sig_eps_vals[j,]))
+    log_post_vals[j,i] <- llik_vals[j,i] + lprior_vals[i]
+  }
+  
+}
 ```
+
+```{r}
+plot(k_ext_vals, exp(lprior_vals), type = "l", col = "red",  main = "Prior: KEXT")
+```
+
+```{r}
+rng_y <- range(llik_vals)
+plot(k_ext_vals, llik_vals_true, type = "l", col = "red", ylim = rng_y, main = "Unnormalized Log-Likelihood: KEXT")
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  lines(k_ext_vals, llik_vals[j,], type = "l", col = "gray")
+}
+abline(v = ref_pars["KEXT", "best"], col = "red", lty = "dashed")
+```
+
+
+
+```{r}
+rng_y <- range(log_post_vals)
+plot(k_ext_vals, log_post_vals_true, type = "l", col = "red", ylim = rng_y, main = "Unnormalized Log-Posterior: KEXT")
+for(j in seq_len(n_Sig_eps_prior_samp)) {
+  lines(k_ext_vals, log_post_vals[j,], type = "l", col = "gray")
+}
+abline(v = ref_pars["KEXT", "best"], col = "red", lty = "dashed")
+```
+
+# MCMC
+
+## Adaptive Metropolis-within-Gibbs
+I first consider an adaptive MWG sampler without any sort of model emulation. 
+
+```{r}
+# Parameters for MWG sampler
+learn_Sig_eps <- TRUE
+diag_cov <- TRUE
+N_mcmc <- 1249
+adapt_frequency <- 250
+adapt_min_scale <- 0.1
+accept_rate_target <- 0.3
+proposal_scale_decay <- 0.7
+proposal_scale_init <- 0.1
+```
+
+```{r}
+mwg_results <- mcmc_calibrate(par_ref = ref_pars, 
+                              par_cal_sel = pars_cal_sel, 
+                              data_obs = data_obs, 
+                              output_vars = output_vars, 
+                              PAR = PAR,
+                              theta_init = NA, 
+                              theta_prior_params = theta_prior_params, 
+                              learn_Sig_eps = TRUE, 
+                              Sig_eps_init = Sig_eps, 
+                              Sig_eps_prior_params = Sig_eps_prior_params, 
+                              diag_cov = TRUE, 
+                              N_mcmc = N_mcmc, 
+                              adapt_frequency = adapt_frequency, 
+                              adapt_min_scale = adapt_min_scale, 
+                              accept_rate_target = accept_rate_target, 
+                              proposal_scale_decay = proposal_scale_decay, 
+                              proposal_scale_init = proposal_scale_init)
+```
+
+### Trace Plots for Sig2_eps Variances
+```{r}
+# Plot Sig_eps trajectories
+par(mfrow=c(N_outputs, 1), mai = c(0.1, 1, 0.1, 1))
+for(j in seq_len(N_outputs)) {
+  plot(mwg_results$Sig_eps[200:N_mcmc,j], type = "l", ylab = output_vars[j])
+}
+```
+
+### Trace Plots for theta
+```{r}
+# Plot Sig_eps trajectories
+par(mfrow=c(N_pars, 1), mai = c(0.1, 1, 0.1, 1))
+for(j in seq_len(N_pars)) {
+  plot(mwg_results$theta[,j], type = "l", ylab = pars_cal[j])
+}
+```
+
+
 
 
 

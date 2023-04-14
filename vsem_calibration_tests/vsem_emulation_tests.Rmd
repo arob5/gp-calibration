@@ -1,0 +1,273 @@
+---
+title: "VSEM Emulation Tests"
+output: html_document
+date: '2023-01-23'
+---
+
+# Introduction
+
+## Ecosystem Model
+The Very Simple Ecosystem Model (VSEM) is a simplified vegetation model that models carbon dynamics between three pools (above-ground vegetation, below-ground vegetation, 
+and soil organic matter) with one forcing variable (PAR - photosynthetically active radiation). The model outputs time series for four output variables: the three carbon 
+pools and Net Ecosystem Exchange (NEE). I represent the model mathematically as 
+$$f: \mathcal{D} \subset \mathbb{R}^d \to \mathbb{R}^{n \times p}$$
+where $\theta \in \mathcal{D}$ denotes the calibration parameters, $n$ the length of the output time series, and $p$ the number of output variables. We can consider $p = 4$ (NEE, 3 carbon pools) or choose to focus on a subset of the outputs (e.g. just NEE). I utilize the notation $f(i, j, \theta) := [f(\theta)]_{ij}$ to refer to the scalar output at the $i^{th}$ time step of the $j^{th}$ output variable. 
+
+## Statistical Model and Likelihood Emulation
+
+## Likelihood Assumptions
+I simulate data by first simulating a PAR time series, running the forward model $f$ using the simulated PAR forcing data and some true fixed values $\theta^*$ of the calibration 
+parameters. I add Gaussian noise to the resulting outputs, resulting in the data-generating process
+$$y_{ij} = f(i, j, \theta) + \epsilon_{ij}$$
+where $y_{ij}$ denotes the simualted field data observation of the $j^{th}$ output variable at the $i^{th}$ time step. This document considers a basic independent Gaussian error structure, such that $\epsilon_{ij} \overset{ind}{\sim} N(0, \sigma^2_{\epsilon_j})$, allowing for the magnitude of the noise to be different across the different output variables. In other words, independence is assumed across time and outputs. Letting $Y \in \mathbb{R}^{n \times p}$ collect all of the field data observations and 
+$\Sigma_\epsilon := \text{diag}\{\sigma^2_{\epsilon_1}, \dots, \sigma^2_{\epsilon_p}\}$, these assumptions imply the likelihood
+$$p(Y|\theta, \Sigma_\epsilon) = \prod_{i = 1}^{n} \prod_{j = 1}^{p} N(y_{ij}|f(i, j, \theta), \sigma^2_{\epsilon_j})$$
+I assume a well-specified model throughout this document, so the above likelihood corresponds to the true data-generating process as well as the statistical model used in the emulation step. 
+
+## Likelihood Emulation
+With regard to the problem of MCMC-based parameter calibration, the model outputs $f(i, j, \theta)$ appear only as a function of the 
+likelihood $p(Y|\theta, \Sigma_\epsilon)$. Therefore, to reduce the dimensionality of the emulation problem, we may consider emulating the univariate lilkelihood 
+surface $p(Y|\theta, \Sigma_\epsilon)$ as a function of $\theta$. In fact, given this simple product-form of the likelihood we actually need only emulate a sufficient
+statistic of the likelihood. Indeed, the log-likelihood may be written as
+$$\log p(Y|\theta, \Sigma_\epsilon) = C - \frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{1}{\sigma^2_{\epsilon_j}}\sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2 \right]$$
+where $C$ is a constant. We can then define $T_j(\theta) := \sum_{i = 1}^{n}(y_{ij} - f(i, j, \theta))^2$, the squared $\ell_2$ error for the $j^{\text{th}}$ output, viewed as a function of $\theta$ (though also implicitly dependent on $Y_j$). The unnormalized log-likelihod is thus given by 
+$$\tilde{\ell}_Y(\theta, \Sigma_\epsilon) := -\frac{1}{2}\sum_{j = 1}^{p}\left[n\log(\sigma^2_{\epsilon_j}) + \frac{T_j(\theta)}{\sigma^2_{\epsilon_j}}\right]$$
+Conveniently, $T_j(\theta)$ is not a function of $\Sigma_\epsilon$. Thus, we may emulate $\tilde{\ell}_Y(\theta, \Sigma_\epsilon)$ by independently emulating $T_1(\theta), \dots, T_p(\theta)$. Therefore, during a Metropolis-within-Gibbs MCMC calibration scheme, an approximate likelihood evaluation may be derived from 
+the emulators for the $T_j$, without needing to emulate the likelihood as a function of $\Sigma_\epsilon$ as well. 
+
+## Gaussian Process Emulation Details
+Given the above derivations, we can fit $p$ independent GP emulators, one for each output. However, note that the $T_j$ map to the non-negative real numbers, while
+a GP is in general not constrained to yield non-negative predictions. We therefore instead emulate $L_j(\theta) := \log T_j(\theta)$. The emulation model thus becomes
+$$L_j(\cdot) \sim \mathcal{GP}(\mu_j, k_j(\cdot, \cdot))$$
+where each output is emulated independently. We assume constant GP means $\mu_j$ and exponentiated quadratic kernels
+$$k_j(\theta, \theta^\prime) = \alpha_j^2 \exp\left\{-\frac{1}{2}\sum_{r = 1}^{d} \left(\frac{\theta_r - \theta_r^\prime}{(l_{j})_r}\right)^2 \right\} + \gamma_j^2\delta_{\theta, \theta^\prime}$$
+The structure of the kernel is the same for each output variable, but the estimation of the kernel parameters (marginal variance $\alpha_j^2$, lengthscales 
+$(\ell_j)_{r = 1}^{d}$, and nugget variance $\gamma_j^2$) is performed via MLE independently for each output. Note that the $L_j$ are deterministic functions, 
+so we will typically fix the $\gamma_j^2$ to a small value for numerical stability, rather than estimating its value from data. The notation $\delta_{\theta, \theta^\prime}$ is meant to indicate that $\delta$ returns one only if the index of two inputs is the same (not the value of the inputs), meaning that 
+$\gamma_j^2$ is only added to the diagonal of the resulting kernel matrix. The specific parameterization of
+the exponentiated quadratic kernel depends on the specific GP package used. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+```
+
+
+```{r run_params, include = FALSE}
+#
+# Model and data generation settings
+#
+
+
+# Number days in time series 
+N_days <- 1000
+
+# The covariance matrix between the outputs. Note that the NEE output of the
+# model VSEM() is scalesd by 1000, so the observation error magnitude should correspond 
+# to this scale. In this basic example, we assume equal noise variance for each output.
+noise_var <- 4.0
+Sig_eps <- noise_var * diag(1, nrow = 4)
+rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+
+# Assuming iid Inverse Gamma priors on each sig_eps_j
+sig_eps_prior_mean <- noise_var
+sig_eps_prior_sd <- 0.4
+
+# Names of parameters to calibrate.
+pars_cal <- c("KEXT")
+N_pars <- length(pars_cal)
+
+# Identify which outputs to constrain in the model. Each constrained output factors 
+# into the likelihood. Choices are "NEE" and the three carbon pools "Cv", "Cs", and "CR".
+output_vars <- c("NEE", "Cv", "Cs", "CR")
+N_outputs <- length(output_vars)
+```
+
+```{r, echo = FALSE}
+#
+# GP Emulator Settings
+#
+
+emulator_settings <- data.frame(gp_lib = c("mlegp", "mlegp", "hetGP", "hetGP"), 
+                                target = c("SSR", "log_SSR", "SSR", "log_SSR"), 
+                                kernel = "Gaussian", 
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+                                
+print(emulator_settings)
+```
+
+
+# Model Parameters and Synthetic Data Generation
+
+```{r}
+random_seed <- 5
+set.seed(random_seed)
+```
+
+```{r data_gen, include = FALSE}
+# Create time series of Phosynthetically Active Radiation (PAR) which is the forcing variable
+# for the VSEM model. 
+PAR <- VSEMcreatePAR(seq_len(N_days))
+
+# The "best" column of the reference parameters are used to generate the "true" 
+# output data. We will add noise to this data to simulate the field observations.
+ref_pars <- VSEMgetDefaults()
+
+# Index selector for calibration parameters
+pars_cal_sel <- which(rownames(ref_pars) %in% pars_cal)
+ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal
+
+data_ref <- as.data.table(VSEM(ref_pars$best, PAR))[, ..output_vars]
+data_ref <- run_VSEM(ref_pars[pars_cal_sel, "best"], ref_pars, pars_cal_sel, PAR, output_vars)
+
+# Add observational noise. For now considering independent 
+# outputs, but can consider models that fill in the off-diagonal Sig_eps values
+# in the future. 
+Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
+Z <- matrix(rnorm(N_days*N_outputs), N_days, N_outputs) 
+data_obs <- data_ref + Z %*% Lt
+
+```
+
+## True Parameters
+
+### Calibration Parameters ($\theta$)
+```{r true_params, echo = FALSE}
+print(ref_pars)
+```
+
+### Likelihood Parameters ($\Sigma_\epsilon$)
+```{r true_lik_params, echo = FALSE}
+print(Sig_eps)
+```
+
+# Runing Model at Design Points
+
+## Priors on Calibration Parameters
+```{r, echo = FALSE}
+ref_pars[pars_cal_sel, "dist"] <- "Uniform"
+ref_pars[pars_cal_sel, "param1"] <- ref_pars[pars_cal_sel, "lower"]
+ref_pars[pars_cal_sel, "param2"] <- ref_pars[pars_cal_sel, "upper"]
+
+theta_prior_params <- ref_pars[pars_cal_sel, c("dist", "param1", "param2")]
+print(theta_prior_params)
+```
+
+## Sample Design Points
+```{r}
+N_design_points <- 10
+design_alg <- "LHS"
+N_test <- 1000
+
+print(paste0("Design algorithm: ", design_alg))
+print(paste0("Number of design points: ", N_design_points))
+
+```
+
+## TEST
+Testing the CR output, which was causing trouble before. 
+```{r}
+
+# Design and test points
+train_test_data <- get_train_test_data(N_design_points, N_test, theta_prior_params, joint = TRUE, extrapolate = FALSE, ref_pars, 
+                                       pars_cal_sel, data_obs, PAR, output_vars = "CR", scale_X = TRUE, normalize_Y = TRUE, log_SSR = TRUE)
+
+# Fit GP on SSR and log(SSR)
+gp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")$fit
+lnp_fit <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$log_Y_train_preprocessed, "hetGP", "Gaussian")$fit
+
+# Predict with GPs
+gp_pred <- predict_GP(train_test_data$X_test_preprocessed, gp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                      output_stats = train_test_data$output_stats, exponentiate_predictions = FALSE)
+lnp_pred <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                       output_stats = train_test_data$log_output_stats, exponentiate_predictions = TRUE)
+lnp_pred_log_scale <- predict_GP(train_test_data$X_test_preprocessed, lnp_fit, "hetGP", cov_mat = FALSE, denormalize_predictions = TRUE,
+                                 output_stats = train_test_data$log_output_stats, exponentiate_predictions = FALSE)
+```
+
+
+### Modeling SSR
+```{r}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, gp_pred$mean, gp_pred$sd2)
+```
+
+### Modeling log(SSR) (transformed to original scale)
+```{r}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$Y_test, train_test_data$X_train, train_test_data$Y_train, lnp_pred$mean, lnp_pred$sd2)
+```
+
+### Modeling log(SSR) (plot on log scale)
+```{r}
+plot_gp_fit_1d(train_test_data$X_test, train_test_data$log_Y_test, train_test_data$X_train, train_test_data$log_Y_train, lnp_pred_log_scale$mean, lnp_pred_log_scale$sd2)
+```
+
+
+
+
+
+
+
+## Fit GPs
+```{r}
+gp_fit_list <- fit_independent_GPs(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed, "hetGP", "Gaussian")
+# gp_fit_list <- fit_GP(train_test_data$X_train_preprocessed, train_test_data$Y_train_preprocessed[,1,drop = FALSE], "hetGP", "Gaussian")
+```
+
+## Predict
+```{r}
+gp_pred_list <- predict_independent_GPs(train_test_data$X_test_preprocessed, gp_fit_list$fits, "hetGP", 
+                                        cov_mat = FALSE, transform_predictions = TRUE, train_test_data$output_stats)
+```
+
+## Evaluate predictions
+```{r}
+gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
+```
+
+
+```{r}
+N_iter <- 1
+N_test_points <- 20
+
+emulator_test_results <- evaluate_GP_emulators(emulator_settings = emulator_settings_2, 
+                                               N_iter = N_iter, 
+                                               N_design_points = N_design_points, 
+                                               N_test_points = N_test_points, 
+                                               theta_prior_params = theta_prior_params, 
+                                               ref_pars = ref_pars, 
+                                               pars_cal_sel = pars_cal_sel, 
+                                               data_obs = data_obs, 
+                                               PAR = PAR, 
+                                               output_vars = output_vars, 
+                                               joint = TRUE, 
+                                               extrapolate = FALSE)
+```
+
+
+## Prep test data
+```{r}
+model_outputs_list_test <- lapply(X_test, function(theta) run_VSEM(theta, ref_pars, pars_cal_sel, PAR, output_vars))
+SSR_test <- calc_SSR(data_obs, model_outputs_list_test)
+SSR_pred <- normalize_output_data(matrix(pred_list$mean, ncol = 1), GP_data_preprocessed$output_stats[,1,drop=FALSE], inverse = TRUE)
+```
+
+## Plot Results
+```{r}
+x_order <- order(X_test[,1])
+plot(X_test[,1], SSR_test[,1], col = "red")
+points(X_test[,1], SSR_pred[,1], col = "blue")
+points(X_train[,1], SSR[,1], col = "green")
+```
+
+
+

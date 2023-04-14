@@ -55,6 +55,14 @@
         "qgam"
       ]
     },
+    "DiceDesign": {
+      "Package": "DiceDesign",
+      "Version": "1.9",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "b7b812ae4484d4bbf0a0baac72e8fc01",
+      "Requirements": []
+    },
     "IDPmisc": {
       "Package": "IDPmisc",
       "Version": "1.1.20",
@@ -440,6 +448,18 @@
         "sandwich"
       ]
     },
+    "hetGP": {
+      "Package": "hetGP",
+      "Version": "1.1.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "33720ed09c5a2813ad0c906e8ad9fa72",
+      "Requirements": [
+        "DiceDesign",
+        "MASS",
+        "Rcpp"
+      ]
+    },
     "highr": {
       "Package": "highr",
       "Version": "0.9",
@@ -543,6 +563,16 @@
       "Hash": "b64cdbb2b340437c4ee047a1f4c4377b",
       "Requirements": []
     },
+    "lhs": {
+      "Package": "lhs",
+      "Version": "1.1.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "64645ac3590e26c258a281560d7c7cf7",
+      "Requirements": [
+        "Rcpp"
+      ]
+    },
     "lifecycle": {
       "Package": "lifecycle",
       "Version": "1.0.1",
@@ -618,6 +648,14 @@
       "Requirements": [
         "Rcpp"
       ]
+    },
+    "mlegp": {
+      "Package": "mlegp",
+      "Version": "3.1.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "c6938a194d407a74052b2859d4977e67",
+      "Requirements": []
     },
     "msm": {
       "Package": "msm",
@@ -1024,6 +1062,14 @@
         "gmm",
         "mvtnorm"
       ]
+    },
+    "truncnorm": {
+      "Package": "truncnorm",
+      "Version": "1.0-8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "cc8b5bfa01c930ccb56d3051e515fbd8",
+      "Requirements": []
     },
     "utf8": {
       "Package": "utf8",
