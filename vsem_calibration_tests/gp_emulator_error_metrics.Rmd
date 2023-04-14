@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r, echo = FALSE, include = FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 library(lhs)
 library(hetGP)
@@ -16,7 +16,7 @@ library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
-source("mcmc_calibration_functions.r")
+# source("mcmc_calibration_functions.r")
 ```
 
 
@@ -187,10 +187,33 @@ In this case, the normalizing constant $\hat{Z}$ changes for each model under co
 
 ## Other Statistical Distances
 One commonly used metric in the Bayesian inverse problem literature is the Hellinger distance. Let $\hat{\pi}(\theta)$ be a density that is trying to approximate $\pi(\theta)$. 
-$$ H(\pi, \hat{\pi}) := \left[\int_\theta\left(\sqrt{\frac{\pi(\theta)}{Z}} - \sqrt{\frac{\hat{\pi}(\theta)}{\hat{Z}}}\right)^{2} \pi(d\theta)\right]^{1/2}$$
-As an illustration the integral is with respect to the true posterior, but we could also consider integrating with respect to $\hat{\pi}$ or something else (e.g. Lebesgue measure). The issue here is that the normalizing constants are required to compute the Hellinger distance, which are typically unavailable to us and difficult to estimate. Dealing with this issue is a challenging problem in itself, but I wanted to present this here to keep in mind, as a lot of the theory in the literature establishes bounds in terms of Hellinger distance. The dissertation "Quantifying Model Error in Bayesian Parameter Estimation" listed in the references is an excellent resource for looking deeper into this issues. 
+$$ H(\pi, \hat{\pi}) := \left[\int_\theta\left(\sqrt{\frac{\pi(\theta)}{Z}} - \sqrt{\frac{\hat{\pi}(\theta)}{\hat{Z}}}\right)^{2} d \theta \right]^{1/2}$$
+As an illustration the integral is with respect to Lebesgue measure, but we could also consider integrating with respect to $\hat{\pi}$ or the true posterior. The issue here is that the normalizing constants are required to compute the Hellinger distance, which are typically unavailable to us and difficult to estimate. Dealing with this issue is a challenging problem in itself, but I wanted to present this here to keep in mind, as a lot of the theory in the literature establishes bounds in terms of Hellinger distance. The dissertation "Quantifying Model Error in Bayesian Parameter Estimation" listed in the references is an excellent resource for looking deeper into this issues. 
 
+# Generalizing Error Computations when the Predictive Density is Not Known
+In the previous section I showed that the distribution of the random approximation $\pi^*(\theta)$ is Gaussian and available in closed-form. However, this relied on the assumption that the predictive distributions of the squared L2 errors were GPs. In the current applications, this will typically not be the case. The predictive distributions of the emulators may be rectified GPs, truncated GPs, or log-normal processes to account for the non-negativity constraint. Therefore, in this section I abandon analytical results and only assume that I have access to $\pi^*(\theta)$ via samples; that is, the density $p_{\pi^*(\theta)}$ is not known. Recall that the ultimate goal is to approximate the integral 
+$$\int \log p_{\pi^*(\theta)}(\pi(\theta)) \pi(\theta) d\theta$$
+There are two layers of intractibility here: 1.) the log density is not known, and 2.) even if it were known, the integral could not be evaluated in closed-form. To address the latter, I consider a Monte Carlo approximation of the integral. Let $\theta_1, \dots, \theta_N$ be MCMC samples drawn from the true posterior $\pi$. For notational convenience, 
+let $\pi_i := \pi(\theta_i)$ denote the posterior density evaluated at the MCMC samples. Supposing for the moment that 
+$p_{\pi^*(\theta)}$ is known, we then obtain the estimator
+$$\int \log p_{\pi^*(\theta)}(\pi(\theta)) \pi(\theta) d\theta \approx \frac{1}{N} \sum_{i = 1}^{N} \log p_{\pi_i^*}(\pi_i)$$
+where I have also used the notation $\pi_i^* := \pi^*(\theta_i)$ to refer to the predictive distribution at location $\theta_i$. The next task is to approximate 
+$\log p_{\pi_i^*}(\pi_i)$. This represents $N$ separate univariate (log) density estimation problems ($\pi_i \in \mathbb{R}$), since the predictive density is different at each input $\theta_i$. Moreover, 
+each of these density estimation problems requires estimating the density at a single point, $\pi_i$. Considering employing a vanilla KDE approach, for each $i$ we can 
+draw samples 
+$$ \pi_i^{(1)}, \dots, \pi_i^{(M)} \overset{iid}{\sim} \pi^*_i$$
+and then estimate 
+$$ p_{\pi_i^*}(\pi_i) \approx \hat{p}_{\pi_i^*}(\pi_i) := \frac{1}{Mh_i} \sum_{j = 1}^{M} K\left(\frac{\pi_i^{(j)} - \pi_i}{h_i}\right)$$
+where $K$ is a smoothing kernel with bandwidth $h_i$. The simplest approach to deriving the log-density estimator would then be to take the log of the density estimate, $\log \hat{p}_{\pi_i^*}(\pi_i)$. However, as discussed in *Bandwidth selection for kernel log-density estimation* (Hazelton and Cox, 2016) this may not the optimal approach. The resulting estimator might not even have finite moments, which can stem from the density estimator assuming values close to 0. However, it seems that their interest is mainly in proving theoretical results. The estimator they consider $\log\left(\hat{p}_{\pi_i^*}(\pi_i) + e^{-M}\right)$ is useful theoretically as it guarantees the estimator has finite moments, but will have almost no practical effect when $M$ is large. A second concern is that KDE may place probability mass below zero, even though we know $\pi_i$ is non-negative. There is a package in R called *logKDE* which deals with this situation by constraining the KDE to be non-negative. These details aside, the Monte Carlo estimate of the error integral now looks like
+$$ \int \log p_{\pi^*(\theta)}(\pi(\theta)) \pi(\theta) d\theta \approx \frac{1}{N} \sum_{i = 1}^{N} \log \hat{p}_{\pi_i^*}(\pi_i) = \frac{1}{N} \sum_{i = 1}^{N} \log\left[\frac{1}{Mh_i} \sum_{j = 1}^{M} K\left(\frac{\pi_i^{(j)} - \pi_i}{h_i}\right)\right]$$
+I briefly note a potential alternative log density estimation approach, as described in *The Gaussian Process Density Sampler* (Murray et al, 2008). They utilize a Bayesian GP approach and place a GP prior on the log-density. Since all we need in this setting is the log-density then this approach would be simpler here than in their paper, since they are ultimately interested in a density estimate. This is certainly more involved than the KDE approach which has readily available software, but it could be interesting. 
 
+Finally, I note that this approach of first sampling the $\theta_i \sim \pi$, then for each $i$ sampling the $\pi_i^{(j)} \sim \pi_i^*$ can also be used to consider alternative measures of error. For example, we could consider approximating something like, 
+$$ \int \mathbb{E}_{\pi^*}|\pi^*(\theta) - \pi(\theta)| \pi(\theta) d\theta = \int \int |\hat{\pi}(\theta) - \pi(\theta)| p_{\pi^*(\theta)}(\hat{\pi}(\theta))\pi(\theta) d\theta$$
+by drawing samples $(\theta_i, \pi_i) \sim p_{\pi^*(\theta)}(\hat{\pi}(\theta))\pi(\theta)$ and then considering the Monte Carlo approximation 
+$$ \frac{1}{N} \sum_{i = 1}^{N} |\pi_i - \pi(\theta_i)|$$
+
+<!-- 
 
 # Numerical Tests
 
@@ -445,6 +468,7 @@ Now the squared deviation is penalized more when the predictive variance is smal
 Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
 
 
+ --> 
 
 
 

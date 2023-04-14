@@ -286,7 +286,8 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
 }
 
 
-run_VSEM <- function(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = c("NEE", "Cv", "Cs", "CR")) {
+run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
+                     computer_model_data = NULL) {
   # Runs the VSEM model using the specified parameter settings, thus returning the outputs of the forward model. 
   # If multiple input parameters are passed, then the model is run at each input and the results are returned in a 
   # list, one for each input. If a single input parameter is passed, this function reduces to `run_VSEM_single_input()`.
@@ -294,15 +295,17 @@ run_VSEM <- function(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = c
   # Args:
   #    theta_vals: matrix of dimension M x d, the values of calibration parameters used to run the model. Each row is 
   #                a setting in the d-dimensional space of calibration parameters. 
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
+  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "true_value". Parameters that are fixed at nominal 
   #             values (not calibrated) are set to their values given in the "true_value" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
+  #    pars_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
   #                 parameters that will be calibrated. 
   #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
   #              term in VSEM. 
   #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
+  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
+  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #    If run at multiple input points (i.e. `theta_vals` has M > 1 rows) then a list of M matrices as returned, where each 
@@ -310,36 +313,48 @@ run_VSEM <- function(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = c
   #    is returned not in a list. 
   
   if(isTRUE(nrow(theta_vals) > 1)) {
-    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, par_ref, par_cal_sel, PAR_data, output_vars)))
+    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data)))
   } else {
-    return(run_VSEM_single_input(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars))
+    return(run_VSEM_single_input(theta_vals, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data))
   }
   
 }
 
 
-run_VSEM_single_input <- function(par_val, par_ref, par_cal_sel, PAR_data, output_vars = c("NEE", "Cv", "Cs", "CR")) {
-  # Runs the VSEM model using specified parameter setting, returning the outputs of the model. 
+run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
+                                  computer_model_data = NULL) {
+  # Runs the VSEM model using specified parameter setting, returning the outputs of the model. Can either pass in the necessary data 
+  # to run the forward model as individual arguments (par_ref, par_cal_sel, PAR_data, output_vars), or can pass in a list `computer_model_data`
+  # will all of these arguments are named elements. 
   #
   # Args:
-  #    theta: numeric vector, values of calibration parameters used to run the model. 
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
+  #    par_val: numeric vector, values of calibration parameters used to run the model. 
+  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "true_value". Parameters that are fixed at nominal 
   #             values (not calibrated) are set to their values given in the "true_value" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
+  #    pars_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
   #                 parameters that will be calibrated. 
   #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
   #         term in VSEM. 
   #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
+  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
+  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #   matrix of dimensions n x p where n is the length of the time series and p is the number
   #   of output variables. 
-
+  
+  if(!is.null(computer_model_data)) {
+    ref_pars <- computer_model_data$ref_pars
+    pars_cal_sel <- computer_model_data$pars_cal_sel
+    PAR_data <- computer_model_data$PAR_data
+    output_vars <- computer_model_data$output_vars
+  }
+  
   # Parameters not calibrated are fixed at default values
-  theta <- par_ref$true_value
-  theta[par_cal_sel] <- par_val
+  theta <- ref_pars$true_value
+  theta[pars_cal_sel] <- par_val
   
   # Run forward model, re-scale NEE.
   VSEM_output <- as.matrix(VSEM(theta, PAR_data))
@@ -436,7 +451,6 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
 }
 
 
-# TODO: update this; I believe data_obs should now be treated as a matrix
 mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
                            theta_init = NA, theta_prior_params, 
                            learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = list(), diag_cov = FALSE, 
@@ -599,6 +613,52 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 }
 
 
+# emulator_info: list with "gp_fits", "gp_output_stats", "emulator_settings", and "gp_input_bounds"
+mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prior_params, 
+                                  theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
+                                  N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                  proposal_scale_decay = 0.7, proposal_scale_init = 0.1) {
+  
+  # Number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Matrices to store MCMC samples. 
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(Sig_eps_samp) <- computer_model_data$output_vars
+
+  # Set initial conditions.
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+  if(learn_Sig_eps) {
+    if(is.null(Sig_eps_init)) {
+      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  Sig_eps_samp[1,] <- diag(Sig_eps_init)
+
+  Sig_eps_curr <- Sig_eps_init
+  SSR_curr <- calc_SSR(computer_model_data$data_obs, run_VSEM_single_input(theta_init, computer_model_data = computer_model_data))
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance
+  Cov_prop <- diag(proposal_scale_init, nrow = d)
+  log_scale_prop <- 0
+  L_prop <- t(chol(Cov_prop))
+  accept_count <- 0
+  
+  
+  
+}
+
+
 sample_prior_theta <- function(theta_prior_params) {
   # Return sample from prior distribution on the calibration parameters (theta). 
   #
@@ -626,7 +686,7 @@ sample_prior_theta <- function(theta_prior_params) {
 
 
 sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
-  # Returns sample from prior distribution on the p x p observation covariance matrix Sig_eps
+  # Returns sample from prior distribution on the p x p observation covariance matrix Sig_eps.
   #
   # Args:
   #    Sig_eps_prior_params: list, must contain element named "dist" specifying the prior distribution. Current accepted values are 
@@ -653,40 +713,45 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
 }
 
 
-sample_cond_post_Sig_eps <- function(model_errs, Sig_eps_prior_params, n) {
+sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs) {
   # Return sample of the observation covariance matrix Sig_eps, drawn from the conditional  
   # posterior p(Sig_eps|theta, Y). Under the model assumptions, this conditional posterior 
   # has an inverse Wishart or Inverse Gamma product distribution. This function does not explicitly take theta as an 
   # argument; rather, it assumes the forward model f(theta) has already been run and 
-  # the error matrix Y - f(theta) is provided by the argument `model_errs`.
+  # the error matrix Y - f(theta) is provided by the argument `model_errs`, or alternatively the sum of squared errors 
+  # are provided in the Inverse Gamma case. 
   #
   # Args:
-  #     model_errs: matrix of dimensions n x p, where n = number observations in time 
-  #                 series and p = number output variables. This is the model error matrix
-  #                 Y - f(theta). 
+  #    model_errs: matrix of dimensions n x p, where n = number observations in time series and p = number output variables.
+  #                This is the model error matrix Y - f(theta). Can be null for inverse gamma prior, in which case `SSR` must be provided. 
+  #    SSR: numeric(), vector of length equal to the number of outputs p, containing the squared L2 errors for each output. This is only 
+  #         used in the case of inverse gamma prior. If NULL, `model_errs` must be provided instead. 
   #    Sig_eps_prior_params: list, must contain element named "dist" specifying the prior distribution. Current accepted values are 
   #                          "IW" (Inverse Wishart) or "IG" (independent Inverse Gamma priors). Depending on value of "dist", 
   #                          must also contain either either 1.) names "scale_matrix" and "dof" 
   #                          that are the arguments of the Inverse Wishart distribution, or 2.) names "IG_shape" and "IG_scale" which 
   #                          each correspond to p-length vectors storing the parameters for the independent Inverse Gamma priors on each
   #                          variance parameter. Note that dist "IG" constrains Sig_eps to be diagonal, while "IW" does not. 
-  #    n: The number of observations in Y (i.e. the length of the time series). Should 
-  #       equal the number of rows of `model_errs`.
+  #    n_obs: numeric(), vector of length equal to the number of outputs p. The number of observations for each output. 
   #
   # Returns:
   #    matrix, p x p positive definite matrix sampled from the prior distribution p(Sig_eps|theta, Y).
   
   if(Sig_eps_prior_params$dist == "IW") {
+    stop("Need to update IW prior for case where there are missing observations.")
     inv_wishart_scale <- crossprod(model_errs_curr) + Sig_eps_prior_params$scale_matrix
     inv_wishart_dof <- n + Sig_eps_prior_params$dof
     return(LaplacesDemon::rinvwishart(nu = inv_wisharat_dof, S = inv_wishart_scale))
   } else if(Sig_eps_prior_params$dist == "IG") {
-    n <- nrow(model_errs)
-    p <- ncol(model_errs)
-    output_l2_errs <- colSums(model_errs^2)
+
+    if(is.null(SSR)) {
+      SSR <- colSums(model_errs^2)
+    }
+    
+    p <- length(n_obs)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = 0.5*n + Sig_eps_prior_params$IG_shape[j], scale = 0.5*output_l2_errs[j] + Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], scale = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
     }
     return(diag(sig2_eps_vars))
   }
