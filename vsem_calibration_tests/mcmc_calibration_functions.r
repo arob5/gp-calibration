@@ -541,6 +541,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   
   Sig_eps_curr <- Sig_eps_init
   model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars) # SSR here instead? 
+  # SSR_curr <- calc_SSR(computer_model_data$data_obs, run_VSEM_single_input(theta_init, computer_model_data = computer_model_data)) # TODO: change to this? maybe still need model_errs for non-diag cov case. 
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -613,7 +614,9 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 }
 
 
-# emulator_info: list with "gp_fits", "gp_output_stats", "emulator_settings", and "gp_input_bounds"
+# emulator_info: list with "gp_fits", "gp_output_stats", "settings", and "gp_input_bounds"
+# TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
+# on the correct scale (e.g. it should be on log scale for LNP). 
 mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prior_params, 
                                   theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
                                   N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
@@ -644,8 +647,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
   theta_samp[1,] <- theta_init
   Sig_eps_samp[1,] <- diag(Sig_eps_init)
 
-  Sig_eps_curr <- Sig_eps_init
-  SSR_curr <- calc_SSR(computer_model_data$data_obs, run_VSEM_single_input(theta_init, computer_model_data = computer_model_data))
+  Sig_eps_curr <- Sig_eps_ini
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -654,7 +656,84 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
   
+  for(itr in seq(2, N_mcmc)) {
+    
+    #
+    # Metropolis step for theta
+    #
+    
+    # Adapt proposal covariance matrix and scaling term
+    if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
+      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE],
+      #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
+      if(accept_count == 0) {
+        Cov_prop <- adapt_min_scale * Cov_prop
+      } else {
+        Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
+      }
+      L_prop <- t(chol(Cov_prop))
+      accept_count <- 0
+    }
+    
+    # theta proposals
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
+    
+    # Approximate SSR by sampling from GP. 
+    thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
+    gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                            gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                            output_stats = emulator_info$output_stats)
+    SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method)
+    
+    # Accept-Reject step. 
+    lpost_theta_curr <- calc_lpost_theta_product_lik(lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,], vars_obs = diag(Sig_eps_curr),
+                                                     n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE) 
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(SSR = SSR_samples[2,], vars_obs = diag(Sig_eps_curr),
+                                                          n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE,
+                                                          theta_prior_params = theta_prior_params, return_list = TRUE) 
+    alpha <- min(1.0, exp(log_theta_post_prop_list$lpost - lpost_theta_curr))
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lpost_theta_prop_list$lprior
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Accept-Reject Step
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    log_theta_post_curr <- llik_curr + lprior_theta_curr
+    log_theta_post_prop <- llik_prop + lprior_theta_prop
+    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lprior_theta_prop
+      model_errs_curr <- model_errs_prop
+      accept_count <- accept_count + 1 
+      pred_idx_curr <- 2
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+      pred_idx_curr <- 1
+    }
+    
+    # Adapt scaling term for proposal
+    log_scale_prop <- log_scale_prop + (1 / itr^proposal_scale_decay) * (alpha - accept_rate_target)
+    
+    #
+    # Gibbs step for Sig_eps
+    #
+    
+    if(learn_Sig_eps) {
+      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, idx_selector = pred_idx_curr)
+      Sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params, n_obs = emulator_info$n_obs)
+      Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
+    } else {
+      Sig_eps_samp[itr,] <- Sig_eps_init
+    }
+    
+  }
   
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
   
 }
 
