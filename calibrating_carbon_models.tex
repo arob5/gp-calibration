@@ -445,9 +445,17 @@ For notational convenience, let $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \
 so we can obtain $p(\Sigma|\theta, Y)$ by dropping terms without $\Sigma$-dependence in the full posterior. To this end, consider 
 \begin{align*}
 p(Y|\theta, \Sigma)p(\Sigma|\theta) &= \prod_{j = 1}^{p} \mathcal{N}_{N_j}(Y_j|f_j(\theta), \sigma_j^2 I_{N_j}) \cdot \prod_{j = 1}^{p} \mathcal{IG}(\sigma_j^2|a_j, b_j) \\
-						      &= \prod_{j = 1}^{p} \prod_{i = 1}^{N_j} \left(2\pi \sigma_j^2\right)^{1/2} \exp\left(-\frac{1}{2\sigma_j^2}(y_{ij} - f_{ij}(\theta))^2 \right) \cdot \\
-						      &\qquad \prod_{j = 1}^{p} \frac{b_j^{a_j}}{\Gamma(a_j)} \left(\sigma_j^2\right)^{-a_j - 1} \exp\left(\frac{b_j}{-\sigma_j^2}\right)
-\end{align*}	
+						      &= \prod_{j = 1}^{p} \prod_{i = 1}^{N_j} \left(2\pi \sigma_j^2\right)^{-1/2} \exp\left(-\frac{1}{2\sigma_j^2}(y_{ij} - f_{ij}(\theta))^2 \right) \cdot \\
+						      &\qquad \prod_{j = 1}^{p} \frac{b_j^{a_j}}{\Gamma(a_j)} \left(\sigma_j^2\right)^{-a_j - 1} \exp\left(\frac{b_j}{-\sigma_j^2}\right) \\
+						      &\propto \left[\prod_{j = 1}^{p} \left(\frac{1}{\sigma_j^2}\right)^{N_j/2}\right] \exp\left(-\frac{1}{2\sigma_j^2} \sum_{i = 1}^{N_j} (y_{ij} - f_{ij}(\theta))^2 \right) \cdot \\
+						      &\qquad \left[\prod_{j = 1}^{p} \left(\frac{1}{\sigma_j^2}\right)^{a_j + 1} \right] \exp\left(-\sum_{j = 1}^{p} \frac{b_j}{\sigma_j^2} \right) \\
+						      &=\prod_{j = 1}^{p} \left[\left(\frac{1}{\sigma_j^2}\right)^{a_j + \frac{N_j}{2} + 1} \exp\left(-\frac{T_j(\theta)}{2\sigma_j^2}\right) \exp\left(-\frac{b_j}{\sigma_j^2}\right)\right] \\
+						      &= \prod_{j = 1}^{p} \left[\left(\frac{1}{\sigma_j^2}\right)^{a_j + \frac{N_j}{2} + 1} \right]\exp\left(-\frac{\frac{T_j(\theta)}{2} + b_j}{\sigma_j^2} \right) \\
+						      &\propto \prod_{j = 1}^{p} \mathcal{IG}\left(\sigma_j^2\bigg|a_j + \frac{N_j}{2}, b_j + \frac{T_j(\theta)}{2} \right)
+\end{align*}
+Recall that 
+\[T_j(\theta) := \sum_{i = 1}^{N_j} (y_{ij} - f_{ij}(\theta))^2\]
+denotes the sum of squared errors when the forward model is run with calibration input $\theta$. Thus, we see that the conditional posterior for $\theta$ is conjugate, retaining the product inverse gamma form. 
 
 
 
