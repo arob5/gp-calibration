@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r, echo = FALSE, include = FALSE}
-knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
 
 library(lhs)
 library(hetGP)
@@ -16,7 +16,7 @@ library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
-# source("mcmc_calibration_functions.r")
+source("mcmc_calibration_functions.r")
 ```
 
 
@@ -213,23 +213,18 @@ $$ \int \mathbb{E}_{\pi^*}|\pi^*(\theta) - \pi(\theta)| \pi(\theta) d\theta = \i
 by drawing samples $(\theta_i, \pi_i) \sim p_{\pi^*(\theta)}(\hat{\pi}(\theta))\pi(\theta)$ and then considering the Monte Carlo approximation 
 $$ \frac{1}{N} \sum_{i = 1}^{N} |\pi_i - \pi(\theta_i)|$$
 
-<!-- 
-
 # Numerical Tests
 
-## VSEM Test case 1
 ```{r}
 # Synthetic data generation
-random_seed_1 <- 1
-test1_list <- generate_vsem_test_1(random_seed_1)
+computer_model_data <- generate_vsem_test_case(1)
 ```
 
-# Sampling method can be be "rectified" or "truncated". Anything else will be standard sampling. 
 ```{r, echo = FALSE}
 # Emulator settings
-emulator_settings <- data.frame(gp_lib = c("mlegp", "hetGP"), 
+emulator_settings <- data.frame(gp_lib = c("mlegp"), 
                                 kernel = "Gaussian", 
-                                transformation_method = c("rectified", "truncated"),
+                                transformation_method = c("truncated"),
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
 print(emulator_settings)
@@ -237,7 +232,7 @@ print(emulator_settings)
 
 ```{r, echo = FALSE} 
 # Priors 
-theta_prior_params <- test1_list$ref_pars[test1_list$pars_cal_sel,]
+theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
 theta_prior_params[, "dist"] <- "Uniform"
 theta_prior_params[,"param1"] <- 0.4 # theta_prior_params[,"lower"]
 theta_prior_params[,"param2"] <- 0.6 # theta_prior_params[,"upper"]
@@ -245,12 +240,43 @@ theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
 
 print(theta_prior_params)
 ```
+
+## Fit GP emulator. 
+
+### Design and validation points. 
 ```{r}
-# Computer model data
-vsem_test_case_num <- 1
-computer_model_data <- generate_vsem_test_case(vsem_test_case_num)
-theta_param_name <- computer_model_data$pars_cal_names
+N_train <- 5
+N_test <- 301
+train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
+                                      scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS", order_1d = TRUE) 
+test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_data = computer_model_data,  
+                                     scale_inputs = TRUE, normalize_response = TRUE, param_ranges = train_data$input_bounds, output_stats = train_data$output_stats,
+                                     transformation_method = emulator_settings$transformation_method, design_method = "grid", order_1d = TRUE) 
 ```
+
+### Fit GPs. 
+```{r, echo = FALsE}
+gp_fits <- fit_independent_GPs(train_data$inputs_scaled, train_data$outputs_normalized, emulator_settings$gp_lib, emulator_settings$kernel)$fits
+```
+### Predict at test points.
+```{r}
+gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj_list = gp_fits, gp_lib = emulator_settings$gp_lib, 
+                                        denormalize_predictions = TRUE, output_stats = train_data$output_stats)
+```
+
+### Plot GPs. 
+```{r}
+for(j in seq_along(gp_pred_list)) {
+  gp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs[,j], train_data$inputs, train_data$outputs[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var,
+                            xlab = "Parameter", ylab = "SSR", main_title = computer_model_data$output_vars[j], CI_prob = 0.9, 
+                            transformation_method = emulator_settings$transformation_method)
+  print(gp_plot)
+}
+```
+
+
+
 
 
 # Sampling from Posterior to Estimate Error Metrics 
@@ -467,8 +493,6 @@ Now the squared deviation is penalized more when the predictive variance is smal
 
 Other than this weighted L2 type approach, we might consider metrics quantifying the posterior approximation to $\pi(\theta)$ directly, or alternatives that specialize the error metric to the use cases of the approximation detailed above. 
 
-
- --> 
 
 
 

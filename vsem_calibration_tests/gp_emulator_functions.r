@@ -703,9 +703,10 @@ quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
 # ------------------------------------------------------------------------------
 
 # TODO: update comments and think about a better way of handling log output stats. 
+# Allow computer_model_data to be passed in directly, rather than having to pass all arguments separately. 
 get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR_data, output_vars, 
                                     scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01) {
+                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, computer_model_data = NULL) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
@@ -753,11 +754,21 @@ get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars
   #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
   #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
+  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
+  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
   #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 
   #    "log_outputs", "log_outputs_normalized", and "log_output_stats". 
+  
+  if(!is.null(computer_model_data)) {
+    ref_pars <- computer_model_data$ref_pars
+    pars_cal_sel <- computer_model_data$pars_cal_sel
+    data_obs <- computer_model_data$data_obs
+    PAR_data <- computer_model_data$PAR_data
+    output_vars <- computer_model_data$output_vars
+  }
   
   # Input points. 
   design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
@@ -878,7 +889,7 @@ get_LHS_design <- function(N_points, theta_prior_params, param_ranges = NULL, or
   #    matrix, of dimension N_points x d, the Latin Hypercube sample. 
   
   # The dimension of the input space.
-  d <- nrow(prior_params)
+  d <- nrow(theta_prior_params)
   
   if(is.null(param_ranges)) {
     param_ranges <- matrix(NA, nrow = 2, ncol = d)
@@ -936,7 +947,7 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
   #    matrix, of dimension N_points x d, the grid points. 
   
   # The dimension of the input space.
-  d <- nrow(prior_params)
+  d <- nrow(theta_prior_params)
   
   if(is.null(param_ranges)) {
     param_ranges <- matrix(NA, nrow = 2, ncol = d)
