@@ -275,8 +275,23 @@ for(j in seq_along(gp_pred_list)) {
 }
 ```
 
+### Assemble GP information list. 
+```{r}
+# TODO: make functions "get_gp_emulator_info_list()" and automatically have this function set `gp_output_stats` to the correct transformed version. 
+emulator_info <- list(gp_fits = gp_fits, 
+                      input_bounds = train_data$input_bounds,
+                      output_stats = train_data$output_stats, 
+                      settings = emulator_settings)
+```
 
-
+# Approximate Calibration with GP Emulators.
+```{r}
+N_mcmc <- 100000
+post_approx_samples <- mcmc_calibrate_ind_GP(computer_model_data, emulator_info, theta_prior_params, 
+                                             theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = TRUE, Sig_eps_prior_params, 
+                                             N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                             proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
+```
 
 
 # Sampling from Posterior to Estimate Error Metrics 

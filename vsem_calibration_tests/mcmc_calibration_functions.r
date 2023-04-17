@@ -388,7 +388,8 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
   #
   # Returns:
   #    The prior density evaluation log p(theta). Assumes prior independence, so the log-prior is the sum of the log-prior
-  #    evaluations for each entry of 'theta'. 
+  #    evaluations for each entry of 'theta'. Note that in certain cases the log prior can be negative infinity; e.g. for 
+  #    a uniform prior where `theta` is not contained within the upper and lower bound. 
   
   lprior <- 0
   
@@ -614,13 +615,15 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 }
 
 
-# emulator_info: list with "gp_fits", "gp_output_stats", "settings", and "gp_input_bounds"
+# emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
 # TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
 # on the correct scale (e.g. it should be on log scale for LNP). 
 mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prior_params, 
                                   theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
                                   N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                   proposal_scale_decay = 0.7, proposal_scale_init = 0.1) {
+  
+  browser()
   
   # Number output variables, and dimension of parameter space.
   p <- length(computer_model_data$output_vars)
@@ -647,7 +650,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
   theta_samp[1,] <- theta_init
   Sig_eps_samp[1,] <- diag(Sig_eps_init)
 
-  Sig_eps_curr <- Sig_eps_ini
+  Sig_eps_curr <- Sig_eps_init
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
@@ -686,29 +689,15 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method)
     
     # Accept-Reject step. 
-    lpost_theta_curr <- calc_lpost_theta_product_lik(lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,], vars_obs = diag(Sig_eps_curr),
+    lpost_theta_curr <- calc_lpost_theta_product_lik(lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], vars_obs = diag(Sig_eps_curr),
                                                      n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE) 
-    lpost_theta_prop_list <- calc_lpost_theta_product_lik(SSR = SSR_samples[2,], vars_obs = diag(Sig_eps_curr),
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(theta_vals = as.matrix(theta_prop, nrow = 1), SSR = SSR_samples[2,,drop=FALSE], vars_obs = diag(Sig_eps_curr),
                                                           n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE,
                                                           theta_prior_params = theta_prior_params, return_list = TRUE) 
-    alpha <- min(1.0, exp(log_theta_post_prop_list$lpost - lpost_theta_curr))
+    alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
     if(runif(1) <= alpha) {
       theta_samp[itr,] <- theta_prop
       lprior_theta_curr <- lpost_theta_prop_list$lprior
-      accept_count <- accept_count + 1 
-    } else {
-      theta_samp[itr,] <- theta_samp[itr-1,]
-    }
-    
-    # Accept-Reject Step
-    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
-    log_theta_post_curr <- llik_curr + lprior_theta_curr
-    log_theta_post_prop <- llik_prop + lprior_theta_prop
-    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
-    if(runif(1) <= alpha) {
-      theta_samp[itr,] <- theta_prop
-      lprior_theta_curr <- lprior_theta_prop
-      model_errs_curr <- model_errs_prop
       accept_count <- accept_count + 1 
       pred_idx_curr <- 2
     } else {
@@ -725,7 +714,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     
     if(learn_Sig_eps) {
       SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, idx_selector = pred_idx_curr)
-      Sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params, n_obs = emulator_info$n_obs)
+      Sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = computer_model_data$n_obs)
       Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
     } else {
       Sig_eps_samp[itr,] <- Sig_eps_init
@@ -804,7 +793,8 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
   #    model_errs: matrix of dimensions n x p, where n = number observations in time series and p = number output variables.
   #                This is the model error matrix Y - f(theta). Can be null for inverse gamma prior, in which case `SSR` must be provided. 
   #    SSR: numeric(), vector of length equal to the number of outputs p, containing the squared L2 errors for each output. This is only 
-  #         used in the case of inverse gamma prior. If NULL, `model_errs` must be provided instead. 
+  #         used in the case of inverse gamma prior. If NULL, `model_errs` must be provided instead. Alternatively, this can be a 
+  #         matrix of dimension 1 x p. 
   #    Sig_eps_prior_params: list, must contain element named "dist" specifying the prior distribution. Current accepted values are 
   #                          "IW" (Inverse Wishart) or "IG" (independent Inverse Gamma priors). Depending on value of "dist", 
   #                          must also contain either either 1.) names "scale_matrix" and "dof" 
