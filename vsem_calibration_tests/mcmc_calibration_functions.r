@@ -452,7 +452,7 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
 }
 
 
-mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
+mcmc_calibrate_old <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR, n_obs,
                            theta_init = NA, theta_prior_params, 
                            learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = list(), diag_cov = FALSE, 
                            N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay, proposal_scale_init) {
@@ -505,7 +505,6 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
   
   # Number observations in time series, number output variables, and dimension of parameter space
-  n <- nrow(data_obs)
   p <- length(output_vars)
   d <- length(par_cal_sel)
 
@@ -552,7 +551,6 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   accept_count <- 0
   
   for(itr in seq(2, N_mcmc)) {
-
     #
     # Metropolis step for theta
     #
@@ -574,7 +572,7 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
 
     # Calculate log-likelihoods for current and proposed theta
-    model_errs_prop <- data_obs[, output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
+    model_errs_prop <- data_obs[, output_vars] - run_VSEM_single_input(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
     llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
     llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
 
@@ -598,9 +596,8 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
     #
     # Gibbs step for Sig_eps
     #
-
     if(learn_Sig_eps) {
-      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs_curr, Sig_eps_prior_params, n)
+      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = n_obs)
       if(diag_cov) {
         Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
       } else {
@@ -615,6 +612,251 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 }
 
 
+computer_model_errs <- function(theta, computer_model_data) {
+  
+  output_vars <- computer_model_data$output_vars
+  
+  if(computer_model_data$forward_model == "VSEM") {
+    model_errs <- computer_model_data$data_obs[, output_vars] - 
+                  run_VSEM(theta, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$PAR_data, output_vars)
+  } else if(computer_model_data$forward_model == "custom_likelihood") {
+    model_errs <- computer_model_data$Y[, output_vars] - computer_model_data$f(theta)
+  }
+  
+  return(model_errs)
+
+}
+
+
+mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = FALSE,
+                           theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
+                           N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                           proposal_scale_decay = 0.7, proposal_scale_init = 0.1) {
+  # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
+  # between the different output variables, but assumes independence across time. Samples from posterior over both  
+  # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
+  # Allows for arbitrary prior over theta, but assumes Inverse Wishart prior on Sig_eps (if treated as random).
+  # MCMC scheme is adaptive random walk Metropolis. This MCMC algorithm does not involve any model emulation/likelihood 
+  # approximation. 
+  #
+  # Args:
+  #    computer_model_data:
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    diag_cov: logical, if TRUE constrains Sig_eps to be diagonal. If the prior distribution is specified to be product Inverse Gamma then this 
+  #              is automatically set to TRUE. Default is FALSE. 
+  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
+  #                the initial value from the prior. 
+  #    learn_Sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    Sig_eps_init: matrix, p x p covariance matrix capturing dependence between output variables. If `learn_Sig_eps` is 
+  #                  TRUE then `Sig_eps_init` can either be set to the initial value used for MCMC, or set to NA in which 
+  #                  case the initial value will be sampled from the prior. If `learn_Sig_eps` is FALSE, then a non-NA value 
+  #                  is required, and treated as the fixed nominal value of Sig_eps_init. 
+  #    Sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    N_mcmc: integer, the number of MCMC iterations. 
+  #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
+  #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
+  #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
+  #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
+  #                          number of iterations. 
+  #    proposal_scale_init: numeric, the proposal covariance is initialized to be diagonal, with `proposal_scale_init` along the diagonal. 
+  #
+  # Returns:
+  #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
+  #    theta stored in the rows. The latter is of dimension N_mcmc x p(p+1)/2, where each row stores the lower triangle of the 
+  #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
+  #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  if(learn_Sig_eps && isTRUE(Sig_eps_prior_params$dist == "IG")) {
+    diag_cov <- TRUE
+  }
+  if(diag_cov) {
+    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  } else {
+    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+    stop("Need to fix correlated Gaussian likelihood function to work with missing data.")
+  }
+  
+  # Set initial conditions.
+  if(is.na(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+  if(learn_Sig_eps) {
+    if(is.null(Sig_eps_init)) {
+      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  if(diag_cov) {
+    Sig_eps_samp[1,] <- diag(Sig_eps_init)
+  } else {
+    Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
+  }
+  
+  Sig_eps_curr <- Sig_eps_init
+  model_errs_curr <- compute_model_errs(theta_init, computer_model_data)
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance
+  Cov_prop <- diag(proposal_scale_init, nrow = d)
+  log_scale_prop <- 0
+  L_prop <- t(chol(Cov_prop))
+  accept_count <- 0
+  
+  for(itr in seq(2, N_mcmc)) {
+    #
+    # Metropolis step for theta
+    #
+    
+    # Adapt proposal covariance matrix and scaling term
+    if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
+      adapt_list <- adapt_cov_proposal(Cov_prop, theta_samp, itr, adapt_frequency, adapt_cov_method, adapt_scale_method,  
+                                       adapt_min_scale, accept_count, accept_rate_target)
+      Cov_prop <- adapt_list$L
+      log_scale-prop <- adapt_list$log_sd2
+      
+      
+      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE],
+      #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
+      if(accept_count == 0) {
+        Cov_prop <- adapt_min_scale * Cov_prop
+      } else {
+        Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
+      }
+      L_prop <- t(chol(Cov_prop))
+      accept_count <- 0
+    }
+    
+    # theta proposals
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
+    
+    # Calculate log-likelihoods for current and proposed theta
+    model_errs_prop <- data_obs[, output_vars] - run_VSEM_single_input(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
+    llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
+    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
+    
+    # Accept-Reject Step
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    log_theta_post_curr <- llik_curr + lprior_theta_curr
+    log_theta_post_prop <- llik_prop + lprior_theta_prop
+    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lprior_theta_prop
+      model_errs_curr <- model_errs_prop
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Adapt scaling term for proposal
+    log_scale_prop <- log_scale_prop + (1 / itr^proposal_scale_decay) * (alpha - accept_rate_target)
+    
+    #
+    # Gibbs step for Sig_eps
+    #
+    if(learn_Sig_eps) {
+      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = n_obs)
+      if(diag_cov) {
+        Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
+      } else {
+        Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
+      }
+    }
+    
+  }
+  
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
+  
+}
+
+
+adapt_cov_proposal <- function(C, log_sd2, sample_history, itr_curr, adapt_cov_frequency, adapt_scale_frequency, cov_method,  
+                               scale_method, accept_rate_target, min_scale, accept_rate, samp_mean, 
+                               alpha, tau = 0.8) {
+  # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form sd2 * C, where 
+  # sd2 is a scaling factor. This function supports different algorithms to adapt C and to adapt sd2, and the methods 
+  # can be mixed and matched. Only a portion of the function arguments are needed for certain methods, so take care 
+  # to ensure the correct arguments are being passed to the function. The function updates C and also computes the lower 
+  # triangular Cholesky factor L of C. For certain methods (e.g. the AM algorithm) C will be updated every iteration, but 
+  # L may only be updated intermittently depending on `adapt_cov_frequency`. 
+  #
+  # Args:
+  #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
+  #    log_sd2: numeric, the log of the scaling factor. 
+  #    sample_history: matrix, itr_curr x p, where itr_curr is the current MCMC iteration. Note that this must be the entire 
+  #                    sample history, even for methods like the AP algorithm, which only require a recent subset of the history. 
+  #    itr_curr: integer, the current MCMC iteration. 
+  #    adapt_cov_frequency: integer, number of iterations that specifies how often C or L will be updated. The AP algorithm 
+  #                         updates both C and L together; the AM algorithm updates C every iteration, but only updates L according 
+  #                         to `update_cov_frequency`. 
+  #    adapt_scale_frequency: integer, number of iterations that specifies how often log_sd2 will be updated. 
+  #    cov_method: character(1), currently either "AP" (Adaptive Proposal, Haario 1999) or "AM" (Adaptive Metropolis, Haario 2001). 
+  #    scale_method: character(1), currently either "pecan" (method currently used in PEcAn) or "MH_ratio" (based on Metropolis-Hastings 
+  #                  acceptance probability). Both methods rely on `accept_rate_target` as a target. 
+  #    accept_rate_target: numeric(1), the target acceptance rate.
+  #    min_scale: numeric(1), used as a floor for the scaling factor for the "pecan" method. 
+  #    accept_rate: numeric(1), the MCMC accept rate over the subset of the sample history that will be used in the updates (not the 
+  #                 acceptance rate over the whole history!). This is only used for the "AP" and "pecan" methods.
+  #    samp_mean: numeric(d), used only by "AM". This is the cumulative sample mean over the MCMC samples. It is updated every iteration. 
+  #    alpha: numeric(1), used only by "MH_ratio". This is the most recent Metropolis-Hastings acceptance probability. The "MH_ratio" method 
+  #           updates log_sd2 every iteration. 
+  #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_sd2 updating occurs. 
+  #
+  # Returns:
+  #    list, with elements "C", "L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
+  #    and is the mean of the MCMC samples up through the current iteration. 
+  
+  # Adapt proposal covariance. 
+  if(cov_method == "AM") {
+    
+    samp_centered <- sample_history[itr,] - samp_mean
+    samp_mean <- samp_mean + (1 / itr) * samp_centered
+    C <- C + (1 / itr) * (outer(samp_centered, samp_centered) - C)
+    if((itr - 1) %% adapt_cov_frequency == 0) L <- t(chol(C))
+    
+  } else if(cov_method == "AP") {
+    
+    if((itr - 1) %% adapt_cov_frequency) {
+      sample_history <- sample_history[(itr_curr - adapt_cov_frequency):(itr_curr - 1),,drop=FALSE]
+      if(accept_rate == 0) {
+        C <- min_scale * C
+        L <- sqrt(min_scale) * L
+      } else {
+        C <- stats::cov(sample_history)
+        L <- t(chol(C))
+      }
+    }
+    
+  }
+  
+  # Adapt scaling factor for proposal covariance matrix. 
+  
+    if(scale_method == "pecan") {
+      if((itr - 1) %% adapt_scale_frequency == 0) {
+        log_sd2 <- 2 * log(max(accept_rate / accept_rate_target, min_scale))
+      }
+    } else if(scale_method == "MH_ratio") {
+      log_sd2 <- log_sd2 + (1 / itr^tau) * (alpha - accept_rate_target)  
+    }
+
+  return(list(C = C, L = L, log_sd2 = log_sd2, samp_mean = samp_mean))
+  
+}
+
+
 # emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
 # TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
 # on the correct scale (e.g. it should be on log scale for LNP). 
@@ -622,8 +864,6 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
                                   theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
                                   N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                   proposal_scale_decay = 0.7, proposal_scale_init = 0.1) {
-  
-  browser()
   
   # Number output variables, and dimension of parameter space.
   p <- length(computer_model_data$output_vars)
@@ -660,7 +900,6 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
   accept_count <- 0
   
   for(itr in seq(2, N_mcmc)) {
-    
     #
     # Metropolis step for theta
     #
@@ -686,7 +925,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
                                             gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
                                             output_stats = emulator_info$output_stats)
-    SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method)
+    SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, include_nugget = TRUE)
     
     # Accept-Reject step. 
     lpost_theta_curr <- calc_lpost_theta_product_lik(lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], vars_obs = diag(Sig_eps_curr),
@@ -695,6 +934,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
                                                           n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE,
                                                           theta_prior_params = theta_prior_params, return_list = TRUE) 
     alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
+
     if(runif(1) <= alpha) {
       theta_samp[itr,] <- theta_prop
       lprior_theta_curr <- lpost_theta_prop_list$lprior
@@ -713,7 +953,8 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     #
     
     if(learn_Sig_eps) {
-      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, idx_selector = pred_idx_curr)
+      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method,
+                                                     idx_selector = pred_idx_curr, include_nugget = TRUE)
       Sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = computer_model_data$n_obs)
       Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
     } else {
@@ -825,36 +1066,6 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
     return(diag(sig2_eps_vars))
   }
   
-}
-
-
-adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_rate, accept_rate_target) {
-  # Returns an adapted covariance matrix to be used in adaptive MCMC scheme. Computes the new
-  # covariance matrix by considering the sample correlation calculated from previous parameter
-  # samples, which is scaled by a factor determined by the acceptance rate and target acceptance
-  # rate. 
-  #
-  # Args:
-  #    cov_proposal: matrix, p x p positive definite covariance matrix. 
-  #    sample_history: matrix, l x p, where l is number of previous parameter samples used 
-  #                    in sample correlation calculation. Each row of the matrix is a previous 
-  #                    sample. 
-  #    min_scale: numeric scalar, used as a floor for the scaling factor. 
-  #    accept_rate: numeric scalar, the MCMC accept rate over the l-length parameter history. 
-  #    accept_rate_target: numeric scalar, the desired acceptance rate. 
-  #
-  # Returns:
-  #    matrix, p x p covariance matrix. 
-  
-  if(accept_rate == 0) {
-    return(min_scale * cov_proposal)
-  } else {
-    cor_estimate <- stats::cor(sample_history)
-    scale_factor <- max(accept_rate / accept_rate_target, min_scale)
-    stdev <- apply(sample_history, 2, stats::sd)
-    scale_mat <- scale_factor * diag(stdev, nrow = length(stdev))
-    return(scale_mat %*% cor_estimate %*% scale_mat)
-  }
 }
 
 
@@ -1085,7 +1296,8 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               pars_cal_names = pars_cal_names, 
               output_vars = output_vars, 
               output_frequencies = output_frequencies, 
-              obs_start_day = obs_start_day))
+              obs_start_day = obs_start_day, 
+              forward_model = "VSEM"))
   
 }
 
@@ -1623,6 +1835,58 @@ run_emulator_test <- function(computer_model_data, emulator_settings, theta_prio
               # lpost_pred_density_train = lpred_pi_train))  
   
 }
+
+
+get_hist_plot <- function(samples_list, bins = 30, colors = NULL, vertical_line = NULL, xlab = "samples", ylab = "density", 
+                          main_title = "Histogram", opacities = NULL, col_sel = 1, data_names = as.character(seq_along(samples_list))) {
+  
+  dt <- data.table(variable = character(), value = numeric())
+  
+  # TODO: left off here. 
+  samples <- matrix()
+  for(j in seq_along(samples_list)) {
+    samples_j <- samples_list[[j]][,col_sel]
+    rownames(samples) <- data_names[j]
+  }
+  
+  dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
+  cols <- colnames(dt)
+  dt <- melt(dt, measure.vars = colnames(dt), na.rm = TRUE)
+  
+  # if(is.null(opacities)) opacities <- rep(1, N)
+  # 
+  # # Set colors if they are not specified.
+  # if(is.null(colors)) {
+  #   colors <- c("red", "blue", "green", "gray", "orange")
+  #   if(N <= length(cols)) {
+  #     cols <- cols[1:N]
+  #   } else {
+  #     N_additional_colors <- N - length(cols)
+  #     N_random_colors <- max(20, N_additional_colors*5)
+  #     random_colors <- rainbow(N_random_colors, s=.6, v=.9)[sample(seq_len(N_random_colors), N_additional_colors)]
+  #     colors <- c(colors, random_colors)
+  #   }
+  # }
+  # 
+  
+  plt <- ggplot(data = dt, aes(x = value, color = variable)) + 
+          geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+          xlab(xlab) + 
+          ylab(ylab) + 
+          ggtitle(main_title)
+  
+  # for(j in seq_len(N)) {
+  #   plt <- plt + geom_histogram(aes(x = df[[j]]), bins = bins, color = colors[j], fill = "white", alpha = opacities[j])
+  # }
+
+  return(plt)
+  
+}
+
+
+
+
+
 
 
 

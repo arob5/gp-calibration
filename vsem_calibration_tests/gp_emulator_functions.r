@@ -232,6 +232,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     mlegp_pred <- predict(gp_obj, newData = X_pred, se.fit = TRUE)
     pred_list[["mean"]] <- mlegp_pred[["fit"]]
     pred_list[["var"]] <- mlegp_pred[["se.fit"]]^2
+    pred_list[["var_nug"]] <- gp_obj$nugget
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
     if(include_cov_mat) {
@@ -1019,21 +1020,25 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
   
   
   if(is.na(transformation_method)) {
-    return(gp_means + sqrt(gp_vars) * rnorm(n))
+    sample <- gp_means + sqrt(gp_vars) * rnorm(n)
   } else if(transformation_method == "truncated") {
-    return(rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars)))
+    sample <- rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars))
   } else if(transformation_method == "rectified") {
-    return(pmax(0, gp_means + sqrt(gp_vars) * rnorm(n)))
+    sample <- pmax(0, gp_means + sqrt(gp_vars) * rnorm(n))
   } else if(transformation_method == "LNP") {
-    return(exp(gp_means + sqrt(gp_vars) * rnorm(n)))
+    sample <- exp(gp_means + sqrt(gp_vars) * rnorm(n))
   } else {
     stop("Invalid transformation method: ", transformation_method)
+  }
+  
+  if(any(is.na(sample))) {
+    stop("GP sample is NA")
   }
   
 }
 
 
-sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL) {
+sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL, include_nugget = TRUE) {
   # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
   # Allows for potentially different output transformations for each GP. 
   #
@@ -1046,6 +1051,8 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   #                            use the same method for all GPs. 
   #    idx_selector: integer(), vector of indices of which to select in the mean/variance numeric vectors. Default selects all indices. Note that 
   #                  the same indices will be selected across all GPs.
+  #    include_nugget: logical(1), if TRUE then the variance used in the sampling is the observation variance, which is the variance of the latent
+  #                    function values plug the "nugget" term. Otherwise, the nugget will not be added to the variance. 
   # 
   # Returns: 
   #    matrix, of dimension N x length(gp_pred_list) where N is the number of input points. The matrix stores the samples for each GP in the 
@@ -1069,7 +1076,9 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   
   gp_samples <- matrix(nrow = N_row, ncol = N_GPs)
   for(j in seq_len(N_GPs)) {
-    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_methods[j], idx_selector)
+    vars <- gp_pred_list[[j]]$var
+    if(include_nugget) vars <- vars + gp_pred_list[[j]]$var_nug
+    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, vars, transformation_methods[j], idx_selector)
   }
   
   return(gp_samples)

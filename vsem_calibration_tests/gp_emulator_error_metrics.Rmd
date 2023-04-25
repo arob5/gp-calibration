@@ -245,7 +245,7 @@ print(theta_prior_params)
 
 ### Design and validation points. 
 ```{r}
-N_train <- 5
+N_train <- 8
 N_test <- 301
 train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
                                       scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
@@ -284,6 +284,24 @@ emulator_info <- list(gp_fits = gp_fits,
                       settings = emulator_settings)
 ```
 
+# Samples from Exact Posterior
+```{r}
+N_mcmc <- 50000
+post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
+                               computer_model_data$output_vars, computer_model_data$PAR_data, computer_model_data$n_obs,
+                               theta_prior_params = theta_prior_params, learn_Sig_eps = TRUE, Sig_eps_prior_params = Sig_eps_prior_params,  
+                               diag_cov = TRUE, N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                               proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
+
+idx_samples_keep <- floor(N_mcmc / 2)
+theta_samples <- post_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
+```
+
+```{r}
+plot(theta_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
+acf(theta_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
+```
+
 # Approximate Calibration with GP Emulators.
 ```{r}
 N_mcmc <- 100000
@@ -291,12 +309,36 @@ post_approx_samples <- mcmc_calibrate_ind_GP(computer_model_data, emulator_info,
                                              theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = TRUE, Sig_eps_prior_params, 
                                              N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                              proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
+
+idx_samples_keep <- floor(N_mcmc / 2)
+theta_approx_samples <- post_approx_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
 ```
+
+```{r}
+plot(theta_approx_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
+acf(theta_approx_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
+```
+
+
+# Comparing Exact and Approximate Samples
+```{r}
+samples_list <- list(theta_samples, theta_approx_samples)
+
+# Histograms
+hist_plot <- get_hist_plot(samples_list, bins = 50, xlab = computer_model_data$pars_cal_name,
+                           main_title = "Histogram of MCMC Samples")
+print(hist_plot)
+
+# plot(theta_approx_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
+# acf(theta_approx_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
+# hist(theta_approx_samples, 100, main = "Histogram: MCMC Samples", xlab = computer_model_data$pars_cal_name)
+```
+
 
 
 # Sampling from Posterior to Estimate Error Metrics 
 ```{r}
-N_mcmc <- 100000
+N_mcmc <- 50000
 post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
                                computer_model_data$output_vars, computer_model_data$PAR_data,
                                theta_prior_params = theta_prior_params, learn_Sig_eps = FALSE, diag_cov = TRUE, 
@@ -305,7 +347,7 @@ post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data
 ```
 
 ```{r}
-# Trace plot
+# MCMC plots
 idx_samples_keep <- floor(N_mcmc / 2)
 theta_samples <- post_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
 plot(theta_samples, type = "l", main = "Trace Plot: KEXT", ylab = theta_param_name)
