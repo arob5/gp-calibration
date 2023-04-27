@@ -231,7 +231,7 @@ theta_prior_params <- data.frame(dist = c("Uniform", "Uniform"),
                                  param1 = c(-100, -100), 
                                  param2 = c(100, 100))
 
-samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, Sig_eps_init = diag(c(1.0, 9.0)), N_mcmc = 50000)
+samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, Sig_eps_init = diag(1.0), N_mcmc = 50000)
 ```
 
 

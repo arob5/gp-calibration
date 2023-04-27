@@ -672,7 +672,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
   #    theta stored in the rows. The latter is of dimension N_mcmc x p(p+1)/2, where each row stores the lower triangle of the 
   #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
   #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
-  browser()
+
   # Number observations in time series, number output variables, and dimension of parameter space.
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
@@ -692,7 +692,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
   }
   
   # Set initial conditions.
-  if(is.na(theta_init)) {
+  if(is.null(theta_init)) {
     theta_init <- sample_prior_theta(theta_prior_params)
   }
   if(learn_Sig_eps) {
@@ -720,22 +720,11 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
   samp_mean <- theta_init
-  alpha <- NA
   
   for(itr in seq(2, N_mcmc)) {
     #
     # Metropolis step for theta
     #
-    
-    # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(C, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
-                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     tau = 0.8, adapt_init_threshold)
-    Cov_prop <- adapt_list$C
-    L_prop <- adapt_list$L
-    log_scale_prop <- adapt_list$log_sd2
-    samp_mean <- adapt_list$samp_mean
-    accept_count <- adapt_list$accept_count
     
     # theta proposals.
     theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
@@ -758,6 +747,16 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     } else {
       theta_samp[itr,] <- theta_samp[itr-1,]
     }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     tau = 0.8, adapt_init_threshold)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_sd2
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
 
     #
     # Gibbs step for Sig_eps
@@ -778,7 +777,8 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
 }
 
 
-adapt_cov_proposal <- function(C, log_sd2, sample_history, itr_curr, accept_count, alpha, samp_mean, 
+# TODO: verify the recursive covariance calculation. 
+adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, alpha, samp_mean, 
                                adapt_frequency = 1000, cov_method = "AM", scale_method = "MH_ratio", 
                                accept_rate_target = 0.24, min_scale = 0.1, tau = 0.8, init_threshold = 3) {
   # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form sd2 * C, where 
@@ -813,22 +813,22 @@ adapt_cov_proposal <- function(C, log_sd2, sample_history, itr_curr, accept_coun
   # Returns:
   #    list, with elements "C", "L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
   #    and is the mean of the MCMC samples up through the current iteration. 
-  
+  browser()
   accept_rate <- accept_count / adapt_frequency
-  if((itr >= init_threshold) && ((itr - 1) %% adapt_frequency == 0)) accept_count <- 0
+  if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
   
   # Adapt proposal covariance. 
   if(cov_method == "AM") {
     
+    samp_mean <- samp_mean + (1 / itr) * (sample_history[itr,] - samp_mean)
     samp_centered <- sample_history[itr,] - samp_mean
-    samp_mean <- samp_mean + (1 / itr) * samp_centered
     C <- C + (1 / itr) * (outer(samp_centered, samp_centered) - C)
-    if((itr >= init_threshold) && ((itr - 1) %% adapt_frequency == 0)) L <- t(chol(C))
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) L <- t(chol(C))
     
   } else if(cov_method == "AP") {
     
-    if((itr >= init_threshold) && ((itr - 1) %% adapt_frequency == 0)) {
-      sample_history <- sample_history[(itr_curr - adapt_frequency):(itr_curr - 1),,drop=FALSE]
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      sample_history <- sample_history[(itr - adapt_frequency + 1):itr,,drop=FALSE]
       if(accept_rate == 0) {
         C <- min_scale * C
         L <- sqrt(min_scale) * L
