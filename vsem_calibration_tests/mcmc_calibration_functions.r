@@ -749,7 +749,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
                                      tau = 0.8, adapt_init_threshold)
     Cov_prop <- adapt_list$C
@@ -778,7 +778,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
 
 
 # TODO: verify the recursive covariance calculation. 
-adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, alpha, samp_mean, 
+adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count, alpha, samp_mean, 
                                adapt_frequency = 1000, cov_method = "AM", scale_method = "MH_ratio", 
                                accept_rate_target = 0.24, min_scale = 0.1, tau = 0.8, init_threshold = 3) {
   # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form sd2 * C, where 
@@ -791,6 +791,9 @@ adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, al
   # Args:
   #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
   #    log_sd2: numeric, the log of the scaling factor. 
+  #    L: matrix, the lower triangular Cholesky factor of C. This is what is actually used to generate proposals. In general, this 
+  #       can be "out of alignment" with C; for example, C can be updated every iteration, but the Cholesky factor can be updated 
+  #       less frequently to save computation time. 
   #    sample_history: matrix, itr_curr x p, where itr_curr is the current MCMC iteration. Note that this must be the entire 
   #                    sample history, even for methods like the AP algorithm, which only require a recent subset of the history. 
   #    itr_curr: integer, the current MCMC iteration. 
@@ -813,15 +816,23 @@ adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, al
   # Returns:
   #    list, with elements "C", "L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
   #    and is the mean of the MCMC samples up through the current iteration. 
-  browser()
+  
   accept_rate <- accept_count / adapt_frequency
   
   # Adapt proposal covariance. 
-  if(cov_method == "AM") {
+  if(cov_method == "AM" ) { 
     
     samp_mean <- samp_mean + (1 / itr) * (sample_history[itr,] - samp_mean)
-    samp_centered <- sample_history[itr,] - samp_mean
-    C <- C + (1 / itr) * (outer(samp_centered, samp_centered) - C)
+    
+    if(itr == 3) { # Sample covariance from first 3 samples. 
+      samp_centered <- t(sample_history[1:3,]) - samp_mean
+      C <- 0.5 * tcrossprod(samp_centered)
+    } else if(itr > 3) { # Begin covariance updates every iteration. 
+      browser()
+      samp_centered <- sample_history[itr,] - samp_mean
+      C <- C + (1 / itr) * (outer(samp_centered, samp_centered) - C)
+    }
+    
     if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) L <- t(chol(C))
     
   } else if(cov_method == "AP") {
