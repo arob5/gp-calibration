@@ -727,7 +727,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     #
     
     # theta proposals.
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Calculate log-likelihoods for current and proposed theta.
     model_errs_prop <- get_computer_model_errs(theta_prop, computer_model_data)
@@ -815,7 +815,6 @@ adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, al
   #    and is the mean of the MCMC samples up through the current iteration. 
   browser()
   accept_rate <- accept_count / adapt_frequency
-  if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
   
   # Adapt proposal covariance. 
   if(cov_method == "AM") {
@@ -849,6 +848,8 @@ adapt_cov_proposal <- function(C, log_sd2, sample_history, itr, accept_count, al
     if(itr >= init_threshold) log_sd2 <- log_sd2 + (1 / itr^tau) * (alpha - accept_rate_target) 
   }
 
+  if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
+  
   return(list(C = C, L = L, log_sd2 = log_sd2, samp_mean = samp_mean, accept_count = accept_count))
   
 }
@@ -915,7 +916,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     }
     
     # theta proposals
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
+    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Approximate SSR by sampling from GP. 
     thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
