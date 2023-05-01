@@ -828,9 +828,9 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
       samp_centered <- t(sample_history[1:3,]) - samp_mean
       C <- 0.5 * tcrossprod(samp_centered)
     } else if(itr > 3) { # Begin covariance updates every iteration. 
-      browser()
       samp_centered <- sample_history[itr,] - samp_mean
-      C <- C + (1 / itr) * (outer(samp_centered, samp_centered) - C)
+      w <- 1/(itr-1)
+      C <- C + w * (itr*w*outer(samp_centered, samp_centered) - C)
     }
     
     if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) L <- t(chol(C))
