@@ -220,7 +220,7 @@ $$p(\theta|y) \propto p(y|\theta) = \mathcal{N}_{2}(\theta|0, \sigma^2 I_2)$$
 ```{r}
 data_obs <- matrix(0.0, nrow = 2, ncol = 1)
 colnames(data_obs) <- "y"
-computer_model_data <- list(f = function(theta) {theta}, 
+computer_model_data <- list(f = function(theta) {matrix(theta, ncol=1)}, 
                             data_obs = data_obs, 
                             n_obs = 2, 
                             output_vars = "y", 
@@ -230,9 +230,48 @@ computer_model_data <- list(f = function(theta) {theta},
 theta_prior_params <- data.frame(dist = c("Uniform", "Uniform"), 
                                  param1 = c(-100, -100), 
                                  param2 = c(100, 100))
-
-samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, Sig_eps_init = diag(1.0), N_mcmc = 50000)
 ```
+
+
+```{r}
+# Verify likelihood computation is correct. Distribution should be N_2(theta|0, sig2_eps*I)
+sig2_eps <- matrix(1.0, nrow=1)
+L_sig2_eps <- t(chol(sig2_eps))
+theta <- c(1, 2)
+
+model_errs <- get_computer_model_errs(theta, computer_model_data)
+llik_curr <- llik_Gaussian_err(model_errs, L = L_sig2_eps) 
+llik_baseline <- dnorm(theta[1], sd=sqrt(sig2_eps), log=TRUE) + dnorm(theta[2], sd=sqrt(sig2_eps), log=TRUE)
+
+print(llik_curr)
+print(llik_baseline)
+```
+
+
+```{r}
+# TODO: test non-adaptive with known posterior covariance, scaled using optimal scaling for Gaussians. 
+N_mcmc <- 50000
+samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
+                       Sig_eps_init = diag(1.0), N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
+```{r}
+burn_in <- 25000
+plot(samp$theta[burn_in:N_mcmc,1], type="l")
+plot(samp$theta[burn_in:N_mcmc,2], type="l")
+```
+
+```{r}
+hist(samp$theta[burn_in:N_mcmc,1], 50)
+hist(samp$theta[burn_in:N_mcmc,2], 50)
+```
+
+```{r}
+stats::cov(samp$theta[burn_in:N_mcmc,])
+```
+
+
+
 
 
 

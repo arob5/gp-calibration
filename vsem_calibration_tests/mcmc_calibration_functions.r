@@ -23,7 +23,7 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
   #
   # Args:
   #    theta_vals: matrix, of dimension M x d, where M is the number of calibration parameter values
-  #                and d is the number of claibration parameters. These are the parameter inputs at which 
+  #                and d is the number of calibration parameters. These are the parameter inputs at which 
   #                to run the forward to evaluate log-likelihood. 
   #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "best". Parameters that are fixed at nominal 
@@ -247,7 +247,7 @@ calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
 # }
 
 
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = TRUE) {
+llik_Gaussian_err <- function(model_errs, Sig_eps = NULL, L = NULL, output_vars = NA, normalize = TRUE) {
   # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
   # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
   # the forward model has already been run, unlike llik_Gaussian(),  which runs
@@ -259,6 +259,8 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   #                 Y - f(theta). 
   #     Sig_eps: matrix of dimensions p x p, the covariance matrix used in the 
   #              multivariate Gaussian likelihood calculation. 
+  #     L: matrix of dimension p x p, the lower Cholesky factor of Sig_eps. If not provided, the Cholesky 
+  #        factor will be computed. 
   #     output_vars: character vector, containing names of output variables to be selected.
   #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
   #                  associated with the output variables, as well as column names of `model_errs`.
@@ -274,11 +276,15 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
     Sig_eps <- Sig_eps[output_vars, output_vars]
     model_errs <- model_errs[, output_vars]
   }
-  L <- t(chol(Sig_eps))
+  
+  if(is.null(L)) {
+    L <- t(chol(Sig_eps))
+  }
+  
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
 
   if(normalize) {
-    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
+    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - sum(log(diag(L))))
   }
   
   return(-0.5 * log_quadratic_form)
@@ -617,10 +623,10 @@ get_computer_model_errs <- function(theta, computer_model_data) {
   output_vars <- computer_model_data$output_vars
   
   if(computer_model_data$forward_model == "VSEM") {
-    model_errs <- computer_model_data$data_obs[, output_vars] - 
+    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - 
                   run_VSEM(theta, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$PAR_data, output_vars)
   } else if(computer_model_data$forward_model == "custom_likelihood") {
-    model_errs <- computer_model_data$data_obs[, output_vars] - computer_model_data$f(theta)
+    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - computer_model_data$f(theta)
   }
   
   return(model_errs)
@@ -711,6 +717,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
   }
   
   Sig_eps_curr <- Sig_eps_init
+  L_Sig_eps_curr <- t(chol(Sig_eps_init))
   model_errs_curr <- get_computer_model_errs(theta_init, computer_model_data)
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
@@ -725,14 +732,15 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     #
     # Metropolis step for theta
     #
-    
+
     # theta proposals.
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    # theta_prop <- theta_samp[itr-1,] + (0.5 * (2.4^2) * diag(1, nrow = 2) %*% matrix(rnorm(d), ncol = 1))[,1]
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Calculate log-likelihoods for current and proposed theta.
     model_errs_prop <- get_computer_model_errs(theta_prop, computer_model_data)
-    llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
-    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
+    llik_curr <- llik_Gaussian_err(model_errs_curr, L = L_Sig_eps_curr) 
+    llik_prop <- llik_Gaussian_err(model_errs_prop, L = L_Sig_eps_curr)
     
     # Metropolis-Hastings Accept-Reject Step.
     lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
@@ -751,10 +759,10 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     # Adapt proposal covariance matrix and scaling term.
     adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     tau = 0.8, adapt_init_threshold)
+                                     proposal_scale_decay, adapt_init_threshold)
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
-    log_scale_prop <- adapt_list$log_sd2
+    log_scale_prop <- adapt_list$log_scale
     samp_mean <- adapt_list$samp_mean
     accept_count <- adapt_list$accept_count
 
@@ -763,6 +771,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     #
     if(learn_Sig_eps) {
       Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      L_Sig_eps_curr <- t(chol(Sig_eps_curr))
       if(diag_cov) {
         Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
       } else {
@@ -778,11 +787,11 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
 
 
 # TODO: verify the recursive covariance calculation. 
-adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count, alpha, samp_mean, 
+adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_count, alpha, samp_mean, 
                                adapt_frequency = 1000, cov_method = "AM", scale_method = "MH_ratio", 
-                               accept_rate_target = 0.24, min_scale = 0.1, tau = 0.8, init_threshold = 3) {
-  # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form sd2 * C, where 
-  # sd2 is a scaling factor. This function supports different algorithms to adapt C and to adapt sd2, and the methods 
+                               accept_rate_target = 0.24, min_scale = 0.1, tau = 0.7, init_threshold = 3) {
+  # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form `scale * C`, where 
+  # `scale` is a scaling factor. This function supports different algorithms to adapt C and to adapt `scale`, and the methods 
   # can be mixed and matched. Only a portion of the function arguments are needed for certain methods, so take care 
   # to ensure the correct arguments are being passed to the function. The function updates C and also computes the lower 
   # triangular Cholesky factor L of C. For certain methods (e.g. the AM algorithm) C will be updated every iteration, but 
@@ -790,7 +799,7 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
   #
   # Args:
   #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
-  #    log_sd2: numeric, the log of the scaling factor. 
+  #    log_scale: numeric, the log of the scaling factor. 
   #    L: matrix, the lower triangular Cholesky factor of C. This is what is actually used to generate proposals. In general, this 
   #       can be "out of alignment" with C; for example, C can be updated every iteration, but the Cholesky factor can be updated 
   #       less frequently to save computation time. 
@@ -800,7 +809,7 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
   #    adapt_cov_frequency: integer, number of iterations that specifies how often C or L will be updated. The AP algorithm 
   #                         updates both C and L together; the AM algorithm updates C every iteration, but only updates L according 
   #                         to `update_cov_frequency`. 
-  #    adapt_scale_frequency: integer, number of iterations that specifies how often log_sd2 will be updated. 
+  #    adapt_scale_frequency: integer, number of iterations that specifies how often log_scale will be updated. 
   #    cov_method: character(1), currently either "AP" (Adaptive Proposal, Haario 1999) or "AM" (Adaptive Metropolis, Haario 2001). 
   #    scale_method: character(1), currently either "pecan" (method currently used in PEcAn) or "MH_ratio" (based on Metropolis-Hastings 
   #                  acceptance probability). Both methods rely on `accept_rate_target` as a target. 
@@ -811,7 +820,7 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
   #    samp_mean: numeric(d), used only by "AM". This is the cumulative sample mean over the MCMC samples. It is updated every iteration. 
   #    alpha: numeric(1), used only by "MH_ratio". This is the most recent Metropolis-Hastings acceptance probability. The "MH_ratio" method 
   #           updates log_sd2 every iteration. 
-  #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_sd2 updating occurs. 
+  #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_scale updating occurs. 
   #
   # Returns:
   #    list, with elements "C", "L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
@@ -844,7 +853,7 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
         L <- sqrt(min_scale) * L
       } else {
         C <- stats::cov(sample_history)
-        L <- t(chol(C))
+        L <- t(chol(C + diag(sqrt(.Machine$double.eps), nrow=nrow(C))))
       }
     }
     
@@ -852,16 +861,16 @@ adapt_cov_proposal <- function(C, log_sd2, L, sample_history, itr, accept_count,
   
   # Adapt scaling factor for proposal covariance matrix. 
   if(scale_method == "pecan") {
-    if((itr >= init_threshold) && ((itr - 1) %% adapt_frequency == 0)) {
-      log_sd2 <- 2 * log(max(accept_rate / accept_rate_target, min_scale))
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      log_scale <- 2 * log(max(accept_rate / accept_rate_target, min_scale))
     }
   } else if(scale_method == "MH_ratio") {
-    if(itr >= init_threshold) log_sd2 <- log_sd2 + (1 / itr^tau) * (alpha - accept_rate_target) 
+    if(itr >= init_threshold) log_scale <- log_scale + (1 / itr^tau) * (alpha - accept_rate_target) 
   }
 
   if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
   
-  return(list(C = C, L = L, log_sd2 = log_sd2, samp_mean = samp_mean, accept_count = accept_count))
+  return(list(C = C, L = L, log_scale = log_scale, samp_mean = samp_mean, accept_count = accept_count))
   
 }
 
@@ -927,7 +936,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prio
     }
     
     # theta proposals
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    theta_prop <- theta_samp[itr-1,] + (sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Approximate SSR by sampling from GP. 
     thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
