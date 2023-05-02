@@ -1233,6 +1233,114 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 # }  
 
 
+generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, Sig_theta, G, pars_cal_sel = NULL) {
+  # Sets up a test example (including computer model data and prior distributions) in which the forward model is linear 
+  # (represented by matrix `G`), the likelihood is Gaussian (with variance `sig2_eps`), and the prior on the calibration 
+  # parameters is zero-mean Gaussian (with diagonal covariance matrix `Sig_theta`). Note that currently this function 
+  # only creates an example with a single output variable (p = 1). Also, for the time being `Sig_theta` must be diagonal, 
+  # until the prior code is updated to allow for correlated priors. This linear Gaussian setup admits a closed form 
+  # posterior so is useful for validating MCMC schemes, etc. This function also returns the mean and covariance matrix 
+  # of the true posterior. 
+  #
+  # Args:
+  #    random_seed: integer(1), the seed for the random number generator. 
+  #    N_obs: integer(1), the number of observed data points that will be generated. 
+  #    D: integer(1), the dimension of the input parameter space; if `pars_cal_sel` is NULL or corresponds to all parameters, 
+  #       then D is the dimension of the calibration parameter space. However, if `pars_cal_sel` only selects a subset of parameters, 
+  #       then D will be larger than the dimension of the parameter calibration space. 
+  #    sig2_eps: numeric(1), the observation variance.
+  #    Sig_theta: matrix of dimension D x D. Note that if only a subset of parameters are calibrated, then the prior covariance on the 
+  #               calibration parameters with be a sub-matrix of `Sig_theta`. 
+  #    G: matrix of dimension N_obs x D, the linear forward model.
+  #    pars_cal_sel: integer(), vector containing the indices used to select the parameters which will be calibrated. The remaining parameters
+  #                  will be fixed. If NULL, calibrates all parameters. 
+  #    
+  # Returns:
+  #    list with 3 elements: computer_model_data, theta_prior_params, and true_posterior. 
+  
+  if(!all.equal(dim(G), c(N_obs, D))) {
+    stop("Forward model G must be matrix of dimension N_obs x D.")
+  }
+  
+  if(!isTRUE(all.equal(Sig_theta, diag(diag(Sig_theta))))) {
+    stop("Code does not currently support correlated prior parameters. `Sig_theta` should be diagonal.")
+  }
+  
+  # Sample from model to generate observed data. 
+  set.seed(random_seed)
+  Sig_t <- diag(sig2_eps, nrow = N_obs)
+  L_t <- t(chol(Sig_t))
+  L_theta <- t(chol(Sig_theta))
+  theta <- L_theta %*% matrix(rnorm(D), ncol=1)
+  data_ref <- G %*% theta
+  data_obs <- data_ref + L_t %*% matrix(rnorm(N_obs), ncol=1)
+  
+  # Select parameters to calibrate. 
+  if(is.null(pars_cal_sel)) pars_cal_sel <- seq(1,D)
+  theta_names <- paste0("theta", seq(1,D))
+  pars_cal_names <- theta_names[pars_cal_sel]
+  if(length(pars_cal_names) > N_obs) {
+    stop("For now number of calibration parameters must be <= number of observations.")
+  }
+  
+  # Forward map. 
+  f <- function(par_val, computer_model_data) {
+    theta <- computer_model_data$ref_pars$true_value
+    theta[computer_model_data$pars_cal_sel] <- par_val
+    
+    return(computer_model_data$G %*% matrix(theta, ncol=1))
+  }
+  
+  # Computer model data.
+  computer_model_data <- list(f = f, 
+                              data_ref = data_ref,
+                              data_obs = data_obs, 
+                              n_obs = N_obs, 
+                              output_vars = "y", 
+                              pars_cal_names = pars_cal_names,
+                              pars_cal_sel = pars_cal_sel,
+                              forward_model = "custom_likelihood", 
+                              G = G, 
+                              Sig_eps = matrix(sig2_eps), 
+                              ref_pars = data.frame(true_value = theta, 
+                                                    row.names = pars_cal_names))
+  
+  # Prior Parameters. 
+  theta_prior_params <- data.frame(dist = rep("Gaussian", length(pars_cal_names)), 
+                                   param1 = rep(0, length(pars_cal_names)), 
+                                   param2 = sqrt(diag(Sig_theta)[pars_cal_sel]))
+  
+  # True posterior (note that we need to adjust for the case where only a subset of the parameters 
+  # are calibrated). The posterior moments are computed using the SVD and Woodbury identity. This 
+  # assumes the number of calibration parameters is <= N_obs. 
+  pars_fixed_sel <- setdiff(seq(1,D), pars_cal_sel)
+  G_cal <- G[, pars_cal_sel]
+  theta_cal <- theta[pars_cal_sel]
+  Sig_theta_cal <- Sig_theta[pars_cal_sel, pars_cal_sel]
+  
+  if(length(pars_fixed_sel) == 0) {
+    G_fixed <- matrix(0, nrow = N_obs, ncol = 1)
+    theta_fixed <- 0
+  } else {
+    G_fixed <- G[, pars_fixed_sel]
+    theta_fixed <- theta[pars_fixed_sel]
+  }
+  y_adjusted <- matrix(data_obs, ncol=1) - G_fixed %*% theta_fixed
+  
+  # TODO: check SVD calculation. For now just directly taking inverse. 
+  # svd_list <- svd(G_cal)
+  # Cov_post <- Sig_theta_cal - Sig_theta_cal %*% diag(1 / (sig2_eps * (svd_list$d^(-2)) + diag(Sig_theta_cal))) %*% Sig_theta_cal
+  
+  Cov_post <- sig2_eps * solve(crossprod(G_cal) + sig2_eps * diag(1/diag(Sig_theta_cal)))
+  mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
+  true_posterior <- list(mean = mean_post, Cov = Cov_post)
+  
+  return(list(computer_model_data = computer_model_data, theta_prior_params = theta_prior_params, 
+              true_posterior = true_posterior))
+  
+}
+
+
 generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
                                     ref_pars, output_vars, output_frequencies, obs_start_day) {
   # A helper function to generate data associated with a specific VSEM test example. Returns a list of all of the information

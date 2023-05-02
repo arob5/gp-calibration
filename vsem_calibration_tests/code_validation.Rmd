@@ -212,11 +212,22 @@ for(j in seq_along(gp_pred_list)) {
 
 # Testing MCMC Calibration Algorithm (Exact, No GP Approximation). 
 
-## Gaussian Posterior Test
-Here we choose settings so that the true posterior is (just about) Gaussian. It is not exact because I am expressing a proper uniform prior, but the 
-prior is so diffuse that the posterior will be very close to Gaussian. The observed data is set to be the zero vector of the same dimension as the calibration 
-parameters and the forward model is chosen to be the identity. Therefore, the posterior is simply (approximately, ignoring the uniform prior)
-$$p(\theta|y) \propto p(y|\theta) = \mathcal{N}_{2}(\theta|0, \sigma^2 I_2)$$
+## Linear Gaussian Posterior Test
+Here we choose the forward model to be linear, with Gaussian observation noise, and a Gaussian prior on the calibration parameters. This 
+results in a closed-form Gaussian posterior which can be used to validate the MCMC schemes. 
+```{r}
+N_obs <- 20
+d <- 2
+G <- matrix(rnorm(N_obs*d), nrow = N_obs, ncol = d)
+Sig_theta <- diag(c(0.1, 1.0))
+linear_Gaussian_data <- generate_linear_Gaussian_test_data(random_seed = 1, N_obs = N_obs, D = d, sig2_eps = 1.0, 
+                                                           Sig_theta = Sig_theta, G = G, pars_cal_sel = NULL)
+computer_model_data <- linear_Gaussian_data$computer_model_data
+theta_prior_params <- linear_Gaussian_data$theta_prior_params
+true_post <- linear_Gaussian_data$true_posterior
+```
+
+
 ```{r}
 data_obs <- matrix(0.0, nrow = 2, ncol = 1)
 colnames(data_obs) <- "y"
