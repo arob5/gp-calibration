@@ -241,10 +241,6 @@ plot(samp$theta[burn_in:N_mcmc,1], type="l")
 plot(samp$theta[burn_in:N_mcmc,2], type="l")
 ```
 
-```{r}
-hist(samp$theta[burn_in:N_mcmc,1], 50)
-hist(samp$theta[burn_in:N_mcmc,2], 50)
-```
 
 ```{r}
 # Sample moments. 
@@ -285,7 +281,14 @@ for(j in seq(1,d)) {
 
 ```
 
+```{r}
+# 2d KDE contour plots. 
 
+countour_plots <- get_2d_density_contour_plot(list(theta_samp_exact, theta_samp_keep), col_sel = c(1,2),  
+                                              xlab = computer_model_data$pars_cal_name[1], ylab = computer_model_data$pars_cal_name[2], 
+                                              main_titles = paste0("2D KDE Countours: ", c("True", "MCMC")))
+for(j in seq_along(countour_plots)) print(countour_plots[[j]])
+```
 
 
 

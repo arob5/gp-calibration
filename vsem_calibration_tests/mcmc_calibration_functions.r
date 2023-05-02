@@ -1314,6 +1314,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, 
   computer_model_data <- list(f = f, 
                               data_ref = data_ref,
                               data_obs = data_obs, 
+                              theta_true = theta[pars_cal_sel],
                               n_obs = N_obs, 
                               output_vars = output_vars, 
                               pars_cal_names = pars_cal_names,
@@ -1808,8 +1809,25 @@ get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = 
 }
 
 
-
-
+get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "theta1", ylab = "theta2", main_titles = NULL) {
+                                        
+  if(is.null(main_titles)) main_titles <- paste0("2D KDE Countours: ", seq_along(samples_list))
+  plts <- vector(mode = "list", length = length(samples_list))
+  
+  for(j in seq_along(samples_list)) {
+    df <- data.frame(samples_list[[j]])
+    x <- colnames(df)[col_sel[1]]
+    y <- colnames(df)[col_sel[2]]
+    plts[[j]] <- ggplot(df, aes(x = .data[[x]], y = .data[[y]])) + 
+                  geom_density_2d_filled() + 
+                  xlab(xlab) + 
+                  ylab(ylab) + 
+                  ggtitle(main_titles[[j]])
+  }
+  
+  return(plts)
+  
+}
 
 
 
