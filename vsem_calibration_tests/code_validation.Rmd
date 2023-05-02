@@ -230,7 +230,6 @@ true_post <- linear_Gaussian_data$true_posterior
 
 
 ```{r}
-# TODO: test non-adaptive with known posterior covariance, scaled using optimal scaling for Gaussians. 
 N_mcmc <- 50000
 samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
                        Sig_eps_init = diag(1.0), N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
@@ -266,7 +265,25 @@ print(true_post$Cov)
 print("Mean:")
 print(true_post$mean)
 ```
+```{r}
+# Samples from true posterior. 
+N_exact_samples <- N_mcmc - burn_in + 1
+L_Cov_exact <- t(chol(true_post$Cov))
+theta_samp_exact <- t(true_post$mean[,1] + L_Cov_exact %*% matrix(rnorm(N_exact_samples*d), nrow = d, ncol = N_exact_samples))
+```
 
+```{r}
+theta_samp_keep <- samp$theta[burn_in:N_mcmc,]
+
+# Histograms.
+for(j in seq(1,d)) {
+  hist_plot <- get_hist_plot(list(theta_samp_exact, theta_samp_keep), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples", data_names = c("True", "MCMC"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
 
 
 

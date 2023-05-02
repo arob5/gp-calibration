@@ -626,6 +626,17 @@ mcmc_calibrate_old <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
 
 
 get_computer_model_errs <- function(theta, computer_model_data) {
+  # Computes the errors Y - f(theta) between observed data Y and forward model evaluation 
+  # f(theta). Both of these quantities are assumed to be matrices of shape N x p, where
+  # N is the number of observations and p is the number of model outputs. The forward 
+  # model is run at input `theta` and then the error is computed. 
+  #
+  # Args:
+  #    theta: numeric(d), d-dimensional vector at which to evaluate the forward model. 
+  #    computer_model_data: list, the computer model data list. 
+  #
+  # Returns:
+  #    matrix of dimension N x p, the error Y - f(theta). 
   
   output_vars <- computer_model_data$output_vars
   
@@ -1751,257 +1762,36 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, 
 }
 
 
-# TODO: I think the range of the y-axis is just too large 
-integrate_loss_1d_log_weights <- function(loss_vals, log_weights, thetas, max_range = log(.Machine$double.xmax), equally_spaced) {
-  
-  min_idx <- 1
-  max_idx <- length(thetas)
 
-  if(diff(range(log_weights)) < max_range) {
-    return(loss_vals, exp(log_weights), thetas)
-  }
-  
-  integral_approx <- 0
-  max_idx <- floor(max_idx / 2)
-  while(max_idx < length(thetas)) {
-    m <- min(log_weights[min_idx:max_idx])
-    M <- max(log_weights[min_idx:max_idx])
-    
-    if(M - m > max_range) {
-      max_idx <- max(floor(max_idx / 2), min_idx + 1)
-    } else {
-      shifted_log_weights <- log_weights[min_idx:max_idx] - m
-      val <- integrate_loss_1d(loss_vals[min_idx:max_idx], exp(shifted_log_weights), ) 
-    }
-    
-  }  
-
-  
-}
+# ------------------------------------------------------------------------------
+# MCMC Plotting Functions. 
+# ------------------------------------------------------------------------------
 
 
-integrate_loss_1d <- function(loss_vals, weights, thetas, equally_spaced) {
-  # Approximates the integral ell(theta)* w(theta) dtheta over a one-dimensional region, 
-  # where ell() is some loss function and w() is some density function (typically the posterior). 
-  # Uses a trapezoidal numerical approximation. This function does not create the grid of theta
-  # values for the approximation, but rather assumes the arguments are vectors of function 
-  # evaluations of ell() and w() at some evenly spaced grid of theta values. 
-  # 
-  # Args:
-  #    loss_vals: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
-  #          N is the number of grid points. 
-  #    weights: numeric(N), vector of weights for integral; this is often the post() evaluations 
-  #             at the grid of evenly spaced points.
-  #    thetas: numeric(N), the grid points. 
-  #    equally_spaced: logical(1), is the grid `thetas` equally spaced or not? 
-  #
-  # Returns:
-  #    numeric, approximation of the integral given by the trapezoidal rule. 
-  
-  if(equally_spaced) {
-    d_theta <- thetas[2] - thetas[1]
-  } else {
-    stop("Non equally spaced grid not currently supported.")
-  }
-  
-  N_grid <- length(loss_vals)
-  0.5 * d_theta * (loss_vals[1]*weights[1] + loss_vals[N_grid]*weights[N_grid]) + d_theta * sum(loss_vals[2:(N_grid-1)] * weights[2:(N_grid-1)])
-  
-}
-
-
-calculate_ground_truth_quantities <- function(theta_train_test_data, computer_model_data, theta_prior_params) {
-  # A convenience function used in emulator comparison tests that computes the ground truth log prior, likelihood, and posterior
-  # to be used for comparison with the emulated analogs. 
+get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = NULL, xlab = "samples", ylab = "density", 
+                          main_title = "Histogram", data_names = NULL) {
+  # Generates a single plot with one or more histograms. The input data `samples_list` must be a list of matrices. 
+  # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
+  # second element a matrix of samples from an approximate distribution. This function will select one column from 
+  # each matrix based on the index `col_sel`. Each selected column will be turned into a histogram. 
+  # TODO: Need to check whether or not the matrices can have different length (i.e. different number of samples).
   #
   # Args:
-  #    theta_train_test_data: list, as returned by `get_train_test_data()`. 
-  #    computer_model_data: list, as returned by `generate_vsem_test_case()`. 
-  #    theta_prior_params: data.frame, containing prior information for calibration parameters. 
-  # 
+  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
+  #    col_sel: integer(1), the column index to select from each matrix. i.e. this selects a particular parameter, whose
+  #             samples will be transformed into a histogram. 
+  #    bins: integer(1), number of bins to use in histogram. 
+  #    vertical_line: If not NULL, the x-intercept to be used for a plotted vertical line. 
+  #    xlab, ylab, main_title: x and y axis labels and plot title. 
+  #    data_names: character(), vector equal to the length of the list `samples_list`. These are the names used in 
+  #                the legend to identify the different histograms. 
+  #
   # Returns:
-  #    list, containing the calcualted ground truth log density evaluations (log prior, log likelihood, log posterior up to normalizing constant). 
-
-  # True log likelihood evaluations at test inputs
-  vars_obs <- diag(computer_model_data$Sig_eps)
-  llik_test_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_test, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
-                                                normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
-  llik_test <- rowSums(llik_test_per_output)
-                                                  
-  # True log likelihood evaluations at design points
-  llik_train_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_train, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
-                                                 normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
-  llik_train <- rowSums(llik_train_per_output)
-  
-  # Log prior evaluations
-  lprior_theta_test <- sapply(seq(1, nrow(theta_train_test_data$X_test)), function(i) calc_lprior_theta(theta_train_test_data$X_test[i,], theta_prior_params))
-  lprior_theta_train <- sapply(seq(1, nrow(theta_train_test_data$X_train)), function(i) calc_lprior_theta(theta_train_test_data$X_train[i,], theta_prior_params))
-  
-  # Log posterior evaluations
-  lpost_theta_test <- llik_test + lprior_theta_test
-  lpost_theta_train <- llik_train + lprior_theta_train
-  
-  return(list(llik_test = llik_test, 
-              llik_train = llik_train, 
-              lprior_test = lprior_theta_test, 
-              lprior_train = lprior_theta_train, 
-              lpost_test = lpost_theta_test, 
-              lpost_train = lpost_theta_train, 
-              llik_test_per_output = llik_test_per_output, 
-              llik_train_per_output = llik_train_per_output))
-  
-}
-
-
-run_emulator_comparison <- function(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = NULL) {
-  # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
-  
-  output_list <- list()
-  output_list[["emulator_settings"]] <- emulator_settings
-  output_list[["theta_prior_params"]] <- theta_prior_params
-  
-  # Synthetic data generation for VSEM model
-  output_list[["computer_model_data"]] <- computer_model_data
-  
-  # Design data and test data
-  output_list[["train_test_data_settings"]] <- train_test_data_settings
-  output_list[["theta_train_test_data"]] <- list()
-  any_log_SSR = any(emulator_settings["target"] == "log_SSR")
-  for(j in seq(1, nrow(train_test_data_settings))) {
-    data_setting_name <- paste0("data_setting_", j)
-    theta_train_test_data <- get_train_test_data(N_train = train_test_data_settings[j, "N_train"], 
-                                                 N_test = train_test_data_settings[j, "N_test"], 
-                                                 prior_params = theta_prior_params,
-                                                 extrapolate = train_test_data_settings[j, "extrapolate"], 
-                                                 ref_pars = computer_model_data$ref_pars,
-                                                 pars_cal_sel = computer_model_data$pars_cal_sel,
-                                                 data_obs = computer_model_data$data_obs, 
-                                                 PAR = computer_model_data$PAR_data,
-                                                 output_vars = computer_model_data$output_vars,
-                                                 scale_X = train_test_data_settings[j, "scale_X"], 
-                                                 normalize_Y = train_test_data_settings[j, "normalize_Y"],
-                                                 log_SSR = any_log_SSR, 
-                                                 joint_LHS = train_test_data_settings[j, "joint_LHS"], 
-                                                 method = train_test_data_settings[j, "method"], 
-                                                 order_1d = TRUE, 
-                                                 true_theta_samples = true_theta_samples)
-    output_list[["theta_train_test_data"]][[j]] <- theta_train_test_data
-  }
-  
-  # Run tests; each test is defined by an emulator setting/train_test_data setting combination.
-  output_list[["test_results"]] <- list()
-  for(i in seq(1, nrow(emulator_settings))) {
-    emulator_setting <- emulator_settings[i, ]
-    log_SSR = (emulator_setting["target"] == "log_SSR")
-    output_list[["test_results"]][[i]] <- list()
-    
-    for(j in seq(1, nrow(train_test_data_settings))) {
-      data_setting_name <- paste0("data_setting_", j)
-      output_list[["test_results"]][[i]][[j]] <- run_emulator_test(computer_model_data, emulator_setting, theta_prior_params,
-                                                                   output_list[["theta_train_test_data"]][[j]])
-    }
-  }
-  
-  return(output_list)
-  
-}
-
-
-# TODO: generalize to LNP
-run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data) {
-  
-  Sig_eps <- computer_model_data$Sig_eps
-  if(!all(Sig_eps[!diag(nrow(Sig_eps))] == 0)) stop("Non-diagonal output covariances not supported yet.")
-  sig2_outputs <- diag(Sig_eps)
-  
-  # Calculate the ground truth quantities (likelihood, posterior, etc.)
-  ground_truth_quantities <- calculate_ground_truth_quantities(theta_train_test_data, computer_model_data, theta_prior_params)
-  
-  # Fit GPs
-  fit_LNP <- (emulator_settings$target == "log_SSR")
-  if(fit_LNP) stop("LNP not supported yet.")
-  gp_fits_list <- fit_independent_GPs(theta_train_test_data$X_train_preprocessed, theta_train_test_data$Y_train_preprocessed, 
-                                      emulator_settings$gp_lib, emulator_settings$kernel)
-  gp_fit_times <- gp_fits_list$times
-  gp_fits <- gp_fits_list$fits
-  
-  # Predict with GPs: returns predictions from GP without performing transformations (exponentiating, truncating, rectifying). These transformations 
-  # are intended to be performed later, e.g. when plotting with plot_gp_1d(). 
-  gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                          transformation_method = "default")
-  gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                           transformation_method = "default")
-  
-  # TODO: left off here:
-  #    - Need to update the below lines of code since need to perform the transformations before calculating SSR. 
-  #    - Should probably have a calc_SSR() function that allows the transformations to be performed. Or I should 
-  #      just perform the transformations and store them as separate elements of the list. Should probably have a 
-  #      "transform_gp_predictions()" function that accounts for all of the transformations.
-  
-  SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
-  SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)
-  SSR_pred_mean_train <- sapply(gp_pred_train, function(pred) pred$mean)
-  SSR_pred_var_train <- sapply(gp_pred_train, function(pred) pred$sd2)
-  
-  # Compute GP predictive density of posterior approximation at test points
-  # post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, 
-  #                                                                   SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
-  # lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, 
-  #                                                       lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
-  # lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, 
-  #                                                        ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
-  
-  return(list(ground_truth_quantities = ground_truth_quantities, 
-              gp_fits = gp_fits, 
-              gp_times = gp_fit_times, 
-              gp_pred_list_test = gp_pred_test, 
-              gp_pred_list_train = gp_pred_train, 
-              SSR_pred_mean_test = SSR_pred_mean_test, 
-              SSR_pred_var_test = SSR_pred_var_test, 
-              SSR_pred_mean_train = SSR_pred_mean_train, 
-              SSR_pred_var_train = SSR_pred_var_train))
-              
-              # post_pred_mean_log_test = post_approx_LNP_params_test$mean_log, 
-              # post_pred_var_log_test = post_approx_LNP_params_test$var_log, 
-              # lpost_pred_density_test = lpred_pi_test, 
-              # lpost_pred_density_train = lpred_pi_train))  
-  
-}
-
-
-get_hist_plot <- function(samples_list, bins = 30, colors = NULL, vertical_line = NULL, xlab = "samples", ylab = "density", 
-                          main_title = "Histogram", opacities = NULL, col_sel = 1, data_names = as.character(seq_along(samples_list))) {
-  
-  dt <- data.table(variable = character(), value = numeric())
-  
-  # TODO: left off here. 
-  samples <- matrix()
-  for(j in seq_along(samples_list)) {
-    samples_j <- samples_list[[j]][,col_sel]
-    rownames(samples) <- data_names[j]
-  }
+  #    ggplot2 object. 
   
   dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
-  cols <- colnames(dt)
+  if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
   dt <- melt(dt, measure.vars = colnames(dt), na.rm = TRUE)
-  
-  # if(is.null(opacities)) opacities <- rep(1, N)
-  # 
-  # # Set colors if they are not specified.
-  # if(is.null(colors)) {
-  #   colors <- c("red", "blue", "green", "gray", "orange")
-  #   if(N <= length(cols)) {
-  #     cols <- cols[1:N]
-  #   } else {
-  #     N_additional_colors <- N - length(cols)
-  #     N_random_colors <- max(20, N_additional_colors*5)
-  #     random_colors <- rainbow(N_random_colors, s=.6, v=.9)[sample(seq_len(N_random_colors), N_additional_colors)]
-  #     colors <- c(colors, random_colors)
-  #   }
-  # }
-  # 
   
   plt <- ggplot(data = dt, aes(x = value, color = variable)) + 
           geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
@@ -2009,10 +1799,10 @@ get_hist_plot <- function(samples_list, bins = 30, colors = NULL, vertical_line 
           ylab(ylab) + 
           ggtitle(main_title)
   
-  # for(j in seq_len(N)) {
-  #   plt <- plt + geom_histogram(aes(x = df[[j]]), bins = bins, color = colors[j], fill = "white", alpha = opacities[j])
-  # }
-
+  if(!is.null(vertical_line)) {
+    plt <- plt + geom_vline(xintercept = vertical_line, color = "red")
+  }
+  
   return(plt)
   
 }
