@@ -318,10 +318,17 @@ run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data 
   #    matrix is the return value of `run_VSEM_single_input()` at the respective input value. If M = 1, then a single matrix 
   #    is returned not in a list. 
   
+  if(!is.null(computer_model_data)) {
+    ref_pars <- computer_model_data$ref_pars
+    pars_cal_sel <- computer_model_data$pars_cal_sel
+    PAR_data <- computer_model_data$PAR_data
+    output_vars <- computer_model_data$output_vars
+  }
+  
   if(isTRUE(nrow(theta_vals) > 1)) {
-    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data)))
+    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, ref_pars, pars_cal_sel, PAR_data, output_vars)))
   } else {
-    return(run_VSEM_single_input(theta_vals, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data))
+    return(run_VSEM_single_input(theta_vals, ref_pars, pars_cal_sel, PAR_data, output_vars))
   }
   
 }
@@ -623,10 +630,9 @@ get_computer_model_errs <- function(theta, computer_model_data) {
   output_vars <- computer_model_data$output_vars
   
   if(computer_model_data$forward_model == "VSEM") {
-    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - 
-                  run_VSEM(theta, computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$PAR_data, output_vars)
+    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - run_VSEM(theta, computer_model_data = computer_model_data)
   } else if(computer_model_data$forward_model == "custom_likelihood") {
-    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - computer_model_data$f(theta)
+    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - computer_model_data$f(theta, computer_model_data)
   }
   
   return(model_errs)
@@ -1274,6 +1280,8 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, 
   theta <- L_theta %*% matrix(rnorm(D), ncol=1)
   data_ref <- G %*% theta
   data_obs <- data_ref + L_t %*% matrix(rnorm(N_obs), ncol=1)
+  output_vars <- "y"
+  colnames(data_obs) <- output_vars
   
   # Select parameters to calibrate. 
   if(is.null(pars_cal_sel)) pars_cal_sel <- seq(1,D)
@@ -1296,7 +1304,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, 
                               data_ref = data_ref,
                               data_obs = data_obs, 
                               n_obs = N_obs, 
-                              output_vars = "y", 
+                              output_vars = output_vars, 
                               pars_cal_names = pars_cal_names,
                               pars_cal_sel = pars_cal_sel,
                               forward_model = "custom_likelihood", 
