@@ -1829,7 +1829,48 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 }
 
 
+# ------------------------------------------------------------------------------
+# Validation Functions
+# ------------------------------------------------------------------------------
 
+MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_params, Sig_eps_prior_params, N_mcmc) {
+  # Currently assumes diagonal prior covariance, inverse Gamma prior, and single output (p=1), 
+  # zero-mean prior with diagonal prior covariance on theta. Also currently assumes none of the thetas are 
+  # fixed (they are all calibration parameters). 
+  
+  d <- length(computer_model_data$pars_cal_sel)
+  Sig_theta <- diag(theta_prior_params$param2^2)
+  
+  theta_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = d)
+  sig2_eps_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = 1)
+  
+  theta_samp_Gibbs[1,] <- computer_model_data$theta_true
+  sig2_eps_samp_Gibbs[1,] <- diag(computer_model_data$Sig_eps)
+  theta_curr <- theta_samp_Gibbs[1,]
+  sig2_eps_curr <- sig2_eps_samp_Gibbs[1,] 
+  
+  
+  for(itr in seq(2, N_mcmc)) {
+    
+    # Sample theta conditional posterior. 
+    Cov_post <- sig2_eps_curr * solve(crossprod(G) + sig2_eps_curr * diag(1/diag(Sig_theta)))
+    mean_post <- (1/sig2_eps_curr) * tcrossprod(Cov_post, G) %*% computer_model_data$data_obs
+    L_post <- t(chol(Cov_post))
+    theta_curr <- mean_post + L_post %*% matrix(rnorm(nrow(L_post)), ncol=1)
+    if(any(is.na(theta_curr))) browser()
+    theta_samp_Gibbs[itr,] <- theta_curr
+    
+    # Sample sig2_eps conditional posterior. 
+    a_post <- Sig_eps_prior_params$IG_shape + 0.5 * computer_model_data$n_obs + 1
+    b_post <- Sig_eps_prior_params$IG_scale + 0.5 * sum((computer_model_data$data_obs - G %*% matrix(theta_curr, ncol=1))^2)
+    sig2_eps_curr <- 1/rgamma(1, shape = a_post, rate = b_post)
+    sig2_eps_samp_Gibbs[itr,] <- sig2_eps_curr
+    
+  }
+  
+  return(list(theta = theta_samp_Gibbs, sig2_eps = sig2_eps_samp_Gibbs))
+  
+}
 
 
 

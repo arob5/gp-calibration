@@ -314,36 +314,7 @@ plot(samp$Sig_eps[burn_in:N_mcmc,1], type="l")
 ```
 ```{r}
 # Gibbs sampler for comparison
-# Note: this algorithm assumes that none of the theta are fixed; i.e. they are all calibration parameters. 
-
-# TODO: where are NAs coming from here? 
-
-theta_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = d)
-sig2_eps_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = 1)
-
-theta_samp_Gibbs[1,] <- computer_model_data$theta_true
-sig2_eps_samp_Gibbs[1,] <- sig2_eps
-theta_curr <- theta_samp_Gibbs[1,]
-sig2_eps_curr <- sig2_eps_samp_Gibbs[1,] 
-
-
-for(itr in seq(2, N_samp_Gibbs)) {
-  
-  # Sample theta conditional posterior. 
-  Cov_post <- sig2_eps_curr * solve(crossprod(G) + sig2_eps_curr * diag(1/diag(Sig_theta)))
-  mean_post <- (1/sig2_eps_curr) * tcrossprod(Cov_post, G) %*% computer_model_data$data_obs
-  L_post <- t(chol(Cov_post))
-  theta_curr <- mean_post + L_post %*% matrix(rnorm(nrow(L_post)), ncol=1)
-  theta_samp_Gibbs[itr,] <- theta_curr
-  
-  # Sample sig2_eps conditional posterior. 
-  a_post <- Sig_eps_prior_params$IG_shape + 0.5*computer_model_data$n_obs + 1
-  b_post <- Sig_eps_prior_params$IG_scale + 0.5 * sum((computer_model_data$data_obs - G %*% matrix(theta_curr, ncol=1))^2)
-  sig2_eps_curr <- 1/rgamma(1, shape = a_post, rate = b_post)
-  sig2_eps_samp_Gibbs[itr,] <- sig2_eps_curr
-  
-}
-
+Gibbs_samp <- MCMC_Gibbs_linear_Gaussian_model(computer_model_data, theta_prior_params, Sig_eps_prior_params, N_mcmc = N_mcmc)
 ```
 
 
@@ -368,16 +339,44 @@ print(mean(samp$Sig_eps[burn_in:N_mcmc,1]))
 # True moments. 
 print("Gibbs Sampling Estimates:")
 print("theta Cov:")
-print(stats::cov(theta_samp_Gibbs[burn_in:N_mcmc,]))
+print(stats::cov(Gibbs_samp$theta[burn_in:N_mcmc,]))
 
 print("theta Mean:")
-print(colMeans(theta_samp_Gibbs[burn_in:N_mcmc,]))
+print(colMeans(Gibbs_samp$theta[burn_in:N_mcmc,]))
 
 print("sig2_eps Var:")
-print(mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1]^2) - mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1])^2)
+print(mean(Gibbs_samp$sig2_eps[burn_in:N_mcmc,1]^2) - mean(Gibbs_samp$sig2_eps[burn_in:N_mcmc,1])^2)
 
 print("sig2_eps Mean:")
-print(mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1]))
+print(mean(Gibbs_samp$sig2_eps[burn_in:N_mcmc,1]))
 ```
+
+```{r}
+
+# Histograms.
+for(j in seq(1,d)) {
+  hist_plot <- get_hist_plot(list(Gibbs_samp$theta[burn_in:N_mcmc,], samp$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Gibbs Baseline", "MCMC Calibration Function"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
+
+```{r}
+
+# Histograms.
+
+sig2_eps_hist_plot <- get_hist_plot(list(Gibbs_samp$sig2_eps[burn_in:N_mcmc,,drop=FALSE], samp$Sig_eps[burn_in:N_mcmc,,drop=FALSE]), bins = 50, xlab = "sig2_eps",
+                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Gibbs Baseline", "MCMC Calibration Function"), 
+                                    vertical_line = diag(computer_model_data$Sig_eps))
+print(sig2_eps_hist_plot)
+
+
+```
+
+
+
+
 
 
