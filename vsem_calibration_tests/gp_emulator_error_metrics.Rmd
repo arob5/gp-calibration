@@ -286,6 +286,7 @@ emulator_info <- list(gp_fits = gp_fits,
 
 # Samples from Exact Posterior
 ```{r}
+# TODO: Sig_eps_prior_params does not appear to be defined anywhere here. 
 N_mcmc <- 50000
 post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
                                computer_model_data$output_vars, computer_model_data$PAR_data, computer_model_data$n_obs,

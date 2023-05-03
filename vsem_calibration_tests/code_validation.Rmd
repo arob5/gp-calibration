@@ -290,7 +290,94 @@ countour_plots <- get_2d_density_contour_plot(list(theta_samp_exact, theta_samp_
 for(j in seq_along(countour_plots)) print(countour_plots[[j]])
 ```
 
+## Linear Gaussian Posterior Test, also learning the noise variance.
+
+### Highly informative prior. 
+```{r}
+# Prior on noise variance. 
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = 10000, 
+                             IG_scale = 10000)
+```
 
 
+```{r}
+samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
+                       Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
+```{r}
+burn_in <- 25000
+plot(samp$theta[burn_in:N_mcmc,1], type="l")
+plot(samp$theta[burn_in:N_mcmc,2], type="l")
+plot(samp$Sig_eps[burn_in:N_mcmc,1], type="l")
+```
+```{r}
+# Gibbs sampler for comparison
+# Note: this algorithm assumes that none of the theta are fixed; i.e. they are all calibration parameters. 
+
+# TODO: where are NAs coming from here? 
+
+theta_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = d)
+sig2_eps_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = 1)
+
+theta_samp_Gibbs[1,] <- computer_model_data$theta_true
+sig2_eps_samp_Gibbs[1,] <- sig2_eps
+theta_curr <- theta_samp_Gibbs[1,]
+sig2_eps_curr <- sig2_eps_samp_Gibbs[1,] 
+
+
+for(itr in seq(2, N_samp_Gibbs)) {
+  
+  # Sample theta conditional posterior. 
+  Cov_post <- sig2_eps_curr * solve(crossprod(G) + sig2_eps_curr * diag(1/diag(Sig_theta)))
+  mean_post <- (1/sig2_eps_curr) * tcrossprod(Cov_post, G) %*% computer_model_data$data_obs
+  L_post <- t(chol(Cov_post))
+  theta_curr <- mean_post + L_post %*% matrix(rnorm(nrow(L_post)), ncol=1)
+  theta_samp_Gibbs[itr,] <- theta_curr
+  
+  # Sample sig2_eps conditional posterior. 
+  a_post <- Sig_eps_prior_params$IG_shape + 0.5*computer_model_data$n_obs + 1
+  b_post <- Sig_eps_prior_params$IG_scale + 0.5 * sum((computer_model_data$data_obs - G %*% matrix(theta_curr, ncol=1))^2)
+  sig2_eps_curr <- 1/rgamma(1, shape = a_post, rate = b_post)
+  sig2_eps_samp_Gibbs[itr,] <- sig2_eps_curr
+  
+}
+
+```
+
+
+```{r}
+# Sample moments. 
+print("MCMC Calibration Code Estimates:")
+print("theta Cov:")
+print(stats::cov(samp$theta[burn_in:N_mcmc,]))
+
+print("theta Mean:")
+print(colMeans(samp$theta[burn_in:N_mcmc,]))
+
+print("sig2_eps Var:")
+print(mean(samp$Sig_eps[burn_in:N_mcmc,1]^2) - mean(samp$Sig_eps[burn_in:N_mcmc,1])^2)
+
+print("sig2_eps Mean:")
+print(mean(samp$Sig_eps[burn_in:N_mcmc,1]))
+
+```
+
+```{r}
+# True moments. 
+print("Gibbs Sampling Estimates:")
+print("theta Cov:")
+print(stats::cov(theta_samp_Gibbs[burn_in:N_mcmc,]))
+
+print("theta Mean:")
+print(colMeans(theta_samp_Gibbs[burn_in:N_mcmc,]))
+
+print("sig2_eps Var:")
+print(mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1]^2) - mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1])^2)
+
+print("sig2_eps Mean:")
+print(mean(sig2_eps_samp_Gibbs[burn_in:N_mcmc,1]))
+```
 
 

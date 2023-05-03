@@ -655,7 +655,7 @@ get_computer_model_errs <- function(theta, computer_model_data) {
 # that operates on model_errs. 
 # TODO: Update description and argument comments.
 mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = FALSE,
-                           theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
+                           theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
                            N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                            proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
                            adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
@@ -751,7 +751,6 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     #
 
     # theta proposals.
-    # theta_prop <- theta_samp[itr-1,] + (0.5 * (2.4^2) * diag(1, nrow = 2) %*% matrix(rnorm(d), ncol = 1))[,1]
     theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Calculate log-likelihoods for current and proposed theta.
@@ -1049,9 +1048,9 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
     p <- length(Sig_eps_prior_params$IG_shape)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = Sig_eps_prior_params$IG_shape[j], scale = Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- 1/rgamma(1, shape = Sig_eps_prior_params$IG_shape[j], rate = Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars))
+    return(diag(sig2_eps_vars, nrow = p))
   }
   
 }
@@ -1096,9 +1095,9 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
     p <- length(n_obs)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], scale = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- rgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], rate = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars))
+    return(diag(sig2_eps_vars, nrow = p))
   }
   
 }
