@@ -704,31 +704,19 @@ quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
 # ------------------------------------------------------------------------------
 
 # TODO: update comments and think about a better way of handling log output stats. 
-# Allow computer_model_data to be passed in directly, rather than having to pass all arguments separately. 
-get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR_data, output_vars, 
-                                    scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, computer_model_data = NULL) {
+get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
+                                    param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
   #
   # Args:
   #    N_points: integer(1), the number of input points to generate. 
+  #    computer_model_data: list, the standard computer model data list. 
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
-  #              Must contain column named "best". Parameters that are fixed at nominal 
-  #              values (not calibrated) are set to their values given in the "best" column. 
-  #    pars_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
-  #                  parameters that will be calibrated. 
-  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
-  #              term in VSEM.
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
   #    scale_inputs: logical(1), if TRUE will linearly scale the samples to the unit hypercube. Will return the scaled 
   #             sample in addition to the un-scaled one, and will also return the information used for the scaling 
   #             so that the transformation can be inverted. 
@@ -755,28 +743,18 @@ get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars
   #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
   #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
-  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
-  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
   #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 
   #    "log_outputs", "log_outputs_normalized", and "log_output_stats". 
   
-  if(!is.null(computer_model_data)) {
-    ref_pars <- computer_model_data$ref_pars
-    pars_cal_sel <- computer_model_data$pars_cal_sel
-    data_obs <- computer_model_data$data_obs
-    PAR_data <- computer_model_data$PAR_data
-    output_vars <- computer_model_data$output_vars
-  }
-  
   # Input points. 
   design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
   
   # Run model at inputs to produce outputs. 
-  model_outputs_list <- run_VSEM(design_list$inputs, ref_pars, pars_cal_sel, PAR_data, output_vars)
-  design_list[["outputs"]] <- calc_SSR(data_obs[, output_vars], model_outputs_list, na.rm = TRUE)
+  model_outputs_list <- run_computer_model(design_list$inputs, computer_model_data)
+  design_list[["outputs"]] <- get_computer_model_SSR(model_outputs_list, computer_model_data, na.rm = TRUE)
   
   # Normalize outputs. 
   if(normalize_response) {

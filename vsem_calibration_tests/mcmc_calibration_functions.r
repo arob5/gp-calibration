@@ -10,6 +10,12 @@
 library(truncnorm)
 library(LaplacesDemon)
 
+# TODO: 
+#    - Updae llik_product_Gaussian() and functions (like the posterior density functions) that rely on this 
+#      to fit within the new generic computer model framework. 
+#    - Update comments for `get_input_output_design`.
+
+
 llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, output_vars = NULL, 
                                   SSR = NULL, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
   # Evaluate Gaussian log-likelihood assuming independence across time and across
@@ -53,7 +59,7 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
   # Run forward model. 
   if(is.null(SSR)) {
     model_outputs_list <- run_VSEM(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = output_vars) 
-    SSR <- calc_SSR(data_obs, model_outputs_list, na.rm = na.rm)
+    SSR <- get_computer_model_SSR(data_obs, model_outputs_list, na.rm = na.rm)
   }
   
   p <- length(vars_obs)
@@ -130,46 +136,6 @@ llik_product_Gaussian_SSR <- function(SSR, vars_obs, n_obs, normalize = TRUE) {
   
 }
 
-
-calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
-  # Computes the sum of squared residuals (SSR) between model runs and observed 
-  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
-  # design point for emulation) or outputs from single model run (e.g. as required
-  # during MCMC).
-  #
-  # Args:
-  #    data_obs: data.table of dimension n x p, where n is the length of the time 
-  #              series outputs from the model, and p is the number of output variables.
-  #              This is Y in my typical notation. 
-  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
-  #                        model outputs f(theta) from a single model run. Or a list 
-  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
-  #                        the outputs from multiple model runs. 
-  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
-  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
-  # 
-  # Returns:
-  #    matrix of dimension N x p, where N is the number of model runs and p is the 
-  #    number of output variables. The (i, j) entry of the matrix is the SSR
-  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
-  
-  # If model only run at single set of calibration parameter values
-  if(is.matrix(model_outputs_list)) {
-    model_outputs_list <- list(model_outputs_list)
-  }
-  
-  N_param_runs <- length(model_outputs_list)
-  N_outputs <- ncol(model_outputs_list[[1]])
-  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
-  
-  for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
-  }
-  colnames(SSR) <- colnames(data_obs)
-  
-  return(SSR)
-  
-}
 
 # TODO: 
 #    This function is intended to be the analog of `llik_product_Gaussian` but for the likelihood that models correlation 
@@ -465,189 +431,110 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
 }
 
 
-mcmc_calibrate_old <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR, n_obs,
-                           theta_init = NA, theta_prior_params, 
-                           learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = list(), diag_cov = FALSE, 
-                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay, proposal_scale_init) {
-  # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
-  # between the different output variables, but assumes independence across time. Samples from posterior over both  
-  # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
-  # Allows for arbitrary prior over theta, but assumes Inverse Wishart prior on Sig_eps (if treated as random).
-  # MCMC scheme is adaptive random walk Metropolis. This MCMC algorithm does not involve any model emulation/likelihood 
-  # approximation. 
+run_computer_model <- function(theta_vals, computer_model_data) {
+  # This is the generic interface for evaluating a computer model at a single or set of multiple input 
+  # parameters and returning the resulting outputs. `theta_vals` can either be a single input 
+  # parameter vector (a numeric vector or a matrix with a single row), or it can be a 
+  # matrix of dimension N_param x d, where d is the dimension of the parameter input space. In the former 
+  # case the model output is returned directly by evaluating at the single parameter vector. In the latter 
+  # case, a list is returned in which element i corresponds to the output resulting from the computer 
+  # model evaluation at the parameter vector in the ith row of `theta_vals`. The computer model output 
+  # is a matrix of dimension N x p, where N is typically the number of time steps and p is the 
+  # number of outputs/data constraints. 
   #
   # Args:
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
-  #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM.
-  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
-  #                the initial value from the prior. 
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
-  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
-  #    learn_Sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
-  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
-  #    Sig_eps_init: matrix, p x p covariance matrix capturing dependence between output variables. If `learn_Sig_eps` is 
-  #                  TRUE then `Sig_eps_init` can either be set to the initial value used for MCMC, or set to NA in which 
-  #                  case the initial value will be sampled from the prior. If `learn_Sig_eps` is FALSE, then a non-NA value 
-  #                  is required, and treated as the fixed nominal value of Sig_eps_init. 
-  #    Sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
-  #    diag_cov: logical, if TRUE constrains Sig_eps to be diagonal. If the prior distribution is specified to be product Inverse Gamma then this 
-  #              is automatically set to TRUE. Default is FALSE. 
-  #    N_mcmc: integer, the number of MCMC iterations. 
-  #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
-  #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
-  #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
-  #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
-  #                          number of iterations. 
-  #    proposal_scale_init: numeric, the proposal covariance is initialized to be diagonal, with `proposal_scale_init` along the diagonal. 
+  #    theta_vals: For a single parameter, a numeric(d) vector or matrix of dimension 1xd. For multiple 
+  #                parameters a matrix of dimension N_param x d. 
+  #    computer_model_data: the standard computer model data list. 
   #
   # Returns:
-  #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
-  #    theta stored in the rows. The latter is of dimension N_mcmc x p(p+1)/2, where each row stores the lower triangle of the 
-  #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
-  #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
+  #    Either Nxp matrix of list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
+  #    See above description for details. 
   
-  # Number observations in time series, number output variables, and dimension of parameter space
-  p <- length(output_vars)
-  d <- length(par_cal_sel)
-
-  # Objects to store samples
-  par_cal_names <- rownames(par_ref)[par_cal_sel]
-  theta_samp <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
-  colnames(theta_samp) <- par_cal_names
-  if(learn_Sig_eps && isTRUE(Sig_eps_prior_params$dist == "IG")) {
-    diag_cov <- TRUE
-  }
-  if(diag_cov) {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
+    return(computer_model_data$f(theta_vals, computer_model_data = computer_model_data))
   } else {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
-    stop("Need to fix correlated Gaussian likelihood function to work with missing data.")
-  }
-
-  # Set initial values
-  if(is.na(theta_init)) {
-    theta_init <- sample_prior_theta(theta_prior_params)
-  }
-  if(learn_Sig_eps && is.na(Sig_eps_init)) {
-    Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
-  } else {
-    Sig_eps_init <- diag(1, nrow = p, ncol = p)
+    return(apply(theta_vals, 1, function(theta) computer_model_data$f(theta, computer_model_data = computer_model_data), simplify = FALSE))
   }
   
-  theta_samp[1,] <- theta_init
-  if(diag_cov) {
-    Sig_eps_samp[1,] <- diag(Sig_eps_init)
-  } else {
-    Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
-  }
-  
-  Sig_eps_curr <- Sig_eps_init
-  model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars) # SSR here instead? 
-  # SSR_curr <- calc_SSR(computer_model_data$data_obs, run_VSEM_single_input(theta_init, computer_model_data = computer_model_data)) # TODO: change to this? maybe still need model_errs for non-diag cov case. 
-  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
-  
-  # Proposal covariance
-  Cov_prop <- diag(proposal_scale_init, nrow = d)
-  log_scale_prop <- 0
-  L_prop <- t(chol(Cov_prop))
-  accept_count <- 0
-  
-  for(itr in seq(2, N_mcmc)) {
-    #
-    # Metropolis step for theta
-    #
-
-    # Adapt proposal covariance matrix and scaling term
-    if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
-      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE],
-      #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
-      if(accept_count == 0) {
-        Cov_prop <- adapt_min_scale * Cov_prop
-      } else {
-        Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
-      }
-      L_prop <- t(chol(Cov_prop))
-      accept_count <- 0
-    }
-    
-    # theta proposals
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
-
-    # Calculate log-likelihoods for current and proposed theta
-    model_errs_prop <- data_obs[, output_vars] - run_VSEM_single_input(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
-    llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
-    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
-
-    # Accept-Reject Step
-    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
-    log_theta_post_curr <- llik_curr + lprior_theta_curr
-    log_theta_post_prop <- llik_prop + lprior_theta_prop
-    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
-    if(runif(1) <= alpha) {
-      theta_samp[itr,] <- theta_prop
-      lprior_theta_curr <- lprior_theta_prop
-      model_errs_curr <- model_errs_prop
-      accept_count <- accept_count + 1 
-    } else {
-      theta_samp[itr,] <- theta_samp[itr-1,]
-    }
-
-    # Adapt scaling term for proposal
-    log_scale_prop <- log_scale_prop + (1 / itr^proposal_scale_decay) * (alpha - accept_rate_target)
-    
-    #
-    # Gibbs step for Sig_eps
-    #
-    if(learn_Sig_eps) {
-      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = n_obs)
-      if(diag_cov) {
-        Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
-      } else {
-        Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
-      }
-    }
-
-  }
-  
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
-
 }
 
 
-get_computer_model_errs <- function(theta, computer_model_data) {
-  # Computes the errors Y - f(theta) between observed data Y and forward model evaluation 
-  # f(theta). Both of these quantities are assumed to be matrices of shape N x p, where
-  # N is the number of observations and p is the number of model outputs. The forward 
-  # model is run at input `theta` and then the error is computed. 
+get_computer_model_errs <- function(theta_vals, computer_model_data) {
+  # A convenience function that first runs the computer model to obtain outputs f(theta)
+  # and then returns the errors Y - f(theta) with respect to observed data Y. 
+  # Both Y and f(thets) are assumed to be matrices of shape N x p, where
+  # N is the number of observations and p is the number of model outputs. This function 
+  # works for a single input parameter vector or a matrix of multiple parameters. 
+  # In the latter case, the errors are returned in a list, with each element corresponding 
+  # to a different parameter. See `run_computer_model()` for details on the single-parameter
+  # vs. multiple-parameter argument requirements. 
   #
   # Args:
-  #    theta: numeric(d), d-dimensional vector at which to evaluate the forward model. 
-  #    computer_model_data: list, the computer model data list. 
+  #    theta_vals: For a single parameter, a numeric(d) vector or matrix of dimension 1xd. For multiple 
+  #                parameters a matrix of dimension N_param x d. 
+  #    computer_model_data: the standard computer model data list. 
   #
   # Returns:
-  #    matrix of dimension N x p, the error Y - f(theta). 
+  #    Either Nxp matrix or list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
+  #    See above description for details. 
   
   output_vars <- computer_model_data$output_vars
+  computer_model_output <- run_computer_model(theta_vals, computer_model_data)
+  data_obs <- computer_model_data$data_obs[, output_vars, drop=FALSE]
   
-  if(computer_model_data$forward_model == "VSEM") {
-    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - run_VSEM(theta, computer_model_data = computer_model_data)
-  } else if(computer_model_data$forward_model == "custom_likelihood") {
-    model_errs <- computer_model_data$data_obs[, output_vars, drop=FALSE] - computer_model_data$f(theta, computer_model_data)
+  if(is.list(computer_model_output)) {
+    model_errs <- lapply(computer_model_output, function(output) data_obs - output)
+  } else {
+    model_errs <- data_obs - computer_model_output
   }
   
   return(model_errs)
 
+}
+
+
+get_computer_model_SSR <- function(model_outputs_list, computer_model_data, na.rm = TRUE) {
+  # Computes the sum of squared residuals (SSR) between model runs and observed 
+  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
+  # design point for emulation) or outputs from single model run (e.g. as required
+  # during MCMC).
+  #
+  # Args:
+  #    data_obs: data.table of dimension n x p, where n is the length of the time 
+  #              series outputs from the model, and p is the number of output variables.
+  #              This is Y in my typical notation. 
+  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
+  #                        model outputs f(theta) from a single model run. Or a list 
+  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
+  #                        the outputs from multiple model runs. 
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
+  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
+  # 
+  # Returns:
+  #    matrix of dimension N x p, where N is the number of model runs and p is the 
+  #    number of output variables. The (i, j) entry of the matrix is the SSR
+  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
+  
+  # Observed data. 
+  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars]
+  
+  # If model only run at single set of calibration parameter values. 
+  if(is.matrix(model_outputs_list)) {
+    model_outputs_list <- list(model_outputs_list)
+  }
+  
+  N_param_runs <- length(model_outputs_list)
+  N_outputs <- ncol(model_outputs_list[[1]])
+  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
+  
+  for(i in seq_along(model_outputs_list)) {
+    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
+  }
+  colnames(SSR) <- colnames(data_obs)
+  
+  return(SSR)
+  
 }
 
 
@@ -1799,7 +1686,6 @@ MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_pa
     mean_post <- (1/sig2_eps_curr) * tcrossprod(Cov_post, G) %*% computer_model_data$data_obs
     L_post <- t(chol(Cov_post))
     theta_curr <- mean_post + L_post %*% matrix(rnorm(nrow(L_post)), ncol=1)
-    if(any(is.na(theta_curr))) browser()
     theta_samp_Gibbs[itr,] <- theta_curr
     
     # Sample sig2_eps conditional posterior. 
