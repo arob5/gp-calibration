@@ -16,36 +16,24 @@ library(LaplacesDemon)
 #    - Update comments for `get_input_output_design`.
 
 
-llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, output_vars = NULL, 
-                                  SSR = NULL, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
+llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NULL, SSR = NULL, 
+                                  normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
   # Evaluate Gaussian log-likelihood assuming independence across time and across
   # output variables. In order to calculate the log-likelihood, the forward model must be run and then 
   # the L2 difference between the forward model outputs and the observed data evaluated. This function can 
   # perform all of those steps, or the L2 error can be passed directly using the `SSR` argument to avoid 
-  # running the forward model when it is not necessary. For the forward model to be run, the arguments 
-  # `theta_vals`, `par_ref`, `par_cal_sel`, `PAR_data`, `data_obs`, and `output_vars` must all be passed. Otherwise, these are 
-  # not needed if `SSR` is provided. This function is vectorized in that it can evaluate 
-  # the log-likelihood at multiple input parameter values, `theta_vals`. 
+  # running the forward model when it is not necessary. For the forward model to be run, the argument
+  # `theta_vals` must be passed. Otherwise, this is not needed if `SSR` is provided. This function is 
+  # vectorized in that it can evaluate  the log-likelihood at multiple input parameter values, `theta_vals`.
   #
   # Args:
+  #    computer_model_data: the standard computer model data list. 
+  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
   #    theta_vals: matrix, of dimension M x d, where M is the number of calibration parameter values
   #                and d is the number of calibration parameters. These are the parameter inputs at which 
   #                to run the forward to evaluate log-likelihood. 
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM.
-  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood.
   #    SSR: matrix, of dimension M x p. The (m, j) entry is the sum of squared errors for the 
   #         jth output variable and mth input parameter. 
-  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
-  #    n_obs: integer(p), the number of observations for each output.
   #    normalize: logical(1), whether or not to include the portion of the Gaussian normalization constant
   #               that doesn't depend on the theta or variance parameters. 
   #    na.rm: logical(1), if TRUE ignores missing data when calculating the sum of squared errors. 
@@ -58,11 +46,12 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
   
   # Run forward model. 
   if(is.null(SSR)) {
-    model_outputs_list <- run_VSEM(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = output_vars) 
-    SSR <- get_computer_model_SSR(data_obs, model_outputs_list, na.rm = na.rm)
+    model_outputs_list <- run_computer_model(theta_vals, computer_model_data)
+    SSR <- get_computer_model_SSR(model_outputs_list, computer_model_data, na.rm = na.rm)
   }
   
   p <- length(vars_obs)
+  n_obs <- computer_model_data$n_obs
   llik_outputs <- matrix(nrow = nrow(SSR), ncol = ncol(SSR))
   
   for(j in seq(1, p)) {
@@ -70,7 +59,7 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
     if(normalize) llik_outputs[,j] <- llik_outputs[,j] - 0.5 * n_obs[j] * log(2*pi)
   }
   
-  # Either return likelihood for each output seperately, or return single likelihood across all outputs. 
+  # Either return likelihood for each output separately, or return single likelihood across all outputs. 
   if(sum_output_lliks) {
     return(rowSums(llik_outputs))
   }
@@ -389,11 +378,11 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
 }
 
 
-calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, 
-                                         output_vars = NULL, SSR = NULL, vars_obs = NULL, n_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
+calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
+                                         SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
   # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
-  # This functions provides the option to calculate the log prior and log likelihood from scrath, at the given parameter values `theta_vals` 
+  # This functions provides the option to calculate the log prior and log likelihood from scratch, at the given parameter values `theta_vals` 
   # and other necessary arguments for computing these quantities. Or if these quantities have already been calculated, they can be passed 
   # directly. 
   #
@@ -417,9 +406,8 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
   
   # Likelihood
   if(is.null(llik_vals)) {
-    llik_vals <- llik_product_Gaussian(theta_vals = theta_vals, par_ref = par_ref, par_cal_sel = par_cal_sel, PAR_data = PAR_data, data_obs = data_obs, 
-                                       output_vars = output_vars, SSR = SSR, vars_obs = vars_obs, n_obs = n_obs, normalize = normalize_lik, 
-                                       na.rm = na.rm, sum_output_lliks = TRUE)
+    llik_vals <- llik_product_Gaussian(computer_model_data, vars_obs, theta_vals = theta_vals, SSR = SSR, 
+                                       normalize = normalize_lik, na.rm = na.rm, sum_output_lliks = TRUE)
   }
   
   if(!return_list) return(lprior_vals + llik_vals)
@@ -699,7 +687,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
                                   proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
                                   adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
 
-  if(Sig_eps_prior_params$dist != "IG") {
+  if(learn_Sig_eps && Sig_eps_prior_params$dist != "IG") {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
   }
   

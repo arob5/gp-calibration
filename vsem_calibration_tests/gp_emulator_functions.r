@@ -592,8 +592,8 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
 }
 
 
-plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, log_scale = FALSE, vertical_line = NULL,
-                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9, transformation_method = NA_character_) {
+plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, post_samples = NULL,
+                           true_theta = NULL, xlab = "", ylab = "", main_title = "", transformation_method = NA_character_) {
   
   df_test <- as.data.frame(X_test)
   df_train <- as.data.frame(X_train)
@@ -607,18 +607,25 @@ plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   
   plt <- ggplot() + 
           geom_tile(data = df_test, aes(x = theta1, y = theta2, fill = density_vals)) + 
-          geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red")
+          geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red") + 
+          xlab(xlab) + 
+          ylab(ylab) + 
+          ggtitle(main_title)
+  
+  if(!is.null(post_samples)) {
+    df <- as.data.frame(post_samples)
+    colnames(df) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_density_2d(data = df, aes(x = theta1, y = theta2))
+  }
+  
+  if(!is.null(true_theta)) {
+    plt <- plt + geom_point(data = data.frame(theta1 = true_theta[1], theta2 = true_theta[2]), 
+                            aes(x = theta1, y = theta2), color = "red", shape = 17)
+  }
   
   return(plt)  
   
-  # GP_density <- cbind(X_test, density = mvtnorm::dmvnorm(X_test, mean = m, sigma = sigma))
-  
-  # q.samp <- cbind(data.grid, prob = mvtnorm::dmvnorm(data.grid, mean = m, sigma = sigma))
-  # ggplot(q.samp, aes(x=s.1, y=s.2, z=prob)) + 
-  #   geom_contour() +
-  #   coord_fixed(xlim = c(-3, 3), ylim = c(-3, 3), ratio = 1) 
-    
-          
 }
 
 

@@ -404,19 +404,11 @@ points(t_vals, computer_model_data$data_obs, col = "black")
 ```
 
 
-### Baseline exact MCMC scheme. 
-```{r}
-N_mcmc <- 50000
-samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
-                                Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
-```
-
-
 ### Model emulation. 
 
 ```{r, echo = FALSE}
 # Emulator settings
-emulator_settings <- data.frame(gp_lib = c("mlegp"), 
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
                                 transformation_method = c("truncated"),
                                 scale_X = TRUE, 
@@ -424,11 +416,16 @@ emulator_settings <- data.frame(gp_lib = c("mlegp"),
 print(emulator_settings)
 ```
 
+```{r}
+samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
+                                Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
 
 ```{r}
 # Design and validation points.
 
-N_train <- 8
+N_train <- 18
 N_test <- 2500
 train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
                                       scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
@@ -463,23 +460,43 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 
 
 ```{r}
-# Questions:
-#    - Why is projection onto first dimension out of control but second dimension looks reasonable? 
-#    - TODO: need to think about confidence intervals for two-dimensional plots. 
-#    - What is up with jagged true function in second dimension? 
+# Computer true posterior. 
+true_post_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = test_data$inputs, 
+                                               SSR = test_data$outputs, vars_obs = sig2_eps, normalize_lik = TRUE,
+                                               theta_prior_params = theta_prior_params, return_list = TRUE) 
+```
 
-# Plot GPs. 
 
+```{r}
 # Plot GPs. 
 for(j in seq_along(gp_pred_list)) {
 
   gp_plot <- plot_gp_fit_2d(test_data$inputs, test_data$outputs[,j], train_data$inputs, 
+                            post_samples = samp_baseline$theta[burn_in:N_mcmc,], 
+                            true_theta = computer_model_data$theta_true,
                             train_data$outputs[,j], gp_pred_list[[j]]$mean,
-                            gp_pred_list[[j]]$var, xlab = "Parameter", ylab = "SSR",
-                            main_title = computer_model_data$output_vars[j], CI_prob = 0.9, 
+                            gp_pred_list[[j]]$var, xlab = "theta1", ylab = "theta2",
+                            main_title = "GP Predictive Density; Contours of True Posterior",
                             transformation_method = emulator_settings$transformation_method)
   print(gp_plot)
 }
+```
+
+```{r}
+# True Posterior. 
+post_plot <- get_2d_density_contour_plot(list(samp_baseline$theta[burn_in:N_mcmc,]), xlab = "theta1", ylab = "theta2", main_titles = "True Posterior")
+print(post_plot)
+```
+
+
+
+
+```{r}
+# Plot 2D response surface: true loss, GP predicted loss (mean), GP predictive variance, true posterior
+
+plt <- plot_2d_response_surface(test_data$inputs, )
+print(plt)
+
 ```
 
 
@@ -492,21 +509,39 @@ emulator_info <- list(gp_fits = gp_fits,
 ```
 
 
+### MCMC comparison: Approximate vs. Exact (Fixed noise variance)
+
 ```{r}
+N_mcmc <- 50000
 samp_GP_approx <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = FALSE,
-                                        Sig_eps_init = computer_model_data$Sig_eps, Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = 50000)
+                                        Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc)
 ```
 
-
+#### Approximate MCMC
 ```{r}
-burn_in <- 1
+burn_in <- 25000
 plot(samp_GP_approx$theta[burn_in:N_mcmc,1], type="l")
 plot(samp_GP_approx$theta[burn_in:N_mcmc,2], type="l")
-plot(samp_GP_approx$Sig_eps[burn_in:N_mcmc,1], type="l")
 ```
 
+#### Exact MCMC
 
+```{r}
+plot(samp_baseline$theta[burn_in:N_mcmc,1], type="l")
+plot(samp_baseline$theta[burn_in:N_mcmc,2], type="l")
+```
 
+```{r}
+
+# Histograms.
+for(j in seq(1,d)) {
+  hist_plot <- get_hist_plot(list(samp_baseline$theta[burn_in:N_mcmc,], samp_GP_approx$theta[burn_in:N_mcmc,]), col_sel = j, bins = 80, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Exact MCMC", "GP Approximate MCMC"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
 
 
 
