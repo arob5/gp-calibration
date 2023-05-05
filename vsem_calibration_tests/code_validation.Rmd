@@ -463,16 +463,16 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 #    - What is up with jagged true function in second dimension? 
 
 # Plot GPs. 
+
+# Plot GPs. 
 for(j in seq_along(gp_pred_list)) {
-  for(k in seq_along(computer_model_data$theta_true)) {
-    gp_plot <- plot_gp_fit_1d(test_data$inputs[,k,drop=FALSE], test_data$outputs[,j], train_data$inputs[,k,drop=FALSE], 
-                              train_data$outputs[,j], gp_pred_list[[j]]$mean,
-                              gp_pred_list[[j]]$var, xlab = "Parameter", ylab = "SSR",
-                              main_title = computer_model_data$output_vars[j], CI_prob = 0.9, 
-                              transformation_method = emulator_settings$transformation_method)
-    print(gp_plot)
-  }
-  
+
+  gp_plot <- plot_gp_fit_2d(test_data$inputs, test_data$outputs[,j], train_data$inputs, 
+                            train_data$outputs[,j], gp_pred_list[[j]]$mean,
+                            gp_pred_list[[j]]$var, xlab = "Parameter", ylab = "SSR",
+                            main_title = computer_model_data$output_vars[j], CI_prob = 0.9, 
+                            transformation_method = emulator_settings$transformation_method)
+  print(gp_plot)
 }
 ```
 

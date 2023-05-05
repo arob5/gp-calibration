@@ -592,6 +592,82 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
 }
 
 
+plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, log_scale = FALSE, vertical_line = NULL,
+                           xlab = "", ylab = "", main_title = "", CI_prob = 0.9, transformation_method = NA_character_) {
+  
+  df_test <- as.data.frame(X_test)
+  df_train <- as.data.frame(X_train)
+  
+  colnames(df_test) <- c("theta1", "theta2")
+  colnames(df_train) <- c("theta1", "theta2")
+  
+  predictive_density <- get_GP_pointwise_predictive_density(y_test, gp_mean_pred, gp_var_pred, 
+                                                            transformation_method = transformation_method, log = TRUE)
+  df_test <- cbind(df_test, density_vals = predictive_density)
+  
+  plt <- ggplot() + 
+          geom_tile(data = df_test, aes(x = theta1, y = theta2, fill = density_vals)) + 
+          geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red")
+  
+  return(plt)  
+  
+  # GP_density <- cbind(X_test, density = mvtnorm::dmvnorm(X_test, mean = m, sigma = sigma))
+  
+  # q.samp <- cbind(data.grid, prob = mvtnorm::dmvnorm(data.grid, mean = m, sigma = sigma))
+  # ggplot(q.samp, aes(x=s.1, y=s.2, z=prob)) + 
+  #   geom_contour() +
+  #   coord_fixed(xlim = c(-3, 3), ylim = c(-3, 3), ratio = 1) 
+  
+    
+          
+}
+
+
+get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transformation_method = NA_character_, log = FALSE) {
+  # Computes the pointwise GP predictive density at a set of input locations. The density evaluations
+  # to not take into account GP predictive covariance, hence the "pointwise". The arguments 
+  # `gp_mean` and `gp_var` must pertain to a GP, but the argument `transformation_method` can be used to 
+  # transform to other predictive distributions. In this case, `y_vals` is assumed to already be on the 
+  # desired scale (`y_vals` is never transformed). For example, the response variable y may have been 
+  # modeled as a log-normal process (LNP) in which case log(y) was modeled as a GP. `gp_mean` and 
+  # `gp_var` are the predictive moments for this GP. Setting `transformation_method` to "LNP" will 
+  # then correctly treat the predictive density as a log-normal density. Note that the vectors 
+  # `y_vals`, `gp_mean`, and `gp_var` are all assumed to be of equal length, with each respective entry 
+  # corresponding to the same input point. 
+  #
+  # Args:
+  #    y_vals: numeric(), vector of response values at which to evaluate the predictive density. 
+  #    gp_mean: numeric(), vector of predictive mean evaluations of the underlying (untransformed) GP. 
+  #    gp_var: numeric(), vector of predictive variance evaluations of the underlying (untransformed) GP.
+  #    transformation_method: character(1), string specifying a transformation method; currently supports
+  #                           "LNP", "rectified" and "truncated". The default, `NA_character_` will apply 
+  #                           no transformation. 
+  #    log: logical(1), if TRUE returns log density.
+  #
+  # Returns:
+  #    numeric(), vector of (potentially transformed) GP pointwise density evaluations, of equal length 
+  #    as `y_vals`. 
+  
+  gp_sd <- sqrt(gp_var)
+  
+  if(is.na(transformation_method)) {
+    predictive_density <- dnorm(y_vals, gp_mean, gp_sd, log = log)
+  } else if(transformation_method == "LNP") {
+    predictive_density <- dlnorm(y_vals, gp_mean, gp_sd, log = log)
+  } else if(transformation_method == "truncated") {
+    predictive_density <- dtruncnorm(y_vals, a = 0, b = Inf, mean = gp_mean, sd = gp_sd)
+    if(isTRUE(log)) predictive_density <- log(predictive_density)
+  } else if(transformation_method == "rectified") {
+    predictive_density <- density_rectified_norm(y_vals, mean_norm = gp_mean, sd_norm = gp_sd, log = log)
+  } else {
+    stop("Invalid transformation method: ", transformation_method)
+  }
+  
+  return(predictive_density)
+  
+}
+
+
 get_GP_confidence_intervals <- function(CI_prob, gp_mean, gp_var, transformation_method = NA_character_) {
   # Computes pointwise upper and lower confidence bounds for a GP or transformed GP. Note that the mean and variance 
   # arguments always correspond to the GP, not the transformed GP. 
@@ -695,6 +771,40 @@ quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
   quantiles_rect_norm[!zero_selector] <- qnorm(p, mean = mean[!zero_selector], sd = sd[!zero_selector])
   
   return(quantiles_rect_norm)
+  
+}
+
+
+density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FALSE, log = FALSE) {
+  # Computes the density of a rectified Gaussian distribution. The arguments 
+  # `mean_norm` and `sd_norm` are the mean and standard deviation of the Gaussian 
+  # that gives rise to the rectified Gaussian, not the moments of the rectified 
+  # Gaussian itself. The rectified Gaussian density is infinite at the value 0, 
+  # so the argument `allow_inf` allows the user to specify whether this should 
+  # be considered an error or not. 
+  #
+  # Args:
+  #    x: numeric(), vector of points at which to evaluate the density. 
+  #    mean_norm: numeric(), vector of Gaussian means. 
+  #    sd_norm: numeric(), vector of Gaussian standard deviations. 
+  #    allow_inf: logical(1), if TRUE returns `inf` for values at `x` which are 0. 
+  #               Otherwise, 0 values of `x` will invoke an error. Default is FALSE. 
+  #    log: logical(1), if TRUE returns log density. 
+  #
+  # Returns:
+  #    numeric() vector of length equal to length of `x` containing the density evaluations. 
+  
+  if(!allow_inf && any(x == 0)) {
+    stop("Density of rectified Gaussian at x = 0 is infinite.")
+  }
+  
+  x_densities <- vector(mode = "numeric", length = length(x))
+  
+  x_densities[x == 0] <- Inf
+  x_densities[x != 0] <- dnorm(x, mean_norm, sd_norm) * as.numeric(x_test > 0)
+  
+  if(isTRUE(log)) return(log(x_densities))
+  return(x_densities)
   
 }
 
