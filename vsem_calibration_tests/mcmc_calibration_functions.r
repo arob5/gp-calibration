@@ -746,11 +746,11 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, include_nugget = TRUE)
     
     # Accept-Reject step. 
-    lpost_theta_curr <- calc_lpost_theta_product_lik(lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], vars_obs = diag(Sig_eps_curr),
-                                                     n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE) 
-    lpost_theta_prop_list <- calc_lpost_theta_product_lik(theta_vals = as.matrix(theta_prop, nrow = 1), SSR = SSR_samples[2,,drop=FALSE], vars_obs = diag(Sig_eps_curr),
-                                                          n_obs = computer_model_data$n_obs, normalize_lik = FALSE, na.rm = TRUE,
-                                                          theta_prior_params = theta_prior_params, return_list = TRUE) 
+    lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
+                                                     vars_obs = diag(Sig_eps_curr), normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = as.matrix(theta_prop, nrow = 1), SSR = SSR_samples[2,,drop=FALSE], 
+                                                          vars_obs = diag(Sig_eps_curr), normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                          return_list = TRUE)
     alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
 
     if(runif(1) <= alpha) {
