@@ -617,7 +617,6 @@ plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   # ggplot(q.samp, aes(x=s.1, y=s.2, z=prob)) + 
   #   geom_contour() +
   #   coord_fixed(xlim = c(-3, 3), ylim = c(-3, 3), ratio = 1) 
-  
     
           
 }
@@ -1119,9 +1118,11 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
     stop("Invalid transformation method: ", transformation_method)
   }
   
-  if(any(is.na(sample))) {
-    stop("GP sample is NA")
+  if(any(is.na(sample)) || is.null(sample)) {
+    stop("GP sample is NA or NULL.")
   }
+  
+  return(sample)
   
 }
 

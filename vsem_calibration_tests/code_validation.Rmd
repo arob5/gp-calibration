@@ -389,12 +389,18 @@ t_vals <- seq(1,N_obs)
 G <- cbind(cos(2*pi*t_vals/period), sin(2*pi*t_vals/period))
 d <- ncol(G)
 Sig_theta <- diag(c(0.1, 1.0))
-sig2_eps <- 1.0
-linear_Gaussian_data <- generate_linear_Gaussian_test_data(random_seed = 3, N_obs = N_obs, D = d, sig2_eps = sig2_eps, 
+linear_Gaussian_data <- generate_linear_Gaussian_test_data(random_seed = 3, N_obs = N_obs, D = d,  
                                                            Sig_theta = Sig_theta, G = G, pars_cal_sel = NULL)
+
+sig2_eps <- diag(computer_model_data$Sig_eps)
 computer_model_data <- linear_Gaussian_data$computer_model_data
 theta_prior_params <- linear_Gaussian_data$theta_prior_params
 true_post <- linear_Gaussian_data$true_posterior
+```
+
+```{r}
+plot(t_vals, computer_model_data$data_ref, type = "l", col = "red", xlab = "Day", ylab = "True and Observed Data", main = "Linear Gaussian Data")
+points(t_vals, computer_model_data$data_obs, col = "black")
 ```
 
 
@@ -481,9 +487,24 @@ for(j in seq_along(gp_pred_list)) {
 # TODO: make functions "get_gp_emulator_info_list()" and automatically have this function set `gp_output_stats` to the correct transformed version. 
 emulator_info <- list(gp_fits = gp_fits, 
                       input_bounds = train_data$input_bounds,
-                      output_stats = train_data$output_stats, 
+                      output_stats = output_stats, 
                       settings = emulator_settings)
 ```
+
+
+```{r}
+samp_GP_approx <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = FALSE,
+                                        Sig_eps_init = computer_model_data$Sig_eps, Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = 50000)
+```
+
+
+```{r}
+burn_in <- 1
+plot(samp_GP_approx$theta[burn_in:N_mcmc,1], type="l")
+plot(samp_GP_approx$theta[burn_in:N_mcmc,2], type="l")
+plot(samp_GP_approx$Sig_eps[burn_in:N_mcmc,1], type="l")
+```
+
 
 
 

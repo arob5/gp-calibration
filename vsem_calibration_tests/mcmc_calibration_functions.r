@@ -694,10 +694,10 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
 # on the correct scale (e.g. it should be on log scale for LNP).
 # TODO: doesn't make sense for Sig_eps to be a matrix here if assuming diagonal structure. 
 mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emulator_info,
-                           theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
-                           N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                           proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
-                           adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+                                  theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
+                                  N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                  proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                  adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
 
   if(Sig_eps_prior_params$dist != "IG") {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
@@ -1054,7 +1054,7 @@ calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
 # }  
 
 
-generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, Sig_theta, G, pars_cal_sel = NULL) {
+generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta, G, sig2_eps = NULL, sig_eps_frac = 0.1, pars_cal_sel = NULL) {
   # Sets up a test example (including computer model data and prior distributions) in which the forward model is linear 
   # (represented by matrix `G`), the likelihood is Gaussian (with variance `sig2_eps`), and the prior on the calibration 
   # parameters is zero-mean Gaussian (with diagonal covariance matrix `Sig_theta`). Note that currently this function 
@@ -1069,9 +1069,13 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, 
   #    D: integer(1), the dimension of the input parameter space; if `pars_cal_sel` is NULL or corresponds to all parameters, 
   #       then D is the dimension of the calibration parameter space. However, if `pars_cal_sel` only selects a subset of parameters, 
   #       then D will be larger than the dimension of the parameter calibration space. 
-  #    sig2_eps: numeric(1), the observation variance.
   #    Sig_theta: matrix of dimension D x D. Note that if only a subset of parameters are calibrated, then the prior covariance on the 
-  #               calibration parameters with be a sub-matrix of `Sig_theta`. 
+  #               calibration parameters with be a sub-matrix of `Sig_theta`.
+  #    sig2_eps: numeric(1), the observation variance. If not provided, then the obsevation variance will be set using `coef_var`, or 
+  #              if `coef_var`.
+  #    sig_eps_frac: numeric(1), If `sig2_eps` is provided directly then `coef_var` will not be used.
+  #                  Otherwise, the noise variance  will be set so that the standard deviation sqrt(sig2_eps) equals 
+  #                  the range of the data * `sig_eps_frac`. 
   #    G: matrix of dimension N_obs x D, the linear forward model.
   #    pars_cal_sel: integer(), vector containing the indices used to select the parameters which will be calibrated. The remaining parameters
   #                  will be fixed. If NULL, calibrates all parameters. 
@@ -1088,12 +1092,16 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, sig2_eps, 
   }
   
   # Sample from model to generate observed data. 
-  set.seed(random_seed)
-  Sig_t <- diag(sig2_eps, nrow = N_obs)
-  L_t <- t(chol(Sig_t))
   L_theta <- t(chol(Sig_theta))
   theta <- L_theta %*% matrix(rnorm(D), ncol=1)
   data_ref <- G %*% theta
+  
+  set.seed(random_seed)
+  if(is.null(sig2_eps)) {
+    sig2_eps <- (diff(range(computer_model_data$data_ref)) * sig_eps_frac)^2
+  }
+  Sig_t <- diag(sig2_eps, nrow = N_obs)
+  L_t <- t(chol(Sig_t))
   data_obs <- data_ref + L_t %*% matrix(rnorm(N_obs), ncol=1)
   output_vars <- "y"
   colnames(data_obs) <- output_vars
