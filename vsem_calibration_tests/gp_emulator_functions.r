@@ -496,7 +496,7 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   # distribution to a left-truncated (at zero) Gaussian distribution, or 3.) converting the Gaussian predictive 
   # distribution to a rectified Gaussian distribution. The plot can also optionally include
   # a vertical line corresponding to some "true" parameter in the input space. By setting `log_scale` to TRUE, the y-axis
-  # will be set to a log base 10 sdale. 
+  # will be set to a log base 10 scale. 
   # 
   # Args:
   #    X_test: matrix, of dimension M x 1 where M is the number of test input points. 
