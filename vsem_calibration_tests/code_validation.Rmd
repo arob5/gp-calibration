@@ -392,8 +392,8 @@ Sig_theta <- diag(c(0.1, 1.0))
 linear_Gaussian_data <- generate_linear_Gaussian_test_data(random_seed = 3, N_obs = N_obs, D = d,  
                                                            Sig_theta = Sig_theta, G = G, pars_cal_sel = NULL)
 
-sig2_eps <- diag(computer_model_data$Sig_eps)
 computer_model_data <- linear_Gaussian_data$computer_model_data
+sig2_eps <- diag(computer_model_data$Sig_eps)
 theta_prior_params <- linear_Gaussian_data$theta_prior_params
 true_post <- linear_Gaussian_data$true_posterior
 ```
@@ -458,9 +458,11 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 
 
 ```{r}
+N_mcmc <- 50000
 samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
                                 Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
+
 
 ```{r}
 # Computer true posterior. 
@@ -471,7 +473,15 @@ true_post_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals =
 
 
 ```{r}
-# Plot GPs. 
+# Select burn in. 
+
+burn_in <- 25000
+plot(samp_baseline$theta[burn_in:N_mcmc,1], type="l")
+plot(samp_baseline$theta[burn_in:N_mcmc,2], type="l")
+```
+
+```{r}
+ # Plot GPs. 
 for(j in seq_along(gp_pred_list)) {
 
   gp_plot <- plot_gp_fit_2d(test_data$inputs, test_data$outputs[,j], train_data$inputs, 
@@ -479,7 +489,7 @@ for(j in seq_along(gp_pred_list)) {
                             true_theta = computer_model_data$theta_true,
                             train_data$outputs[,j], gp_pred_list[[j]]$mean,
                             gp_pred_list[[j]]$var, xlab = "theta1", ylab = "theta2",
-                            main_title = "GP Predictive Density; Contours of True Posterior",
+                            main_title = "GP Predictive Density; Contours of True Posterior (Fixed Observation Variance)",
                             transformation_method = emulator_settings$transformation_method)
   print(gp_plot)
 }
@@ -492,18 +502,6 @@ post_plot <- get_2d_density_contour_plot(list(samp_baseline$theta[burn_in:N_mcmc
 print(post_plot)
 ```
 
-
-
-
-```{r}
-# Plot 2D response surface: true loss, GP predicted loss (mean), GP predictive variance, true posterior
-
-plt <- plot_2d_response_surface(test_data$inputs, )
-print(plt)
-
-```
-
-
 ```{r}
 # TODO: make functions "get_gp_emulator_info_list()" and automatically have this function set `gp_output_stats` to the correct transformed version. 
 emulator_info <- list(gp_fits = gp_fits, 
@@ -512,33 +510,27 @@ emulator_info <- list(gp_fits = gp_fits,
                       settings = emulator_settings)
 ```
 
-
+#### Approximate MCMC
 ```{r}
-N_mcmc <- 50000
 samp_GP_approx <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = FALSE,
                                         Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc)
 ```
 
-#### Approximate MCMC
 ```{r}
-burn_in <- 25000
-plot(samp_GP_approx$theta[burn_in:N_mcmc,1], type="l")
-plot(samp_GP_approx$theta[burn_in:N_mcmc,2], type="l")
+burn_in_approx <- 30000
+
+plot(samp_GP_approx$theta[burn_in_approx:N_mcmc,1], type="l")
+plot(samp_GP_approx$theta[burn_in_approx:N_mcmc,2], type="l")
 ```
 
-#### Exact MCMC
-
-```{r}
-plot(samp_baseline$theta[burn_in:N_mcmc,1], type="l")
-plot(samp_baseline$theta[burn_in:N_mcmc,2], type="l")
-```
+#### Exact vs. Approximate MCMC
 
 ```{r}
 
 # Histograms.
 for(j in seq(1,d)) {
-  hist_plot <- get_hist_plot(list(samp_baseline$theta[burn_in:N_mcmc,], samp_GP_approx$theta[burn_in:N_mcmc,]), col_sel = j, bins = 80, xlab = computer_model_data$pars_cal_name[j],
-                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Exact MCMC", "GP Approximate MCMC"), 
+  hist_plot <- get_hist_plot(list(samp_baseline$theta[burn_in:N_mcmc,], samp_GP_approx$theta[burn_in_approx:N_mcmc,]), col_sel = j, bins = 80, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = paste0("Histogram of MCMC Samples: theta", j), data_names = c("Exact MCMC", "GP Approximate MCMC"), 
                              vertical_line = computer_model_data$theta_true[j])
   print(hist_plot)
 }
@@ -548,15 +540,47 @@ for(j in seq(1,d)) {
 
 ### MCMC comparison: Approximate vs. Exact (Unknown noise variance)
 
+```{r}
+
+IG_prior_coef_var <- 0.001
+IG_shape <- (1 / IG_prior_coef_var^2) + 2
+IG_scale <- sig2_eps * (IG_shape - 1)
+
+# Prior on noise variance. 
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = IG_shape, 
+                             IG_scale = IG_scale)
+```
+
+
+
+
 
 ```{r}
 samp_baseline_2 <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
-                                Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+                                  Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
+
+```{r}
+# Select burn in. 
+burn_in_2 <- 25000
+plot(samp_baseline_2$theta[burn_in_2:N_mcmc,1], type="l")
+plot(samp_baseline_2$theta[burn_in_2:N_mcmc,2], type="l")
+plot(samp_baseline_2$Sig_eps[burn_in_2:N_mcmc,1], type="l")
+```
+
 
 ```{r}
 samp_GP_approx_2 <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = TRUE,
                                           Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc)
+```
+
+```{r}
+# Select burn in. 
+burn_in_approx_2 <- 25000
+plot(samp_GP_approx_2$theta[burn_in_approx_2:N_mcmc,1], type="l")
+plot(samp_GP_approx_2$theta[burn_in_approx_2:N_mcmc,2], type="l")
+plot(samp_GP_approx_2$Sig_eps[burn_in_approx_2:N_mcmc,1], type="l")
 ```
 
 
@@ -564,7 +588,7 @@ samp_GP_approx_2 <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_param
 
 # Histograms: theta. 
 for(j in seq(1,d)) {
-  hist_plot <- get_hist_plot(list(samp_baseline_2$theta[burn_in:N_mcmc,], samp_GP_approx_2$theta[burn_in:N_mcmc,]), col_sel = j, 
+  hist_plot <- get_hist_plot(list(samp_baseline_2$theta[burn_in_2:N_mcmc,], samp_GP_approx_2$theta[burn_in_approx_2:N_mcmc,]), col_sel = j, 
                              bins = 50, xlab = computer_model_data$pars_cal_name[j],
                              main_title = "Histogram of MCMC Samples: theta", data_names = c("Exact MCMC", "GP Approximate MCMC"), 
                              vertical_line = computer_model_data$theta_true[j])
@@ -572,7 +596,8 @@ for(j in seq(1,d)) {
 }
 
 # Histogram: sig2_eps. 
-hist_plot_sig2_eps <- get_hist_plot(list(samp_baseline_2$Sig_eps[burn_in:N_mcmc,,drop=FALSE], samp_GP_approx_2$Sig_eps[burn_in:N_mcmc,,drop=FALSE]), 
+hist_plot_sig2_eps <- get_hist_plot(list(samp_baseline_2$Sig_eps[burn_in_2:N_mcmc,,drop=FALSE], 
+                                         samp_GP_approx_2$Sig_eps[burn_in_approx_2:N_mcmc,,drop=FALSE]), 
                                     bins = 50, xlab = "sig2_eps",
                                     main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Exact MCMC", "GP Approximate MCMC"), 
                                     vertical_line = sig2_eps)

@@ -974,7 +974,7 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
     p <- length(n_obs)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- rgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], rate = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- 1/rgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], rate = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
     }
     return(diag(sig2_eps_vars, nrow = p))
   }
@@ -1086,7 +1086,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   
   set.seed(random_seed)
   if(is.null(sig2_eps)) {
-    sig2_eps <- (diff(range(computer_model_data$data_ref)) * sig_eps_frac)^2
+    sig2_eps <- (diff(range(data_ref)) * sig_eps_frac)^2
   }
   Sig_t <- diag(sig2_eps, nrow = N_obs)
   L_t <- t(chol(Sig_t))
@@ -1575,7 +1575,7 @@ get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = 
   # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
   # second element a matrix of samples from an approximate distribution. This function will select one column from 
   # each matrix based on the index `col_sel`. Each selected column will be turned into a histogram. 
-  # TODO: Need to check whether or not the matrices can have different length (i.e. different number of samples).
+  # Note that the matrices may have different lengths (numbers of samples).
   #
   # Args:
   #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
@@ -1589,6 +1589,17 @@ get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = 
   #
   # Returns:
   #    ggplot2 object. 
+  
+  # Pad with NAs in the case that the number of samples is different across different parameters. 
+  N_samp <- sapply(samples_list, nrow)
+  if(length(unique(N_samp)) > 1) {
+    N_max <- max(N_samp)
+    for(j in seq_along(samples_list)) {
+      if(nrow(samples_list[[j]]) < N_max) {
+        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow = N_max - nrow(samples_list[[j]]), ncol = ncol(samples_list[[j]])))
+      }
+    }
+  }
   
   dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
   if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
