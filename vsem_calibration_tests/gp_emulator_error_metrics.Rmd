@@ -17,6 +17,7 @@ library(data.table)
 library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
+source("gp_emulator_functions.r")
 ```
 
 
@@ -213,16 +214,16 @@ $$ \int \mathbb{E}_{\pi^*}|\pi^*(\theta) - \pi(\theta)| \pi(\theta) d\theta = \i
 by drawing samples $(\theta_i, \pi_i) \sim p_{\pi^*(\theta)}(\hat{\pi}(\theta))\pi(\theta)$ and then considering the Monte Carlo approximation 
 $$ \frac{1}{N} \sum_{i = 1}^{N} |\pi_i - \pi(\theta_i)|$$
 
-# Numerical Tests
+# Numerical Test (2D input space)
 
 ```{r}
 # Synthetic data generation
-computer_model_data <- generate_vsem_test_case(1)
+computer_model_data <- generate_vsem_test_case(5)
 ```
 
 ```{r, echo = FALSE}
 # Emulator settings
-emulator_settings <- data.frame(gp_lib = c("mlegp"), 
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
                                 transformation_method = c("truncated"),
                                 scale_X = TRUE, 
@@ -233,27 +234,66 @@ print(emulator_settings)
 ```{r, echo = FALSE} 
 # Priors 
 theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
-theta_prior_params[, "dist"] <- "Uniform"
-theta_prior_params[,"param1"] <- 0.4 # theta_prior_params[,"lower"]
-theta_prior_params[,"param2"] <- 0.6 # theta_prior_params[,"upper"]
+theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
+theta_prior_params[,"param1"] <- theta_prior_params[,"lower"]
+theta_prior_params[,"param2"] <- theta_prior_params[,"upper"]
 theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
 
 print(theta_prior_params)
 ```
 
+```{r}
+IG_prior_coef_var <- 0.01
+IG_shape <- (1 / IG_prior_coef_var^2) + 2
+
+# Prior on noise variance (this creates inverse gamma priors with means equal to the true variances and coefficient of variation 
+# equal to `IG_prior_coef_var`).
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = rep(IG_shape, 2), 
+                             IG_scale = diag(computer_model_data$Sig_eps) * (IG_shape - 1))
+
+prior_Sig_eps_samples <- matrix(NA, nrow = 10000, ncol = length(computer_model_data$output_vars))
+
+for(i in seq_len(nrow(prior_Sig_eps_samples))) {
+  prior_Sig_eps_samples[i,] <- diag(sample_prior_Sig_eps(Sig_eps_prior_params))
+}
+
+for(j in seq_len(ncol(prior_Sig_eps_samples))) {
+  hist(prior_Sig_eps_samples[,j], 50, main = computer_model_data$output_vars[j], xlab = "Samples from prior on variance.", )
+  abline(v = diag(computer_model_data$Sig_eps)[j], col = "red")
+}
+
+```
+
+
+## Run baseline MCMC sampling (no GP approximation). 
+```{r}
+N_mcmc <- 50000
+samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
+                                Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
+
 ## Fit GP emulator. 
 
 ### Design and validation points. 
 ```{r}
-N_train <- 8
-N_test <- 301
+# Design and validation points.
+
+N_train <- 18
+N_test <- 2500
 train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
-                                      scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS", order_1d = TRUE) 
+                                      scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
+                                      param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS") 
+
 test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_data = computer_model_data,  
-                                     scale_inputs = TRUE, normalize_response = TRUE, param_ranges = train_data$input_bounds, output_stats = train_data$output_stats,
-                                     transformation_method = emulator_settings$transformation_method, design_method = "grid", order_1d = TRUE) 
+                                     scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
+                                     param_ranges = train_data$input_bounds, 
+                                     output_stats = train_data$output_stats, log_output_stats = train_data$log_output_stats,
+                                     transformation_method = emulator_settings$transformation_method, design_method = "grid") 
 ```
+
 
 ### Fit GPs. 
 ```{r, echo = FALsE}
@@ -261,9 +301,16 @@ gp_fits <- fit_independent_GPs(train_data$inputs_scaled, train_data$outputs_norm
 ```
 ### Predict at test points.
 ```{r}
+if(emulator_settings$transformation_method == "LNP") {
+  output_stats <- train_data$log_output_stats
+} else {
+  output_stats <- train_data$output_stats
+}
+
 gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj_list = gp_fits, gp_lib = emulator_settings$gp_lib, 
-                                        denormalize_predictions = TRUE, output_stats = train_data$output_stats)
+                                        denormalize_predictions = TRUE, output_stats = output_stats)
 ```
+
 
 ### Plot GPs. 
 ```{r}

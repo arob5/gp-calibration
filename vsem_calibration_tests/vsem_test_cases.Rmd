@@ -176,7 +176,8 @@ for(output_var in test3_list$output_vars) {
 
 
 ## Test 4
-This test builds on complexity to test 1 by adding an additional calibration parameter $\tau_v$, increasing the number of days, and varying the frequency of observed data. 
+This test is identical to test 3 with the addition of a second calibration parameter KEXT. KEXT and LAR are completely unidentifiable in the 
+ODEs. 
 ```{r}
 test4_list <- generate_vsem_test_case(4)
 ```
@@ -205,7 +206,8 @@ for(output_var in test4_list$output_vars) {
 
 
 ## Test 5
-Another two-parameter test case ($C_v$, $\tau_r$), with a longer time series, varying observation frequencies, increased noise on NEE observations, and small correlation between observation errors for $C_s$ and $C_r$. 
+This is also identical to test case 3 with the addition of a second calibration parameter Cs (the initial condition of the soil carbon pool). This 
+parameter is less related to LAR, so as compared to test case 4 represents a less severe case of non-identifiability. 
 ```{r}
 test5_list <- generate_vsem_test_case(5)
 ```

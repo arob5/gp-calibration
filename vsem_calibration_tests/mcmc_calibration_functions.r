@@ -247,15 +247,17 @@ llik_Gaussian_err <- function(model_errs, Sig_eps = NULL, L = NULL, output_vars 
 }
 
 
-run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
-                     computer_model_data = NULL) {
+run_VSEM <- function(theta_vals, computer_model_data = NULL, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = NULL) {
   # Runs the VSEM model using the specified parameter settings, thus returning the outputs of the forward model. 
   # If multiple input parameters are passed, then the model is run at each input and the results are returned in a 
   # list, one for each input. If a single input parameter is passed, this function reduces to `run_VSEM_single_input()`.
+  # Note that `run_computer_model()` is a generic interface that should typically be used to execute a forward model, instead 
+  # of directly calling model-specific functions. 
   #
   # Args:
   #    theta_vals: matrix of dimension M x d, the values of calibration parameters used to run the model. Each row is 
   #                a setting in the d-dimensional space of calibration parameters. 
+  #    computer_model_data: list, must have named elements "par_ref", "par_cal_sel", "PAR_data", "output_vars".
   #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "true_value". Parameters that are fixed at nominal 
   #             values (not calibrated) are set to their values given in the "true_value" column. 
@@ -265,13 +267,40 @@ run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data 
   #              term in VSEM. 
   #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
-  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
-  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #    If run at multiple input points (i.e. `theta_vals` has M > 1 rows) then a list of M matrices as returned, where each 
   #    matrix is the return value of `run_VSEM_single_input()` at the respective input value. If M = 1, then a single matrix 
   #    is returned not in a list. 
+  
+  if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
+    return(run_VSEM_single_input(par_val = theta_vals, computer_model_data = computer_model_data, 
+                                 ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, PAR_data = PAR_data, 
+                                 output_vars = output_vars))
+  } else {
+    return(apply(theta_vals, 1, function(theta) run_VSEM_single_input(par_val = theta, computer_model_data = computer_model_data, 
+                                                                      ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, PAR_data = PAR_data, 
+                                                                      output_vars = output_vars), simplify = FALSE))
+  }
+  
+}
+
+
+run_VSEM_single_input <- function(par_val, computer_model_data = NULL, ref_pars = NULL, pars_cal_sel = NULL, 
+                                  PAR_data = NULL, output_vars = NULL) {
+  # Runs the VSEM model using specified parameter setting, returning the outputs of the model. This runs
+  # the computer model as a single input, intended to work as a generic computer model`f()` mapping 
+  # as used in the `run_computer_model()` function. 
+  #
+  # Args:
+  #    computer_model_data: list, must have named elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
+  #    par_val: numeric vector, values of calibration parameters used to run the model. 
+  #    The remaining parameters provide an alternative to passing `computer_model_data`; these are primarily 
+  #    intended to be used when initially creating data, before the `computer_model_list` is generated. 
+  #
+  # Returns:
+  #   matrix of dimensions n x p where n is the length of the time series and p is the number
+  #   of output variables. 
   
   if(!is.null(computer_model_data)) {
     ref_pars <- computer_model_data$ref_pars
@@ -280,17 +309,34 @@ run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data 
     output_vars <- computer_model_data$output_vars
   }
   
-  if(isTRUE(nrow(theta_vals) > 1)) {
-    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, ref_pars, pars_cal_sel, PAR_data, output_vars)))
-  } else {
-    return(run_VSEM_single_input(theta_vals, ref_pars, pars_cal_sel, PAR_data, output_vars))
+  # Parameters not calibrated are fixed at default values
+  theta <- ref_pars$true_value
+  theta[pars_cal_sel] <- par_val
+  
+  # Run forward model, re-scale NEE.
+  VSEM_output <- as.matrix(VSEM(theta, PAR_data))
+  if("NEE" %in% output_vars) {
+    VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
   }
+  
+  # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
+  # at time t. 
+  if("LAI" %in% output_vars) {
+    VSEM_output <- cbind(VSEM_output, theta[rownames(ref_pars) == "LAR"] * VSEM_output[, "Cv"])
+    colnames(VSEM_output)[ncol(VSEM_output)] <- "LAI"
+  }
+  
+  # Select only the output variables 
+  VSEM_output <- VSEM_output[, output_vars]
+  
+  return(VSEM_output)
   
 }
 
 
-run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
-                                  computer_model_data = NULL) {
+# Deprecated: replaced by new generic run_computer_model() framework. 
+run_VSEM_single_input_old <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
+                                      computer_model_data = NULL) {
   # Runs the VSEM model using specified parameter setting, returning the outputs of the model. Can either pass in the necessary data 
   # to run the forward model as individual arguments (par_ref, par_cal_sel, PAR_data, output_vars), or can pass in a list `computer_model_data`
   # will all of these arguments are named elements. 
@@ -333,7 +379,7 @@ run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL,
   # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
   # at time t. 
   if("LAI" %in% output_vars) {
-    VSEM_output <- cbind(VSEM_output, theta[rownames(par_ref) == "LAR"] * VSEM_output[, "Cv"])
+    VSEM_output <- cbind(VSEM_output, theta[rownames(ref_pars) == "LAR"] * VSEM_output[, "Cv"])
     colnames(VSEM_output)[ncol(VSEM_output)] <- "LAI"
   }
   
@@ -638,6 +684,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     lpost_theta_curr <- llik_curr + lprior_theta_curr
     lpost_theta_prop <- llik_prop + lprior_theta_prop
     alpha <- min(1.0, exp(lpost_theta_prop - lpost_theta_curr))
+    
     if(runif(1) <= alpha) {
       theta_samp[itr,] <- theta_prop
       lprior_theta_curr <- lprior_theta_prop
@@ -1207,7 +1254,8 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
   
   # Run the model to generate the reference data, the ground truth. 
-  data_ref <- run_VSEM(pars_cal_vals, ref_pars, pars_cal_sel, PAR, output_vars)
+  data_ref <- run_VSEM(theta_vals = pars_cal_vals, ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, 
+                       PAR_data = PAR, output_vars = output_vars)
 
   # Add observational noise. Assumes Gaussian noise, potentially correlated across output variables. 
   Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
@@ -1243,7 +1291,8 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               output_vars = output_vars, 
               output_frequencies = output_frequencies, 
               obs_start_day = obs_start_day, 
-              forward_model = "VSEM"))
+              forward_model = "VSEM", 
+              f = run_VSEM_single_input))
   
 }
 
@@ -1382,9 +1431,11 @@ generate_vsem_test_3 <- function(random_seed) {
 
 
 generate_vsem_test_4 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 4". This builds adds complexity 
-  # to test case 1 by adding an additional calibration parameter, and varying the observation 
-  # frequencies. 
+  # A convenience function to generate the VSEM data for "test case 4". This test is 
+  # identical to test case 3, with the addition of a second parameter `KEXT` (the 
+  # extinction coefficient in the GPP calculation). KEXT and LAR are not identifiable 
+  # in the ODE; they completely trade off. Thus, this test is intended to explore 
+  # calibration behavior in an extreme case of non-identifiability. 
   #
   # Args:
   #    random_seed: integer(1), random seed used to generate observation noise. 
@@ -1393,35 +1444,44 @@ generate_vsem_test_4 <- function(random_seed) {
   #    list, the list returned by `generate_vsem_test_data()`. 
   
   # Number of days.
-  N_time_steps <- 2048
+  N_time_steps <- 3650
   
   # Diagonal covariance across outputs.
-  Sig_eps <- diag(c(4.0, 2.0, 2.0, 2.0))
-  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  Sig_eps <- diag(c(4.0, 0.36))
+  rownames(Sig_eps) <- c("NEE", "LAI")
+  colnames(Sig_eps) <- c("NEE", "LAI")
   
-  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
-  # and 2.) residence time of above-ground vegetation. 
-  pars_cal_names <- c("KEXT", "tauV")
-  pars_cal_vals <- c(0.5, 1440)
+  # Single calibration parameter: Leaf Area Ratio (LAR)
+  pars_cal_names <- c("LAR", "KEXT")
+  pars_cal_vals <- c(1.5, 0.5)
   ref_pars <- VSEMgetDefaults()
   
-  # All outputs are observed daily, with no missing values. 
-  output_vars <- c("NEE", "Cv", "Cs", "CR")
-  output_frequencies <- c(1, 300, 365, 30)
-  obs_start_day <- c(1, 1, 1, 1)
+  # NEE is observed daily with no missing values. LAI is observed every three days.   
+  output_vars <- c("NEE", "LAI")
+  output_frequencies <- c(1, 3)
+  obs_start_day <- c(1, 1)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
-                                       ref_pars, output_vars, output_frequencies, obs_start_day)
+  test_list <- generate_vsem_test_data(random_seed = random_seed,
+                                       N_time_steps = N_time_steps , 
+                                       Sig_eps = Sig_eps, 
+                                       pars_cal_names = pars_cal_names, 
+                                       pars_cal_vals = pars_cal_vals,
+                                       ref_pars = ref_pars, 
+                                       output_vars = output_vars, 
+                                       output_frequencies = output_frequencies, 
+                                       obs_start_day = obs_start_day)
   return(test_list)
   
 }
 
 
 generate_vsem_test_5 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 5". This is another two calibration 
-  # parameter test, which varies observation frequency, and now also includes time-independent correlation 
-  # between observation noise in the output variables. 
+  # A convenience function to generate the VSEM data for "test case 5". This test is 
+  # identical to test case 3, with the addition of a second parameter `Cs` (the 
+  # initial condition for the soil pool). This is also a counterpart ot test case 4, 
+  # which calibrates LAR and KEXT, which are completely unidentifiable. In this case
+  # the parameters LAR and Cs are less related, so comparing test cases 4 and 5 allow 
+  # for different degrees of non-identifiability to be tested. 
   #
   # Args:
   #    random_seed: integer(1), random seed used to generate observation noise. 
@@ -1430,28 +1490,25 @@ generate_vsem_test_5 <- function(random_seed) {
   #    list, the list returned by `generate_vsem_test_data()`. 
   
   # Number of days.
-  N_time_steps <- 3065
+  N_time_steps <- 3650
   
   # Diagonal covariance across outputs.
-  Sig_eps <- diag(c(5.0, 2.0, 2.0, 2.0))
-  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  Sig_eps["Cs", "CR"] <- -0.2
-  Sig_eps["CR", "Cs"] <- -0.2
+  Sig_eps <- diag(c(4.0, 0.36))
+  rownames(Sig_eps) <- c("NEE", "LAI")
+  colnames(Sig_eps) <- c("NEE", "LAI")
   
-  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
-  # and 2.) residence time of above-ground vegetation. 
-  pars_cal_names <- c("Cv", "tauR")
-  pars_cal_vals <- c(3.0, 1440)
+  # Single calibration parameter: Leaf Area Ratio (LAR)
+  pars_cal_names <- c("LAR", "Cs")
+  pars_cal_vals <- c(1.5, 15.0)
   ref_pars <- VSEMgetDefaults()
   
-  # All outputs are observed daily, with no missing values. 
-  output_vars <- c("NEE", "Cv", "Cs", "CR")
-  output_frequencies <- c(1, 300, 365, 30)
-  obs_start_day <- c(1, 1, 1, 1)
+  # NEE is observed daily with no missing values. LAI is observed every three days.   
+  output_vars <- c("NEE", "LAI")
+  output_frequencies <- c(1, 3)
+  obs_start_day <- c(1, 1)
   
   test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
-                                       ref_pars, output_vars, output_frequencies, obs_start_day <- c(1, 1, 1, 1))
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
   return(test_list)
   
 }
