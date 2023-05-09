@@ -869,8 +869,7 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
   
   # Run model at inputs to produce outputs. 
-  model_outputs_list <- run_computer_model(design_list$inputs, computer_model_data)
-  design_list[["outputs"]] <- get_computer_model_SSR(model_outputs_list, computer_model_data, na.rm = TRUE)
+  design_list[["outputs"]] <- get_computer_model_SSR(computer_model_data, theta_vals = design_list$inputs, na.rm = na.rm)
   
   # Normalize outputs. 
   if(normalize_response) {

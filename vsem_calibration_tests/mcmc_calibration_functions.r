@@ -46,8 +46,7 @@ llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NU
   
   # Run forward model. 
   if(is.null(SSR)) {
-    model_outputs_list <- run_computer_model(theta_vals, computer_model_data)
-    SSR <- get_computer_model_SSR(model_outputs_list, computer_model_data, na.rm = na.rm)
+    SSR <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals, na.rm = na.rm)
   }
   
   p <- length(vars_obs)
@@ -528,20 +527,21 @@ get_computer_model_errs <- function(theta_vals, computer_model_data) {
 }
 
 
-get_computer_model_SSR <- function(model_outputs_list, computer_model_data, na.rm = TRUE) {
+get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NULL, theta_vals = NULL, na.rm = TRUE) {
   # Computes the sum of squared residuals (SSR) between model runs and observed 
   # data on a per-output basis. Can handle multiple model runs (e.g. one per 
   # design point for emulation) or outputs from single model run (e.g. as required
   # during MCMC).
   #
   # Args:
-  #    data_obs: data.table of dimension n x p, where n is the length of the time 
-  #              series outputs from the model, and p is the number of output variables.
-  #              This is Y in my typical notation. 
+  #    computer_model_data: list, the standard computer model data list. 
   #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
   #                        model outputs f(theta) from a single model run. Or a list 
   #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
   #                        the outputs from multiple model runs. 
+  #    theta_vals: numeric vector or matrix of input values, must be provided if `model_outputs_list` 
+  #                is NULL, in which case the forward model  will be run at these inputs to obtain 
+  #                `model_outputs_list`. 
   #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
   #           calculation, passed to the `colSums()` functions. Default is TRUE. 
   # 
@@ -552,6 +552,11 @@ get_computer_model_SSR <- function(model_outputs_list, computer_model_data, na.r
   
   # Observed data. 
   data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars]
+  
+  # Run forward model if it has not been run yet. 
+  if(is.null(model_outputs_list)) {
+    model_outputs_list <- run_computer_model(theta_vals, computer_model_data)
+  }
   
   # If model only run at single set of calibration parameter values. 
   if(is.matrix(model_outputs_list)) {
@@ -574,8 +579,9 @@ get_computer_model_SSR <- function(model_outputs_list, computer_model_data, na.r
 
 # TODO: need to update this so that it can handle missing data. Main issue is updating the Gaussian likelihood function 
 # that operates on model_errs. 
-# TODO: Update description and argument comments.
-mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = FALSE,
+# TODO: Update description and argument comments; have changes this function to be exclusively for the case where the 
+#       covariance matrix Sig_eps is non-diagonal. 
+mcmc_calibrate <- function(computer_model_data, theta_prior_params,
                            theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
                            N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                            proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
@@ -624,36 +630,23 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  if(learn_Sig_eps && isTRUE(Sig_eps_prior_params$dist == "IG")) {
-    diag_cov <- TRUE
-  }
-  if(diag_cov) {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-    colnames(Sig_eps_samp) <- computer_model_data$output_vars
-  } else {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
-    stop("Need to fix correlated Gaussian likelihood function to work with missing data.")
-  }
-  
+  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+
   # Set initial conditions.
   if(is.null(theta_init)) {
     theta_init <- sample_prior_theta(theta_prior_params)
   }
   if(learn_Sig_eps) {
     if(is.null(Sig_eps_init)) {
-      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params, return_matrix = TRUE)
     }
   } else {
     if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
-  if(diag_cov) {
-    Sig_eps_samp[1,] <- diag(Sig_eps_init)
-  } else {
-    Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
-  }
-  
+  Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
+
   Sig_eps_curr <- Sig_eps_init
   L_Sig_eps_curr <- t(chol(Sig_eps_init))
   model_errs_curr <- get_computer_model_errs(theta_init, computer_model_data)
@@ -708,18 +701,148 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params, diag_cov = F
     # Gibbs step for Sig_eps
     #
     if(learn_Sig_eps) {
-      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, 
+                                               Sig_eps_prior_params = Sig_eps_prior_params, 
+                                               n_obs = computer_model_data$n_obs, return_matrix = TRUE)
       L_Sig_eps_curr <- t(chol(Sig_eps_curr))
-      if(diag_cov) {
-        Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
-      } else {
-        Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
-      }
+      Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
     }
     
   }
   
   return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
+  
+}
+
+
+# TODO: update comments. 
+mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
+                                       theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                       N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                       proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                       adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+  # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
+  # between the different output variables, but assumes independence across time. Samples from posterior over both  
+  # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
+  # Allows for arbitrary prior over theta, but assumes Inverse Wishart prior on Sig_eps (if treated as random).
+  # MCMC scheme is adaptive random walk Metropolis. This MCMC algorithm does not involve any model emulation/likelihood 
+  # approximation. 
+  #
+  # Args:
+  #    computer_model_data:
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    diag_cov: logical, if TRUE constrains Sig_eps to be diagonal. If the prior distribution is specified to be product Inverse Gamma then this 
+  #              is automatically set to TRUE. Default is FALSE. 
+  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
+  #                the initial value from the prior. 
+  #    learn_Sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    Sig_eps_init: matrix, p x p covariance matrix capturing dependence between output variables. If `learn_Sig_eps` is 
+  #                  TRUE then `Sig_eps_init` can either be set to the initial value used for MCMC, or set to NA in which 
+  #                  case the initial value will be sampled from the prior. If `learn_Sig_eps` is FALSE, then a non-NA value 
+  #                  is required, and treated as the fixed nominal value of Sig_eps_init. 
+  #    Sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    N_mcmc: integer, the number of MCMC iterations. 
+  #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
+  #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
+  #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
+  #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
+  #                          number of iterations. 
+  #    proposal_scale_init: numeric, the proposal covariance is initialized to be diagonal, with `proposal_scale_init` along the diagonal. 
+  #
+  # Returns:
+  #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
+  #    theta stored in the rows. The latter is of dimension N_mcmc x p(p+1)/2, where each row stores the lower triangle of the 
+  #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
+  #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  sg_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- computer_model_data$output_vars
+
+  # Set initial conditions.
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  sig_eps_samp[1,] <- sig_eps_init
+
+  sig_eps_curr <- sig_eps_init
+  SSR_curr <- get_computer_model_SSR(computer_model_data, theta_vals = theta_init, na.rm = TRUE)
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  log_scale_prop <- 0
+  L_prop <- t(chol(Cov_prop))
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  for(itr in seq(2, N_mcmc)) {
+    #
+    # Metropolis step for theta
+    #
+    
+    # theta proposals.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Calculate log-likelihoods for current and proposed theta.
+    SSR_prop <- get_computer_model_SSR(computer_model_data, theta_vals = theta_prop, na.rm = TRUE)
+    llik_prop <- llik_product_Gaussian(computer_model_data, sig_eps_curr, SSR = SSR_prop, normalize = FALSE, na.rm = TRUE)
+    llik_curr <- llik_product_Gaussian(computer_model_data, sig_eps_curr, SSR = SSR_curr, normalize = FALSE, na.rm = TRUE) 
+
+    # Metropolis-Hastings Accept-Reject Step.
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    lpost_theta_curr <- llik_curr + lprior_theta_curr
+    lpost_theta_prop <- llik_prop + lprior_theta_prop
+    alpha <- min(1.0, exp(lpost_theta_prop - lpost_theta_curr))
+    
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lprior_theta_prop
+      SSR_curr <- SSR_prop
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+    
+    #
+    # Gibbs step for sig_eps
+    #
+    if(learn_sig_eps) {
+      sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
+    }
+    
+  }
+  
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp))
   
 }
 
@@ -954,7 +1077,7 @@ sample_prior_theta <- function(theta_prior_params) {
 }
 
 
-sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
+sample_prior_Sig_eps <- function(Sig_eps_prior_params, return_matrix = FALSE) {
   # Returns sample from prior distribution on the p x p observation covariance matrix Sig_eps.
   #
   # Args:
@@ -964,9 +1087,14 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
   #                          that are the arguments of the Inverse Wishart distribution, or 2.) names "IG_shape" and "IG_scale" which 
   #                          each correspond to p-length vectors storing the parameters for the independent Inverse Gamma priors on each
   #                          variance parameter. Note that dist "IG" constrains Sig_eps to be diagonal, while "IW" does not. 
+  #    return_matrix: logical(1), only relevant for inverse Gamma prior. When prior is inverse Wishart, the return value is always 
+  #                   a matrix. If `return_matrix` is TRUE, then the return value under the inverse Gamma prior will also be a matrix. 
+  #                   Otherwise it is a numeric vector. 
   #
   # Returns:
-  #    matrix, p x p positive definite matrix sampled from the prior p(Sig_eps).
+  #    matrix or numeric vector. In prior is inverse Wishart, returns p x p positive definite matrix sampled from the prior. If prior 
+  #    instead returns numeric vector of length p containing the sampled variances. Setting `return_matrix` to TRUE will force the 
+  #    return value to be a matrix in either case (this will return a diagonal matrix in the inverse gamma case). 
   
   if(Sig_eps_prior_params$dist == "IW") {
     return(LaplacesDemon::rinvwishart(nu = Sig_eps_prior_params$dof, S = Sig_eps_prior_params$scale_matrix))
@@ -976,13 +1104,16 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
     for(j in seq_len(p)) {
       sig2_eps_vars[j] <- 1/rgamma(1, shape = Sig_eps_prior_params$IG_shape[j], rate = Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars, nrow = p))
+    
+    if(return_matrix) return(diag(sig2_eps_vars, nrow = p))
+    return(sig2_eps_vars)
+    
   }
   
 }
 
 
-sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs) {
+sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs, return_matrix = FALSE) {
   # Return sample of the observation covariance matrix Sig_eps, drawn from the conditional  
   # posterior p(Sig_eps|theta, Y). Under the model assumptions, this conditional posterior 
   # has an inverse Wishart or Inverse Gamma product distribution. This function does not explicitly take theta as an 
@@ -1003,9 +1134,14 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
   #                          each correspond to p-length vectors storing the parameters for the independent Inverse Gamma priors on each
   #                          variance parameter. Note that dist "IG" constrains Sig_eps to be diagonal, while "IW" does not. 
   #    n_obs: numeric(), vector of length equal to the number of outputs p. The number of observations for each output. 
+  #    return_matrix: logical(1), only relevant for inverse Gamma prior. When prior is inverse Wishart, the return value is always 
+  #                   a matrix. If `return_matrix` is TRUE, then the return value under the inverse Gamma prior will also be a matrix. 
+  #                   Otherwise it is a numeric vector. 
   #
   # Returns:
-  #    matrix, p x p positive definite matrix sampled from the prior distribution p(Sig_eps|theta, Y).
+  #    If prior is inverse wishart, returns a p x p positive definite matrix sampled from the conditional posterior distribution p(Sig_eps|theta, Y).
+  #    If prior is inverse Gamma, returns a numeric vector of length p of the sampled variances from the conditional posterior. Setting `return_matrix`
+  #    to TRUE forces the return value to be a matrix in this case as well. 
   
   if(Sig_eps_prior_params$dist == "IW") {
     stop("Need to update IW prior for case where there are missing observations.")
@@ -1023,7 +1159,10 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
     for(j in seq_len(p)) {
       sig2_eps_vars[j] <- 1/rgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], rate = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars, nrow = p))
+    
+    if(return_matrix) return(diag(sig2_eps_vars, nrow = p))
+    return(sig2_eps_vars)
+    
   }
   
 }
