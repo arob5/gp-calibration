@@ -555,7 +555,7 @@ get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NUL
   
   # Run forward model if it has not been run yet. 
   if(is.null(model_outputs_list)) {
-    model_outputs_list <- run_computer_model(theta_vals, computer_model_data)
+    model_outputs_list <- run_computer_model(theta_vals = theta_vals, computer_model_data = computer_model_data)
   }
   
   # If model only run at single set of calibration parameter values. 
@@ -568,7 +568,7 @@ get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NUL
   SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
   
   for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
+    SSR[i,] <- colSums((data_obs - model_outputs_list[[i]])^2, na.rm = na.rm)
   }
   colnames(SSR) <- colnames(data_obs)
   
@@ -645,7 +645,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
   }
   
   theta_samp[1,] <- theta_init
-  Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
+  Sig_eps_samp[1,] <- Sig_eps_init[lower.tri(Sig_eps_init, diag = TRUE)]
 
   Sig_eps_curr <- Sig_eps_init
   L_Sig_eps_curr <- t(chol(Sig_eps_init))
@@ -705,7 +705,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
                                                Sig_eps_prior_params = Sig_eps_prior_params, 
                                                n_obs = computer_model_data$n_obs, return_matrix = TRUE)
       L_Sig_eps_curr <- t(chol(Sig_eps_curr))
-      Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
+      Sig_eps_samp[itr,] <- Sig_eps_curr[lower.tri(Sig_eps_curr, diag = TRUE)]
     }
     
   }
@@ -758,6 +758,10 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
   #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
   
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_product_lik()` requires inverse gamma priors on observation variances.")
+  }
+  
   # Number observations in time series, number output variables, and dimension of parameter space.
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
@@ -765,7 +769,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  sg_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
   colnames(sig_eps_samp) <- computer_model_data$output_vars
 
   # Set initial conditions.
@@ -836,7 +840,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
     # Gibbs step for sig_eps
     #
     if(learn_sig_eps) {
-      sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_curr, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
       sig_eps_samp[itr,] <- sig_eps_curr
     }
     
@@ -852,12 +856,12 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
 # on the correct scale (e.g. it should be on log scale for LNP).
 # TODO: doesn't make sense for Sig_eps to be a matrix here if assuming diagonal structure. 
 mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emulator_info,
-                                  theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
+                                  theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
                                   N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                   proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
                                   adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
 
-  if(learn_Sig_eps && Sig_eps_prior_params$dist != "IG") {
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
   }
   
@@ -868,25 +872,25 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(Sig_eps_samp) <- computer_model_data$output_vars
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- computer_model_data$output_vars
 
   # Set initial conditions.
   if(is.null(theta_init)) {
     theta_init <- sample_prior_theta(theta_prior_params)
   }
-  if(learn_Sig_eps) {
-    if(is.null(Sig_eps_init)) {
-      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
     }
   } else {
-    if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
-  Sig_eps_samp[1,] <- diag(Sig_eps_init)
+  sig_eps_samp[1,] <- sig_eps_init
   
-  Sig_eps_curr <- Sig_eps_init
+  sig_eps_curr <- sig_eps_init
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance.
@@ -895,7 +899,6 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
   samp_mean <- theta_init
-  
   
   for(itr in seq(2, N_mcmc)) {
     
@@ -917,9 +920,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     
     # Accept-Reject step. 
     lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
-                                                     vars_obs = diag(Sig_eps_curr), normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
+                                                     vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
     lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = as.matrix(theta_prop, nrow = 1), SSR = SSR_samples[2,,drop=FALSE], 
-                                                          vars_obs = diag(Sig_eps_curr), normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                          vars_obs = Sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
                                                           return_list = TRUE)
     alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
 
@@ -947,18 +950,18 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     # Gibbs step for Sig_eps.
     #
     
-    if(learn_Sig_eps) {
+    if(learn_sig_eps) {
       SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method,
                                                      idx_selector = pred_idx_curr, include_nugget = TRUE)
-      Sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = Sig_eps_prior_params, n_obs = computer_model_data$n_obs)
-      Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
     } else {
-      Sig_eps_samp[itr,] <- diag(Sig_eps_init)
+      sig_eps_samp[itr,] <- sig_eps_init
     }
     
   }
   
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp))
   
 }
 

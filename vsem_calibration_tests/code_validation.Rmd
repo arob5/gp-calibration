@@ -211,6 +211,13 @@ for(j in seq_along(gp_pred_list)) {
 ```
 
 # Testing MCMC Calibration Algorithm (Exact, No GP Approximation). 
+This section concerns the validation of the functions *mcmc_calibrate_product_lik()* and *mcmc_calibrate()*. Their samples are 1.) compared with samples 
+from the exact Gaussian posterior under a fixed observation variance, and 2.) compared with samples from a Metropolis-within-Gibbs sampler under an inverse 
+gamma prior on the observation variance. Both of these functions assume a Gaussian likelihood. *mcmc_calibrate_product_lik()* is specialized for a 
+diagonal covariance structure across different model outputs/data constraints, and assumes independent inverse gamma priors on each observation variance parameter. 
+*mcmc_calibrate()* allows for a non-diagonal covaraiance structure with inverse Wishart prior. However, in these tests *mcmc_calibrate()* is applied with the same 
+inverse gamma priors and hence reduces to *mcmc_calibrate_product_lik()*. Note that *mcmc_calibrate()* is currently very limited in that it assumes no 
+data is missing. 
 
 ## Linear Gaussian Posterior Test
 Here we choose the forward model to be linear, with Gaussian observation noise, and a Gaussian prior on the calibration parameters. This 
@@ -233,20 +240,42 @@ true_post <- linear_Gaussian_data$true_posterior
 
 ```{r}
 N_mcmc <- 50000
-samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
-                       ig_eps_init = diag(1.0), N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+samp_prod_lik <- mcmc_calibrate_product_lik(computer_model_data, theta_prior_params, learn_sig_eps = FALSE, sig_eps_init = diag(computer_model_data$Sig_eps),
+                                            N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
+```{r}
+samp <- mcmc_calibrate(computer_model_data, theta_prior_params, learn_Sig_eps = FALSE, 
+                       Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
 
 ```{r}
 burn_in <- 25000
-plot(samp$theta[burn_in:N_mcmc,1], type="l")
-plot(samp$theta[burn_in:N_mcmc,2], type="l")
+plot(samp_prod_lik$theta[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate_product_lik", xlab = "theta1")
+plot(samp_prod_lik$theta[burn_in:N_mcmc,2], type="l", main = "mcmc_calibrate_product_lik", xlab = "theta2")
+```
+
+
+```{r}
+burn_in <- 25000
+plot(samp$theta[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate", xlab = "theta1")
+plot(samp$theta[burn_in:N_mcmc,2], type="l", main = "mcmc_calibrate", xlab = "theta2")
+```
+
+```{r}
+# Sample moments. 
+print("MCMC Estimates (mcmc_calibrate_product_lik):")
+print("Cov:")
+print(stats::cov(samp_prod_lik$theta[burn_in:N_mcmc,]))
+
+print("Mean:")
+print(colMeans(samp_prod_lik$theta[burn_in:N_mcmc,]))
 ```
 
 
 ```{r}
 # Sample moments. 
-print("MCMC Estimates:")
+print("MCMC Estimates (mcmc_calibrate):")
 print("Cov:")
 print(stats::cov(samp$theta[burn_in:N_mcmc,]))
 
@@ -271,12 +300,22 @@ theta_samp_exact <- t(true_post$mean[,1] + L_Cov_exact %*% matrix(rnorm(N_exact_
 ```
 
 ```{r}
-theta_samp_keep <- samp$theta[burn_in:N_mcmc,]
-
 # Histograms.
 for(j in seq(1,d)) {
-  hist_plot <- get_hist_plot(list(theta_samp_exact, theta_samp_keep), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
-                             main_title = "Histogram of MCMC Samples", data_names = c("True", "MCMC"), 
+  hist_plot <- get_hist_plot(list(theta_samp_exact, samp_prod_lik$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples", data_names = c("True", "mcmc_calibrate_product_lik"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
+
+
+```{r}
+# Histograms.
+for(j in seq(1,d)) {
+  hist_plot <- get_hist_plot(list(theta_samp_exact, samp$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples", data_names = c("True", "mcmc_calibrate"), 
                              vertical_line = computer_model_data$theta_true[j])
   print(hist_plot)
 }
@@ -286,7 +325,7 @@ for(j in seq(1,d)) {
 ```{r}
 # 2d KDE contour plots. 
 
-countour_plots <- get_2d_density_contour_plot(list(theta_samp_exact, theta_samp_keep), col_sel = c(1,2),  
+countour_plots <- get_2d_density_contour_plot(list(theta_samp_exact, samp$theta[burn_in:N_mcmc,]), col_sel = c(1,2),  
                                               xlab = computer_model_data$pars_cal_name[1], ylab = computer_model_data$pars_cal_name[2], 
                                               main_titles = paste0("2D KDE Countours: ", c("True", "MCMC")))
 for(j in seq_along(countour_plots)) print(countour_plots[[j]])
@@ -296,24 +335,41 @@ for(j in seq_along(countour_plots)) print(countour_plots[[j]])
 
 ### Highly informative prior. 
 ```{r}
-# Prior on noise variance. 
+IG_prior_coef_var <- 0.01
+IG_shape <- (1 / IG_prior_coef_var^2) + 2
+
+# Prior on noise variance (this creates inverse gamma priors with means equal to the true variances and coefficient of variation 
+# equal to `IG_prior_coef_var`).
 Sig_eps_prior_params <- list(dist = "IG", 
-                             IG_shape = 10000, 
-                             IG_scale = 10000)
+                             IG_shape = IG_shape, 
+                             IG_scale = diag(computer_model_data$Sig_eps) * (IG_shape - 1))
 ```
 
 
 ```{r}
-samp <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
-                       Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+samp_prod_lik_2 <- mcmc_calibrate_product_lik(computer_model_data, theta_prior_params, learn_sig_eps = TRUE, sig_eps_init = diag(computer_model_data$Sig_eps),
+                                              sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+```
+
+```{r}
+samp_2 <- mcmc_calibrate(computer_model_data, theta_prior_params, learn_Sig_eps = TRUE, Sig_eps_prior_params = Sig_eps_prior_params,
+                         Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
 
 ```{r}
 burn_in <- 25000
-plot(samp$theta[burn_in:N_mcmc,1], type="l")
-plot(samp$theta[burn_in:N_mcmc,2], type="l")
-plot(samp$Sig_eps[burn_in:N_mcmc,1], type="l")
+plot(samp_2$theta[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate", xlab = "theta1")
+plot(samp_2$theta[burn_in:N_mcmc,2], type="l", main = "mcmc_calibrate", xlab = "theta2")
+plot(samp_2$Sig_eps[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate", xlab = "sig2_eps")
 ```
+
+```{r}
+plot(samp_prod_lik_2$theta[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate_product_lik", xlab = "theta1")
+plot(samp_prod_lik_2$theta[burn_in:N_mcmc,2], type="l", main = "mcmc_calibrate_product_lik", xlab = "theta2")
+plot(samp_prod_lik_2$sig_eps[burn_in:N_mcmc,1], type="l", main = "mcmc_calibrate_product_lik", xlab = "sig2_eps")
+```
+
+
 ```{r}
 # Gibbs sampler for comparison
 Gibbs_samp <- MCMC_Gibbs_linear_Gaussian_model(computer_model_data, theta_prior_params, Sig_eps_prior_params, N_mcmc = N_mcmc)
@@ -324,18 +380,36 @@ Gibbs_samp <- MCMC_Gibbs_linear_Gaussian_model(computer_model_data, theta_prior_
 # Sample moments. 
 print("MCMC Calibration Code Estimates:")
 print("theta Cov:")
-print(stats::cov(samp$theta[burn_in:N_mcmc,]))
+print(stats::cov(samp_2$theta[burn_in:N_mcmc,]))
 
 print("theta Mean:")
-print(colMeans(samp$theta[burn_in:N_mcmc,]))
+print(colMeans(samp_2$theta[burn_in:N_mcmc,]))
 
 print("sig2_eps Var:")
-print(mean(samp$Sig_eps[burn_in:N_mcmc,1]^2) - mean(samp$Sig_eps[burn_in:N_mcmc,1])^2)
+print(mean(samp_2$Sig_eps[burn_in:N_mcmc,1]^2) - mean(samp$Sig_eps[burn_in:N_mcmc,1])^2)
 
 print("sig2_eps Mean:")
-print(mean(samp$Sig_eps[burn_in:N_mcmc,1]))
+print(mean(samp_2$Sig_eps[burn_in:N_mcmc,1]))
 
 ```
+
+```{r}
+# Sample moments. 
+print("MCMC Calibration Code Estimates:")
+print("theta Cov:")
+print(stats::cov(samp_prod_lik_2$theta[burn_in:N_mcmc,]))
+
+print("theta Mean:")
+print(colMeans(samp_prod_lik_2$theta[burn_in:N_mcmc,]))
+
+print("sig2_eps Var:")
+print(mean(samp_prod_lik_2$Sig_eps[burn_in:N_mcmc,1]^2) - mean(samp_prod_lik_2$Sig_eps[burn_in:N_mcmc,1])^2)
+
+print("sig2_eps Mean:")
+print(mean(samp_prod_lik_2$Sig_eps[burn_in:N_mcmc,1]))
+
+```
+
 
 ```{r}
 # True moments. 
@@ -357,8 +431,8 @@ print(mean(Gibbs_samp$sig2_eps[burn_in:N_mcmc,1]))
 
 # Histograms.
 for(j in seq(1,d)) {
-  hist_plot <- get_hist_plot(list(Gibbs_samp$theta[burn_in:N_mcmc,], samp$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
-                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Gibbs Baseline", "MCMC Calibration Function"), 
+  hist_plot <- get_hist_plot(list(Gibbs_samp$theta[burn_in:N_mcmc,], samp_2$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Gibbs Baseline", "mcmc_calibrate"), 
                              vertical_line = computer_model_data$theta_true[j])
   print(hist_plot)
 }
@@ -369,13 +443,41 @@ for(j in seq(1,d)) {
 
 # Histograms.
 
-sig2_eps_hist_plot <- get_hist_plot(list(Gibbs_samp$sig2_eps[burn_in:N_mcmc,,drop=FALSE], samp$Sig_eps[burn_in:N_mcmc,,drop=FALSE]), bins = 50, xlab = "sig2_eps",
-                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Gibbs Baseline", "MCMC Calibration Function"), 
+sig2_eps_hist_plot <- get_hist_plot(list(Gibbs_samp$sig2_eps[burn_in:N_mcmc,,drop=FALSE], samp_2$Sig_eps[burn_in:N_mcmc,,drop=FALSE]), bins = 50, xlab = "sig2_eps",
+                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Gibbs Baseline", "mcmc_calibrate"), 
                                     vertical_line = diag(computer_model_data$Sig_eps))
 print(sig2_eps_hist_plot)
 
 
 ```
+
+```{r}
+
+# Histograms.
+for(j in seq(1,d)) {
+  hist_plot <- get_hist_plot(list(Gibbs_samp$theta[burn_in:N_mcmc,], samp_prod_lik_2$theta[burn_in:N_mcmc,]), col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("Gibbs Baseline", "mcmc_calibrate_product_lik"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
+
+
+```{r}
+
+# Histograms.
+
+sig2_eps_hist_plot <- get_hist_plot(list(Gibbs_samp$sig2_eps[burn_in:N_mcmc,,drop=FALSE], samp_prod_lik_2$sig_eps[burn_in:N_mcmc,,drop=FALSE]), bins = 50, xlab = "sig2_eps",
+                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Gibbs Baseline", "mcmc_calibrate_product_lik"), 
+                                    vertical_line = diag(computer_model_data$Sig_eps))
+print(sig2_eps_hist_plot)
+
+
+```
+
+
+
 
 # Testing Emulator-Based MCMC Calibration Algorithm.
 
