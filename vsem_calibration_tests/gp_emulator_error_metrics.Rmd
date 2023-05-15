@@ -218,8 +218,16 @@ $$ \frac{1}{N} \sum_{i = 1}^{N} |\pi_i - \pi(\theta_i)|$$
 
 ```{r}
 # Synthetic data generation
-computer_model_data <- generate_vsem_test_case(5)
+computer_model_data <- generate_vsem_test_case(4)
 ```
+
+```{r echo = FALSE}
+for(output_var in computer_model_data$output_vars) {
+ plotTimeSeries(observed = computer_model_data$data_obs[, output_var],
+                predicted = computer_model_data$data_ref[, output_var], main = output_var) 
+}
+```
+
 
 ```{r, echo = FALSE}
 # Emulator settings
@@ -269,12 +277,12 @@ for(j in seq_len(ncol(prior_Sig_eps_samples))) {
 
 ## Run baseline MCMC sampling (no GP approximation). 
 ```{r}
-N_mcmc <- 50000
+N_mcmc_baseline <- 50000
 samp_baseline <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
                                             theta_prior_params = theta_prior_params, 
                                             learn_sig_eps = TRUE,
                                             sig_eps_prior_params = Sig_eps_prior_params,
-                                            N_mcmc = N_mcmc,
+                                            N_mcmc = N_mcmc_baseline,
                                             adapt_cov_method = "AM", 
                                             adapt_scale_method = "MH_ratio")
 ```
@@ -338,11 +346,11 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 for(j in seq_along(gp_pred_list)) {
 
   gp_plot <- plot_gp_fit_2d(test_data$inputs, test_data$outputs[,j], train_data$inputs, 
-                            post_samples = samp_baseline$theta[burn_in:N_mcmc,], 
+                            post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc,], 
                             true_theta = computer_model_data$theta_true,
                             train_data$outputs[,j], gp_pred_list[[j]]$mean,
-                            gp_pred_list[[j]]$var, xlab = "theta1", ylab = "theta2",
-                            main_title = "GP Predictive Density; Contours of True Posterior (Fixed Observation Variance)",
+                            gp_pred_list[[j]]$var, xlab = colnames(samp_baseline$theta)[1], ylab = colnames(samp_baseline$theta)[2],
+                            main_title = paste0(computer_model_data$output_vars[j], " GP Predictive Density; Contours of True Posterior"),
                             transformation_method = emulator_settings$transformation_method)
   print(gp_plot)
 }
@@ -354,114 +362,87 @@ for(j in seq_along(gp_pred_list)) {
 # TODO: make functions "get_gp_emulator_info_list()" and automatically have this function set `gp_output_stats` to the correct transformed version. 
 emulator_info <- list(gp_fits = gp_fits, 
                       input_bounds = train_data$input_bounds,
-                      output_stats = train_data$output_stats, 
+                      output_stats = output_stats, 
                       settings = emulator_settings)
 ```
 
-# Samples from Exact Posterior
-```{r}
-# TODO: Sig_eps_prior_params does not appear to be defined anywhere here. 
-N_mcmc <- 50000
-post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
-                               computer_model_data$output_vars, computer_model_data$PAR_data, computer_model_data$n_obs,
-                               theta_prior_params = theta_prior_params, learn_Sig_eps = TRUE, Sig_eps_prior_params = Sig_eps_prior_params,  
-                               diag_cov = TRUE, N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                               proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
-
-idx_samples_keep <- floor(N_mcmc / 2)
-theta_samples <- post_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
-```
-
-```{r}
-plot(theta_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
-acf(theta_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
-```
 
 # Approximate Calibration with GP Emulators.
 ```{r}
-N_mcmc <- 100000
-post_approx_samples <- mcmc_calibrate_ind_GP(computer_model_data, emulator_info, theta_prior_params, 
-                                             theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = TRUE, Sig_eps_prior_params, 
-                                             N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                                             proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
-
-idx_samples_keep <- floor(N_mcmc / 2)
-theta_approx_samples <- post_approx_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
+N_mcmc_approx <- 50000
+samp_approx <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                     theta_prior_params = theta_prior_params, 
+                                     emulator_info = emulator_info, 
+                                     learn_sig_eps = TRUE, 
+                                     sig_eps_prior_params = Sig_eps_prior_params, 
+                                     Cov_prop_init_diag = c(0.01, 0.01),
+                                     N_mcmc = N_mcmc_approx)
 ```
 
 ```{r}
-plot(theta_approx_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
-acf(theta_approx_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
+burn_in_approx <- 10000
+plot(samp_approx$theta[burn_in_approx:N_mcmc,1], type="l", main = "Approx MCMC", ylab = colnames(samp_approx$theta)[1])
+plot(samp_approx$theta[burn_in_approx:N_mcmc,2], type="l", main = "Approx MCMC", ylab = colnames(samp_approx$theta)[2])
+plot(samp_approx$sig_eps[burn_in_approx:N_mcmc,1], type="l", main = "Approx MCMC", ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[1]))
+plot(samp_approx$sig_eps[burn_in_approx:N_mcmc,2], type="l", main = "Approx MCMC", ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[2]))
 ```
-
 
 # Comparing Exact and Approximate Samples
+
+## Calibration Parameters
 ```{r}
-samples_list <- list(theta_samples, theta_approx_samples)
-
-# Histograms
-hist_plot <- get_hist_plot(samples_list, bins = 50, xlab = computer_model_data$pars_cal_name,
-                           main_title = "Histogram of MCMC Samples")
-print(hist_plot)
-
-# plot(theta_approx_samples, type = "l", main = "Trace Plot", ylab = computer_model_data$pars_cal_names)
-# acf(theta_approx_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", computer_model_data$pars_cal_name))
-# hist(theta_approx_samples, 100, main = "Histogram: MCMC Samples", xlab = computer_model_data$pars_cal_name)
-```
-
-
-
-# Sampling from Posterior to Estimate Error Metrics 
-```{r}
-N_mcmc <- 50000
-post_samples <- mcmc_calibrate(computer_model_data$ref_pars, computer_model_data$pars_cal_sel, computer_model_data$data_obs, 
-                               computer_model_data$output_vars, computer_model_data$PAR_data,
-                               theta_prior_params = theta_prior_params, learn_Sig_eps = FALSE, diag_cov = TRUE, 
-                               N_mcmc = N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                               proposal_scale_decay = 0.7, proposal_scale_init = 0.1)
-```
-
-```{r}
-# MCMC plots
-idx_samples_keep <- floor(N_mcmc / 2)
-theta_samples <- post_samples$theta[idx_samples_keep:N_mcmc,, drop = FALSE]
-plot(theta_samples, type = "l", main = "Trace Plot: KEXT", ylab = theta_param_name)
-acf(theta_samples, lag = 50, col = "red", main = paste0("Autocorrelation Plot: ", theta_param_name))
-hist(theta_samples, 100, main = "Histogram: MCMC Samples", xlab = theta_param_name)
-```
-
-```{r, include = FALSE}
-train_test_data_settings <- data.frame(N_train = c(5, 8), 
-                                       N_test = c(1000), 
-                                       extrapolate = FALSE, 
-                                       scale_X = TRUE, 
-                                       normalize_Y = TRUE, 
-                                       joint_LHS = FALSE, 
-                                       method = "grid",
-                                       order_1d = TRUE)
-
-emulator_tests <- run_emulator_comparison(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = theta_samples)
-theta_param_name <- emulator_tests$computer_model_data$pars_cal_names
-```
-
-
-```{r, echo = FALSE}
-# Print posterior plots 
-true_param_val <- emulator_tests$computer_model_data$ref_pars[emulator_tests$computer_model_data$pars_cal_sel, "true_value"]
-for(i in seq(1, nrow(emulator_settings))) {
-  for(j in seq(1, nrow(train_test_data_settings))) {
-    post_approx_plot <- plot_gp_fit_1d(emulator_tests$theta_train_test_data[[j]]$X_test, 
-                                       emulator_tests$test_results[[i]][[j]]$ground_truth_quantities$lpost_test, 
-                                       emulator_tests$theta_train_test_data[[j]]$X_train,
-                                       emulator_tests$test_results[[i]][[j]]$ground_truth_quantities$lpost_train, 
-                                       emulator_tests$test_results[[i]][[j]]$post_pred_mean_log_test,
-                                       emulator_tests$test_results[[i]][[j]]$post_pred_var_log_test,
-                                       main_title = "GP Log Posterior Approximation", xlab = "KEXT",
-                                       ylab = "Log Posterior Density", vertical_line = true_param_val, log_scale = FALSE, exponentiate_predictions = FALSE)
-    print(post_approx_plot)
-  }
+# Histograms.
+for(j in 1:ncol(samp_baseline$theta)) {
+  hist_plot <- get_hist_plot(list(samp_baseline$theta[burn_in_baseline:N_mcmc_baseline,], samp_approx$theta[burn_in_approx:N_mcmc_approx,]), 
+                             col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("True", "Approx"), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
 }
+
 ```
+
+
+## Variance Parameters
+```{r}
+# Histograms.
+for(j in 1:ncol(samp_baseline$sig_eps)) {
+  hist_plot <- get_hist_plot(list(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_baseline,], samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,]), 
+                             col_sel = j, bins = 50, xlab = colnames(samp_baseline$sig_eps)[j],
+                             main_title = "Histogram of MCMC Samples: sig2", data_names = c("True", "Approx"), 
+                             vertical_line = diag(computer_model_data$Sig_eps)[j])
+  print(hist_plot)
+}
+
+```
+
+```{r}
+# 2d KDE contour plots. 
+
+countour_plots <- get_2d_density_contour_plot(list(samp_baseline$theta[burn_in_baseline:N_mcmc_baseline,], samp_approx$theta[burn_in_approx:N_mcmc_approx,]), 
+                                              col_sel = c(1,2),  
+                                              xlab = computer_model_data$pars_cal_name[1], ylab = computer_model_data$pars_cal_name[2], 
+                                              main_titles = paste0("2D KDE theta countours: ", c("True", "Approx")))
+for(j in seq_along(countour_plots)) print(countour_plots[[j]])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ### Individual Output Plots

@@ -46,7 +46,9 @@ llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NU
   
   # Run forward model. 
   if(is.null(SSR)) {
-    SSR <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals, na.rm = na.rm)
+    SSR <- get_computer_model_SSR(computer_model_data = computer_model_data,
+                                  theta_vals = theta_vals, 
+                                  na.rm = na.rm)
   }
   
   p <- length(vars_obs)
@@ -446,13 +448,18 @@ calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL
   
   # Prior
   if(is.null(lprior_vals)) {
-    lprior_vals <- sapply(theta_vals, function(theta) calc_lprior_theta(theta, theta_prior_params))
+    lprior_vals <- apply(theta_prop, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
   }
   
   # Likelihood
   if(is.null(llik_vals)) {
-    llik_vals <- llik_product_Gaussian(computer_model_data, vars_obs, theta_vals = theta_vals, SSR = SSR, 
-                                       normalize = normalize_lik, na.rm = na.rm, sum_output_lliks = TRUE)
+    llik_vals <- llik_product_Gaussian(computer_model_data = computer_model_data, 
+                                       vars_obs = vars_obs, 
+                                       theta_vals = theta_vals, 
+                                       SSR = SSR, 
+                                       normalize = normalize_lik, 
+                                       na.rm = na.rm, 
+                                       sum_output_lliks = TRUE)
   }
   
   if(!return_list) return(lprior_vals + llik_vals)
@@ -710,7 +717,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
     
   }
   
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
+  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -846,7 +853,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
     
   }
   
-  return(list(theta = theta_samp, sig_eps = sig_eps_samp))
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -921,8 +928,8 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     # Accept-Reject step. 
     lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
                                                      vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
-    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = as.matrix(theta_prop, nrow = 1), SSR = SSR_samples[2,,drop=FALSE], 
-                                                          vars_obs = Sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = theta_prop, SSR = SSR_samples[2,,drop=FALSE], 
+                                                          vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
                                                           return_list = TRUE)
     alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
 
@@ -961,7 +968,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     
   }
   
-  return(list(theta = theta_samp, sig_eps = sig_eps_samp))
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -1022,6 +1029,7 @@ adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_coun
     }
     
     if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) L <- t(chol(C))
+  
     
   } else if(cov_method == "AP") {
     
@@ -1394,6 +1402,8 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal_names
   ref_pars[pars_cal_sel, "true_value"] <- pars_cal_vals
   ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
+  theta_true <- ref_pars[pars_cal_sel, "true_value"]
+  names(theta_true) <- pars_cal_names
   
   # Run the model to generate the reference data, the ground truth. 
   data_ref <- run_VSEM(theta_vals = pars_cal_vals, ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, 
@@ -1434,7 +1444,8 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               output_frequencies = output_frequencies, 
               obs_start_day = obs_start_day, 
               forward_model = "VSEM", 
-              f = run_VSEM_single_input))
+              f = run_VSEM_single_input, 
+              theta_true = theta_true))
   
 }
 
