@@ -821,8 +821,8 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
 
 # TODO: update comments and think about a better way of handling log output stats. 
 get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
-                                    param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01) {
+                                    param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
+                                     design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
@@ -859,7 +859,9 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
   #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
-  #
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares calculation, when computing L2 error between computer model 
+  #           outputs and observed data. Default is FALSE. 
+  #           
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
   #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 

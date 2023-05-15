@@ -245,17 +245,18 @@ print(theta_prior_params)
 ```{r}
 IG_prior_coef_var <- 0.01
 IG_shape <- (1 / IG_prior_coef_var^2) + 2
+p <- length(computer_model_data$output_vars)
 
 # Prior on noise variance (this creates inverse gamma priors with means equal to the true variances and coefficient of variation 
 # equal to `IG_prior_coef_var`).
 Sig_eps_prior_params <- list(dist = "IG", 
-                             IG_shape = rep(IG_shape, 2), 
+                             IG_shape = rep(IG_shape, p), 
                              IG_scale = diag(computer_model_data$Sig_eps) * (IG_shape - 1))
 
-prior_Sig_eps_samples <- matrix(NA, nrow = 10000, ncol = length(computer_model_data$output_vars))
+prior_Sig_eps_samples <- matrix(NA, nrow = 10000, ncol = p)
 
 for(i in seq_len(nrow(prior_Sig_eps_samples))) {
-  prior_Sig_eps_samples[i,] <- diag(sample_prior_Sig_eps(Sig_eps_prior_params))
+  prior_Sig_eps_samples[i,] <- sample_prior_Sig_eps(Sig_eps_prior_params)
 }
 
 for(j in seq_len(ncol(prior_Sig_eps_samples))) {
@@ -269,8 +270,21 @@ for(j in seq_len(ncol(prior_Sig_eps_samples))) {
 ## Run baseline MCMC sampling (no GP approximation). 
 ```{r}
 N_mcmc <- 50000
-samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
-                                Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
+samp_baseline <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params, 
+                                            learn_sig_eps = TRUE,
+                                            sig_eps_prior_params = Sig_eps_prior_params,
+                                            N_mcmc = N_mcmc,
+                                            adapt_cov_method = "AM", 
+                                            adapt_scale_method = "MH_ratio")
+```
+
+```{r}
+burn_in_baseline <- 10000
+plot(samp_baseline$theta[burn_in_baseline:N_mcmc,1], type="l", main = "Exact MCMC", ylab = colnames(samp_baseline$theta)[1])
+plot(samp_baseline$theta[burn_in_baseline:N_mcmc,2], type="l", main = "Exact MCMC", ylab = colnames(samp_baseline$theta)[2])
+plot(samp_baseline$sig_eps[burn_in_baseline:N_mcmc,1], type="l", main = "Exact MCMC", ylab = paste0("Variance: ", colnames(samp_baseline$sig_eps)[1]))
+plot(samp_baseline$sig_eps[burn_in_baseline:N_mcmc,2], type="l", main = "Exact MCMC", ylab = paste0("Variance: ", colnames(samp_baseline$sig_eps)[2]))
 ```
 
 
@@ -285,20 +299,26 @@ N_test <- 2500
 train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
                                       scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
                                       param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS") 
+                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS", 
+                                      na.rm = TRUE) 
 
 test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_data = computer_model_data,  
                                      scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
                                      param_ranges = train_data$input_bounds, 
                                      output_stats = train_data$output_stats, log_output_stats = train_data$log_output_stats,
-                                     transformation_method = emulator_settings$transformation_method, design_method = "grid") 
+                                     transformation_method = emulator_settings$transformation_method, design_method = "grid", 
+                                     na.rm = TRUE) 
 ```
 
 
 ### Fit GPs. 
 ```{r, echo = FALsE}
-gp_fits <- fit_independent_GPs(train_data$inputs_scaled, train_data$outputs_normalized, emulator_settings$gp_lib, emulator_settings$kernel)$fits
+gp_fits <- fit_independent_GPs(X_train = train_data$inputs_scaled, 
+                               Y_train = train_data$outputs_normalized, 
+                               gp_lib = emulator_settings$gp_lib, 
+                               gp_kernel = emulator_settings$kernel)$fits
 ```
+
 ### Predict at test points.
 ```{r}
 if(emulator_settings$transformation_method == "LNP") {
@@ -312,15 +332,22 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 ```
 
 
-### Plot GPs. 
+### Plot GPs, with respect to samples from true posterior. 
 ```{r}
+ # Plot GPs. 
 for(j in seq_along(gp_pred_list)) {
-  gp_plot <- plot_gp_fit_1d(test_data$inputs, test_data$outputs[,j], train_data$inputs, train_data$outputs[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var,
-                            xlab = "Parameter", ylab = "SSR", main_title = computer_model_data$output_vars[j], CI_prob = 0.9, 
+
+  gp_plot <- plot_gp_fit_2d(test_data$inputs, test_data$outputs[,j], train_data$inputs, 
+                            post_samples = samp_baseline$theta[burn_in:N_mcmc,], 
+                            true_theta = computer_model_data$theta_true,
+                            train_data$outputs[,j], gp_pred_list[[j]]$mean,
+                            gp_pred_list[[j]]$var, xlab = "theta1", ylab = "theta2",
+                            main_title = "GP Predictive Density; Contours of True Posterior (Fixed Observation Variance)",
                             transformation_method = emulator_settings$transformation_method)
   print(gp_plot)
 }
 ```
+
 
 ### Assemble GP information list. 
 ```{r}
