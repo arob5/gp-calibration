@@ -639,6 +639,17 @@ for(j in seq(1,d)) {
 
 ```
 
+### Computing predictive log-density of the GPs, averaged over the true posterior. 
+```{r}
+
+nlpd_err_list <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                              theta_samples_post = samp_baseline$theta[burn_in:N_mcmc,], 
+                                                              emulator_info = emulator_info)
+nlpd <- nlpd_err_list$neg_log_pred_density
+nlpd_estimate <- nlpd_err_list$err_estimate
+
+```
+
 
 ### MCMC comparison: Approximate vs. Exact (Unknown noise variance)
 
@@ -704,9 +715,30 @@ print(hist_plot_sig2_eps)
 
 ```
 
+### Computing predictive log-density of the GPs, averaged over the true posterior. 
+```{r}
 
+nlpd_err_list_2 <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                                theta_samples_post = samp_baseline_2$theta[burn_in_2:N_mcmc,], 
+                                                                emulator_info = emulator_info)
+nlpd_2 <- nlpd_err_list_2$neg_log_pred_density
+nlpd_estimate_2 <- nlpd_err_list_2$err_estimate
 
+```
 
+```{r}
+hist(log_pred_density_2, 50)
+```
+
+### Compare errors for fixed variance vs. estimated variance. 
+```{r}
+hist_err_plot <- get_hist_plot(list(matrix(nlpd, ncol=1), matrix(nlpd_2, ncol=1)),
+                               bins = 50, xlab = "Negative Log Predictive Density",
+                               main_title = "Negative Log Predictive Density: GP SSR Approximation", 
+                               data_names = c(paste0("Fixed Variance; Err=", nlpd_estimate), paste0("Estimated Variance; Err=", nlpd_estimate_2)), 
+                               vertical_line = c(nlpd_estimate, nlpd_estimate_2))
+print(hist_err_plot)
+```
 
 
 

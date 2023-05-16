@@ -297,7 +297,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
-  #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
+  #    with named elements "mean", "var", "var_nug", "cov" (the output of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). 
   
   lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, include_cov_mat, denormalize_predictions, 
@@ -671,6 +671,77 @@ get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transfo
   }
   
   return(predictive_density)
+  
+}
+
+
+get_GP_SSR_log_pred_density <- function(computer_model_data, theta_vals, emulator_info) {
+  # Computes the GP log predictive density for an independent GP model at a set of input points. 
+  # In particular, computes the predictive distribution for each output individually and evaluates
+  # the log predictive density for each output at the true SSR values. The overall log predictive 
+  # density is then the sum of the log predictive densities for each output. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_vals: matrix, of shape M x d, where M is the number of input points and d is the dimension of 
+  #                the parameter space. Each row is an input points. 
+  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. 
+  #
+  # Returns:
+  #    numeric vector, of length equal to the number of rows in `theta_vals` containing the log predictive 
+  #    density evaluations. 
+  
+  # Get true SSR values. 
+  SSR_true <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals, na.rm = TRUE)
+  
+  # GP predictive mean and variance of the SSR values. 
+  if(emulator_info$settings$transformation_method == "LNP") output_stats <- emulator_info$log_output_stats
+  else output_stats <- emulator_info$output_stats
+  
+  thetas_scaled <- scale_input_data(theta_vals, input_bounds = emulator_info$input_bounds)
+  gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                          gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                          output_stats = output_stats)
+  
+  # Evaluate GP predictive density at the true SSR values. 
+  log_pred_density <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  for(j in seq(1, ncol(SSR_true))) {
+    log_pred_density <- log_pred_density + get_GP_pointwise_predictive_density(SSR_true[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, 
+                                                                               transformation_method = emulator_info$settings$transformation_method, log = TRUE)
+  }
+  
+  return(log_pred_density)
+  
+}
+
+
+estimate_integrated_neg_log_pred_density_err <- function(computer_model_data, theta_samples_post, emulator_info) {
+  # Computes a Monte Carlo estimate of error for a GP-approximated posterior distribution, with respect to a true 
+  # known posterior distribution. The error is defined as the expectation of the GP negative log predictive density
+  # with respect to the true posterior. This is estimated with a Monte Carlo estimate based on samples `theta_samples_post`
+  # from the true posterior. Note that the log predictive density is multiplied by -1 so that it can be interpreted as 
+  # a measure of error, with smaller being better. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_samples_post: matrix, of shape M x d, where M is the number of input points sampled from the true posterior 
+  #                        and d is the dimension of the parameter space. Each row is an input point sampled from the true posterior.
+  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. 
+  #
+  # Returns:
+  #    list, the first element is the vector of negative log predictive density evaluations. The second is the estimate of the 
+  #    error measure, which is just the average of the elements in the vector of the first element. 
+  
+  # Compute log predictive density at input points sampled from true posterior. 
+  log_pred_density <- get_GP_SSR_log_pred_density(computer_model_data, theta_samples_post, emulator_info)
+  
+  # Compute sample average of negative log predictive density, which estimates the integral of the negative log predictive 
+  # density with respect to the true posterior. 
+  err_estimate <- -mean(log_pred_density)
+  
+  return(list(neg_log_pred_density = -log_pred_density, 
+              err_estimate = err_estimate))
   
 }
 
