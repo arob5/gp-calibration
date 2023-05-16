@@ -7,6 +7,8 @@
 # Andrew Roberts
 #
 
+library(mvtnorm)
+library(tmvtnorm)
 library(truncnorm)
 library(LaplacesDemon)
 
@@ -448,7 +450,7 @@ calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL
   
   # Prior
   if(is.null(lprior_vals)) {
-    lprior_vals <- apply(theta_prop, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
+    lprior_vals <- apply(theta_vals, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
   }
   
   # Likelihood
@@ -634,6 +636,9 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
   
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
@@ -695,9 +700,9 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     proposal_scale_decay, adapt_init_threshold)
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
     log_scale_prop <- adapt_list$log_scale
@@ -773,6 +778,9 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
   
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
@@ -834,9 +842,9 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     proposal_scale_decay, adapt_init_threshold)
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
     log_scale_prop <- adapt_list$log_scale
@@ -876,6 +884,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
   
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
@@ -884,7 +895,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
 
   # Set initial conditions.
   if(is.null(theta_init)) {
-    theta_init <- sample_prior_theta(theta_prior_params)
+    theta_init <- sample_prior_theta(theta_prior_params, input_bounds = emulator_info$input_bounds)
   }
   if(learn_sig_eps) {
     if(is.null(sig_eps_init)) {
@@ -901,9 +912,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance.
+  Cov_prop_curr <- diag(Cov_prop_init_diag, nrow = d)
   Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
   log_scale_prop <- 0
-  L_prop <- t(chol(Cov_prop))
   accept_count <- 0
   samp_mean <- theta_init
   
@@ -914,7 +925,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     #
     
     # theta proposals.
-    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    theta_prop <- tmvtnorm::rtmvnorm(1, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop, 
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,])[1,]
+    # theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Approximate SSR by sampling from GP. 
     # TODO: shouldn't have to re-scale theta_curr; should have `theta_curr_scaled` variable or something. 
@@ -928,10 +941,14 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     # Accept-Reject step. 
     lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
                                                      vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
-    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = theta_prop, SSR = SSR_samples[2,,drop=FALSE], 
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = matrix(theta_prop, nrow=1), SSR = SSR_samples[2,,drop=FALSE], 
                                                           vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
                                                           return_list = TRUE)
-    alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
+    q_curr_prop <- tmvtnorm::dtmvnorm(theta_prop, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop,
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+    q_prop_curr <- tmvtnorm::dtmvnorm(theta_samp[itr-1,], mean = theta_prop, sigma = exp(2*log_scale_prop)*Cov_prop,
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+    alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr + q_prop_curr - q_curr_prop))
 
     if(runif(1) <= alpha) {
       theta_samp[itr,] <- theta_prop
@@ -944,11 +961,11 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, L_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+    adapt_list <- adapt_cov_proposal(Cov_prop_curr, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     proposal_scale_decay, adapt_init_threshold)
-    Cov_prop <- adapt_list$C
-    L_prop <- adapt_list$L
+                                     proposal_scale_decay, adapt_init_threshold, C_L = Cov_prop)
+    Cov_prop_curr <- adapt_list$C
+    Cov_prop <- adapt_list$C_L
     log_scale_prop <- adapt_list$log_scale
     samp_mean <- adapt_list$samp_mean
     accept_count <- adapt_list$accept_count
@@ -973,15 +990,20 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
 }
 
 
-adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_count, alpha, samp_mean, 
+adapt_cov_proposal <- function(C, log_scale, sample_history, itr, accept_count, alpha, samp_mean, 
                                adapt_frequency = 1000, cov_method = "AM", scale_method = "MH_ratio", 
-                               accept_rate_target = 0.24, min_scale = 0.1, tau = 0.7, init_threshold = 3) {
+                               accept_rate_target = 0.24, min_scale = 0.1, tau = 0.7, init_threshold = 3, 
+                               L = NULL, C_L = NULL) {
   # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form `scale * C`, where 
   # `scale` is a scaling factor. This function supports different algorithms to adapt C and to adapt `scale`, and the methods 
   # can be mixed and matched. Only a portion of the function arguments are needed for certain methods, so take care 
   # to ensure the correct arguments are being passed to the function. The function updates C and also computes the lower 
   # triangular Cholesky factor L of C. For certain methods (e.g. the AM algorithm) C will be updated every iteration, but 
-  # L may only be updated intermittently depending on `adapt_cov_frequency`. 
+  # L may only be updated intermittently depending on `adapt_cov_frequency`. The matrix `C_L` is defined as the covariance 
+  # matrix that corresponds to the Cholesky factor `L`; i.e. C_L = LL^T. The covariance `C` will always be the most up-to-date, 
+  # but one may instead choose to utilize `L` or `C_L` for proposals if the proposal covariance is not to be updated 
+  # every MCMC iteration; this saves on computation (not having to compute a Cholesky decomposition every iteration) and 
+  # can help prevent singular proposal covariances. 
   #
   # Args:
   #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
@@ -1009,7 +1031,7 @@ adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_coun
   #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_scale updating occurs. 
   #
   # Returns:
-  #    list, with elements "C", "L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
+  #    list, with elements "C", "C_L", L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
   #    and is the mean of the MCMC samples up through the current iteration. 
   
   accept_rate <- accept_count / adapt_frequency
@@ -1028,9 +1050,11 @@ adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_coun
       C <- C + w * (itr*w*outer(samp_centered, samp_centered) - C)
     }
     
-    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) L <- t(chol(C))
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      L <- t(chol(C))
+      C_L <- C
+    }
   
-    
   } else if(cov_method == "AP") {
     
     if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
@@ -1042,6 +1066,7 @@ adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_coun
         C <- stats::cov(sample_history)
         L <- t(chol(C + diag(sqrt(.Machine$double.eps), nrow=nrow(C))))
       }
+      C_L <- C
     }
     
   }
@@ -1057,18 +1082,26 @@ adapt_cov_proposal <- function(C, log_scale, L, sample_history, itr, accept_coun
   
   if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
   
-  return(list(C = C, L = L, log_scale = log_scale, samp_mean = samp_mean, accept_count = accept_count))
+  return(list(C = C, C_L = C_L, L = L, log_scale = log_scale, samp_mean = samp_mean, accept_count = accept_count))
   
 }
 
 
-sample_prior_theta <- function(theta_prior_params) {
+sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
   # Return sample from prior distribution on the calibration parameters (theta). 
   #
   # Args:
   #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    input_bounds: matrix of dimension 2 x d, where d is the number of parameters. The first row contains lower bounds 
+  #                  on the parameters and the second row contains upper bounds (these are often determined by the 
+  #                  extent of the design points). If provided, the prior sample will be required to satisfy the lower 
+  #                  and upper bounds, so sampled parameters that do not satisfy the constraints will be rejected until 
+  #                  the constraint is satisfied. Note that this implies that the resulting samples are from a truncated 
+  #                  version of the prior distribution, rather than the prior itself. The columns of `input_bounds` must be 
+  #                  sorted in the same order as the rows of `theta_prior_params.` Default is NULL, which imposes 
+  #                  no constraints. 
   #
   # Returns:
   #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
@@ -1078,8 +1111,22 @@ sample_prior_theta <- function(theta_prior_params) {
   for(i in seq_along(theta_samp)) {
     if(theta_prior_params[i, "dist"] == "Gaussian") {
       theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+      
+      if(!is.null(input_bounds)) {
+        while((theta_samp[i] < input_bounds[1,j]) || (theta_samp[i] > input_bounds[2,j])) {
+          theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+        }
+      }
+      
     } else if(theta_prior_params[i, "dist"] == "Uniform") {
       theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+      
+      if(!is.null(input_bounds)) {
+        while((theta_samp[i] < input_bounds[1,j]) || (theta_samp[i] > input_bounds[2,j])) {
+          theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+        }
+      }
+      
     }
   }
 
@@ -1326,6 +1373,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   theta_prior_params <- data.frame(dist = rep("Gaussian", length(pars_cal_names)), 
                                    param1 = rep(0, length(pars_cal_names)), 
                                    param2 = sqrt(diag(Sig_theta)[pars_cal_sel]))
+  rownames(theta_prior_params) <- pars_cal_names
   
   # True posterior (note that we need to adjust for the case where only a subset of the parameters 
   # are calibrated). The posterior moments are computed using the SVD and Woodbury identity. This 

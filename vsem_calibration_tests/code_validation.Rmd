@@ -561,7 +561,7 @@ gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj
 
 ```{r}
 N_mcmc <- 50000
-samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = FALSE, 
+samp_baseline <- mcmc_calibrate(computer_model_data, theta_prior_params, learn_Sig_eps = FALSE, 
                                 Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
 
@@ -614,8 +614,8 @@ emulator_info <- list(gp_fits = gp_fits,
 
 #### Approximate MCMC
 ```{r}
-samp_GP_approx <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = FALSE,
-                                        Sig_eps_init = computer_model_data$Sig_eps, N_mcmc = N_mcmc)
+samp_GP_approx <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_sig_eps = FALSE,
+                                        sig_eps_init = diag(computer_model_data$Sig_eps), N_mcmc = N_mcmc)
 ```
 
 ```{r}
@@ -655,11 +655,8 @@ Sig_eps_prior_params <- list(dist = "IG",
 ```
 
 
-
-
-
 ```{r}
-samp_baseline_2 <- mcmc_calibrate(computer_model_data, theta_prior_params, diag_cov = TRUE, learn_Sig_eps = TRUE, 
+samp_baseline_2 <- mcmc_calibrate(computer_model_data, theta_prior_params, learn_Sig_eps = TRUE, 
                                   Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc, adapt_cov_method = "AM", adapt_scale_method = "MH_ratio")
 ```
 
@@ -673,8 +670,8 @@ plot(samp_baseline_2$Sig_eps[burn_in_2:N_mcmc,1], type="l")
 
 
 ```{r}
-samp_GP_approx_2 <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_Sig_eps = TRUE,
-                                          Sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc)
+samp_GP_approx_2 <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_params, emulator_info, learn_sig_eps = TRUE,
+                                          sig_eps_prior_params = Sig_eps_prior_params, N_mcmc = N_mcmc)
 ```
 
 ```{r}
@@ -682,7 +679,7 @@ samp_GP_approx_2 <- mcmc_calibrate_ind_GP(computer_model_data, theta_prior_param
 burn_in_approx_2 <- 25000
 plot(samp_GP_approx_2$theta[burn_in_approx_2:N_mcmc,1], type="l")
 plot(samp_GP_approx_2$theta[burn_in_approx_2:N_mcmc,2], type="l")
-plot(samp_GP_approx_2$Sig_eps[burn_in_approx_2:N_mcmc,1], type="l")
+plot(samp_GP_approx_2$sig_eps[burn_in_approx_2:N_mcmc,1], type="l")
 ```
 
 
@@ -697,11 +694,11 @@ for(j in seq(1,d)) {
   print(hist_plot)
 }
 
-# Histogram: sig2_eps. 
-hist_plot_sig2_eps <- get_hist_plot(list(samp_baseline_2$Sig_eps[burn_in_2:N_mcmc,,drop=FALSE], 
-                                         samp_GP_approx_2$Sig_eps[burn_in_approx_2:N_mcmc,,drop=FALSE]), 
+# Histogram: sig2_eps.
+hist_plot_sig2_eps <- get_hist_plot(list(samp_baseline_2$Sig_eps[burn_in_2:N_mcmc,,drop=FALSE],
+                                         samp_GP_approx_2$sig_eps[burn_in_approx_2:N_mcmc,,drop=FALSE]),
                                     bins = 50, xlab = "sig2_eps",
-                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Exact MCMC", "GP Approximate MCMC"), 
+                                    main_title = "Histogram of MCMC Samples: sig2_eps", data_names = c("Exact MCMC", "GP Approximate MCMC"),
                                     vertical_line = sig2_eps)
 print(hist_plot_sig2_eps)
 
