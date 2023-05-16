@@ -240,6 +240,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     } else {
       X_prime <- NULL
     }
+    
     hetGP_pred <- predict(gp_obj, X_pred, xprime = X_prime)
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
