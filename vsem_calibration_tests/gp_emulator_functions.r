@@ -592,27 +592,35 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   
 }
 
-
-plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_var_pred, post_samples = NULL,
-                           true_theta = NULL, xlab = "", ylab = "", main_title = "", transformation_method = NA_character_) {
+# TODO: comment. 
+plot_gp_fit_2d <- function(X_test, X_train = NULL, y_test = NULL, gp_mean_pred = NULL, gp_var_pred = NULL, post_samples = NULL,
+                           true_theta = NULL, xlab = "", ylab = "", main_title = "", 
+                           transformation_method = NA_character_, log_predictive_density = NULL, raster = FALSE) {
+  # Set raster=TRUE when X_test is a grid of points (equally spaced). If not equally, spaced set to FALSE. 
   
+  # Log predictive density evaluations at test points. 
   df_test <- as.data.frame(X_test)
-  df_train <- as.data.frame(X_train)
-  
   colnames(df_test) <- c("theta1", "theta2")
-  colnames(df_train) <- c("theta1", "theta2")
   
-  predictive_density <- get_GP_pointwise_predictive_density(y_test, gp_mean_pred, gp_var_pred, 
-                                                            transformation_method = transformation_method, log = TRUE)
-  df_test <- cbind(df_test, density_vals = predictive_density)
+  if(is.null(log_predictive_density)) {
+    log_predictive_density <- get_GP_pointwise_predictive_density(y_test, gp_mean_pred, gp_var_pred, 
+                                                                  transformation_method = transformation_method, log = TRUE)
+  }
+  df_test <- cbind(df_test, density_vals = log_predictive_density)
+  if(raster) {
+    plt <- ggplot() + geom_tile(data = df_test, aes(x = theta1, y = theta2, fill = density_vals))
+  } else {
+    plt <- ggplot() + geom_point(data = df_test, aes(x = theta1, y = theta2, color = density_vals))
+  }
   
-  plt <- ggplot() + 
-          geom_tile(data = df_test, aes(x = theta1, y = theta2, fill = density_vals)) + 
-          geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red") + 
-          xlab(xlab) + 
-          ylab(ylab) + 
-          ggtitle(main_title)
+  # Design points. 
+  if(!is.null(X_train)) {
+    df_train <- as.data.frame(X_train)
+    colnames(df_train) <- c("theta1", "theta2")
+    plt <- plt + geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red")
+  }
   
+  # Contours of true posterior. 
   if(!is.null(post_samples)) {
     df <- as.data.frame(post_samples)
     colnames(df) <- c("theta1", "theta2")
@@ -620,10 +628,18 @@ plot_gp_fit_2d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
     plt <- plt + geom_density_2d(data = df, aes(x = theta1, y = theta2))
   }
   
+  # Marker for the true parameter values. 
   if(!is.null(true_theta)) {
     plt <- plt + geom_point(data = data.frame(theta1 = true_theta[1], theta2 = true_theta[2]), 
                             aes(x = theta1, y = theta2), color = "red", shape = 17)
   }
+  
+  # Labels and title. 
+  plt <- plt + 
+         xlab(xlab) + 
+         ylab(ylab) + 
+         ggtitle(main_title)
+  
   
   return(plt)  
   

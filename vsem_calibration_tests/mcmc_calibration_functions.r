@@ -7,6 +7,7 @@
 # Andrew Roberts
 #
 
+library(parallel)
 library(mvtnorm)
 library(tmvtnorm)
 library(truncnorm)
@@ -741,7 +742,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   # approximation. 
   #
   # Args:
-  #    computer_model_data:
+  #    computer_model_data: list, standard computer model data list. 
   #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
@@ -1964,6 +1965,107 @@ MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_pa
   return(list(theta = theta_samp_Gibbs, sig2_eps = sig2_eps_samp_Gibbs))
   
 }
+
+
+# ------------------------------------------------------------------------------
+# Calibration Test Functions: automating testing of different calibration schemes
+# ------------------------------------------------------------------------------
+
+run_calibration_emulator_comparison <- function(computer_model_data, theta_prior_params, emulator_settings, train_data, 
+                                                learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, ...) {
+  
+  # Run exact MCMC sampler (no emulator). 
+  samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                                theta_prior_params = theta_prior_params, 
+                                                learn_sig_eps = learn_sig_eps,
+                                                sig_eps_prior_params = sig_eps_prior_params,
+                                                N_mcmc = N_mcmc_exact, ...)
+  
+  # Loop over `emulator_settings` and run separate emulator-assisted MCMC for each emulator setting. 
+  approx_list <- run_calibration_single_emulator_setting(computer_model_data = computer_model_data, 
+                                                         theta_prior_params = theta_prior_params, 
+                                                         emulator_setting = emulator_settings[1,], 
+                                                         train_data = train_data,
+                                                         test_data = test_data, 
+                                                         learn_sig_eps = learn_sig_eps, 
+                                                         sig_eps_prior_params = sig_eps_prior_params, 
+                                                         N_mcmc = N_mcmc_approx, ...)
+  
+  return(list(samp_mcmc_exact = samp_mcmc_exact, 
+              mcmc_approx_list = list(approx_list)))
+  
+}
+
+
+run_calibration_single_emulator_setting <- function(computer_model_data, theta_prior_params, emulator_setting, train_data, 
+                                                    learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                    test_data = NULL, N_mcmc = 50000, ...) {
+  # A convenience function that fits a GP emulator and runs emulator-assisted MCMC. Also optionally computes emulator predictions 
+  # at a set of test/validation points. Returns a list of all the relevant quantities. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    emulator_setting: list, with elements "gp_lib", "kernel", "transformation_method", "scale_X", "normalize_y" used to specify 
+  #                      GP emulator settings. 
+  #    learn_sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    test_data: matrix, of dimension M x d, where M is the number of test points and d the number of calibration parameters. If provided, GP 
+  #               predictions are computed at this set of points. Default is NULL. 
+  #    N_mcmc: integer, the number of MCMC iterations. 
+  #    ...: additional MCMC arguments, see `mcmc_calibrate_ind_GP()` for options. 
+  #
+  # Returns:
+  #    list, with elements "emulator_info", "samp_mcmc", and "gp_pred_list". The third is NULL if `test_data` is NULL. 
+  
+  # Select correct "output_stats" used to normalize response variable, depending on whether emulator is log-normal process or not. 
+  if(emulator_setting$transformation_method == "LNP") {
+    output_stats <- train_data$log_output_stats
+  } else {
+    output_stats <- train_data$output_stats
+  }
+  
+  # Fit GPs. 
+  gp_fits <- fit_independent_GPs(train_data$inputs_scaled, train_data$outputs_normalized, emulator_setting$gp_lib, emulator_setting$kernel)$fits
+
+  # Predict at test points.
+  if(!is.null(test_data)) {
+    gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj_list = gp_fits, gp_lib = emulator_setting$gp_lib, 
+                                            denormalize_predictions = TRUE, output_stats = output_stats)
+  } else {
+    gp_pred_list <- NULL
+  }
+  
+  # Emulator info list. 
+  emulator_info <- list(gp_fits = gp_fits, 
+                        input_bounds = train_data$input_bounds,
+                        output_stats = output_stats, 
+                        settings = emulator_setting)
+  
+  # Emulator-assisted MCMC. 
+  samp_mcmc <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                     theta_prior_params = theta_prior_params,
+                                     emulator_info = emulator_info, 
+                                     learn_sig_eps = learn_sig_eps, 
+                                     sig_eps_prior_params = sig_eps_prior_params, 
+                                     N_mcmc = N_mcmc, ...)
+                                     
+  return(list(emulator_info = emulator_info, 
+              samp_mcmc = samp_mcmc, 
+              gp_pred_list = gp_pred_list))                                  
+  
+} 
+
+
+
+
+
+
+
 
 
 
