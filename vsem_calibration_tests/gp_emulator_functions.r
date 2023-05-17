@@ -691,6 +691,7 @@ get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transfo
 }
 
 
+# TODO: allow SSR_true to be passed in to avoid re-computing every time. 
 get_GP_SSR_log_pred_density <- function(computer_model_data, theta_vals, emulator_info) {
   # Computes the GP log predictive density for an independent GP model at a set of input points. 
   # In particular, computes the predictive distribution for each output individually and evaluates
@@ -701,7 +702,9 @@ get_GP_SSR_log_pred_density <- function(computer_model_data, theta_vals, emulato
   #    computer_model_data: list, the standard computer model data list. 
   #    theta_vals: matrix, of shape M x d, where M is the number of input points and d is the dimension of 
   #                the parameter space. Each row is an input points. 
-  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. 
+  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. Note that the element 
+  #                   "output_stats" of `emulator_info` is assumed to already be transformed correctly; for example, 
+  #                   for a log-normal process, "output_stats" should be the log-transformed version. 
   #
   # Returns:
   #    numeric vector, of length equal to the number of rows in `theta_vals` containing the log predictive 
@@ -711,13 +714,10 @@ get_GP_SSR_log_pred_density <- function(computer_model_data, theta_vals, emulato
   SSR_true <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals, na.rm = TRUE)
   
   # GP predictive mean and variance of the SSR values. 
-  if(emulator_info$settings$transformation_method == "LNP") output_stats <- emulator_info$log_output_stats
-  else output_stats <- emulator_info$output_stats
-  
   thetas_scaled <- scale_input_data(theta_vals, input_bounds = emulator_info$input_bounds)
   gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
                                           gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = output_stats)
+                                          output_stats = emulator_info$output_stats)
   
   # Evaluate GP predictive density at the true SSR values. 
   log_pred_density <- vector(mode = "numeric", length = nrow(theta_vals))
@@ -895,7 +895,7 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
   x_densities <- vector(mode = "numeric", length = length(x))
   
   x_densities[x == 0] <- Inf
-  x_densities[x != 0] <- dnorm(x, mean_norm, sd_norm) * as.numeric(x_test > 0)
+  x_densities[x != 0] <- dnorm(x, mean_norm, sd_norm) * as.numeric(x > 0)
   
   if(isTRUE(log)) return(log(x_densities))
   return(x_densities)
@@ -936,9 +936,9 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #                  `normalize_response` if TRUE, then uses this information for the normalization. If NULL, then will instead compute 
   #                   the means/variances of the response data and use those computations for the normalization. 
   #    log_output_stats: the log-transformed analog of `output_stats`. This is only used when `transformation_method` is "LNP".  
-  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
-  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
-  #                           log-normal process. The default is not to perform any transformation. 
+  #    transformation_method: character(1), if `transformation_method` is "LNP", then will include the log-transformed response and output 
+  #                           statistics in addition to the non-log transformed versions. Transformations "rectified" and "truncated" have 
+  #                           no effect. 
   #    design_method: character(1), the algorithm used to generate the inputs. Currently supports "LHS" or "grid". 
   #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 

@@ -1106,7 +1106,7 @@ sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
   #
   # Returns:
   #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
-  
+
   theta_samp <- vector(mode = "numeric", length = nrow(theta_prior_params))
   
   for(i in seq_along(theta_samp)) {
@@ -1114,7 +1114,7 @@ sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
       theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
       
       if(!is.null(input_bounds)) {
-        while((theta_samp[i] < input_bounds[1,j]) || (theta_samp[i] > input_bounds[2,j])) {
+        while((theta_samp[i] < input_bounds[1,i]) || (theta_samp[i] > input_bounds[2,i])) {
           theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
         }
       }
@@ -1123,7 +1123,7 @@ sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
       theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
       
       if(!is.null(input_bounds)) {
-        while((theta_samp[i] < input_bounds[1,j]) || (theta_samp[i] > input_bounds[2,j])) {
+        while((theta_samp[i] < input_bounds[1,i]) || (theta_samp[i] > input_bounds[2,i])) {
           theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
         }
       }
@@ -1971,6 +1971,7 @@ MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_pa
 # Calibration Test Functions: automating testing of different calibration schemes
 # ------------------------------------------------------------------------------
 
+# TODO: return info on runtimes. 
 run_calibration_emulator_comparison <- function(computer_model_data, theta_prior_params, emulator_settings, train_data, 
                                                 learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
                                                 test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, ...) {
@@ -1982,18 +1983,23 @@ run_calibration_emulator_comparison <- function(computer_model_data, theta_prior
                                                 sig_eps_prior_params = sig_eps_prior_params,
                                                 N_mcmc = N_mcmc_exact, ...)
   
-  # Loop over `emulator_settings` and run separate emulator-assisted MCMC for each emulator setting. 
-  approx_list <- run_calibration_single_emulator_setting(computer_model_data = computer_model_data, 
-                                                         theta_prior_params = theta_prior_params, 
-                                                         emulator_setting = emulator_settings[1,], 
-                                                         train_data = train_data,
-                                                         test_data = test_data, 
-                                                         learn_sig_eps = learn_sig_eps, 
-                                                         sig_eps_prior_params = sig_eps_prior_params, 
-                                                         N_mcmc = N_mcmc_approx, ...)
   
+  # Run separate emulator-assisted MCMC for each emulator setting.
+  # TODO: get parallelization to work.
+  FUN <- function(j) run_calibration_single_emulator_setting(computer_model_data = computer_model_data,
+                                                             theta_prior_params = theta_prior_params,
+                                                             emulator_setting = emulator_settings[j,],
+                                                             train_data = train_data,
+                                                             test_data = test_data,
+                                                             learn_sig_eps = learn_sig_eps,
+                                                             sig_eps_prior_params = sig_eps_prior_params,
+                                                             N_mcmc = N_mcmc_approx, ...)
+  # N_cores <- min(detectCores(), nrow(emulator_settings))
+  # approx_list <- mclapply(seq(1, nrow(emulator_settings)), FUN, mc.cores = N_cores)
+  approx_list <- lapply(seq(1, nrow(emulator_settings)), FUN)
+
   return(list(samp_mcmc_exact = samp_mcmc_exact, 
-              mcmc_approx_list = list(approx_list)))
+              mcmc_approx_list = approx_list))
   
 }
 

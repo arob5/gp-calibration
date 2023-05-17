@@ -224,6 +224,11 @@ $$ \frac{1}{N} \sum_{i = 1}^{N} |\pi_i - \pi(\theta_i)|$$
 computer_model_data <- generate_vsem_test_case(4)
 ```
 
+```{r}
+print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
+```
+
+
 ```{r echo = FALSE}
 for(output_var in computer_model_data$output_vars) {
  plotTimeSeries(observed = computer_model_data$data_obs[, output_var],
@@ -236,7 +241,7 @@ for(output_var in computer_model_data$output_vars) {
 # Emulator settings
 emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
-                                transformation_method = c("truncated"),
+                                transformation_method = c("truncated", "rectified", "LNP"),
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
 print(emulator_settings)
@@ -284,17 +289,20 @@ for(j in seq_len(ncol(prior_Sig_eps_samples))) {
 # Design and validation points.
 N_train <- 18
 N_test <- 2500
+
+transformation_method <- ifelse(any(emulator_settings == "LNP"), "LNP", NA_character_)
+
 train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
-                                      scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
+                                      scale_inputs = TRUE, normalize_response = TRUE, 
                                       param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS", 
+                                      transformation_method = transformation_method, design_method = "LHS", 
                                       na.rm = TRUE) 
 
 test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_data = computer_model_data,  
-                                     scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
+                                     scale_inputs = TRUE, normalize_response = TRUE, 
                                      param_ranges = train_data$input_bounds, 
                                      output_stats = train_data$output_stats, log_output_stats = train_data$log_output_stats,
-                                     transformation_method = emulator_settings$transformation_method, design_method = "grid", 
+                                     transformation_method = transformation_method, design_method = "grid", 
                                      na.rm = TRUE) 
 ```
 
@@ -313,11 +321,15 @@ calibration_comparison_list <- run_calibration_emulator_comparison(computer_mode
 ```
 
 ```{r}
+N_tests <- length(calibration_comparison_list$mcmc_approx_list)
 samp_baseline <- calibration_comparison_list$samp_mcmc_exact
-samp_approx <- calibration_comparison_list$mcmc_approx_list[[1]]$samp_mcmc
+samp_approx_list <- lapply(seq(1, N_tests), 
+                           function(j) calibration_comparison_list$mcmc_approx_list[[j]]$samp_mcmc)
 ```
 
 ### Check MCMC performance. 
+
+#### Exact MCMC. 
 ```{r}
 burn_in_baseline <- 10000
 plot(samp_baseline$theta[burn_in_baseline:N_mcmc_exact,1], type="l", main = "Exact MCMC", ylab = colnames(samp_baseline$theta)[1])
@@ -325,22 +337,42 @@ plot(samp_baseline$theta[burn_in_baseline:N_mcmc_exact,2], type="l", main = "Exa
 plot(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_exact,1], type="l", main = "Exact MCMC", ylab = paste0("Variance: ", colnames(samp_baseline$sig_eps)[1]))
 plot(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_exact,2], type="l", main = "Exact MCMC", ylab = paste0("Variance: ", colnames(samp_baseline$sig_eps)[2]))
 ```
+
+#### Approx MCMC. 
 ```{r}
+
 burn_in_approx <- 10000
-plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,1], type="l", main = "Approx MCMC", ylab = colnames(samp_approx$theta)[1])
-plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,2], type="l", main = "Approx MCMC", ylab = colnames(samp_approx$theta)[2])
-plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,1], type="l", main = "Approx MCMC", ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[1]))
-plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,2], type="l", main = "Approx MCMC", ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[2]))
+for(j in seq(1, N_tests)) {
+  samp_approx <- samp_approx_list[[j]]
+  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,1], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[1])
+  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,2], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[2])
+  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,1], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[1]))
+  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,2], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[2]))
+}
+
 ```
+
+```{r}
+calibration_comparison_list$burn_in_exact <- 10000
+calibration_comparison_list$burn_ins_approx <- rep(10000, N_test)
+calibration_comparison_list$test_labels <- emulator_settings$transformation_method
+```
+
 
 ## Comparing Exact and Approximate Samples
 ### Calibration Parameters
 ```{r}
+theta_list <- c(list(samp_baseline$theta[burn_in_baseline:N_mcmc_exact,]), 
+                               lapply(1:N_tests, function(j) samp_approx_list[[j]]$theta[burn_in_approx:N_mcmc_approx,]))
+
 # Histograms.
 for(j in 1:ncol(samp_baseline$theta)) {
-  hist_plot <- get_hist_plot(list(samp_baseline$theta[burn_in_baseline:N_mcmc_exact,], samp_approx$theta[burn_in_approx:N_mcmc_approx,]), 
-                             col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
-                             main_title = "Histogram of MCMC Samples: theta", data_names = c("True", "Approx"), 
+  hist_plot <- get_hist_plot(theta_list, col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("True", calibration_comparison_list$test_labels), 
                              vertical_line = computer_model_data$theta_true[j])
   print(hist_plot)
 }
@@ -349,13 +381,215 @@ for(j in 1:ncol(samp_baseline$theta)) {
 
 ### Variance Parameters
 ```{r}
+sig2_list <- c(list(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_exact,]), 
+                    lapply(1:N_tests, function(j) samp_approx_list[[j]]$sig_eps[burn_in_approx:N_mcmc_approx,]))
+
 # Histograms.
 for(j in 1:ncol(samp_baseline$sig_eps)) {
-  hist_plot <- get_hist_plot(list(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_exact,], samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,]), 
-                             col_sel = j, bins = 50, xlab = colnames(samp_baseline$sig_eps)[j],
-                             main_title = "Histogram of MCMC Samples: sig2", data_names = c("True", "Approx"), 
+  hist_plot <- get_hist_plot(sig2_list, col_sel = j, bins = 50, xlab = colnames(samp_baseline$sig_eps)[j],
+                             main_title = "Histogram of MCMC Samples: sig2", data_names = c("True", calibration_comparison_list$test_labels), 
                              vertical_line = diag(computer_model_data$Sig_eps)[j])
   print(hist_plot)
+}
+
+```
+
+### Estimate negative log predictive density measure of error, both with respect to prior as well as posterior distribution. 
+```{r}
+nlpd_prior_err_list <- vector(mode = "list", length = N_tests)
+nlpd_post_err_list <- vector(mode = "list", length = N_tests)
+
+for(j in seq_len(N_tests)) {
+
+  nlpd_prior_err_list[[j]] <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                                           theta_samples_post = test_data$inputs, 
+                                                                           emulator_info = calibration_comparison_list$mcmc_approx_list[[j]]$emulator_info)
+  
+  nlpd_post_err_list[[j]] <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                                           theta_samples_post = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,], 
+                                                                           emulator_info = calibration_comparison_list$mcmc_approx_list[[j]]$emulator_info)
+  
+}
+
+```
+
+
+### GP predictive density plots, with overlayed contours of true posterior. 
+#### At test points, generated from prior. 
+```{r}
+
+# Plot GPs. 
+for(j in seq_len(N_tests)) {
+  
+  gp_plot <- plot_gp_fit_2d(X_test = test_data$inputs,
+                            X_train = train_data$inputs,
+                            post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
+                            true_theta = computer_model_data$theta_true, 
+                            xlab = colnames(samp_baseline$theta)[1], 
+                            ylab = colnames(samp_baseline$theta)[2], 
+                            main_title = paste0("SSR GP Predictive Density at Validation Points: ", 
+                                                calibration_comparison_list$test_labels[j]), 
+                            log_predictive_density = nlpd_prior_err_list[[j]]$neg_log_pred_density, 
+                            raster = TRUE)
+  
+  print(gp_plot)
+}
+```
+
+
+#### At test points, generated from true posterior. 
+
+```{r}
+
+# Plot GPs. 
+for(j in seq_len(N_tests)) {
+  
+  gp_plot <- plot_gp_fit_2d(X_test = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
+                            post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
+                            true_theta = computer_model_data$theta_true, 
+                            xlab = colnames(samp_baseline$theta)[1], 
+                            ylab = colnames(samp_baseline$theta)[2], 
+                            main_title = paste0("SSR GP Predictive Density at Posterior Samples: ", 
+                                                calibration_comparison_list$test_labels[j]), 
+                            log_predictive_density = nlpd_post_err_list[[j]]$neg_log_pred_density, 
+                            raster = FALSE)
+  
+  print(gp_plot)
+}
+
+```
+
+#### Error estimates. 
+This estimates the measure of error 
+$$ \mathcal{E}_{\text{NLPD}}(T^*) = \int \log p_{T^*}(T(\theta)) \pi(\theta) d\theta = \int \sum_{j = 1}^{p} \log_{T_j^*}(T_j(\theta)) \pi(\theta) d\theta$$
+with a Monte Carlo estimate
+$$ \hat{\mathcal{E}}_{\text{NLPD}}(T^*) = \sum_{i = 1}^{M} \sum_{j = 1}^{p} \log_{T_j^*}(T_j(\theta_i)), \text{ where } \theta_i \sim \pi$$
+```{r}
+df_errs <- data.frame(test_name = calibration_comparison_list$test_labels,
+                      design = "design 1",
+                      NLPD_post = sapply(nlpd_post_err_list, function(l) l$err_estimate), 
+                      NLPD_prior = sapply(nlpd_prior_err_list, function(l) l$err_estimate))
+
+print(df_errs)
+```
+
+
+# Same test, but now with tighter priors on the calibration parameters. 
+```{r, echo = FALSE} 
+# Priors 
+theta_prior_params2 <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+theta_prior_params2[, "dist"] <- c("Gaussian", "Gaussian")
+theta_prior_params2[,"param1"] <- theta_prior_params2[,"true_value"]
+theta_prior_params2[,"param2"] <- c(.01, .25)
+theta_prior_params2 <- theta_prior_params2[, c("dist", "param1", "param2")]
+
+print(theta_prior_params2)
+```
+
+### Design and validation points. 
+```{r}
+# Design and validation points.
+N_train <- 18
+N_test <- 2500
+
+transformation_method <- ifelse(any(emulator_settings == "LNP"), "LNP", NA_character_)
+
+train_data2 <- get_input_output_design(N_train, theta_prior_params2, computer_model_data = computer_model_data,  
+                                       scale_inputs = TRUE, normalize_response = TRUE, 
+                                       param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                       transformation_method = transformation_method, design_method = "LHS", 
+                                       na.rm = TRUE) 
+
+test_data2 <- get_input_output_design(N_test, theta_prior_params2, computer_model_data = computer_model_data,  
+                                      scale_inputs = TRUE, normalize_response = TRUE, 
+                                      param_ranges = train_data2$input_bounds, 
+                                      output_stats = train_data2$output_stats, log_output_stats = train_data2$log_output_stats,
+                                      transformation_method = transformation_method, design_method = "grid", 
+                                      na.rm = TRUE) 
+```
+
+
+### Run calibration algorithms. 
+```{r}
+calibration_comparison_list2 <- run_calibration_emulator_comparison(computer_model_data = computer_model_data, 
+                                                                    theta_prior_params = theta_prior_params2, 
+                                                                    emulator_settings = emulator_settings, 
+                                                                    train_data = train_data2, 
+                                                                    test_data = test_data2, 
+                                                                    learn_sig_eps = TRUE, 
+                                                                    sig_eps_prior_params = Sig_eps_prior_params,
+                                                                    N_mcmc_exact = 50000, N_mcmc_approx = 50000)
+```
+
+```{r}
+samp_approx_list2 <- lapply(seq(1, N_tests), 
+                            function(j) calibration_comparison_list2$mcmc_approx_list[[j]]$samp_mcmc)
+```
+
+#### Approx MCMC. 
+```{r}
+
+for(j in seq(1, N_tests)) {
+  samp_approx <- samp_approx_list2[[j]]
+  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,1], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[1])
+  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,2], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[2])
+  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,1], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[1]))
+  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,2], type="l", 
+       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[2]))
+}
+
+```
+
+## Comparing Exact and Approximate Samples
+### Calibration Parameters
+```{r}
+theta_list2 <- c(list(samp_baseline$theta[burn_in_baseline:N_mcmc_exact,]), 
+                      lapply(1:N_tests, function(j) samp_approx_list2[[j]]$theta[burn_in_approx:N_mcmc_approx,]))
+
+# Histograms.
+for(j in 1:ncol(samp_baseline$theta)) {
+  hist_plot <- get_hist_plot(theta_list2, col_sel = j, bins = 50, xlab = computer_model_data$pars_cal_name[j],
+                             main_title = "Histogram of MCMC Samples: theta", data_names = c("True", calibration_comparison_list$test_labels), 
+                             vertical_line = computer_model_data$theta_true[j])
+  print(hist_plot)
+}
+
+```
+
+### Variance Parameters
+```{r}
+sig2_list2 <- c(list(samp_baseline$sig_eps[burn_in_baseline:N_mcmc_exact,]), 
+                     lapply(1:N_tests, function(j) samp_approx_list2[[j]]$sig_eps[burn_in_approx:N_mcmc_approx,]))
+
+# Histograms.
+for(j in 1:ncol(samp_baseline$sig_eps)) {
+  hist_plot <- get_hist_plot(sig2_list2, col_sel = j, bins = 50, xlab = colnames(samp_baseline$sig_eps)[j],
+                             main_title = "Histogram of MCMC Samples: sig2", data_names = c("True", calibration_comparison_list$test_labels), 
+                             vertical_line = diag(computer_model_data$Sig_eps)[j])
+  print(hist_plot)
+}
+
+```
+
+
+### Estimate negative log predictive density measure of error, both with respect to prior as well as posterior distribution. 
+```{r}
+nlpd_prior_err_list2 <- vector(mode = "list", length = N_tests)
+nlpd_post_err_list2 <- vector(mode = "list", length = N_tests)
+
+for(j in seq_len(N_tests)) {
+
+  nlpd_prior_err_list2[[j]] <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                                            theta_samples_post = test_data2$inputs, 
+                                                                            emulator_info = calibration_comparison_list2$mcmc_approx_list[[j]]$emulator_info)
+  
+  nlpd_post_err_list2[[j]] <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
+                                                                           theta_samples_post = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,], 
+                                                                           emulator_info = calibration_comparison_list2$mcmc_approx_list[[j]]$emulator_info)
+  
 }
 
 ```
@@ -364,74 +598,56 @@ for(j in 1:ncol(samp_baseline$sig_eps)) {
 #### At test points, generated from prior. 
 ```{r}
 
-gp_pred_list <- calibration_comparison_list$mcmc_approx_list[[1]]$gp_pred_list
-
- # Plot GPs. 
-for(j in seq_along(gp_pred_list)) {
+# Plot GPs. 
+for(j in seq_len(N_tests)) {
   
-  gp_plot <- plot_gp_fit_2d(X_test = test_data$inputs, 
-                            X_train = train_data$inputs, 
-                            y_test = test_data$outputs[,j], 
-                            gp_mean_pred = gp_pred_list[[j]]$mean, 
-                            gp_var_pred = gp_pred_list[[j]]$var, 
+  gp_plot <- plot_gp_fit_2d(X_test = test_data2$inputs,
+                            X_train = train_data2$inputs,
                             post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
-                            true_theta = computer_model_data$theta_true,
+                            true_theta = computer_model_data$theta_true, 
                             xlab = colnames(samp_baseline$theta)[1], 
                             ylab = colnames(samp_baseline$theta)[2], 
-                            main_title = paste0(computer_model_data$output_vars[j], 
-                                                " GP Predictive Density; Contours of True Posterior"),
-                            transformation_method = emulator_settings$transformation_method, 
+                            main_title = paste0("SSR GP Predictive Density at Validation Points: ", 
+                                                calibration_comparison_list$test_labels[j]), 
+                            log_predictive_density = nlpd_prior_err_list2[[j]]$neg_log_pred_density, 
                             raster = TRUE)
+  
   print(gp_plot)
 }
 ```
 
 #### At test points, generated from true posterior. 
-```{r}
-nlpd_err_list <- estimate_integrated_neg_log_pred_density_err(computer_model_data, 
-                                                              theta_samples_post = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,], 
-                                                              emulator_info = calibration_comparison_list$mcmc_approx_list[[1]]$emulator_info)
-```
 
 ```{r}
-gp_plot <- plot_gp_fit_2d(X_test = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
-                          post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
-                          true_theta = computer_model_data$theta_true, 
-                          xlab = colnames(samp_baseline$theta)[1], 
-                          ylab = colnames(samp_baseline$theta)[2], 
-                          main_title = "SSR GP Predictive Density at Posterior Samples; Contours of True Posterior", 
-                          log_predictive_density = -nlpd_err_list$neg_log_pred_density)
 
-print(gp_plot)
+# Plot GPs. 
+for(j in seq_len(N_tests)) {
+  
+  gp_plot <- plot_gp_fit_2d(X_test = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
+                            post_samples = samp_baseline$theta[burn_in_baseline:N_mcmc_exact,],
+                            true_theta = computer_model_data$theta_true, 
+                            xlab = colnames(samp_baseline$theta)[1], 
+                            ylab = colnames(samp_baseline$theta)[2], 
+                            main_title = paste0("SSR GP Predictive Density at Posterior Samples: ", 
+                                                calibration_comparison_list$test_labels[j]), 
+                            log_predictive_density = nlpd_post_err_list2[[j]]$neg_log_pred_density, 
+                            raster = FALSE)
+  
+  print(gp_plot)
+}
 
-```
-
-
-
-
-
-```{r}
-# 2d KDE contour plots. 
-
-countour_plots <- get_2d_density_contour_plot(list(samp_baseline$theta[burn_in_baseline:N_mcmc_baseline,], samp_approx$theta[burn_in_approx:N_mcmc_approx,]), 
-                                              col_sel = c(1,2),  
-                                              xlab = computer_model_data$pars_cal_name[1], ylab = computer_model_data$pars_cal_name[2], 
-                                              main_titles = paste0("2D KDE theta countours: ", c("True", "Approx")))
-for(j in seq_along(countour_plots)) print(countour_plots[[j]])
 ```
 
 
+```{r}
+df_errs2 <- data.frame(test_name = calibration_comparison_list$test_labels,
+                       design = "design 2",
+                       NLPD_post = sapply(nlpd_post_err_list2, function(l) l$err_estimate), 
+                       NLPD_prior = sapply(nlpd_prior_err_list2, function(l) l$err_estimate))
 
+print(rbind(df_errs, df_errs2))
 
-
-
-
-
-
-
-
-
-
+```
 
 
 
