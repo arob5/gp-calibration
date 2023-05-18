@@ -395,7 +395,7 @@ run_VSEM_single_input_old <- function(par_val, ref_pars = NULL, pars_cal_sel = N
 }
 
 
-calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = TRUE) {
+calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
   # Evaluates the log prior density on calibration functions at specific values of the settings.  
   #
   # Args:
@@ -411,7 +411,7 @@ calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = TRUE) {
   #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
   #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
   #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
-  #                  value. If `check_bounds` is FALSE, no check is performed. Default is TRUE. 
+  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE 
   #
   # Returns:
   #    The prior density evaluation log p(theta). Assumes prior independence, so the log-prior is the sum of the log-prior
@@ -895,12 +895,149 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
 # emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
 # TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
 # on the correct scale (e.g. it should be on log scale for LNP).
-# TODO: doesn't make sense for Sig_eps to be a matrix here if assuming diagonal structure. 
 mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emulator_info,
                                   theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
                                   N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
                                   proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
                                   adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+  # `theta_prior_params` should already be truncated, if desired. 
+  
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
+  }
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- computer_model_data$output_vars
+  
+  # Set initial conditions. 
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  sig_eps_samp[1,] <- sig_eps_init
+  
+  sig_eps_curr <- sig_eps_init
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance.
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  L_prop <- t(chol(Cov_prop))
+  log_scale_prop <- 0
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  for(itr in seq(2, N_mcmc)) {
+    
+    #
+    # Metropolis step for theta.
+    #
+    
+    # theta proposals.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0). If this occurs on the first 
+    # iteration we let the normal calculations proceed since we need to initialize `gp_pred_list`. In this case, the 
+    # calculations will still return an acceptance probability of 0. After the first iteration, there is no need to 
+    # waste computation if we know the acceptance probability will be 0. 
+    if((itr > 2) && 
+       (any(theta_prop < theta_prior_params[["bound_lower"]], na.rm = TRUE) ||
+        any(theta_prop > theta_prior_params[["bound_upper"]], na.rm = TRUE))) {
+        
+        theta_samp[itr,] <- theta_samp[itr-1,]
+        alpha <- 0
+        
+    } else {
+    
+      # Approximate SSR by sampling from GP. 
+      # TODO: shouldn't have to re-scale theta_curr; should have `theta_curr_scaled` variable or something. 
+      # Could also re-use mean prediction, but if including GP covariance then this will change. 
+      thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
+      gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                              gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                              output_stats = emulator_info$output_stats)
+      SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, include_nugget = TRUE)
+      
+      # Accept-Reject step. 
+      lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
+                                                       vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
+      lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = matrix(theta_prop, nrow=1), SSR = SSR_samples[2,,drop=FALSE], 
+                                                            vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                            return_list = TRUE)
+      q_curr_prop <- tmvtnorm::dtmvnorm(theta_prop, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop,
+                                        lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+      q_prop_curr <- tmvtnorm::dtmvnorm(theta_samp[itr-1,], mean = theta_prop, sigma = exp(2*log_scale_prop)*Cov_prop,
+                                        lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+      alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr + q_prop_curr - q_curr_prop))
+    
+      if(runif(1) <= alpha) {
+        theta_samp[itr,] <- theta_prop
+        lprior_theta_curr <- lpost_theta_prop_list$lprior
+        accept_count <- accept_count + 1 
+        pred_idx_curr <- 2
+      } else {
+        theta_samp[itr,] <- theta_samp[itr-1,]
+        pred_idx_curr <- 1
+      }
+      
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop_curr, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold, C_L = Cov_prop)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+    
+    #
+    # Gibbs step for Sig_eps.
+    #
+    
+    if(learn_sig_eps) {
+      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method,
+                                                     idx_selector = pred_idx_curr, include_nugget = TRUE)
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
+    } else {
+      sig_eps_samp[itr,] <- sig_eps_init
+    }
+    
+  }
+  
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  
+}
+
+
+# emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
+# TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
+# on the correct scale (e.g. it should be on log scale for LNP).
+mcmc_calibrate_ind_GP_trunc_proposal <- function(computer_model_data, theta_prior_params, emulator_info,
+                                                 theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                 N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                                 proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                                 adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
 
   if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
@@ -919,10 +1056,17 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
   colnames(sig_eps_samp) <- computer_model_data$output_vars
 
-  # Set initial conditions.
+  # Set initial conditions, ensuring the initial value of the calibration parameters satisfies the 
+  # input bounds constraint determined by the extent of the design points. 
   if(is.null(theta_init)) {
-    theta_init <- sample_prior_theta(theta_prior_params, input_bounds = emulator_info$input_bounds)
+    init_samp_max <- 100
+    while(t < init_samp_max) {
+      theta_init <- sample_prior_theta(theta_prior_params)
+      if(all(theta_init >= emulator_info$input_bounds[1,]) && all(theta_init <= emulator_info$input_bounds[2,])) break
+      if(t == init_samp_max) stop("Failed to generate initial sample from theta prior that satisfies input bounds.")
+    }
   }
+  
   if(learn_sig_eps) {
     if(is.null(sig_eps_init)) {
       sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
