@@ -810,22 +810,38 @@ calibration_results_list <- run_calibration_emulator_comparison(computer_model_d
                                                                 theta_prior_params = theta_prior_params, 
                                                                 emulator_settings = emulator_settings, 
                                                                 train_data = train_data, 
-                                                                learn_sig_eps = TRUE, 
-                                                                sig_eps_prior_params = Sig_eps_prior_params, 
+                                                                learn_sig_eps = TRUE, sig_eps_prior_params = Sig_eps_prior_params, 
                                                                 N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
                                                                 run_exact_mcmc = TRUE)
 ```
 
 ## Run emulator-based MCMC with truncated proposal (un-truncated prior). 
+Note that `mcmc_calibrate_ind_GP_trunc_proposal()` is not included in the testing framework implemented in 
+`run_calibration_emulator_comparison()` so we call it separately here. 
 ```{r}
 time_start <- proc.time()
-
+mcmc_trunc_prop_samp <- mcmc_calibrate_ind_GP_trunc_proposal(computer_model_data = computer_model_data, 
+                                                             theta_prior_params = theta_prior_params, 
+                                                             emulator_info = calibration_results_list$mcmc_approx_list[[1]]$emulator_info,
+                                                             learn_sig_eps = TRUE, sig_eps_prior_params = Sig_eps_prior_params, 
+                                                             N_mcmc = 50000)
 mcmc_trunc_prop_runtime <- (proc.time() - time_start)[["elapsed"]]
 ```
 
 
+## Comparing MCMC results. 
+```{r}
+print("MCMC Runtimes (seconds):")
+print(paste0("Exact: ", calibration_results_list$mcmc_exact_runtime))
+print(paste0("Truncated prior: ", calibration_results_list$mcmc_approx_list[[1]]$mcmc_runtime))
+print(paste0("Truncated proposal: ", mcmc_trunc_prop_runtime))
+```
 
-
+## Comparing marginal distributions. 
+```{r}
+# TODO: add mcmc_trunc_prop_samp to list `calibration_results_list$mcmc_approx_list` and then write function called something like 
+# `compare_calibration_results_marginal_samples()` to produce these plots. 
+```
 
 
 

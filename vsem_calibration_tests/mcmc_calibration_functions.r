@@ -1056,10 +1056,12 @@ mcmc_calibrate_ind_GP_trunc_proposal <- function(computer_model_data, theta_prio
   # input bounds constraint determined by the extent of the design points. 
   if(is.null(theta_init)) {
     init_samp_max <- 100
+    t <- 1
     while(t < init_samp_max) {
       theta_init <- sample_prior_theta(theta_prior_params)
       if(all(theta_init >= emulator_info$input_bounds[1,]) && all(theta_init <= emulator_info$input_bounds[2,])) break
       if(t == init_samp_max) stop("Failed to generate initial sample from theta prior that satisfies input bounds.")
+      t <- t + 1
     }
   }
   
