@@ -317,7 +317,8 @@ calibration_comparison_list <- run_calibration_emulator_comparison(computer_mode
                                                                    test_data = test_data, 
                                                                    learn_sig_eps = TRUE, 
                                                                    sig_eps_prior_params = Sig_eps_prior_params,
-                                                                   N_mcmc_exact = 50000, N_mcmc_approx = 50000)
+                                                                   N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
+                                                                   test_labels = emulator_settings$transformation_method)
 ```
 
 ```{r}
@@ -461,9 +462,9 @@ for(j in seq_len(N_tests)) {
 
 #### Error estimates. 
 This estimates the measure of error 
-$$ \mathcal{E}_{\text{NLPD}}(T^*) = \int \log p_{T^*}(T(\theta)) \pi(\theta) d\theta = \int \sum_{j = 1}^{p} \log_{T_j^*}(T_j(\theta)) \pi(\theta) d\theta$$
+$$ \mathcal{E}_{\text{NLPD}}(T^*) = \int \log p_{T^*}(T(\theta)) \pi(\theta) d\theta = \int \sum_{j = 1}^{p} \log p_{T_j^*}(T_j(\theta)) \pi(\theta) d\theta$$
 with a Monte Carlo estimate
-$$ \hat{\mathcal{E}}_{\text{NLPD}}(T^*) = \sum_{i = 1}^{M} \sum_{j = 1}^{p} \log_{T_j^*}(T_j(\theta_i)), \text{ where } \theta_i \sim \pi$$
+$$ \hat{\mathcal{E}}_{\text{NLPD}}(T^*) = \sum_{i = 1}^{M} \sum_{j = 1}^{p} \log p_{T_j^*}(T_j(\theta_i)), \text{ where } \theta_i \sim \pi$$
 ```{r}
 df_errs <- data.frame(test_name = calibration_comparison_list$test_labels,
                       design = "design 1",

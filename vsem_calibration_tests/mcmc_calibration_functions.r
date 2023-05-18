@@ -1088,8 +1088,53 @@ adapt_cov_proposal <- function(C, log_scale, sample_history, itr, accept_count, 
 }
 
 
-sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
+sample_prior_theta <- function(theta_prior_params) {
   # Return sample from prior distribution on the calibration parameters (theta). 
+  #
+  # Args:
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2"; and potentially also columns 
+  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper), 
+  #                        and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                        bound_upper = upper truncation value).  
+  #
+  # Returns:
+  #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
+
+  theta_samp <- vector(mode = "numeric", length = nrow(theta_prior_params))
+  
+  for(i in seq_along(theta_samp)) {
+    if(theta_prior_params[i, "dist"] == "Gaussian") {
+      theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+    } else if(theta_prior_params[i, "dist"] == "Uniform") {
+      theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") {
+      theta_samp[i] <- rtruncnorm(1, a = theta_prior_params[i, "bound_lower"], b = theta_prior_params[i, "bound_upper"], 
+                                  mean = theta_prior_params[i, "param1"], sd = theta_prior_params[i, "param2"])
+    } else {
+      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
+    }
+  }
+
+  return(theta_samp)  
+  
+}
+
+
+truncate_prior_theta <- function(theta_prior_params, input_bounds) {
+  # Converts the prior parameters on the calibration parameters (theta) so that they are truncated
+  # in that they assign 0 probability mass beyond the bounds specified in `input_bounds`. 
+  # `input_bounds` is typically determined by the extent of the design points, so this
+  # function modifies the prior so that posterior evaluations are 0 outside of the 
+  # extent of the design points (where the GP would have to interpolate). This is an 
+  # alternative to allowing an unbounded prior and instead truncating the MCMC 
+  # proposals. The truncation applied to uniform priors simply sets the bounds on the 
+  # uniform prior to the bounds provided in `input_bounds`. Applied to Gaussian priors, 
+  # the Gaussian distributions are converted to truncated Gaussian distributions, with 
+  # the truncation bounds again determined by `input_bounds`. For compactly supported priors 
+  # (e.g. uniform or truncated Gaussian), the bounds are only updated if they fall outside of 
+  # the bounds in `input_bounds` (e.g. an existing lower bound will not be made any lower). 
   #
   # Args:
   #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
@@ -1105,33 +1150,28 @@ sample_prior_theta <- function(theta_prior_params, input_bounds = NULL) {
   #                  no constraints. 
   #
   # Returns:
-  #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
-
-  theta_samp <- vector(mode = "numeric", length = nrow(theta_prior_params))
+  #    data.frame, the updated version of `theta_prior_params`. 
   
-  for(i in seq_along(theta_samp)) {
+  for(i in seq(1, nrow(theta_prior_params))) {
+    l <- input_bounds[1, i]
+    u <- input_bounds[2, i]
+    
     if(theta_prior_params[i, "dist"] == "Gaussian") {
-      theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-      
-      if(!is.null(input_bounds)) {
-        while((theta_samp[i] < input_bounds[1,i]) || (theta_samp[i] > input_bounds[2,i])) {
-          theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-        }
-      }
-      
+      theta_prior_params[i, "dist"] <- "Truncated_Gaussian"
+      theta_prior_params[i, "bound_lower"] <- l
+      theta_prior_params[i, "bound_upper"] <- u
     } else if(theta_prior_params[i, "dist"] == "Uniform") {
-      theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-      
-      if(!is.null(input_bounds)) {
-        while((theta_samp[i] < input_bounds[1,i]) || (theta_samp[i] > input_bounds[2,i])) {
-          theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-        }
-      }
-      
+      if(theta_prior_params[i, "param1"] < l) theta_prior_params[i, "param1"] <- l
+      if(theta_prior_params[i, "param2"] > u) theta_prior_params[i, "param2"] <- u
+    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") { 
+      if(theta_prior_params[i, "bound_lower"] < l) theta_prior_params[i, "bound_lower"] <- l
+      if(theta_prior_params[i, "bound_upper"] > u) theta_prior_params[i, "bound_upper"] <- u
+    } else {
+      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
     }
   }
-
-  return(theta_samp)  
+  
+  return(theta_prior_params)
   
 }
 
@@ -1225,66 +1265,6 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
   }
   
 }
-
-
-calc_independent_gp_pred_errs <- function(gp_pred_list, Y_true) {
-  
-  lapply(seq_along(gp_pred_list), function(j) calc_gp_pred_err(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$sd2, Y_true[,j]))
-  
-}
-
-
-# TODO: look into variance vs. nugget variance returned in pred object 
-calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
-  
-  sq_diff <- (y_true - gp_pred_mean)^2
-  N_obs <- length(y_true)
-  
-  return(list(rmse = sum(sq_diff) / N_obs, 
-              rmse_scaled = sum(sq_diff / gp_pred_var) / N_obs))
-  
-}
-
-
-# plot_lnp_fit_1d <- function(X_test, y_test, X_train, y_train, lnp_log_mean_pred, lnp_log_var_pred, 
-#                            vertical_line = NULL, xlab = "", ylab = "", main_title = "", CI_prob = 0.9) {
-# 
-#   order_pred <- order(X_test)
-#   order_train <- order(X_train)
-#   lnp_log_sd_pred <- sqrt(lnp_log_var_pred)
-#   
-#   # Confidence Intervals
-#   CI_tail_prob <- 0.5 * (1 - CI_prob)
-#   CI_plot_label <- paste0(CI_prob * 100, "% CI")
-#   CI_lower <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = TRUE)
-#   CI_upper <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = FALSE)
-#   
-#   # ggplot 
-#   df <- data.frame(x_test = X_test[order_pred,1], 
-#                    y_test = y_test[order_pred], 
-#                    y_test_pred = lnp_log_mean_pred[order_pred],
-#                    CI_lower = CI_lower[order_pred], 
-#                    CI_upper = CI_upper[order_pred], 
-#                    x_train = X_train[order_train,1], 
-#                    y_train = y_train[order_train])
-#   
-#   lnp_plot <- ggplot(data=df, aes(x = x_test, y = y_test_pred)) + 
-#                 geom_line(color = "blue") + 
-#                 geom_line(aes(y = y_test), color = "red") + 
-#                 geom_line(aes(y = CI_lower), color = "gray") + 
-#                 geom_line(aes(y = CI_upper), color = "gray") + 
-#                 geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
-#                 geom_point(aes(x = x_train, y = y_train), color = "red") + 
-#                 xlab(xlab) + 
-#                 ylab(paste0(ylab, " (", CI_plot_label, ")")) + 
-#                 ggtitle(main_title)
-#   
-#   # Add vertical line
-#   if(!is.null(vertical_line)) {
-#     gp_plot <- gp_plot + geom_vline(xintercept = vertical_line, linetype = 2, color = "pink1")
-#   }
-#   
-# }  
 
 
 generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta, G, sig2_eps = NULL, sig_eps_frac = 0.1, pars_cal_sel = NULL) {
@@ -1974,15 +1954,53 @@ MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_pa
 # TODO: return info on runtimes. 
 run_calibration_emulator_comparison <- function(computer_model_data, theta_prior_params, emulator_settings, train_data, 
                                                 learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
-                                                test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, ...) {
+                                                test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
+                                                run_exact_mcmc = TRUE,
+                                                test_labels = as.character(seq(1, nrow(emulator_settings))), ...) {
+  # Automates the comparison of emulator-based MCMC calibration across different emulator settings. 
+  # In particular, runs `run_calibration_single_emulator_setting()` for each emulator setting, where 
+  # distinct emulator settings are provided in the rows of `emulator_settings`. Optionally also runs
+  # exact (no emulator) calibration as a basis for comparison. Note that aside from the emulator settings, 
+  # everything else (e.g. train data, priors, computer model data) are held constant across runs. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    emulator_settings: data.frame, with columns "gp_lib", "kernel", "transformation_method", "scale_X", "normalize_y" used to specify 
+  #                       GP emulator settings. Each row is interpreted as one emulator setting, and a calibration will be executed 
+  #                       for each setting. 
+  #    train_data: matrix of dimension N x d, where N is the number of design points and d the dimension of the input space. The training 
+  #                inputs used to fit the GP emulator. 
+  #    learn_sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    test_data: matrix, of dimension M x d, where M is the number of test points and d the number of calibration parameters. If provided, GP 
+  #               predictions are computed at this set of points. Default is NULL. 
+  #    N_mcmc_exact: integer, the number of MCMC iterations used for the exact MCMC scheme (used only if `run_exact_mcmc` is TRUE). 
+  #    N_mcmc_approx: integer, the number of MCMC iterations used for each approximate emulator-assisted MCMC scheme. 
+  #    run_exact_mcmc: logical(1), if TRUE runs exact non-emulator assisted MCMC and includes results in return list. Default is TRUE. 
+  #    test_labels: character vector, of equal length to the number of rows in `emulator_settings`. These are labels used to identify each 
+  #                 test run for each emulator setting. Default is just to label them by the row numbers in `emulator_settings`. 
+  #    ...: additional MCMC arguments, see `mcmc_calibrate_ind_GP()` for options.
+  #
+  # Returns:
+  #    list, including element "mcmc_approx_list" which is a list of length equal to the number of rows in `emualator_settings`. This
+  #    sub-list contains the return value of `run_calibration_single_emulator_setting()` applied to each emulator setting. Also contains
+  #    element "test_labels" containing the test labels, and element "samp_mcmc_exact" storing the MCMC results for the exact 
+  #    calibration (NULL if `run_exact_mcmc` is FALSE). 
   
   # Run exact MCMC sampler (no emulator). 
-  samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
-                                                theta_prior_params = theta_prior_params, 
-                                                learn_sig_eps = learn_sig_eps,
-                                                sig_eps_prior_params = sig_eps_prior_params,
-                                                N_mcmc = N_mcmc_exact, ...)
-  
+  if(run_exact_mcmc) {
+    samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                                  theta_prior_params = theta_prior_params, 
+                                                  learn_sig_eps = learn_sig_eps,
+                                                  sig_eps_prior_params = sig_eps_prior_params,
+                                                  N_mcmc = N_mcmc_exact, ...)
+  } else {
+    samp_mcmc_exact <- NULL
+  }
   
   # Run separate emulator-assisted MCMC for each emulator setting.
   # TODO: get parallelization to work.
@@ -1999,7 +2017,8 @@ run_calibration_emulator_comparison <- function(computer_model_data, theta_prior
   approx_list <- lapply(seq(1, nrow(emulator_settings)), FUN)
 
   return(list(samp_mcmc_exact = samp_mcmc_exact, 
-              mcmc_approx_list = approx_list))
+              mcmc_approx_list = approx_list, 
+              test_labels = test_labels))
   
 }
 
@@ -2017,6 +2036,8 @@ run_calibration_single_emulator_setting <- function(computer_model_data, theta_p
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
   #    emulator_setting: list, with elements "gp_lib", "kernel", "transformation_method", "scale_X", "normalize_y" used to specify 
   #                      GP emulator settings. 
+  #    train_data: matrix of dimension N x d, where N is the number of design points and d the dimension of the input space. The training 
+  #                inputs used to fit the GP emulator. 
   #    learn_sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
   #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
   #    sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
