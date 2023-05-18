@@ -946,7 +946,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   samp_mean <- theta_init
   
   for(itr in seq(2, N_mcmc)) {
-    
+
     #
     # Metropolis step for theta.
     #
@@ -982,11 +982,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
       lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = matrix(theta_prop, nrow=1), SSR = SSR_samples[2,,drop=FALSE], 
                                                             vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
                                                             return_list = TRUE)
-      q_curr_prop <- tmvtnorm::dtmvnorm(theta_prop, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop,
-                                        lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
-      q_prop_curr <- tmvtnorm::dtmvnorm(theta_samp[itr-1,], mean = theta_prop, sigma = exp(2*log_scale_prop)*Cov_prop,
-                                        lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
-      alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr + q_prop_curr - q_curr_prop))
+      alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
     
       if(runif(1) <= alpha) {
         theta_samp[itr,] <- theta_prop
@@ -1001,9 +997,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_proposal(Cov_prop_curr, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
                                      adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
-                                     proposal_scale_decay, adapt_init_threshold, C_L = Cov_prop)
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
     log_scale_prop <- adapt_list$log_scale
@@ -2162,13 +2158,16 @@ run_calibration_emulator_comparison <- function(computer_model_data, theta_prior
   
   # Run exact MCMC sampler (no emulator). 
   if(run_exact_mcmc) {
+    time_start <- proc.time()
     samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
                                                   theta_prior_params = theta_prior_params, 
                                                   learn_sig_eps = learn_sig_eps,
                                                   sig_eps_prior_params = sig_eps_prior_params,
                                                   N_mcmc = N_mcmc_exact, ...)
+    mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
   } else {
     samp_mcmc_exact <- NULL
+    mcmc_exact_runtime <- NULL
   }
   
   # Run separate emulator-assisted MCMC for each emulator setting.
@@ -2187,7 +2186,8 @@ run_calibration_emulator_comparison <- function(computer_model_data, theta_prior
 
   return(list(samp_mcmc_exact = samp_mcmc_exact, 
               mcmc_approx_list = approx_list, 
-              test_labels = test_labels))
+              test_labels = test_labels, 
+              mcmc_exact_runtime = mcmc_exact_runtime))
   
 }
 
@@ -2236,6 +2236,11 @@ run_calibration_single_emulator_setting <- function(computer_model_data, theta_p
     gp_pred_list <- NULL
   }
   
+  # Truncate priors on calibration parameters. 
+  if(isTRUE(emulator_setting$truncate_theta_prior)) {
+    theta_prior_params <- truncate_prior_theta(theta_prior_params, train_data$input_bounds)
+  }
+  
   # Emulator info list. 
   emulator_info <- list(gp_fits = gp_fits, 
                         input_bounds = train_data$input_bounds,
@@ -2243,17 +2248,21 @@ run_calibration_single_emulator_setting <- function(computer_model_data, theta_p
                         settings = emulator_setting)
   
   # Emulator-assisted MCMC. 
+  time_start <- proc.time()
   samp_mcmc <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
                                      theta_prior_params = theta_prior_params,
                                      emulator_info = emulator_info, 
                                      learn_sig_eps = learn_sig_eps, 
                                      sig_eps_prior_params = sig_eps_prior_params, 
                                      N_mcmc = N_mcmc, ...)
+  mcmc_runtime <- (proc.time() - time_start)[["elapsed"]]
                                      
   return(list(emulator_info = emulator_info, 
               samp_mcmc = samp_mcmc, 
-              gp_pred_list = gp_pred_list))                                  
-  
+              gp_pred_list = gp_pred_list, 
+              mcmc_runtime = mcmc_runtime, 
+              theta_prior_params_trunc = theta_prior_params)) 
+                                               
 } 
 
 

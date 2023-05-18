@@ -333,7 +333,7 @@ for(j in seq_along(countour_plots)) print(countour_plots[[j]])
 
 ## Linear Gaussian Posterior Test, also learning the noise variance.
 
-### Highly informative prior. 
+### Highly informative prior on observation variances. 
 ```{r}
 IG_prior_coef_var <- 0.01
 IG_shape <- (1 / IG_prior_coef_var^2) + 2
@@ -739,6 +739,95 @@ hist_err_plot <- get_hist_plot(list(matrix(nlpd, ncol=1), matrix(nlpd_2, ncol=1)
                                vertical_line = c(nlpd_estimate, nlpd_estimate_2))
 print(hist_err_plot)
 ```
+
+# Testing methods for dealing with the bounds imposed by the design points. 
+
+Here we again consider a linear Gaussian test, this time comparing two GP-based calibration schemes: `mcmc_calibrate_ind_GP()` and 
+`mcmc_calibrate_ind_GP_trunc_proposal()`. The former does not make any special adjustments to the MCMC algorithm, instead either assuming that 
+bounds are not a worry, or that the bounds are imposed in the priors `theta_prior_params`. The latter makes no such assumption, and instead enforces 
+the bounds by truncating the proposal distribution in the MCMC scheme. 
+
+## Setup: The linear Gaussian computer model, emulator settings, design points, and prior distributions. 
+
+### Linear Gaussian Model. 
+```{r}
+N_obs <- 1000
+period <- 365
+t_vals <- seq(1,N_obs)
+G <- cbind(cos(2*pi*t_vals/period), sin(2*pi*t_vals/period))
+d <- ncol(G)
+Sig_theta <- diag(c(0.1, 1.0))
+sig2_eps <- 1.0
+linear_Gaussian_data <- generate_linear_Gaussian_test_data(random_seed = 3, N_obs = N_obs, D = d, sig2_eps = sig2_eps, 
+                                                           Sig_theta = Sig_theta, G = G, pars_cal_sel = NULL)
+computer_model_data <- linear_Gaussian_data$computer_model_data
+theta_prior_params <- linear_Gaussian_data$theta_prior_params
+true_post <- linear_Gaussian_data$true_posterior
+```
+
+### Emulator Settings
+```{r, echo = FALSE}
+# Emulator settings
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
+                                kernel = "Gaussian", 
+                                transformation_method = c("truncated"),
+                                scale_X = TRUE, 
+                                normalize_y = TRUE, 
+                                truncate_theta_prior = TRUE)
+print(emulator_settings)
+```
+
+### Design Points. 
+```{r}
+# Design and validation points.
+
+N_train <- 18
+N_test <- 2500
+train_data <- get_input_output_design(N_train, theta_prior_params, computer_model_data = computer_model_data,  
+                                      scale_inputs = emulator_settings$scale_X, normalize_response = emulator_settings$normalize_y, 
+                                      param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
+                                      transformation_method = emulator_settings$transformation_method, design_method = "LHS") 
+```
+
+### Priors on observation variances. 
+```{r}
+IG_prior_coef_var <- 0.01
+IG_shape <- (1 / IG_prior_coef_var^2) + 2
+
+# Prior on noise variance (this creates inverse gamma priors with means equal to the true variances and coefficient of variation 
+# equal to `IG_prior_coef_var`).
+Sig_eps_prior_params <- list(dist = "IG", 
+                             IG_shape = IG_shape, 
+                             IG_scale = diag(computer_model_data$Sig_eps) * (IG_shape - 1))
+```
+
+
+# Run MCMC Calibration Schemes
+
+## Run exact MCMC (no emulator) and emulator-based MCMC with truncated priors. 
+```{r}
+calibration_results_list <- run_calibration_emulator_comparison(computer_model_data = computer_model_data, 
+                                                                theta_prior_params = theta_prior_params, 
+                                                                emulator_settings = emulator_settings, 
+                                                                train_data = train_data, 
+                                                                learn_sig_eps = TRUE, 
+                                                                sig_eps_prior_params = Sig_eps_prior_params, 
+                                                                N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
+                                                                run_exact_mcmc = TRUE)
+```
+
+## Run emulator-based MCMC with truncated proposal (un-truncated prior). 
+```{r}
+time_start <- proc.time()
+
+mcmc_trunc_prop_runtime <- (proc.time() - time_start)[["elapsed"]]
+```
+
+
+
+
+
+
 
 
 
