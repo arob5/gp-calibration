@@ -7,6 +7,7 @@
 # Andrew Roberts
 #
 
+library(dplyr)
 library(parallel)
 library(mvtnorm)
 library(tmvtnorm)
@@ -2061,6 +2062,74 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 }
 
 
+get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
+  
+  # Select columns to plot and remove burn-in. 
+  n <- nrow(samp_df)
+  cols_sel <- select_mcmc_samp_cols(...)
+  samp_df_plot <- samp_df %>% select(matches(cols_sel))
+  col_names <- colnames(samp_df_plot)
+  itr <- seq(burn_in_start, n)
+  samp_df_plot <- samp_df_plot[itr,]
+  
+  # Generate one trace plot per column. 
+  plts <- vector(mode = "list", length = length(col_names))
+  
+  for(j in seq_along(plts)) {
+    y <- col_names[j]
+    
+    plts[[j]] <- ggplot(samp_df_plot, aes(x = itr, y = .data[[y]])) + 
+                 geom_line() + 
+                 ggtitle(paste0("Trace Plot: ", y)) + 
+                 xlab("Iteration")
+  }
+  
+  return(plts)
+  
+}
+
+
+select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
+  # This function generates a vector of column names intended to select columns from a data.frame, in which each 
+  # column of the data.frame stores a set of samples from a particular parameter. The assumed column name structure 
+  # is "<test_label>_<parameter_label>_<parameter_types>", where <test_label> is used to identify different 
+  # MCMC schemes (e.g. for comparing different algorithms), <parameter_types> is currently either "theta" or 
+  # "sig_eps", and <param_names> provides the specific name for identifying a parameter. Specifying these values 
+  # in the arguments `test_labels`, `param_types`, `params_names` will concatenate every combination and return 
+  # the resulting column names. Specifying `col_names` overrides all other specifications, and simply returns 
+  # `col_names` itself; this is used when the user wants to manually select certain columns. Specifying only one 
+  # or two of `test_labels`, `param_types`, `params_names` will generate regular expressions to select all 
+  # of the variable(s) that are missing. For example, one could specify only `test_labels` = c("test1", "test2)
+  # and `param_types` = c("theta"), which would then generate a character vector used to select all columns 
+  # corresponding to tests 1 and 2 with parameter theta (and will include all theta parameters). Calling 
+  # this function will all arguments equal to NULL will return "*_*_*", which is a regular expression that 
+  # will select all columns under the assumed column name format. 
+  #
+  # Args:
+  #    See above description. 
+  #
+  # Returns:
+  #    character vector, containing either column names or regular expressions to select column names. 
+  
+  if(!is.null(col_names)) {
+    return(col_names)
+  } else {
+    
+    # Deal with case that one or two of the inputs are missing. 
+    if(is.null(test_labels)) test_labels <- "*"
+    if(is.null(param_types)) param_types <- "*"
+    if(is.null(param_names)) param_names <- "*"
+    
+    # Generate column selector. 
+    col_combs <- paste(rep(test_labels, each = length(param_types)), param_types, sep = "_")
+    col_sel <- paste(rep(col_combs, each = length(param_names)), param_names, sep = "_")
+    return(col_sel)
+    
+  } 
+
+}
+
+
 # ------------------------------------------------------------------------------
 # Validation Functions
 # ------------------------------------------------------------------------------
@@ -2317,7 +2386,7 @@ get_mcmc_samp_df <- function(calibration_results_list) {
   }
 
   # Combine approximate samples into single data.frame. 
-  df_samples <- do.call("cbind", mcmc_samp_list)
+  df_samples <- as.data.frame(do.call("cbind", mcmc_samp_list))
   
   return(df_samples)
   

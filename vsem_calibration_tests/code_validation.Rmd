@@ -841,9 +841,18 @@ print(paste0("Truncated proposal: ", mcmc_trunc_prop_runtime))
 calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc = mcmc_trunc_prop_samp, mcmc_runtime = mcmc_trunc_prop_runtime)
 ```
 
+```{r}
+# Combine all MCMC samples into single data.frame. 
+samp <- get_mcmc_samp_df(calibration_results_list)
+```
 
 ## Comparing marginal distributions. 
 ```{r}
+
+trace_plots <- get_trace_plots(samp, test_labels = "exact")
+for(plt in trace_plots) print(plt)
+
+
 # TODO: add mcmc_trunc_prop_samp to list `calibration_results_list$mcmc_approx_list` and then write function called something like 
 # `compare_calibration_results_marginal_samples()` to produce these plots. 
 
@@ -852,19 +861,11 @@ calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc 
 # by appending the two. Alternatively, can have additional argument called "col_names" that overrides the the column selection and allows 
 # the user to directly select the columns to plot by name. 
 
-test <- get_mcmc_samp_df(calibration_results_list)
-
-
-
-
-
-
-
+# TODO: check out bayesplot package; in particular, `mcmc_pairs()` function
 
 # compare_calibration_results_marginal_samples <- function() {
 #   
 # }
-
 
 ```
 
