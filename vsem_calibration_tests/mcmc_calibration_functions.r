@@ -2118,7 +2118,6 @@ MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_pa
 # Calibration Test Functions: automating testing of different calibration schemes
 # ------------------------------------------------------------------------------
 
-# TODO: return info on runtimes. 
 run_calibration_emulator_comparison <- function(computer_model_data, theta_prior_params, emulator_settings, train_data, 
                                                 learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
                                                 test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
@@ -2185,6 +2184,7 @@ run_calibration_emulator_comparison <- function(computer_model_data, theta_prior
   # N_cores <- min(detectCores(), nrow(emulator_settings))
   # approx_list <- mclapply(seq(1, nrow(emulator_settings)), FUN, mc.cores = N_cores)
   approx_list <- lapply(seq(1, nrow(emulator_settings)), FUN)
+  names(approx_list) <- test_labels
 
   return(list(samp_mcmc_exact = samp_mcmc_exact, 
               mcmc_approx_list = approx_list, 
@@ -2267,6 +2267,85 @@ run_calibration_single_emulator_setting <- function(computer_model_data, theta_p
                                                
 } 
 
+
+get_mcmc_samp_df <- function(calibration_results_list) {
+  # A convenience function that extracts the MCMC samples from `run_calibration_emulator_comparison()`
+  # and arranges them in a data.frame. The columns will contain all "theta" and "sig_eps" samples from 
+  # each approximate MCMC scheme. If exact MCMC results are also present in `calibration_results_list` 
+  # then the exact samples will also be included. This function is robust to the case when different 
+  # MCMC schemes have different numbers of samples, in which case those with fewer samples will 
+  # be padded with NAs. Column names for the approximate sample schemes are determined by 
+  # `calibration_results_list$test_labels` as well as the name of the sampled parameter. The name formatting
+  # is "<test_label>_<parameter_label>_<parameter_name>", where "<parameter_label>" is either "sig_eps" or 
+  # "theta". 
+  # 
+  # Samples from exact MCMC are labeled as "exact". Every MCMC algorithm is assumed to have "theta" 
+  # samples, but  may or may not have "sig_eps" samples, depending on whether the observation variance  
+  # was fixed or not. 
+  #
+  # Args:
+  #    calibration_results_list: list, the returned value from `run_calibration_emulator_comparison()`. 
+  #
+  # Returns:
+  #    data.frame, containing all MCMC samples as described above. 
+  
+  #
+  # Approximate MCMC samples. 
+  #
+  
+  # Approximate samples list. 
+  mcmc_approx_samp_list_theta <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$theta)
+  mcmc_approx_samp_list_sig_eps <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$sig_eps)
+
+  N_samp <- sapply(mcmc_approx_samp_list_theta, nrow)
+  N_max <- max(N_samp)
+  for(j in seq_along(mcmc_approx_samp_list_theta)) {
+    
+    # Pad with NAs in the case that the number of samples is different across different parameters.
+    if(nrow(mcmc_approx_samp_list_theta[[j]]) < N_max) {
+        # theta
+        mcmc_approx_samp_list_theta[[j]] <- rbind(mcmc_approx_samp_list_theta[[j]], 
+                                                  matrix(NA, nrow = N_max - nrow(mcmc_approx_samp_list_theta[[j]]), 
+                                                         ncol = ncol(mcmc_approx_samp_list_theta[[j]])))
+          
+        # sig_eps
+        if(!is.null(mcmc_approx_samp_list_sig_eps[[j]])) {
+          mcmc_approx_samp_list_sig_eps[[j]] <- rbind(mcmc_approx_samp_list_sig_eps[[j]], 
+                                                      matrix(NA, nrow = N_max - nrow(mcmc_approx_samp_list_sig_eps[[j]]), 
+                                                             ncol = ncol(mcmc_approx_samp_list_sig_eps[[j]])))
+        }
+    }
+      
+
+    # Set column names. 
+
+    # theta
+    colnames(mcmc_approx_samp_list_theta[[j]]) <- paste(names(calibration_results_list$mcmc_approx_list)[[j]], "theta",
+                                                        colnames(mcmc_approx_samp_list_theta[[j]]), sep = "_")
+      
+    # sig_eps
+    if(!is.null(mcmc_approx_samp_list_sig_eps[[j]])) {
+      colnames(mcmc_approx_samp_list_sig_eps[[j]]) <- paste(names(calibration_results_list$mcmc_approx_list)[[j]], "sig_eps",
+                                                            colnames(mcmc_approx_samp_list_sig_eps[[j]]), sep = "_")
+    }
+    
+  }
+
+  # Combine approximate samples into single data.frame. 
+  df_samples_theta <- do.call("cbind", mcmc_approx_samp_list_theta)
+  df_samples_sig_eps <- do.call("cbind", mcmc_approx_samp_list_sig_eps)
+  df_samples <- cbind(df_samples_theta, df_samples_sig_eps)
+  
+  #
+  # Exact MCMC samples. 
+  #
+  
+  # samp_mcmc_exact <- calibration_results_list$samp_mcmc_exact
+  
+  
+  
+  
+}
 
 
 
