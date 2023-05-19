@@ -852,24 +852,13 @@ calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc 
 # by appending the two. Alternatively, can have additional argument called "col_names" that overrides the the column selection and allows 
 # the user to directly select the columns to plot by name. 
 
+test <- get_mcmc_samp_df(calibration_results_list)
 
 
 
 
 
 
-
-for(j in seq(1, N_tests)) {
-  samp_approx <- samp_approx_list[[j]]
-  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,1], type="l", 
-       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[1])
-  plot(samp_approx$theta[burn_in_approx:N_mcmc_approx,2], type="l", 
-       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = colnames(samp_approx$theta)[2])
-  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,1], type="l", 
-       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[1]))
-  plot(samp_approx$sig_eps[burn_in_approx:N_mcmc_approx,2], type="l", 
-       main = paste0("Approx MCMC: ", emulator_settings[j,"transformation_method"]), ylab = paste0("Variance: ", colnames(samp_approx$sig_eps)[2]))
-}
 
 
 # compare_calibration_results_marginal_samples <- function() {

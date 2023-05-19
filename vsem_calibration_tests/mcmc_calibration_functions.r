@@ -667,8 +667,10 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
   Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+  output_var_sel <- matrix(1:p^2, nrow = p)[lower.tri(matrix(1:p^2, nrow = p), diag = TRUE)]
+  colnames(Sig_eps_samp) <- paste("sig_eps", output_var_sel, sep = "_") # Should replace this with actual output var names (e.g. "sig_eps_y1_y2").
 
   # Set initial conditions.
   if(is.null(theta_init)) {
@@ -748,7 +750,7 @@ mcmc_calibrate <- function(computer_model_data, theta_prior_params,
     
   }
   
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(samp = cbind(theta_samp, Sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -809,9 +811,9 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(sig_eps_samp) <- computer_model_data$output_vars
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
 
   # Set initial conditions.
   if(is.null(theta_init)) {
@@ -887,7 +889,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
     
   }
   
-  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -915,9 +917,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(sig_eps_samp) <- computer_model_data$output_vars
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -1021,7 +1023,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     
   }
   
-  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -1048,9 +1050,9 @@ mcmc_calibrate_ind_GP_trunc_proposal <- function(computer_model_data, theta_prio
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(sig_eps_samp) <- computer_model_data$output_vars
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
 
   # Set initial conditions, ensuring the initial value of the calibration parameters satisfies the 
   # input bounds constraint determined by the extent of the design points. 
@@ -1153,7 +1155,7 @@ mcmc_calibrate_ind_GP_trunc_proposal <- function(computer_model_data, theta_prio
     
   }
   
-  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -2289,61 +2291,35 @@ get_mcmc_samp_df <- function(calibration_results_list) {
   # Returns:
   #    data.frame, containing all MCMC samples as described above. 
   
-  #
-  # Approximate MCMC samples. 
-  #
-  
   # Approximate samples list. 
-  mcmc_approx_samp_list_theta <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$theta)
-  mcmc_approx_samp_list_sig_eps <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$sig_eps)
+  mcmc_samp_list <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$samp)
+  names(mcmc_samp_list) <- names(calibration_results_list$mcmc_approx_list)
+  
+  # If exact samples are included, add to list. 
+  samp_mcmc_exact <- calibration_results_list$samp_mcmc_exact$samp
+  if(!is.null(samp_mcmc_exact)) {
+    mcmc_samp_list[["exact"]] <- samp_mcmc_exact
+  }
 
-  N_samp <- sapply(mcmc_approx_samp_list_theta, nrow)
+  N_samp <- sapply(mcmc_samp_list, nrow)
   N_max <- max(N_samp)
-  for(j in seq_along(mcmc_approx_samp_list_theta)) {
+  for(j in seq_along(mcmc_samp_list)) {
     
     # Pad with NAs in the case that the number of samples is different across different parameters.
-    if(nrow(mcmc_approx_samp_list_theta[[j]]) < N_max) {
-        # theta
-        mcmc_approx_samp_list_theta[[j]] <- rbind(mcmc_approx_samp_list_theta[[j]], 
-                                                  matrix(NA, nrow = N_max - nrow(mcmc_approx_samp_list_theta[[j]]), 
-                                                         ncol = ncol(mcmc_approx_samp_list_theta[[j]])))
-          
-        # sig_eps
-        if(!is.null(mcmc_approx_samp_list_sig_eps[[j]])) {
-          mcmc_approx_samp_list_sig_eps[[j]] <- rbind(mcmc_approx_samp_list_sig_eps[[j]], 
-                                                      matrix(NA, nrow = N_max - nrow(mcmc_approx_samp_list_sig_eps[[j]]), 
-                                                             ncol = ncol(mcmc_approx_samp_list_sig_eps[[j]])))
-        }
+    if(nrow(mcmc_samp_list[[j]]) < N_max) {
+      mcmc_samp_list[[j]] <- rbind(mcmc_samp_list[[j]], matrix(NA, nrow = N_max - nrow(mcmc_samp_list[[j]]),
+                                                                   ncol = ncol(mcmc_samp_list[[j]])))         
     }
       
-
     # Set column names. 
-
-    # theta
-    colnames(mcmc_approx_samp_list_theta[[j]]) <- paste(names(calibration_results_list$mcmc_approx_list)[[j]], "theta",
-                                                        colnames(mcmc_approx_samp_list_theta[[j]]), sep = "_")
-      
-    # sig_eps
-    if(!is.null(mcmc_approx_samp_list_sig_eps[[j]])) {
-      colnames(mcmc_approx_samp_list_sig_eps[[j]]) <- paste(names(calibration_results_list$mcmc_approx_list)[[j]], "sig_eps",
-                                                            colnames(mcmc_approx_samp_list_sig_eps[[j]]), sep = "_")
-    }
-    
+    colnames(mcmc_samp_list[[j]]) <- paste(names(mcmc_samp_list)[j], colnames(mcmc_samp_list[[j]]), sep = "_")
+                                                        
   }
 
   # Combine approximate samples into single data.frame. 
-  df_samples_theta <- do.call("cbind", mcmc_approx_samp_list_theta)
-  df_samples_sig_eps <- do.call("cbind", mcmc_approx_samp_list_sig_eps)
-  df_samples <- cbind(df_samples_theta, df_samples_sig_eps)
+  df_samples <- do.call("cbind", mcmc_samp_list)
   
-  #
-  # Exact MCMC samples. 
-  #
-  
-  # samp_mcmc_exact <- calibration_results_list$samp_mcmc_exact
-  
-  
-  
+  return(df_samples)
   
 }
 
