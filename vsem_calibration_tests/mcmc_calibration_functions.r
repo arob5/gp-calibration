@@ -2063,22 +2063,27 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 
 
 get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
-  
-  # Select columns to plot and remove burn-in. 
+
+  # Select columns to plot.  
   n <- nrow(samp_df)
   cols_sel <- select_mcmc_samp_cols(...)
   samp_df_plot <- samp_df %>% select(matches(cols_sel))
   col_names <- colnames(samp_df_plot)
-  itr <- seq(burn_in_start, n)
-  samp_df_plot <- samp_df_plot[itr,]
+  
+  # Get starting iteration number for each parameter. 
+  start_itrs <- get_mcmc_burn_in_start_itrs(burn_in_start, colnames(samp_df_plot))
   
   # Generate one trace plot per column. 
   plts <- vector(mode = "list", length = length(col_names))
   
   for(j in seq_along(plts)) {
     y <- col_names[j]
+    itr_start <- start_itrs[j]
+    df <- samp_df_plot[itr_start:n, y, drop = FALSE]
+    colnames(df) <- "param"
+    df$itr <- itr_start:n
     
-    plts[[j]] <- ggplot(samp_df_plot, aes(x = itr, y = .data[[y]])) + 
+    plts[[j]] <- ggplot(data = df, aes(x = itr, y = param)) + 
                  geom_line() + 
                  ggtitle(paste0("Trace Plot: ", y)) + 
                  xlab("Iteration")
@@ -2127,6 +2132,52 @@ select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_
     
   } 
 
+}
+
+
+get_mcmc_burn_in_start_itrs <- function(burn_in_start, samp_df_col_names) {
+  # Returns an integer vector of equal length as `samp_df_col_names` which contains 
+  # starting MCMC iteration for each respective variable in `samp_df_col_names` (all 
+  # iterations prior to the start iteration are considered burn-in, i.e. warm-up). 
+  # The logic for `burn_in_start` is as follows. If it is an unnamed vector of length 1  
+  # then it is assumed this is the starting iteration that is desired for all plots. 
+  # If it is an unnamed vector of multiple elements, then it is assumed that its length 
+  # and order corresponds to the plots that will be produced, in which case the respective 
+  # iterations will be used for each plot. An error will be thrown if the length does 
+  # not agree with the number of plots. Otherwise, `burn_in_start` must be a named 
+  # integer vector with the names equal to the values of the `test_labels`. `burn_in_start`
+  # is assumed to only be a function of the test labels, as typically the same burn-in is 
+  # used for all variables within the same MCMC run. In this case, the starting iterations 
+  # are mapped onto the appropriate plots using the names of the vector elements. If plots 
+  # of a certain test label are selected but not burn-in values passed, then the 
+  # burn-in start iteration defaults to 1. There is no issue if test labels are included 
+  # in `burn_in_start` but not in `samp_df_col_names`. This allows the user to set 
+  # `burn_in_start` for all tests at once and then simply pass in the whole thing 
+  # regardless of which subset of plots are being created without having to worry. 
+  
+  N_cols <- length(samp_df_col_names)
+  
+  # Set burn-in starting iteration values. 
+  if(is.null(names(burn_in_start)) && (length(burn_in_start) == 1)) {
+    burn_in_start <- rep(burn_in_start, N_cols)
+  } else if(is.null(names(burn_in_start))) {
+    if(length(burn_in_start) != N_cols) {
+      stop("<burn_in_start> is unnamed and its length does not agree with number of plots.")
+    }
+  } else {
+    burn_in_itrs <- vector(mode = "integer", length = N_cols)
+    for(i in 1:N_cols) {
+      test_label <- names(burn_in_start)[i]
+      idx_sel <- grep(test_label, samp_df_col_names)
+      burn_in_itrs[idx_sel] <- burn_in_start[i]
+    }
+    
+    # Assign remaining columns burn-in start iteration of 1. 
+    burn_in_itrs[burn_in_itrs == 0L] <- 1
+  }
+  
+  return(burn_in_itrs)
+  
 }
 
 
