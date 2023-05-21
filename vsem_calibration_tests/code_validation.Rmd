@@ -873,6 +873,31 @@ trace_plots <- get_trace_plots(samp, test_labels = "trunc_proposal", burn_in_sta
 for(plt in trace_plots) print(plt)
 ```
 
+```{r}
+marginal_hist_plots_theta <- get_mcmc_marginal_hist_plot(samp, param_names = computer_model_data$pars_cal_names, burn_in_start = mcmc_start_itrs, 
+                                                         bins = 50, vertical_lines = computer_model_data$theta_true)
+for(plt in marginal_hist_plots_theta) print(plt)
+```
+
+
+```{r}
+sig_eps_true <- diag(computer_model_data$Sig_eps)
+names(sig_eps_true) <- computer_model_data$output_vars
+
+marginal_hist_plots_sig_eps <- get_mcmc_marginal_hist_plot(samp, param_names = computer_model_data$output_vars, param_types = "sig_eps",
+                                                           burn_in_start = mcmc_start_itrs, bins = 50, 
+                                                           vertical_lines = sig_eps_true)
+for(plt in marginal_hist_plots_sig_eps) print(plt)
+```
+
+
+
+
+
+
+
+
+
 
 
 

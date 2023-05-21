@@ -1478,7 +1478,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   L_theta <- t(chol(Sig_theta))
   theta <- L_theta %*% matrix(rnorm(D), ncol=1)
   data_ref <- G %*% theta
-  
+
   set.seed(random_seed)
   if(is.null(sig2_eps)) {
     sig2_eps <- (diff(range(data_ref)) * sig_eps_frac)^2
@@ -1496,6 +1496,8 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   if(length(pars_cal_names) > N_obs) {
     stop("For now number of calibration parameters must be <= number of observations.")
   }
+  theta_true <- theta[pars_cal_sel]
+  names(theta_true) <- pars_cal_names
   
   # Forward map. 
   f <- function(par_val, computer_model_data) {
@@ -1509,7 +1511,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   computer_model_data <- list(f = f, 
                               data_ref = data_ref,
                               data_obs = data_obs, 
-                              theta_true = theta[pars_cal_sel],
+                              theta_true = theta_true,
                               n_obs = N_obs, 
                               output_vars = output_vars, 
                               pars_cal_names = pars_cal_names,
@@ -2087,6 +2089,42 @@ get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
                  geom_line() + 
                  ggtitle(paste0("Trace Plot: ", y)) + 
                  xlab("Iteration")
+  }
+  
+  return(plts)
+  
+}
+
+
+get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1, bins = 30, vertical_lines = NULL, ...) {
+  # Generates one plot per parameter name. 
+  
+  # Select columns to plot.  
+  n <- nrow(samp_df)
+  cols_sel <- select_mcmc_samp_cols(param_names = param_names, ...)
+  samp_df_plot <- samp_df %>% select(matches(cols_sel))
+  col_names <- colnames(samp_df_plot)
+  
+  # Get starting iteration number for each parameter. 
+  start_itrs <- get_mcmc_burn_in_start_itrs(burn_in_start, colnames(samp_df_plot))
+  
+  # Convert data.frame to long format. 
+  samp_df_plot <- melt(as.data.table(samp_df_plot), measure.vars = colnames(samp_df_plot), na.rm = TRUE)
+  
+  # Produce one plot per parameter name. 
+  plts <- vector(mode = "list", length = length(param_names))
+  for(j in seq_along(plts)) {
+    df_param_cols <- grep(param_names[j], col_names, value = TRUE)
+    plts[[j]] <- ggplot(data = samp_df_plot[variable %in% df_param_cols], aes(x = value, color = variable)) + 
+                        geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+                        xlab(param_names[j]) + 
+                        ylab("Frequency") + 
+                        ggtitle(paste0("Marginal Distribution: ", param_names[j]))
+    
+    if(!is.null(vertical_lines)) {
+      plts[[j]] <- plts[[j]] + geom_vline(xintercept = vertical_lines[param_names[j]], color = "red")
+    }
+    
   }
   
   return(plts)
