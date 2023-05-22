@@ -890,9 +890,13 @@ marginal_hist_plots_sig_eps <- get_mcmc_marginal_hist_plot(samp, param_names = c
 for(plt in marginal_hist_plots_sig_eps) print(plt)
 ```
 
+```{r}
+emulator_info_list <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$emulator_info)
+```
 
-
-
+```{r}
+gp_heatmap_plts <- get_2d_gp_pred_heatmap_plots(emulator_info_list, X_test, raster = TRUE)
+```
 
 
 

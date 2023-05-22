@@ -2132,6 +2132,28 @@ get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1,
 }
 
 
+# get_2d_gp_pred_heatmap_plots <- function(emulator_info_list, X_test, raster = TRUE, emulator_pred_list = NULL) {
+#   
+#   emulator_pred_list <- vector(mode = "list", length = length(emulator_info_list))
+#   for(j in seq_along(emulator_info_list)) {
+#     predict_independent_GPs(X_pred = X_test, 
+#                             gp_obj_list = emulator_info_list[[j]]$gp_fits, 
+#                             gp_lib = emulator_info_list[[j]]$settings$gp_lib, 
+#                             include_cov_mat = FALSE, 
+#                             denormalize_predictions = TRUE, 
+#                             output_stats = emulator_info_list[[j]]$output_stats, 
+#                             transformation_method = emulator_info_list[[j]]$settings$transformation_method)
+#   }
+#                             
+#   
+# }
+# 
+# 
+# get_2d_gp_heatmap_plot <- function() {
+#   
+# }
+
+
 select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
   # This function generates a vector of column names intended to select columns from a data.frame, in which each 
   # column of the data.frame stores a set of samples from a particular parameter. The assumed column name structure 
