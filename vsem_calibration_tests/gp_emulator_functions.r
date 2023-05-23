@@ -232,6 +232,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     mlegp_pred <- predict(gp_obj, newData = X_pred, se.fit = TRUE)
     pred_list[["mean"]] <- mlegp_pred[["fit"]]
     pred_list[["var"]] <- mlegp_pred[["se.fit"]]^2
+    pred_list[["var_nug"]] <- gp_obj$nugget
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
     if(include_cov_mat) {
@@ -239,6 +240,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     } else {
       X_prime <- NULL
     }
+    
     hetGP_pred <- predict(gp_obj, X_pred, xprime = X_prime)
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
@@ -295,7 +297,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
-  #    with named elements "mean", "sd2", "sd2_nug", "cov" (the output of the function `predict_GP()` applied 
+  #    with named elements "mean", "var", "var_nug", "cov" (the output of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). 
   
   lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, include_cov_mat, denormalize_predictions, 
@@ -495,7 +497,7 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   # distribution to a left-truncated (at zero) Gaussian distribution, or 3.) converting the Gaussian predictive 
   # distribution to a rectified Gaussian distribution. The plot can also optionally include
   # a vertical line corresponding to some "true" parameter in the input space. By setting `log_scale` to TRUE, the y-axis
-  # will be set to a log base 10 sdale. 
+  # will be set to a log base 10 scale. 
   # 
   # Args:
   #    X_test: matrix, of dimension M x 1 where M is the number of test input points. 
@@ -587,6 +589,175 @@ plot_gp_fit_1d <- function(X_test, y_test, X_train, y_train, gp_mean_pred, gp_va
   }
   
   return(gp_plot)
+  
+}
+
+# TODO: comment. 
+plot_gp_fit_2d <- function(X_test, X_train = NULL, y_test = NULL, gp_mean_pred = NULL, gp_var_pred = NULL, post_samples = NULL,
+                           true_theta = NULL, xlab = "", ylab = "", main_title = "", 
+                           transformation_method = NA_character_, log_predictive_density = NULL, raster = FALSE) {
+  # Set raster=TRUE when X_test is a grid of points (equally spaced). If not equally, spaced set to FALSE. 
+  
+  # Log predictive density evaluations at test points. 
+  df_test <- as.data.frame(X_test)
+  colnames(df_test) <- c("theta1", "theta2")
+  
+  if(is.null(log_predictive_density)) {
+    log_predictive_density <- get_GP_pointwise_predictive_density(y_test, gp_mean_pred, gp_var_pred, 
+                                                                  transformation_method = transformation_method, log = TRUE)
+  }
+  df_test <- cbind(df_test, density_vals = log_predictive_density)
+  if(raster) {
+    plt <- ggplot() + geom_tile(data = df_test, aes(x = theta1, y = theta2, fill = density_vals))
+  } else {
+    plt <- ggplot() + geom_point(data = df_test, aes(x = theta1, y = theta2, color = density_vals))
+  }
+  
+  # Design points. 
+  if(!is.null(X_train)) {
+    df_train <- as.data.frame(X_train)
+    colnames(df_train) <- c("theta1", "theta2")
+    plt <- plt + geom_point(data = df_train, aes(x = theta1, y = theta2), color = "red")
+  }
+  
+  # Contours of true posterior. 
+  if(!is.null(post_samples)) {
+    df <- as.data.frame(post_samples)
+    colnames(df) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_density_2d(data = df, aes(x = theta1, y = theta2))
+  }
+  
+  # Marker for the true parameter values. 
+  if(!is.null(true_theta)) {
+    plt <- plt + geom_point(data = data.frame(theta1 = true_theta[1], theta2 = true_theta[2]), 
+                            aes(x = theta1, y = theta2), color = "red", shape = 17)
+  }
+  
+  # Labels and title. 
+  plt <- plt + 
+         xlab(xlab) + 
+         ylab(ylab) + 
+         ggtitle(main_title)
+  
+  
+  return(plt)  
+  
+}
+
+
+get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transformation_method = NA_character_, log = FALSE) {
+  # Computes the pointwise GP predictive density at a set of input locations. The density evaluations
+  # to not take into account GP predictive covariance, hence the "pointwise". The arguments 
+  # `gp_mean` and `gp_var` must pertain to a GP, but the argument `transformation_method` can be used to 
+  # transform to other predictive distributions. In this case, `y_vals` is assumed to already be on the 
+  # desired scale (`y_vals` is never transformed). For example, the response variable y may have been 
+  # modeled as a log-normal process (LNP) in which case log(y) was modeled as a GP. `gp_mean` and 
+  # `gp_var` are the predictive moments for this GP. Setting `transformation_method` to "LNP" will 
+  # then correctly treat the predictive density as a log-normal density. Note that the vectors 
+  # `y_vals`, `gp_mean`, and `gp_var` are all assumed to be of equal length, with each respective entry 
+  # corresponding to the same input point. 
+  #
+  # Args:
+  #    y_vals: numeric(), vector of response values at which to evaluate the predictive density. 
+  #    gp_mean: numeric(), vector of predictive mean evaluations of the underlying (untransformed) GP. 
+  #    gp_var: numeric(), vector of predictive variance evaluations of the underlying (untransformed) GP.
+  #    transformation_method: character(1), string specifying a transformation method; currently supports
+  #                           "LNP", "rectified" and "truncated". The default, `NA_character_` will apply 
+  #                           no transformation. 
+  #    log: logical(1), if TRUE returns log density.
+  #
+  # Returns:
+  #    numeric(), vector of (potentially transformed) GP pointwise density evaluations, of equal length 
+  #    as `y_vals`. 
+  
+  gp_sd <- sqrt(gp_var)
+  
+  if(is.na(transformation_method)) {
+    predictive_density <- dnorm(y_vals, gp_mean, gp_sd, log = log)
+  } else if(transformation_method == "LNP") {
+    predictive_density <- dlnorm(y_vals, gp_mean, gp_sd, log = log)
+  } else if(transformation_method == "truncated") {
+    predictive_density <- dtruncnorm(y_vals, a = 0, b = Inf, mean = gp_mean, sd = gp_sd)
+    if(isTRUE(log)) predictive_density <- log(predictive_density)
+  } else if(transformation_method == "rectified") {
+    predictive_density <- density_rectified_norm(y_vals, mean_norm = gp_mean, sd_norm = gp_sd, log = log)
+  } else {
+    stop("Invalid transformation method: ", transformation_method)
+  }
+  
+  return(predictive_density)
+  
+}
+
+
+# TODO: allow SSR_true to be passed in to avoid re-computing every time. 
+get_GP_SSR_log_pred_density <- function(computer_model_data, theta_vals, emulator_info) {
+  # Computes the GP log predictive density for an independent GP model at a set of input points. 
+  # In particular, computes the predictive distribution for each output individually and evaluates
+  # the log predictive density for each output at the true SSR values. The overall log predictive 
+  # density is then the sum of the log predictive densities for each output. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_vals: matrix, of shape M x d, where M is the number of input points and d is the dimension of 
+  #                the parameter space. Each row is an input points. 
+  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. Note that the element 
+  #                   "output_stats" of `emulator_info` is assumed to already be transformed correctly; for example, 
+  #                   for a log-normal process, "output_stats" should be the log-transformed version. 
+  #
+  # Returns:
+  #    numeric vector, of length equal to the number of rows in `theta_vals` containing the log predictive 
+  #    density evaluations. 
+  
+  # Get true SSR values. 
+  SSR_true <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals, na.rm = TRUE)
+  
+  # GP predictive mean and variance of the SSR values. 
+  thetas_scaled <- scale_input_data(theta_vals, input_bounds = emulator_info$input_bounds)
+  gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                          gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                          output_stats = emulator_info$output_stats)
+  
+  # Evaluate GP predictive density at the true SSR values. 
+  log_pred_density <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  for(j in seq(1, ncol(SSR_true))) {
+    log_pred_density <- log_pred_density + get_GP_pointwise_predictive_density(SSR_true[,j], gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, 
+                                                                               transformation_method = emulator_info$settings$transformation_method, log = TRUE)
+  }
+  
+  return(log_pred_density)
+  
+}
+
+
+estimate_integrated_neg_log_pred_density_err <- function(computer_model_data, theta_samples_post, emulator_info) {
+  # Computes a Monte Carlo estimate of error for a GP-approximated posterior distribution, with respect to a true 
+  # known posterior distribution. The error is defined as the expectation of the GP negative log predictive density
+  # with respect to the true posterior. This is estimated with a Monte Carlo estimate based on samples `theta_samples_post`
+  # from the true posterior. Note that the log predictive density is multiplied by -1 so that it can be interpreted as 
+  # a measure of error, with smaller being better. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_samples_post: matrix, of shape M x d, where M is the number of input points sampled from the true posterior 
+  #                        and d is the dimension of the parameter space. Each row is an input point sampled from the true posterior.
+  #    emulator_info: list, the emulator info list, as passed into `mcmc_calibrate_ind_GP`. 
+  #
+  # Returns:
+  #    list, the first element is the vector of negative log predictive density evaluations. The second is the estimate of the 
+  #    error measure, which is just the average of the elements in the vector of the first element. 
+  
+  # Compute log predictive density at input points sampled from true posterior. 
+  log_pred_density <- get_GP_SSR_log_pred_density(computer_model_data, theta_samples_post, emulator_info)
+  
+  # Compute sample average of negative log predictive density, which estimates the integral of the negative log predictive 
+  # density with respect to the true posterior. 
+  err_estimate <- -mean(log_pred_density)
+  
+  return(list(neg_log_pred_density = -log_pred_density, 
+              err_estimate = err_estimate))
   
 }
 
@@ -698,35 +869,58 @@ quantile_rectified_norm <- function(p, mean = 0, sd = 1, lower.tail = TRUE) {
 }
 
 
+density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FALSE, log = FALSE) {
+  # Computes the density of a rectified Gaussian distribution. The arguments 
+  # `mean_norm` and `sd_norm` are the mean and standard deviation of the Gaussian 
+  # that gives rise to the rectified Gaussian, not the moments of the rectified 
+  # Gaussian itself. The rectified Gaussian density is infinite at the value 0, 
+  # so the argument `allow_inf` allows the user to specify whether this should 
+  # be considered an error or not. 
+  #
+  # Args:
+  #    x: numeric(), vector of points at which to evaluate the density. 
+  #    mean_norm: numeric(), vector of Gaussian means. 
+  #    sd_norm: numeric(), vector of Gaussian standard deviations. 
+  #    allow_inf: logical(1), if TRUE returns `inf` for values at `x` which are 0. 
+  #               Otherwise, 0 values of `x` will invoke an error. Default is FALSE. 
+  #    log: logical(1), if TRUE returns log density. 
+  #
+  # Returns:
+  #    numeric() vector of length equal to length of `x` containing the density evaluations. 
+  
+  if(!allow_inf && any(x == 0)) {
+    stop("Density of rectified Gaussian at x = 0 is infinite.")
+  }
+  
+  x_densities <- vector(mode = "numeric", length = length(x))
+  
+  x_densities[x == 0] <- Inf
+  x_densities[x != 0] <- dnorm(x, mean_norm, sd_norm) * as.numeric(x > 0)
+  
+  if(isTRUE(log)) return(log(x_densities))
+  return(x_densities)
+  
+}
+
+
 # ------------------------------------------------------------------------------
 # Design Points
 # ------------------------------------------------------------------------------
 
 # TODO: update comments and think about a better way of handling log output stats. 
-get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR_data, output_vars, 
-                                    scale_inputs = TRUE, normalize_response = TRUE, param_ranges = NULL, output_stats = NULL, log_output_stats = NULL,
-                                    transformation_method = NA_character_, design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01) {
+get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
+                                    param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
+                                     design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
   #
   # Args:
   #    N_points: integer(1), the number of input points to generate. 
+  #    computer_model_data: list, the standard computer model data list. 
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
-  #              Must contain column named "best". Parameters that are fixed at nominal 
-  #              values (not calibrated) are set to their values given in the "best" column. 
-  #    pars_cal_sel: integer vector, selects the rows of 'ref_pars' that correspond to 
-  #                  parameters that will be calibrated. 
-  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
-  #              term in VSEM.
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
   #    scale_inputs: logical(1), if TRUE will linearly scale the samples to the unit hypercube. Will return the scaled 
   #             sample in addition to the un-scaled one, and will also return the information used for the scaling 
   #             so that the transformation can be inverted. 
@@ -742,9 +936,9 @@ get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars
   #                  `normalize_response` if TRUE, then uses this information for the normalization. If NULL, then will instead compute 
   #                   the means/variances of the response data and use those computations for the normalization. 
   #    log_output_stats: the log-transformed analog of `output_stats`. This is only used when `transformation_method` is "LNP".  
-  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
-  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
-  #                           log-normal process. The default is not to perform any transformation. 
+  #    transformation_method: character(1), if `transformation_method` is "LNP", then will include the log-transformed response and output 
+  #                           statistics in addition to the non-log transformed versions. Transformations "rectified" and "truncated" have 
+  #                           no effect. 
   #    design_method: character(1), the algorithm used to generate the inputs. Currently supports "LHS" or "grid". 
   #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
@@ -753,7 +947,9 @@ get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars
   #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
   #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
-  #
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares calculation, when computing L2 error between computer model 
+  #           outputs and observed data. Default is FALSE. 
+  #           
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
   #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 
@@ -763,8 +959,7 @@ get_input_output_design <- function(N_points, theta_prior_params, ref_pars, pars
   design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
   
   # Run model at inputs to produce outputs. 
-  model_outputs_list <- run_VSEM(design_list$inputs, ref_pars, pars_cal_sel, PAR_data, output_vars)
-  design_list[["outputs"]] <- calc_SSR(data_obs[, output_vars], model_outputs_list, na.rm = TRUE)
+  design_list[["outputs"]] <- get_computer_model_SSR(computer_model_data, theta_vals = design_list$inputs, na.rm = na.rm)
   
   # Normalize outputs. 
   if(normalize_response) {
@@ -878,7 +1073,7 @@ get_LHS_design <- function(N_points, theta_prior_params, param_ranges = NULL, or
   #    matrix, of dimension N_points x d, the Latin Hypercube sample. 
   
   # The dimension of the input space.
-  d <- nrow(prior_params)
+  d <- nrow(theta_prior_params)
   
   if(is.null(param_ranges)) {
     param_ranges <- matrix(NA, nrow = 2, ncol = d)
@@ -936,7 +1131,7 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
   #    matrix, of dimension N_points x d, the grid points. 
   
   # The dimension of the input space.
-  d <- nrow(prior_params)
+  d <- nrow(theta_prior_params)
   
   if(is.null(param_ranges)) {
     param_ranges <- matrix(NA, nrow = 2, ncol = d)
@@ -1008,21 +1203,27 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
   
   
   if(is.na(transformation_method)) {
-    return(gp_means + sqrt(gp_vars) * rnorm(n))
+    sample <- gp_means + sqrt(gp_vars) * rnorm(n)
   } else if(transformation_method == "truncated") {
-    return(rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars)))
+    sample <- rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars))
   } else if(transformation_method == "rectified") {
-    return(pmax(0, gp_means + sqrt(gp_vars) * rnorm(n)))
+    sample <- pmax(0, gp_means + sqrt(gp_vars) * rnorm(n))
   } else if(transformation_method == "LNP") {
-    return(exp(gp_means + sqrt(gp_vars) * rnorm(n)))
+    sample <- exp(gp_means + sqrt(gp_vars) * rnorm(n))
   } else {
     stop("Invalid transformation method: ", transformation_method)
   }
   
+  if(any(is.na(sample)) || is.null(sample)) {
+    stop("GP sample is NA or NULL.")
+  }
+  
+  return(sample)
+  
 }
 
 
-sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL) {
+sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL, include_nugget = TRUE) {
   # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
   # Allows for potentially different output transformations for each GP. 
   #
@@ -1035,6 +1236,8 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   #                            use the same method for all GPs. 
   #    idx_selector: integer(), vector of indices of which to select in the mean/variance numeric vectors. Default selects all indices. Note that 
   #                  the same indices will be selected across all GPs.
+  #    include_nugget: logical(1), if TRUE then the variance used in the sampling is the observation variance, which is the variance of the latent
+  #                    function values plug the "nugget" term. Otherwise, the nugget will not be added to the variance. 
   # 
   # Returns: 
   #    matrix, of dimension N x length(gp_pred_list) where N is the number of input points. The matrix stores the samples for each GP in the 
@@ -1058,7 +1261,9 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   
   gp_samples <- matrix(nrow = N_row, ncol = N_GPs)
   for(j in seq_len(N_GPs)) {
-    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$var, transformation_methods[j], idx_selector)
+    vars <- gp_pred_list[[j]]$var
+    if(include_nugget) vars <- vars + gp_pred_list[[j]]$var_nug
+    gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, vars, transformation_methods[j], idx_selector)
   }
   
   return(gp_samples)

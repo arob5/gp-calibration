@@ -7,39 +7,37 @@
 # Andrew Roberts
 #
 
+library(dplyr)
+library(parallel)
+library(mvtnorm)
+library(tmvtnorm)
 library(truncnorm)
 library(LaplacesDemon)
 
-llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, output_vars = NULL, 
-                                  SSR = NULL, vars_obs, n_obs, normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
+# TODO: 
+#    - Updae llik_product_Gaussian() and functions (like the posterior density functions) that rely on this 
+#      to fit within the new generic computer model framework. 
+#    - Update comments for `get_input_output_design`.
+
+
+llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NULL, SSR = NULL, 
+                                  normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
   # Evaluate Gaussian log-likelihood assuming independence across time and across
   # output variables. In order to calculate the log-likelihood, the forward model must be run and then 
   # the L2 difference between the forward model outputs and the observed data evaluated. This function can 
   # perform all of those steps, or the L2 error can be passed directly using the `SSR` argument to avoid 
-  # running the forward model when it is not necessary. For the forward model to be run, the arguments 
-  # `theta_vals`, `par_ref`, `par_cal_sel`, `PAR_data`, `data_obs`, and `output_vars` must all be passed. Otherwise, these are 
-  # not needed if `SSR` is provided. This function is vectorized in that it can evaluate 
-  # the log-likelihood at multiple input parameter values, `theta_vals`. 
+  # running the forward model when it is not necessary. For the forward model to be run, the argument
+  # `theta_vals` must be passed. Otherwise, this is not needed if `SSR` is provided. This function is 
+  # vectorized in that it can evaluate  the log-likelihood at multiple input parameter values, `theta_vals`.
   #
   # Args:
+  #    computer_model_data: the standard computer model data list. 
+  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
   #    theta_vals: matrix, of dimension M x d, where M is the number of calibration parameter values
-  #                and d is the number of claibration parameters. These are the parameter inputs at which 
+  #                and d is the number of calibration parameters. These are the parameter inputs at which 
   #                to run the forward to evaluate log-likelihood. 
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    PAR_data: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM.
-  #    data_obs: data.table, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood.
   #    SSR: matrix, of dimension M x p. The (m, j) entry is the sum of squared errors for the 
   #         jth output variable and mth input parameter. 
-  #    vars_obs: numeric(p), vector of observation/noise variances for each output. 
-  #    n_obs: integer(p), the number of observations for each output.
   #    normalize: logical(1), whether or not to include the portion of the Gaussian normalization constant
   #               that doesn't depend on the theta or variance parameters. 
   #    na.rm: logical(1), if TRUE ignores missing data when calculating the sum of squared errors. 
@@ -52,11 +50,13 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
   
   # Run forward model. 
   if(is.null(SSR)) {
-    model_outputs_list <- run_VSEM(theta_vals, par_ref, par_cal_sel, PAR_data, output_vars = output_vars) 
-    SSR <- calc_SSR(data_obs, model_outputs_list, na.rm = na.rm)
+    SSR <- get_computer_model_SSR(computer_model_data = computer_model_data,
+                                  theta_vals = theta_vals, 
+                                  na.rm = na.rm)
   }
   
   p <- length(vars_obs)
+  n_obs <- computer_model_data$n_obs
   llik_outputs <- matrix(nrow = nrow(SSR), ncol = ncol(SSR))
   
   for(j in seq(1, p)) {
@@ -64,7 +64,7 @@ llik_product_Gaussian <- function(theta_vals = NULL, par_ref = NULL, par_cal_sel
     if(normalize) llik_outputs[,j] <- llik_outputs[,j] - 0.5 * n_obs[j] * log(2*pi)
   }
   
-  # Either return likelihood for each output seperately, or return single likelihood across all outputs. 
+  # Either return likelihood for each output separately, or return single likelihood across all outputs. 
   if(sum_output_lliks) {
     return(rowSums(llik_outputs))
   }
@@ -130,46 +130,6 @@ llik_product_Gaussian_SSR <- function(SSR, vars_obs, n_obs, normalize = TRUE) {
   
 }
 
-
-calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
-  # Computes the sum of squared residuals (SSR) between model runs and observed 
-  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
-  # design point for emulation) or outputs from single model run (e.g. as required
-  # during MCMC).
-  #
-  # Args:
-  #    data_obs: data.table of dimension n x p, where n is the length of the time 
-  #              series outputs from the model, and p is the number of output variables.
-  #              This is Y in my typical notation. 
-  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
-  #                        model outputs f(theta) from a single model run. Or a list 
-  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
-  #                        the outputs from multiple model runs. 
-  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
-  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
-  # 
-  # Returns:
-  #    matrix of dimension N x p, where N is the number of model runs and p is the 
-  #    number of output variables. The (i, j) entry of the matrix is the SSR
-  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
-  
-  # If model only run at single set of calibration parameter values
-  if(is.matrix(model_outputs_list)) {
-    model_outputs_list <- list(model_outputs_list)
-  }
-  
-  N_param_runs <- length(model_outputs_list)
-  N_outputs <- ncol(model_outputs_list[[1]])
-  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
-  
-  for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums(data_obs - model_outputs_list[[i]], na.rm = na.rm)^2
-  }
-  colnames(SSR) <- colnames(data_obs)
-  
-  return(SSR)
-  
-}
 
 # TODO: 
 #    This function is intended to be the analog of `llik_product_Gaussian` but for the likelihood that models correlation 
@@ -247,7 +207,7 @@ calc_SSR <- function(data_obs, model_outputs_list, na.rm = TRUE) {
 # }
 
 
-llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize = TRUE) {
+llik_Gaussian_err <- function(model_errs, Sig_eps = NULL, L = NULL, output_vars = NA, normalize = TRUE) {
   # A version of llik_Gaussian() that is parameterized in terms of the n x p model 
   # error matrix Y - f(theta) and the observation covariance Sig_eps. This presumes
   # the forward model has already been run, unlike llik_Gaussian(),  which runs
@@ -259,6 +219,8 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
   #                 Y - f(theta). 
   #     Sig_eps: matrix of dimensions p x p, the covariance matrix used in the 
   #              multivariate Gaussian likelihood calculation. 
+  #     L: matrix of dimension p x p, the lower Cholesky factor of Sig_eps. If not provided, the Cholesky 
+  #        factor will be computed. 
   #     output_vars: character vector, containing names of output variables to be selected.
   #                  If provided, uses row and column names of `Sig_eps` to select sub-matrix
   #                  associated with the output variables, as well as column names of `model_errs`.
@@ -274,11 +236,15 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
     Sig_eps <- Sig_eps[output_vars, output_vars]
     model_errs <- model_errs[, output_vars]
   }
-  L <- t(chol(Sig_eps))
+  
+  if(is.null(L)) {
+    L <- t(chol(Sig_eps))
+  }
+  
   log_quadratic_form <- sum(forwardsolve(L, t(model_errs))^2)
 
   if(normalize) {
-    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - nrow(model_errs) * sum(log(diag(L))))
+    return(-0.5 * log_quadratic_form - 0.5 * prod(dim(model_errs)) * log(2*pi) - sum(log(diag(L))))
   }
   
   return(-0.5 * log_quadratic_form)
@@ -286,15 +252,17 @@ llik_Gaussian_err <- function(model_errs, Sig_eps, output_vars = NA, normalize =
 }
 
 
-run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
-                     computer_model_data = NULL) {
+run_VSEM <- function(theta_vals, computer_model_data = NULL, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = NULL) {
   # Runs the VSEM model using the specified parameter settings, thus returning the outputs of the forward model. 
   # If multiple input parameters are passed, then the model is run at each input and the results are returned in a 
   # list, one for each input. If a single input parameter is passed, this function reduces to `run_VSEM_single_input()`.
+  # Note that `run_computer_model()` is a generic interface that should typically be used to execute a forward model, instead 
+  # of directly calling model-specific functions. 
   #
   # Args:
   #    theta_vals: matrix of dimension M x d, the values of calibration parameters used to run the model. Each row is 
   #                a setting in the d-dimensional space of calibration parameters. 
+  #    computer_model_data: list, must have named elements "par_ref", "par_cal_sel", "PAR_data", "output_vars".
   #    ref_pars: data.frame, rownames should correspond to parameters of computer model. 
   #             Must contain column named "true_value". Parameters that are fixed at nominal 
   #             values (not calibrated) are set to their values given in the "true_value" column. 
@@ -304,25 +272,76 @@ run_VSEM <- function(theta_vals, ref_pars = NULL, pars_cal_sel = NULL, PAR_data 
   #              term in VSEM. 
   #    output_vars: character vector, selects columns of output from VSEM model. Default returns
   #                 all four columns. 
-  #    computer_model_data: list, an alternative to having to pass in the computer model data one argument at a time. Must have named 
-  #                         elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
   #
   # Returns:
   #    If run at multiple input points (i.e. `theta_vals` has M > 1 rows) then a list of M matrices as returned, where each 
   #    matrix is the return value of `run_VSEM_single_input()` at the respective input value. If M = 1, then a single matrix 
   #    is returned not in a list. 
   
-  if(isTRUE(nrow(theta_vals) > 1)) {
-    return(lapply(theta_vals, function(theta) run_VSEM_single_input(theta, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data)))
+  if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
+    return(run_VSEM_single_input(par_val = theta_vals, computer_model_data = computer_model_data, 
+                                 ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, PAR_data = PAR_data, 
+                                 output_vars = output_vars))
   } else {
-    return(run_VSEM_single_input(theta_vals, ref_pars, pars_cal_sel, PAR_data, output_vars, computer_model_data))
+    return(apply(theta_vals, 1, function(theta) run_VSEM_single_input(par_val = theta, computer_model_data = computer_model_data, 
+                                                                      ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, PAR_data = PAR_data, 
+                                                                      output_vars = output_vars), simplify = FALSE))
   }
   
 }
 
 
-run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
-                                  computer_model_data = NULL) {
+run_VSEM_single_input <- function(par_val, computer_model_data = NULL, ref_pars = NULL, pars_cal_sel = NULL, 
+                                  PAR_data = NULL, output_vars = NULL) {
+  # Runs the VSEM model using specified parameter setting, returning the outputs of the model. This runs
+  # the computer model as a single input, intended to work as a generic computer model`f()` mapping 
+  # as used in the `run_computer_model()` function. 
+  #
+  # Args:
+  #    computer_model_data: list, must have named elements "par_ref", "par_cal_sel", "PAR_data", "output_vars". 
+  #    par_val: numeric vector, values of calibration parameters used to run the model. 
+  #    The remaining parameters provide an alternative to passing `computer_model_data`; these are primarily 
+  #    intended to be used when initially creating data, before the `computer_model_list` is generated. 
+  #
+  # Returns:
+  #   matrix of dimensions n x p where n is the length of the time series and p is the number
+  #   of output variables. 
+  
+  if(!is.null(computer_model_data)) {
+    ref_pars <- computer_model_data$ref_pars
+    pars_cal_sel <- computer_model_data$pars_cal_sel
+    PAR_data <- computer_model_data$PAR_data
+    output_vars <- computer_model_data$output_vars
+  }
+  
+  # Parameters not calibrated are fixed at default values
+  theta <- ref_pars$true_value
+  theta[pars_cal_sel] <- par_val
+  
+  # Run forward model, re-scale NEE.
+  VSEM_output <- as.matrix(VSEM(theta, PAR_data))
+  if("NEE" %in% output_vars) {
+    VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
+  }
+  
+  # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
+  # at time t. 
+  if("LAI" %in% output_vars) {
+    VSEM_output <- cbind(VSEM_output, theta[rownames(ref_pars) == "LAR"] * VSEM_output[, "Cv"])
+    colnames(VSEM_output)[ncol(VSEM_output)] <- "LAI"
+  }
+  
+  # Select only the output variables 
+  VSEM_output <- VSEM_output[, output_vars]
+  
+  return(VSEM_output)
+  
+}
+
+
+# Deprecated: replaced by new generic run_computer_model() framework. 
+run_VSEM_single_input_old <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL, PAR_data = NULL, output_vars = c("NEE", "Cv", "Cs", "CR"), 
+                                      computer_model_data = NULL) {
   # Runs the VSEM model using specified parameter setting, returning the outputs of the model. Can either pass in the necessary data 
   # to run the forward model as individual arguments (par_ref, par_cal_sel, PAR_data, output_vars), or can pass in a list `computer_model_data`
   # will all of these arguments are named elements. 
@@ -365,7 +384,7 @@ run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL,
   # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
   # at time t. 
   if("LAI" %in% output_vars) {
-    VSEM_output <- cbind(VSEM_output, theta[rownames(par_ref) == "LAR"] * VSEM_output[, "Cv"])
+    VSEM_output <- cbind(VSEM_output, theta[rownames(ref_pars) == "LAR"] * VSEM_output[, "Cv"])
     colnames(VSEM_output)[ncol(VSEM_output)] <- "LAI"
   }
   
@@ -377,24 +396,42 @@ run_VSEM_single_input <- function(par_val, ref_pars = NULL, pars_cal_sel = NULL,
 }
 
 
-calc_lprior_theta <- function(theta, theta_prior_params) {
+calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
   # Evaluates the log prior density on calibration functions at specific values of the settings.  
   #
   # Args:
   #    theta: numeric vector, the value of the calibration parameters at which to evaluate the prior density. 
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2", and potentially columns 
+  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper)
+  #                         and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                         bound_upper = upper truncation value). 
+  #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
+  #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 
+  #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
+  #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
+  #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
+  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE 
   #
   # Returns:
   #    The prior density evaluation log p(theta). Assumes prior independence, so the log-prior is the sum of the log-prior
-  #    evaluations for each entry of 'theta'. 
+  #    evaluations for each entry of 'theta'. Note that in certain cases the log prior can be negative infinity; e.g. for 
+  #    a uniform prior where `theta` is not contained within the upper and lower bound. 
+  
+  if(check_bounds) {
+    if(any(theta < theta_prior_params[["bound_lower"]], na.rm = TRUE) ||
+       any(theta > theta_prior_params[["bound_upper"]], na.rm = TRUE)) {
+      return(-Inf)
+    }
+  }
   
   lprior <- 0
   
   theta_prior_params[["val"]] <- theta
   Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Gaussian",]
   Uniform_priors <- theta_prior_params[theta_prior_params$dist == "Uniform",]
+  Truncated_Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Truncated_Gaussian",]
   
   if(nrow(Gaussian_priors) > 0) {
     lprior <- lprior + sum(dnorm(Gaussian_priors$val, Gaussian_priors$param1, Gaussian_priors$param2, log = TRUE))
@@ -404,16 +441,24 @@ calc_lprior_theta <- function(theta, theta_prior_params) {
     lprior <- lprior + sum(dunif(Uniform_priors$val, Uniform_priors$param1, Uniform_priors$param2, log = TRUE))
   }
   
+  if(nrow(Truncated_Gaussian_priors) > 0) {
+    lprior <- lprior + sum(sapply(seq(1, nrow(Truncated_Gaussian_priors)), function(i) log(dtruncnorm(Truncated_Gaussian_priors$val[i], 
+                                                                                           a = Truncated_Gaussian_priors$bound_lower[i], 
+                                                                                           b = Truncated_Gaussian_priors$bound_upper[i], 
+                                                                                           mean = Truncated_Gaussian_priors$param1[i],
+                                                                                           sd = Truncated_Gaussian_priors$param2[i]))))
+  }
+  
   return(lprior)  
 
 }
 
 
-calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, par_ref = NULL, par_cal_sel = NULL, PAR_data = NULL, data_obs = NULL, 
-                                         output_vars = NULL, SSR = NULL, vars_obs = NULL, n_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
+calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
+                                         SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
   # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
-  # This functions provides the option to calculate the log prior and log likelihood from scrath, at the given parameter values `theta_vals` 
+  # This functions provides the option to calculate the log prior and log likelihood from scratch, at the given parameter values `theta_vals` 
   # and other necessary arguments for computing these quantities. Or if these quantities have already been calculated, they can be passed 
   # directly. 
   #
@@ -432,14 +477,18 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
   
   # Prior
   if(is.null(lprior_vals)) {
-    lprior_vals <- sapply(theta_vals, function(theta) calc_lprior_theta(theta, theta_prior_params))
+    lprior_vals <- apply(theta_vals, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
   }
   
   # Likelihood
   if(is.null(llik_vals)) {
-    llik_vals <- llik_product_Gaussian(theta_vals = theta_vals, par_ref = par_ref, par_cal_sel = par_cal_sel, PAR_data = PAR_data, data_obs = data_obs, 
-                                       output_vars = output_vars, SSR = SSR, vars_obs = vars_obs, n_obs = n_obs, normalize = normalize_lik, 
-                                       na.rm = na.rm, sum_output_lliks = TRUE)
+    llik_vals <- llik_product_Gaussian(computer_model_data = computer_model_data, 
+                                       vars_obs = vars_obs, 
+                                       theta_vals = theta_vals, 
+                                       SSR = SSR, 
+                                       normalize = normalize_lik, 
+                                       na.rm = na.rm, 
+                                       sum_output_lliks = TRUE)
   }
   
   if(!return_list) return(lprior_vals + llik_vals)
@@ -451,10 +500,128 @@ calc_lpost_theta_product_lik <- function(lprior_vals = NULL, llik_vals = NULL, t
 }
 
 
-mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
-                           theta_init = NA, theta_prior_params, 
-                           learn_Sig_eps = FALSE, Sig_eps_init = NA, Sig_eps_prior_params = list(), diag_cov = FALSE, 
-                           N_mcmc, adapt_frequency, adapt_min_scale, accept_rate_target, proposal_scale_decay, proposal_scale_init) {
+run_computer_model <- function(theta_vals, computer_model_data) {
+  # This is the generic interface for evaluating a computer model at a single or set of multiple input 
+  # parameters and returning the resulting outputs. `theta_vals` can either be a single input 
+  # parameter vector (a numeric vector or a matrix with a single row), or it can be a 
+  # matrix of dimension N_param x d, where d is the dimension of the parameter input space. In the former 
+  # case the model output is returned directly by evaluating at the single parameter vector. In the latter 
+  # case, a list is returned in which element i corresponds to the output resulting from the computer 
+  # model evaluation at the parameter vector in the ith row of `theta_vals`. The computer model output 
+  # is a matrix of dimension N x p, where N is typically the number of time steps and p is the 
+  # number of outputs/data constraints. 
+  #
+  # Args:
+  #    theta_vals: For a single parameter, a numeric(d) vector or matrix of dimension 1xd. For multiple 
+  #                parameters a matrix of dimension N_param x d. 
+  #    computer_model_data: the standard computer model data list. 
+  #
+  # Returns:
+  #    Either Nxp matrix of list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
+  #    See above description for details. 
+  
+  if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
+    return(computer_model_data$f(theta_vals, computer_model_data = computer_model_data))
+  } else {
+    return(apply(theta_vals, 1, function(theta) computer_model_data$f(theta, computer_model_data = computer_model_data), simplify = FALSE))
+  }
+  
+}
+
+
+get_computer_model_errs <- function(theta_vals, computer_model_data) {
+  # A convenience function that first runs the computer model to obtain outputs f(theta)
+  # and then returns the errors Y - f(theta) with respect to observed data Y. 
+  # Both Y and f(thets) are assumed to be matrices of shape N x p, where
+  # N is the number of observations and p is the number of model outputs. This function 
+  # works for a single input parameter vector or a matrix of multiple parameters. 
+  # In the latter case, the errors are returned in a list, with each element corresponding 
+  # to a different parameter. See `run_computer_model()` for details on the single-parameter
+  # vs. multiple-parameter argument requirements. 
+  #
+  # Args:
+  #    theta_vals: For a single parameter, a numeric(d) vector or matrix of dimension 1xd. For multiple 
+  #                parameters a matrix of dimension N_param x d. 
+  #    computer_model_data: the standard computer model data list. 
+  #
+  # Returns:
+  #    Either Nxp matrix or list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
+  #    See above description for details. 
+  
+  output_vars <- computer_model_data$output_vars
+  computer_model_output <- run_computer_model(theta_vals, computer_model_data)
+  data_obs <- computer_model_data$data_obs[, output_vars, drop=FALSE]
+  
+  if(is.list(computer_model_output)) {
+    model_errs <- lapply(computer_model_output, function(output) data_obs - output)
+  } else {
+    model_errs <- data_obs - computer_model_output
+  }
+  
+  return(model_errs)
+
+}
+
+
+get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NULL, theta_vals = NULL, na.rm = TRUE) {
+  # Computes the sum of squared residuals (SSR) between model runs and observed 
+  # data on a per-output basis. Can handle multiple model runs (e.g. one per 
+  # design point for emulation) or outputs from single model run (e.g. as required
+  # during MCMC).
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    model_outputs_list: either a matrix of dimension n x p corresponding to the 
+  #                        model outputs f(theta) from a single model run. Or a list 
+  #                        {f(theta_1), ..., f(theta_N)} of such matrices, collecting
+  #                        the outputs from multiple model runs. 
+  #    theta_vals: numeric vector or matrix of input values, must be provided if `model_outputs_list` 
+  #                is NULL, in which case the forward model  will be run at these inputs to obtain 
+  #                `model_outputs_list`. 
+  #    na.rm: logical(1), whether or not to remove NA values from the sum of squares 
+  #           calculation, passed to the `colSums()` functions. Default is TRUE. 
+  # 
+  # Returns:
+  #    matrix of dimension N x p, where N is the number of model runs and p is the 
+  #    number of output variables. The (i, j) entry of the matrix is the SSR
+  #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
+  
+  # Observed data. 
+  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars]
+  
+  # Run forward model if it has not been run yet. 
+  if(is.null(model_outputs_list)) {
+    model_outputs_list <- run_computer_model(theta_vals = theta_vals, computer_model_data = computer_model_data)
+  }
+  
+  # If model only run at single set of calibration parameter values. 
+  if(is.matrix(model_outputs_list)) {
+    model_outputs_list <- list(model_outputs_list)
+  }
+  
+  N_param_runs <- length(model_outputs_list)
+  N_outputs <- ncol(model_outputs_list[[1]])
+  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
+  
+  for(i in seq_along(model_outputs_list)) {
+    SSR[i,] <- colSums((data_obs - model_outputs_list[[i]])^2, na.rm = na.rm)
+  }
+  colnames(SSR) <- colnames(data_obs)
+  
+  return(SSR)
+  
+}
+
+
+# TODO: need to update this so that it can handle missing data. Main issue is updating the Gaussian likelihood function 
+# that operates on model_errs. 
+# TODO: Update description and argument comments; have changes this function to be exclusively for the case where the 
+#       covariance matrix Sig_eps is non-diagonal. 
+mcmc_calibrate <- function(computer_model_data, theta_prior_params,
+                           theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params = NULL, 
+                           N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                           proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                           adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
   # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
   # between the different output variables, but assumes independence across time. Samples from posterior over both  
   # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
@@ -463,23 +630,14 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   # approximation. 
   #
   # Args:
-  #    par_ref: data.frame, rownames should correspond to parameters of computer model. 
-  #             Must contain column named "best". Parameters that are fixed at nominal 
-  #             values (not calibrated) are set to their values given in the "best" column. 
-  #    par_cal_sel: integer vector, selects the rows of 'par_ref' that correspond to 
-  #                 parameters that will be calibrated. 
-  #    data_obs: matrix, dimension n x p (n = length of time series, p = number outputs).
-  #              Colnames set to output variable names. 
-  #    output_vars: character vector, used to the select the outputs to be considered in 
-  #                 the likelihood; e.g. selects the correct sub-matrix of 'Sig_eps' and the 
-  #                 correct columns of 'data_obs'. 
-  #    PAR: numeric vector, time series of photosynthetically active radiation used as forcing
-  #         term in VSEM.
-  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
-  #                the initial value from the prior. 
+  #    computer_model_data:
   #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    diag_cov: logical, if TRUE constrains Sig_eps to be diagonal. If the prior distribution is specified to be product Inverse Gamma then this 
+  #              is automatically set to TRUE. Default is FALSE. 
+  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
+  #                the initial value from the prior. 
   #    learn_Sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
   #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
   #    Sig_eps_init: matrix, p x p covariance matrix capturing dependence between output variables. If `learn_Sig_eps` is 
@@ -487,8 +645,146 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #                  case the initial value will be sampled from the prior. If `learn_Sig_eps` is FALSE, then a non-NA value 
   #                  is required, and treated as the fixed nominal value of Sig_eps_init. 
   #    Sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    N_mcmc: integer, the number of MCMC iterations. 
+  #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
+  #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
+  #    accept_rate_target: numeric scalar, the desired acceptance rate, see `adapt_cov_proposal()`.
+  #    proposal_scale_decay: Controls the exponential decay in the adjustment made to the scale of the proposal covariance as a function of the 
+  #                          number of iterations. 
+  #    proposal_scale_init: numeric, the proposal covariance is initialized to be diagonal, with `proposal_scale_init` along the diagonal. 
+  #
+  # Returns:
+  #    list, with named elements "theta" and "Sig_eps". The former is a matrix of dimension N_mcmc x p with the MCMC samples of 
+  #    theta stored in the rows. The latter is of dimension N_mcmc x p(p+1)/2, where each row stores the lower triangle of the 
+  #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
+  #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
+
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
+  output_var_sel <- matrix(1:p^2, nrow = p)[lower.tri(matrix(1:p^2, nrow = p), diag = TRUE)]
+  colnames(Sig_eps_samp) <- paste("sig_eps", output_var_sel, sep = "_") # Should replace this with actual output var names (e.g. "sig_eps_y1_y2").
+
+  # Set initial conditions.
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+  if(learn_Sig_eps) {
+    if(is.null(Sig_eps_init)) {
+      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params, return_matrix = TRUE)
+    }
+  } else {
+    if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  Sig_eps_samp[1,] <- Sig_eps_init[lower.tri(Sig_eps_init, diag = TRUE)]
+
+  Sig_eps_curr <- Sig_eps_init
+  L_Sig_eps_curr <- t(chol(Sig_eps_init))
+  model_errs_curr <- get_computer_model_errs(theta_init, computer_model_data)
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  log_scale_prop <- 0
+  L_prop <- t(chol(Cov_prop))
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  for(itr in seq(2, N_mcmc)) {
+    #
+    # Metropolis step for theta
+    #
+
+    # theta proposals.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Calculate log-likelihoods for current and proposed theta.
+    model_errs_prop <- get_computer_model_errs(theta_prop, computer_model_data)
+    llik_curr <- llik_Gaussian_err(model_errs_curr, L = L_Sig_eps_curr) 
+    llik_prop <- llik_Gaussian_err(model_errs_prop, L = L_Sig_eps_curr)
+    
+    # Metropolis-Hastings Accept-Reject Step.
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    lpost_theta_curr <- llik_curr + lprior_theta_curr
+    lpost_theta_prop <- llik_prop + lprior_theta_prop
+    alpha <- min(1.0, exp(lpost_theta_prop - lpost_theta_curr))
+    
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lprior_theta_prop
+      model_errs_curr <- model_errs_prop
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+
+    #
+    # Gibbs step for Sig_eps
+    #
+    if(learn_Sig_eps) {
+      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs = model_errs_curr, 
+                                               Sig_eps_prior_params = Sig_eps_prior_params, 
+                                               n_obs = computer_model_data$n_obs, return_matrix = TRUE)
+      L_Sig_eps_curr <- t(chol(Sig_eps_curr))
+      Sig_eps_samp[itr,] <- Sig_eps_curr[lower.tri(Sig_eps_curr, diag = TRUE)]
+    }
+    
+  }
+  
+  return(list(samp = cbind(theta_samp, Sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  
+}
+
+
+# TODO: update comments. 
+mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
+                                       theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                       N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                       proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                       adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+  # MCMC implementation for VSEM carbon model. Accommodates Gaussian likelihood, possibly with correlations 
+  # between the different output variables, but assumes independence across time. Samples from posterior over both  
+  # calibration parameters (theta) and observation covariance (Sig_eps), or just over theta if `learn_Sig_eps` is FALSE.
+  # Allows for arbitrary prior over theta, but assumes Inverse Wishart prior on Sig_eps (if treated as random).
+  # MCMC scheme is adaptive random walk Metropolis. This MCMC algorithm does not involve any model emulation/likelihood 
+  # approximation. 
+  #
+  # Args:
+  #    computer_model_data: list, standard computer model data list. 
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
   #    diag_cov: logical, if TRUE constrains Sig_eps to be diagonal. If the prior distribution is specified to be product Inverse Gamma then this 
   #              is automatically set to TRUE. Default is FALSE. 
+  #    theta_init: numeric vector of length p, the initial value of the calibration parameters to use in MCMC. If NA, samples
+  #                the initial value from the prior. 
+  #    learn_Sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    Sig_eps_init: matrix, p x p covariance matrix capturing dependence between output variables. If `learn_Sig_eps` is 
+  #                  TRUE then `Sig_eps_init` can either be set to the initial value used for MCMC, or set to NA in which 
+  #                  case the initial value will be sampled from the prior. If `learn_Sig_eps` is FALSE, then a non-NA value 
+  #                  is required, and treated as the fixed nominal value of Sig_eps_init. 
+  #    Sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
   #    N_mcmc: integer, the number of MCMC iterations. 
   #    adapt_frequency: integer, number of iterations in between each covariance adaptation. 
   #    adapt_min_scale: numeric scalar, used as a floor for the scaling factor in covariance adaptation, see `adapt_cov_proposal()`.
@@ -503,158 +799,461 @@ mcmc_calibrate <- function(par_ref, par_cal_sel, data_obs, output_vars, PAR,
   #    MCMC samples of Sig_eps, ordered column-wise, using lower.tri(Sig_eps, diag = TRUE). If `learn_Sig_eps` is FALSE, then 
   #    the first row stores the fixed value of Sig_eps, and the remaining rows are NA. 
   
-  # Number observations in time series, number output variables, and dimension of parameter space
-  n <- nrow(data_obs)
-  p <- length(output_vars)
-  d <- length(par_cal_sel)
-
-  # Objects to store samples
-  par_cal_names <- rownames(par_ref)[par_cal_sel]
-  theta_samp <- matrix(nrow = N_mcmc, ncol = par_cal_sel)
-  colnames(theta_samp) <- par_cal_names
-  if(learn_Sig_eps && isTRUE(Sig_eps_prior_params$dist == "IG")) {
-    diag_cov <- TRUE
-  }
-  if(diag_cov) {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  } else {
-    Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = 0.5*p*(p+1)) # Each row stores lower triangle of Sig_eps
-    stop("Need to fix correlated Gaussian likelihood function to work with missing data.")
-  }
-
-  # Set initial values
-  if(is.na(theta_init)) {
-    theta_init <- sample_prior_theta(theta_prior_params)
-  }
-  if(learn_Sig_eps && is.na(Sig_eps_init)) {
-    Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
-  } else {
-    Sig_eps_init <- diag(1, nrow = p, ncol = p)
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_product_lik()` requires inverse gamma priors on observation variances.")
   }
   
-  theta_samp[1,] <- theta_init
-  if(diag_cov) {
-    Sig_eps_samp[1,] <- diag(Sig_eps_init)
-  } else {
-    Sig_eps_samp[1,] <- lower.tri(Sig_eps_init, diag = TRUE)
-  }
-  
-  Sig_eps_curr <- Sig_eps_init
-  model_errs_curr <- data_obs[, output_vars] - run_VSEM(theta_init, par_ref, par_cal_sel, PAR, output_vars) # SSR here instead? 
-  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
-  
-  # Proposal covariance
-  Cov_prop <- diag(proposal_scale_init, nrow = d)
-  log_scale_prop <- 0
-  L_prop <- t(chol(Cov_prop))
-  accept_count <- 0
-  
-  for(itr in seq(2, N_mcmc)) {
-
-    #
-    # Metropolis step for theta
-    #
-
-    # Adapt proposal covariance matrix and scaling term
-    if((itr > 3) && ((itr - 1) %% adapt_frequency) == 0) {
-      # Cov_prop <- adapt_cov_proposal(Cov_prop, theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE],
-      #                                adapt_min_scale, accept_count / adapt_frequency, accept_rate_target)
-      if(accept_count == 0) {
-        Cov_prop <- adapt_min_scale * Cov_prop
-      } else {
-        Cov_prop <- stats::cov(theta_samp[(itr - adapt_frequency):(itr - 1),,drop=FALSE])
-      }
-      L_prop <- t(chol(Cov_prop))
-      accept_count <- 0
-    }
-    
-    # theta proposals
-    theta_prop <- (theta_samp[itr-1,] + sqrt(exp(log_scale_prop)) * L_prop %*% matrix(rnorm(d), ncol = 1))[1,]
-
-    # Calculate log-likelihoods for current and proposed theta
-    model_errs_prop <- data_obs[, output_vars] - run_VSEM(theta_prop, par_ref, par_cal_sel, PAR, output_vars)
-    llik_curr <- llik_Gaussian_err(model_errs_curr, Sig_eps_curr) 
-    llik_prop <- llik_Gaussian_err(model_errs_prop, Sig_eps_curr)
-
-    # Accept-Reject Step
-    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
-    log_theta_post_curr <- llik_curr + lprior_theta_curr
-    log_theta_post_prop <- llik_prop + lprior_theta_prop
-    alpha <- min(1.0, exp(log_theta_post_prop - log_theta_post_curr))
-    if(runif(1) <= alpha) {
-      theta_samp[itr,] <- theta_prop
-      lprior_theta_curr <- lprior_theta_prop
-      model_errs_curr <- model_errs_prop
-      accept_count <- accept_count + 1 
-    } else {
-      theta_samp[itr,] <- theta_samp[itr-1,]
-    }
-
-    # Adapt scaling term for proposal
-    log_scale_prop <- log_scale_prop + (1 / itr^proposal_scale_decay) * (alpha - accept_rate_target)
-    
-    #
-    # Gibbs step for Sig_eps
-    #
-
-    if(learn_Sig_eps) {
-      Sig_eps_curr <- sample_cond_post_Sig_eps(model_errs_curr, Sig_eps_prior_params, n)
-      if(diag_cov) {
-        Sig_eps_samp[itr,] <- diag(Sig_eps_curr)
-      } else {
-        Sig_eps_samp[itr,] <- lower.tri(Sig_eps_curr, diag = TRUE)
-      }
-    }
-
-  }
-  
-  return(list(theta = theta_samp, Sig_eps = Sig_eps_samp))
-
-}
-
-
-# emulator_info: list with "gp_fits", "gp_output_stats", "emulator_settings", and "gp_input_bounds"
-mcmc_calibrate_ind_GP <- function(computer_model_data, emulator_info, theta_prior_params, 
-                                  theta_init = NULL, Sig_eps_init = NULL, learn_Sig_eps = FALSE, Sig_eps_prior_params, 
-                                  N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                                  proposal_scale_decay = 0.7, proposal_scale_init = 0.1) {
-  
-  # Number output variables, and dimension of parameter space.
+  # Number observations in time series, number output variables, and dimension of parameter space.
   p <- length(computer_model_data$output_vars)
   d <- length(computer_model_data$pars_cal_names)
   
-  # Matrices to store MCMC samples. 
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
-  Sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(Sig_eps_samp) <- computer_model_data$output_vars
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
 
   # Set initial conditions.
   if(is.null(theta_init)) {
     theta_init <- sample_prior_theta(theta_prior_params)
   }
-  if(learn_Sig_eps) {
-    if(is.null(Sig_eps_init)) {
-      Sig_eps_init <- sample_prior_Sig_eps(Sig_eps_prior_params)
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
     }
   } else {
-    if(is.null(Sig_eps_init)) stop("Value for `Sig_eps_init` must be provided when `learn_Sig_eps` is FALSE.")
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
-  Sig_eps_samp[1,] <- diag(Sig_eps_init)
+  sig_eps_samp[1,] <- sig_eps_init
 
-  Sig_eps_curr <- Sig_eps_init
-  SSR_curr <- calc_SSR(computer_model_data$data_obs, run_VSEM_single_input(theta_init, computer_model_data = computer_model_data))
+  sig_eps_curr <- sig_eps_init
+  SSR_curr <- get_computer_model_SSR(computer_model_data, theta_vals = theta_init, na.rm = TRUE)
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance
-  Cov_prop <- diag(proposal_scale_init, nrow = d)
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
   log_scale_prop <- 0
   L_prop <- t(chol(Cov_prop))
   accept_count <- 0
+  samp_mean <- theta_init
   
+  for(itr in seq(2, N_mcmc)) {
+    #
+    # Metropolis step for theta
+    #
+    
+    # theta proposals.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Calculate log-likelihoods for current and proposed theta.
+    SSR_prop <- get_computer_model_SSR(computer_model_data, theta_vals = theta_prop, na.rm = TRUE)
+    llik_prop <- llik_product_Gaussian(computer_model_data, sig_eps_curr, SSR = SSR_prop, normalize = FALSE, na.rm = TRUE)
+    llik_curr <- llik_product_Gaussian(computer_model_data, sig_eps_curr, SSR = SSR_curr, normalize = FALSE, na.rm = TRUE) 
+
+    # Metropolis-Hastings Accept-Reject Step.
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    lpost_theta_curr <- llik_curr + lprior_theta_curr
+    lpost_theta_prop <- llik_prop + lprior_theta_prop
+    alpha <- min(1.0, exp(lpost_theta_prop - lpost_theta_curr))
+    
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lprior_theta_prop
+      SSR_curr <- SSR_prop
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+    
+    #
+    # Gibbs step for sig_eps
+    #
+    if(learn_sig_eps) {
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_curr, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
+    }
+    
+  }
   
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  
+}
+
+
+# emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
+# TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
+# on the correct scale (e.g. it should be on log scale for LNP).
+mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emulator_info,
+                                  theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                  N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                  proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                  adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+  # `theta_prior_params` should already be truncated, if desired. 
+  
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
+  }
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
+  
+  # Set initial conditions. 
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  sig_eps_samp[1,] <- sig_eps_init
+  
+  sig_eps_curr <- sig_eps_init
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance.
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  L_prop <- t(chol(Cov_prop))
+  log_scale_prop <- 0
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  for(itr in seq(2, N_mcmc)) {
+
+    #
+    # Metropolis step for theta.
+    #
+    
+    # theta proposals.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0). If this occurs on the first 
+    # iteration we let the normal calculations proceed since we need to initialize `gp_pred_list`. In this case, the 
+    # calculations will still return an acceptance probability of 0. After the first iteration, there is no need to 
+    # waste computation if we know the acceptance probability will be 0. 
+    if((itr > 2) && 
+       (any(theta_prop < theta_prior_params[["bound_lower"]], na.rm = TRUE) ||
+        any(theta_prop > theta_prior_params[["bound_upper"]], na.rm = TRUE))) {
+        
+        theta_samp[itr,] <- theta_samp[itr-1,]
+        alpha <- 0
+        
+    } else {
+    
+      # Approximate SSR by sampling from GP. 
+      # TODO: shouldn't have to re-scale theta_curr; should have `theta_curr_scaled` variable or something. 
+      # Could also re-use mean prediction, but if including GP covariance then this will change. 
+      thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
+      gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                              gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                              output_stats = emulator_info$output_stats)
+      SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, include_nugget = TRUE)
+      
+      # Accept-Reject step. 
+      lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
+                                                       vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
+      lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = matrix(theta_prop, nrow=1), SSR = SSR_samples[2,,drop=FALSE], 
+                                                            vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                            return_list = TRUE)
+      alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
+    
+      if(runif(1) <= alpha) {
+        theta_samp[itr,] <- theta_prop
+        lprior_theta_curr <- lpost_theta_prop_list$lprior
+        accept_count <- accept_count + 1 
+        pred_idx_curr <- 2
+      } else {
+        theta_samp[itr,] <- theta_samp[itr-1,]
+        pred_idx_curr <- 1
+      }
+      
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold, L = L_prop)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+    
+    #
+    # Gibbs step for Sig_eps.
+    #
+    
+    if(learn_sig_eps) {
+      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method,
+                                                     idx_selector = pred_idx_curr, include_nugget = TRUE)
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
+    } else {
+      sig_eps_samp[itr,] <- sig_eps_init
+    }
+    
+  }
+  
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  
+}
+
+
+# emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
+# TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
+# on the correct scale (e.g. it should be on log scale for LNP).
+mcmc_calibrate_ind_GP_trunc_proposal <- function(computer_model_data, theta_prior_params, emulator_info,
+                                                 theta_init = NULL, sig_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                 N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                                 proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                                 adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
+  }
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
+
+  # Set initial conditions, ensuring the initial value of the calibration parameters satisfies the 
+  # input bounds constraint determined by the extent of the design points. 
+  if(is.null(theta_init)) {
+    init_samp_max <- 100
+    t <- 1
+    while(t < init_samp_max) {
+      theta_init <- sample_prior_theta(theta_prior_params)
+      if(all(theta_init >= emulator_info$input_bounds[1,]) && all(theta_init <= emulator_info$input_bounds[2,])) break
+      if(t == init_samp_max) stop("Failed to generate initial sample from theta prior that satisfies input bounds.")
+      t <- t + 1
+    }
+  }
+  
+  if(learn_sig_eps) {
+    if(is.null(sig_eps_init)) {
+      sig_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  sig_eps_samp[1,] <- sig_eps_init
+  
+  sig_eps_curr <- sig_eps_init
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance.
+  Cov_prop_curr <- diag(Cov_prop_init_diag, nrow = d)
+  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  log_scale_prop <- 0
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  for(itr in seq(2, N_mcmc)) {
+    
+    #
+    # Metropolis step for theta.
+    #
+    
+    # theta proposals.
+    theta_prop <- tmvtnorm::rtmvnorm(1, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop, 
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,])[1,]
+    # theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Approximate SSR by sampling from GP. 
+    # TODO: shouldn't have to re-scale theta_curr; should have `theta_curr_scaled` variable or something. 
+    # Could also re-use mean prediction, but if including GP covariance then this will change. 
+    thetas_scaled <- scale_input_data(rbind(theta_samp[itr-1,], theta_prop), input_bounds = emulator_info$input_bounds)
+    gp_pred_list <- predict_independent_GPs(X_pred = thetas_scaled, gp_obj_list = emulator_info$gp_fits, 
+                                            gp_lib = emulator_info$settings$gp_lib, include_cov_mat = FALSE, denormalize_predictions = TRUE,
+                                            output_stats = emulator_info$output_stats)
+    SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method, include_nugget = TRUE)
+    
+    # Accept-Reject step. 
+    lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals = lprior_theta_curr, SSR = SSR_samples[1,,drop=FALSE], 
+                                                     vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, return_list = FALSE)
+    lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals = matrix(theta_prop, nrow=1), SSR = SSR_samples[2,,drop=FALSE], 
+                                                          vars_obs = sig_eps_curr, normalize_lik = FALSE, na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                          return_list = TRUE)
+    q_curr_prop <- tmvtnorm::dtmvnorm(theta_prop, mean = theta_samp[itr-1,], sigma = exp(2*log_scale_prop)*Cov_prop,
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+    q_prop_curr <- tmvtnorm::dtmvnorm(theta_samp[itr-1,], mean = theta_prop, sigma = exp(2*log_scale_prop)*Cov_prop,
+                                     lower = emulator_info$input_bounds[1,], upper = emulator_info$input_bounds[2,], log = TRUE)
+    alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr + q_prop_curr - q_curr_prop))
+
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lprior_theta_curr <- lpost_theta_prop_list$lprior
+      accept_count <- accept_count + 1 
+      pred_idx_curr <- 2
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+      pred_idx_curr <- 1
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_proposal(Cov_prop_curr, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, adapt_frequency, 
+                                     adapt_cov_method, adapt_scale_method, accept_rate_target, adapt_min_scale,  
+                                     proposal_scale_decay, adapt_init_threshold, C_L = Cov_prop)
+    Cov_prop_curr <- adapt_list$C
+    Cov_prop <- adapt_list$C_L
+    log_scale_prop <- adapt_list$log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+    
+    #
+    # Gibbs step for Sig_eps.
+    #
+    
+    if(learn_sig_eps) {
+      SSR_sample <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info$settings$transformation_method,
+                                                     idx_selector = pred_idx_curr, include_nugget = TRUE)
+      sig_eps_curr <- sample_cond_post_Sig_eps(SSR = SSR_sample, Sig_eps_prior_params = sig_eps_prior_params, n_obs = computer_model_data$n_obs)
+      sig_eps_samp[itr,] <- sig_eps_curr
+    } else {
+      sig_eps_samp[itr,] <- sig_eps_init
+    }
+    
+  }
+  
+  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  
+}
+
+
+adapt_cov_proposal <- function(C, log_scale, sample_history, itr, accept_count, alpha, samp_mean, 
+                               adapt_frequency = 1000, cov_method = "AM", scale_method = "MH_ratio", 
+                               accept_rate_target = 0.24, min_scale = 0.1, tau = 0.7, init_threshold = 3, 
+                               L = NULL, C_L = NULL) {
+  # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form `scale * C`, where 
+  # `scale` is a scaling factor. This function supports different algorithms to adapt C and to adapt `scale`, and the methods 
+  # can be mixed and matched. Only a portion of the function arguments are needed for certain methods, so take care 
+  # to ensure the correct arguments are being passed to the function. The function updates C and also computes the lower 
+  # triangular Cholesky factor L of C. For certain methods (e.g. the AM algorithm) C will be updated every iteration, but 
+  # L may only be updated intermittently depending on `adapt_cov_frequency`. The matrix `C_L` is defined as the covariance 
+  # matrix that corresponds to the Cholesky factor `L`; i.e. C_L = LL^T. The covariance `C` will always be the most up-to-date, 
+  # but one may instead choose to utilize `L` or `C_L` for proposals if the proposal covariance is not to be updated 
+  # every MCMC iteration; this saves on computation (not having to compute a Cholesky decomposition every iteration) and 
+  # can help prevent singular proposal covariances. 
+  #
+  # Args:
+  #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
+  #    log_scale: numeric, the log of the scaling factor. 
+  #    L: matrix, the lower triangular Cholesky factor of C. This is what is actually used to generate proposals. In general, this 
+  #       can be "out of alignment" with C; for example, C can be updated every iteration, but the Cholesky factor can be updated 
+  #       less frequently to save computation time. 
+  #    sample_history: matrix, itr_curr x p, where itr_curr is the current MCMC iteration. Note that this must be the entire 
+  #                    sample history, even for methods like the AP algorithm, which only require a recent subset of the history. 
+  #    itr_curr: integer, the current MCMC iteration. 
+  #    adapt_cov_frequency: integer, number of iterations that specifies how often C or L will be updated. The AP algorithm 
+  #                         updates both C and L together; the AM algorithm updates C every iteration, but only updates L according 
+  #                         to `update_cov_frequency`. 
+  #    adapt_scale_frequency: integer, number of iterations that specifies how often log_scale will be updated. 
+  #    cov_method: character(1), currently either "AP" (Adaptive Proposal, Haario 1999) or "AM" (Adaptive Metropolis, Haario 2001). 
+  #    scale_method: character(1), currently either "pecan" (method currently used in PEcAn) or "MH_ratio" (based on Metropolis-Hastings 
+  #                  acceptance probability). Both methods rely on `accept_rate_target` as a target. 
+  #    accept_rate_target: numeric(1), the target acceptance rate.
+  #    min_scale: numeric(1), used as a floor for the scaling factor for the "pecan" method. 
+  #    accept_count: integer(1), the number of accepted MH proposals over the subset of the sample history that will be used in the updates (not the 
+  #                  acceptance count over the whole history!). This is only used for the "AP" and "pecan" methods.
+  #    samp_mean: numeric(d), used only by "AM". This is the cumulative sample mean over the MCMC samples. It is updated every iteration. 
+  #    alpha: numeric(1), used only by "MH_ratio". This is the most recent Metropolis-Hastings acceptance probability. The "MH_ratio" method 
+  #           updates log_sd2 every iteration. 
+  #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_scale updating occurs. 
+  #
+  # Returns:
+  #    list, with elements "C", "C_L", L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
+  #    and is the mean of the MCMC samples up through the current iteration. 
+  
+  accept_rate <- accept_count / adapt_frequency
+  
+  # Adapt proposal covariance. 
+  if(cov_method == "AM" ) { 
+    
+    samp_mean <- samp_mean + (1 / itr) * (sample_history[itr,] - samp_mean)
+    
+    if(itr == 3) { # Sample covariance from first 3 samples. 
+      samp_centered <- t(sample_history[1:3,]) - samp_mean
+      C <- 0.5 * tcrossprod(samp_centered)
+    } else if(itr > 3) { # Begin covariance updates every iteration. 
+      samp_centered <- sample_history[itr,] - samp_mean
+      w <- 1/(itr-1)
+      C <- C + w * (itr*w*outer(samp_centered, samp_centered) - C)
+    }
+    
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      L <- t(chol(C))
+      C_L <- C
+    }
+  
+  } else if(cov_method == "AP") {
+    
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      sample_history <- sample_history[(itr - adapt_frequency + 1):itr,,drop=FALSE]
+      if(accept_rate == 0) {
+        C <- min_scale * C
+        L <- sqrt(min_scale) * L
+      } else {
+        C <- stats::cov(sample_history)
+        L <- t(chol(C + diag(sqrt(.Machine$double.eps), nrow=nrow(C))))
+      }
+      C_L <- C
+    }
+    
+  }
+  
+  # Adapt scaling factor for proposal covariance matrix. 
+  if(scale_method == "pecan") {
+    if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
+      log_scale <- 2 * log(max(accept_rate / accept_rate_target, min_scale))
+    }
+  } else if(scale_method == "MH_ratio") {
+    if(itr >= init_threshold) log_scale <- log_scale + (1 / itr^tau) * (alpha - accept_rate_target) 
+  }
+  
+  if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) accept_count <- 0
+  
+  return(list(C = C, C_L = C_L, L = L, log_scale = log_scale, samp_mean = samp_mean, accept_count = accept_count))
   
 }
 
@@ -663,13 +1262,16 @@ sample_prior_theta <- function(theta_prior_params) {
   # Return sample from prior distribution on the calibration parameters (theta). 
   #
   # Args:
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2"; and potentially also columns 
+  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper), 
+  #                        and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                        bound_upper = upper truncation value).  
   #
   # Returns:
   #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
-  
+
   theta_samp <- vector(mode = "numeric", length = nrow(theta_prior_params))
   
   for(i in seq_along(theta_samp)) {
@@ -677,6 +1279,11 @@ sample_prior_theta <- function(theta_prior_params) {
       theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
     } else if(theta_prior_params[i, "dist"] == "Uniform") {
       theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
+    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") {
+      theta_samp[i] <- rtruncnorm(1, a = theta_prior_params[i, "bound_lower"], b = theta_prior_params[i, "bound_upper"], 
+                                  mean = theta_prior_params[i, "param1"], sd = theta_prior_params[i, "param2"])
+    } else {
+      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
     }
   }
 
@@ -685,7 +1292,61 @@ sample_prior_theta <- function(theta_prior_params) {
 }
 
 
-sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
+truncate_prior_theta <- function(theta_prior_params, input_bounds) {
+  # Converts the prior parameters on the calibration parameters (theta) so that they are truncated
+  # in that they assign 0 probability mass beyond the bounds specified in `input_bounds`. 
+  # `input_bounds` is typically determined by the extent of the design points, so this
+  # function modifies the prior so that posterior evaluations are 0 outside of the 
+  # extent of the design points (where the GP would have to interpolate). This is an 
+  # alternative to allowing an unbounded prior and instead truncating the MCMC 
+  # proposals. The truncation applied to uniform priors simply sets the bounds on the 
+  # uniform prior to the bounds provided in `input_bounds`. Applied to Gaussian priors, 
+  # the Gaussian distributions are converted to truncated Gaussian distributions, with 
+  # the truncation bounds again determined by `input_bounds`. For compactly supported priors 
+  # (e.g. uniform or truncated Gaussian), the bounds are only updated if they fall outside of 
+  # the bounds in `input_bounds` (e.g. an existing lower bound will not be made any lower). 
+  #
+  # Args:
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    input_bounds: matrix of dimension 2 x d, where d is the number of parameters. The first row contains lower bounds 
+  #                  on the parameters and the second row contains upper bounds (these are often determined by the 
+  #                  extent of the design points). If provided, the prior sample will be required to satisfy the lower 
+  #                  and upper bounds, so sampled parameters that do not satisfy the constraints will be rejected until 
+  #                  the constraint is satisfied. Note that this implies that the resulting samples are from a truncated 
+  #                  version of the prior distribution, rather than the prior itself. The columns of `input_bounds` must be 
+  #                  sorted in the same order as the rows of `theta_prior_params.` Default is NULL, which imposes 
+  #                  no constraints. 
+  #
+  # Returns:
+  #    data.frame, the updated version of `theta_prior_params`. 
+  
+  for(i in seq(1, nrow(theta_prior_params))) {
+    l <- input_bounds[1, i]
+    u <- input_bounds[2, i]
+    
+    if(theta_prior_params[i, "dist"] == "Gaussian") {
+      theta_prior_params[i, "dist"] <- "Truncated_Gaussian"
+      theta_prior_params[i, "bound_lower"] <- l
+      theta_prior_params[i, "bound_upper"] <- u
+    } else if(theta_prior_params[i, "dist"] == "Uniform") {
+      if(theta_prior_params[i, "param1"] < l) theta_prior_params[i, "param1"] <- l
+      if(theta_prior_params[i, "param2"] > u) theta_prior_params[i, "param2"] <- u
+    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") { 
+      if(theta_prior_params[i, "bound_lower"] < l) theta_prior_params[i, "bound_lower"] <- l
+      if(theta_prior_params[i, "bound_upper"] > u) theta_prior_params[i, "bound_upper"] <- u
+    } else {
+      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
+    }
+  }
+  
+  return(theta_prior_params)
+  
+}
+
+
+sample_prior_Sig_eps <- function(Sig_eps_prior_params, return_matrix = FALSE) {
   # Returns sample from prior distribution on the p x p observation covariance matrix Sig_eps.
   #
   # Args:
@@ -695,9 +1356,14 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
   #                          that are the arguments of the Inverse Wishart distribution, or 2.) names "IG_shape" and "IG_scale" which 
   #                          each correspond to p-length vectors storing the parameters for the independent Inverse Gamma priors on each
   #                          variance parameter. Note that dist "IG" constrains Sig_eps to be diagonal, while "IW" does not. 
+  #    return_matrix: logical(1), only relevant for inverse Gamma prior. When prior is inverse Wishart, the return value is always 
+  #                   a matrix. If `return_matrix` is TRUE, then the return value under the inverse Gamma prior will also be a matrix. 
+  #                   Otherwise it is a numeric vector. 
   #
   # Returns:
-  #    matrix, p x p positive definite matrix sampled from the prior p(Sig_eps).
+  #    matrix or numeric vector. In prior is inverse Wishart, returns p x p positive definite matrix sampled from the prior. If prior 
+  #    instead returns numeric vector of length p containing the sampled variances. Setting `return_matrix` to TRUE will force the 
+  #    return value to be a matrix in either case (this will return a diagonal matrix in the inverse gamma case). 
   
   if(Sig_eps_prior_params$dist == "IW") {
     return(LaplacesDemon::rinvwishart(nu = Sig_eps_prior_params$dof, S = Sig_eps_prior_params$scale_matrix))
@@ -705,15 +1371,18 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params) {
     p <- length(Sig_eps_prior_params$IG_shape)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = Sig_eps_prior_params$IG_shape[j], scale = Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- 1/rgamma(1, shape = Sig_eps_prior_params$IG_shape[j], rate = Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars))
+    
+    if(return_matrix) return(diag(sig2_eps_vars, nrow = p))
+    return(sig2_eps_vars)
+    
   }
   
 }
 
 
-sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs) {
+sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs, return_matrix = FALSE) {
   # Return sample of the observation covariance matrix Sig_eps, drawn from the conditional  
   # posterior p(Sig_eps|theta, Y). Under the model assumptions, this conditional posterior 
   # has an inverse Wishart or Inverse Gamma product distribution. This function does not explicitly take theta as an 
@@ -725,7 +1394,8 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
   #    model_errs: matrix of dimensions n x p, where n = number observations in time series and p = number output variables.
   #                This is the model error matrix Y - f(theta). Can be null for inverse gamma prior, in which case `SSR` must be provided. 
   #    SSR: numeric(), vector of length equal to the number of outputs p, containing the squared L2 errors for each output. This is only 
-  #         used in the case of inverse gamma prior. If NULL, `model_errs` must be provided instead. 
+  #         used in the case of inverse gamma prior. If NULL, `model_errs` must be provided instead. Alternatively, this can be a 
+  #         matrix of dimension 1 x p. 
   #    Sig_eps_prior_params: list, must contain element named "dist" specifying the prior distribution. Current accepted values are 
   #                          "IW" (Inverse Wishart) or "IG" (independent Inverse Gamma priors). Depending on value of "dist", 
   #                          must also contain either either 1.) names "scale_matrix" and "dof" 
@@ -733,9 +1403,14 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
   #                          each correspond to p-length vectors storing the parameters for the independent Inverse Gamma priors on each
   #                          variance parameter. Note that dist "IG" constrains Sig_eps to be diagonal, while "IW" does not. 
   #    n_obs: numeric(), vector of length equal to the number of outputs p. The number of observations for each output. 
+  #    return_matrix: logical(1), only relevant for inverse Gamma prior. When prior is inverse Wishart, the return value is always 
+  #                   a matrix. If `return_matrix` is TRUE, then the return value under the inverse Gamma prior will also be a matrix. 
+  #                   Otherwise it is a numeric vector. 
   #
   # Returns:
-  #    matrix, p x p positive definite matrix sampled from the prior distribution p(Sig_eps|theta, Y).
+  #    If prior is inverse wishart, returns a p x p positive definite matrix sampled from the conditional posterior distribution p(Sig_eps|theta, Y).
+  #    If prior is inverse Gamma, returns a numeric vector of length p of the sampled variances from the conditional posterior. Setting `return_matrix`
+  #    to TRUE forces the return value to be a matrix in this case as well. 
   
   if(Sig_eps_prior_params$dist == "IW") {
     stop("Need to update IW prior for case where there are missing observations.")
@@ -751,188 +1426,137 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
     p <- length(n_obs)
     sig2_eps_vars <- vector(mode = "numeric", length = p)
     for(j in seq_len(p)) {
-      sig2_eps_vars[j] <- LaplacesDemon::rinvgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], scale = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
+      sig2_eps_vars[j] <- 1/rgamma(1, shape = 0.5*n_obs[j] + Sig_eps_prior_params$IG_shape[j], rate = 0.5*SSR[j] + Sig_eps_prior_params$IG_scale[j])
     }
-    return(diag(sig2_eps_vars))
-  }
-  
-}
-
-
-adapt_cov_proposal <- function(cov_proposal, sample_history, min_scale, accept_rate, accept_rate_target) {
-  # Returns an adapted covariance matrix to be used in adaptive MCMC scheme. Computes the new
-  # covariance matrix by considering the sample correlation calculated from previous parameter
-  # samples, which is scaled by a factor determined by the acceptance rate and target acceptance
-  # rate. 
-  #
-  # Args:
-  #    cov_proposal: matrix, p x p positive definite covariance matrix. 
-  #    sample_history: matrix, l x p, where l is number of previous parameter samples used 
-  #                    in sample correlation calculation. Each row of the matrix is a previous 
-  #                    sample. 
-  #    min_scale: numeric scalar, used as a floor for the scaling factor. 
-  #    accept_rate: numeric scalar, the MCMC accept rate over the l-length parameter history. 
-  #    accept_rate_target: numeric scalar, the desired acceptance rate. 
-  #
-  # Returns:
-  #    matrix, p x p covariance matrix. 
-  
-  if(accept_rate == 0) {
-    return(min_scale * cov_proposal)
-  } else {
-    cor_estimate <- stats::cor(sample_history)
-    scale_factor <- max(accept_rate / accept_rate_target, min_scale)
-    stdev <- apply(sample_history, 2, stats::sd)
-    scale_mat <- scale_factor * diag(stdev, nrow = length(stdev))
-    return(scale_mat %*% cor_estimate %*% scale_mat)
-  }
-}
-
-
-evaluate_GP_emulators <- function(emulator_settings, N_iter, N_design_points, N_test_points, 
-                                  theta_prior_params, ref_pars, pars_cal_sel, data_obs, PAR, output_vars, 
-                                  joint = TRUE, extrapolate = FALSE) {
-  
-  # Create list to store results
-  nrow_test_results <- N_iter * nrow(emulator_settings)
-  rmse_cols <- paste0("rmse_", output_vars)
-  rmse_scaled_cols <- paste0("rmse_scaled_", output_vars)
-  fit_time_cols <- paste0("fit_time_", output_vars)
-  emulator_settings_cols <- c("gp_lib", "target", "kernel", "scale_X", "normalize_y")
-  colnames_test_results <- c("iter", emulator_settings_cols, rmse_cols, rmse_scaled_cols, fit_time_cols)
-  test_results <- data.frame(matrix(nrow = nrow_test_results, ncol = length(colnames_test_results)))
-  colnames(test_results) <- colnames_test_results
-  idx <- 1
-  
-  any_log_SSR <- any(emulator_settings[,"target"] == "log_SSR")
-  
-  # Loop over design/test datasets
-  for(iter in seq_len(N_iter)) {
-    # Create design/test sets
-    train_test_data <- get_train_test_data(N_train = N_design_points, 
-                                           N_test = N_test_points,
-                                           prior_params = theta_prior_params, 
-                                           joint = joint, 
-                                           extrapolate = extrapolate, 
-                                           ref_pars = ref_pars, 
-                                           pars_cal_sel = pars_cal_sel, 
-                                           data_obs = data_obs,
-                                           PAR = PAR, 
-                                           output_vars = output_vars, 
-                                           scale_X = TRUE, 
-                                           normalize_Y = TRUE, 
-                                           log_SSR = any_log_SSR)
-      
-    # Loop over each model specification
-    for(j in seq_len(nrow(emulator_settings))) {
-
-      # Input train (design) and test points, either scaled or un-scaled.
-      if(emulator_settings[j, "scale_X"]) {
-        X_design <- train_test_data$X_train_preprocessed
-        X_pred <- train_test_data$X_test_preprocessed
-      } else {
-        X_design <- train_test_data$X_train
-        X_pred <- train_test_data$X_test
-      }
-      
-      # Training output points, potentially normalized and/or log-transformed.  
-      normalize_y <- emulator_settings[j, "normalize_y"]
-      log_y <- emulator_settings[j, "target"] == "log_SSR"
-      y_train_sel_string <- "Y_train"
-      output_stats_sel_string <- "output_stats"
-      if(normalize_y) {
-        y_train_sel_string <- paste0(y_train_sel_string, "_preprocessed")
-      }
-      if(log_y) {
-        y_train_sel_string <- paste0("log_", y_train_sel_string)
-        output_stats_sel_string <- paste0("log_", output_stats_sel_string)
-      }
-      Y_design <- train_test_data[[y_train_sel_string]]
-      
-      # Fit GP and calculate error metrics
-      gp_lib <- emulator_settings[j, "gp_lib"]
-      gp_fit_list <- fit_independent_GPs(X_design, Y_design, gp_lib, emulator_settings[j, "kernel"])
-      gp_pred_list <- predict_independent_GPs(X_pred, gp_fit_list$fits, gp_lib, cov_mat = FALSE,
-                                              denormalize_predictions = normalize_y, 
-                                              output_stats = train_test_data[[output_stats_sel_string]], 
-                                              exponentiate_predictions = log_y)
-      gp_err_list <- calc_independent_gp_pred_errs(gp_pred_list, train_test_data$Y_test)
-      
-      # Populate results data.frame
-      test_results[idx, "iter"] <- iter
-      test_results[idx, emulator_settings_cols] <- emulator_settings[j, emulator_settings_cols]
-      test_results[idx, rmse_cols] <- sapply(gp_err_list, function(x) x$rmse)
-      test_results[idx, rmse_scaled_cols] <- sapply(gp_err_list, function(x) x$rmse_scaled)
-      test_results[idx, fit_time_cols] <- gp_fit_list$times
-      idx <- idx + 1
-    }
-
+    
+    if(return_matrix) return(diag(sig2_eps_vars, nrow = p))
+    return(sig2_eps_vars)
     
   }
   
-  return(test_results)
-
 }
 
 
-calc_independent_gp_pred_errs <- function(gp_pred_list, Y_true) {
+generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta, G, sig2_eps = NULL, sig_eps_frac = 0.1, pars_cal_sel = NULL) {
+  # Sets up a test example (including computer model data and prior distributions) in which the forward model is linear 
+  # (represented by matrix `G`), the likelihood is Gaussian (with variance `sig2_eps`), and the prior on the calibration 
+  # parameters is zero-mean Gaussian (with diagonal covariance matrix `Sig_theta`). Note that currently this function 
+  # only creates an example with a single output variable (p = 1). Also, for the time being `Sig_theta` must be diagonal, 
+  # until the prior code is updated to allow for correlated priors. This linear Gaussian setup admits a closed form 
+  # posterior so is useful for validating MCMC schemes, etc. This function also returns the mean and covariance matrix 
+  # of the true posterior. 
+  #
+  # Args:
+  #    random_seed: integer(1), the seed for the random number generator. 
+  #    N_obs: integer(1), the number of observed data points that will be generated. 
+  #    D: integer(1), the dimension of the input parameter space; if `pars_cal_sel` is NULL or corresponds to all parameters, 
+  #       then D is the dimension of the calibration parameter space. However, if `pars_cal_sel` only selects a subset of parameters, 
+  #       then D will be larger than the dimension of the parameter calibration space. 
+  #    Sig_theta: matrix of dimension D x D. Note that if only a subset of parameters are calibrated, then the prior covariance on the 
+  #               calibration parameters with be a sub-matrix of `Sig_theta`.
+  #    sig2_eps: numeric(1), the observation variance. If not provided, then the obsevation variance will be set using `coef_var`, or 
+  #              if `coef_var`.
+  #    sig_eps_frac: numeric(1), If `sig2_eps` is provided directly then `coef_var` will not be used.
+  #                  Otherwise, the noise variance  will be set so that the standard deviation sqrt(sig2_eps) equals 
+  #                  the range of the data * `sig_eps_frac`. 
+  #    G: matrix of dimension N_obs x D, the linear forward model.
+  #    pars_cal_sel: integer(), vector containing the indices used to select the parameters which will be calibrated. The remaining parameters
+  #                  will be fixed. If NULL, calibrates all parameters. 
+  #    
+  # Returns:
+  #    list with 3 elements: computer_model_data, theta_prior_params, and true_posterior. 
   
-  lapply(seq_along(gp_pred_list), function(j) calc_gp_pred_err(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$sd2, Y_true[,j]))
+  if(!all.equal(dim(G), c(N_obs, D))) {
+    stop("Forward model G must be matrix of dimension N_obs x D.")
+  }
+  
+  if(!isTRUE(all.equal(Sig_theta, diag(diag(Sig_theta))))) {
+    stop("Code does not currently support correlated prior parameters. `Sig_theta` should be diagonal.")
+  }
+  
+  # Sample from model to generate observed data. 
+  L_theta <- t(chol(Sig_theta))
+  theta <- L_theta %*% matrix(rnorm(D), ncol=1)
+  data_ref <- G %*% theta
+
+  set.seed(random_seed)
+  if(is.null(sig2_eps)) {
+    sig2_eps <- (diff(range(data_ref)) * sig_eps_frac)^2
+  }
+  Sig_t <- diag(sig2_eps, nrow = N_obs)
+  L_t <- t(chol(Sig_t))
+  data_obs <- data_ref + L_t %*% matrix(rnorm(N_obs), ncol=1)
+  output_vars <- "y"
+  colnames(data_obs) <- output_vars
+  
+  # Select parameters to calibrate. 
+  if(is.null(pars_cal_sel)) pars_cal_sel <- seq(1,D)
+  theta_names <- paste0("theta", seq(1,D))
+  pars_cal_names <- theta_names[pars_cal_sel]
+  if(length(pars_cal_names) > N_obs) {
+    stop("For now number of calibration parameters must be <= number of observations.")
+  }
+  theta_true <- theta[pars_cal_sel]
+  names(theta_true) <- pars_cal_names
+  
+  # Forward map. 
+  f <- function(par_val, computer_model_data) {
+    theta <- computer_model_data$ref_pars$true_value
+    theta[computer_model_data$pars_cal_sel] <- par_val
+    
+    return(computer_model_data$G %*% matrix(theta, ncol=1))
+  }
+  
+  # Computer model data.
+  computer_model_data <- list(f = f, 
+                              data_ref = data_ref,
+                              data_obs = data_obs, 
+                              theta_true = theta_true,
+                              n_obs = N_obs, 
+                              output_vars = output_vars, 
+                              pars_cal_names = pars_cal_names,
+                              pars_cal_sel = pars_cal_sel,
+                              forward_model = "custom_likelihood", 
+                              G = G, 
+                              Sig_eps = matrix(sig2_eps), 
+                              ref_pars = data.frame(true_value = theta, 
+                                                    row.names = pars_cal_names))
+  
+  # Prior Parameters. 
+  theta_prior_params <- data.frame(dist = rep("Gaussian", length(pars_cal_names)), 
+                                   param1 = rep(0, length(pars_cal_names)), 
+                                   param2 = sqrt(diag(Sig_theta)[pars_cal_sel]))
+  rownames(theta_prior_params) <- pars_cal_names
+  
+  # True posterior (note that we need to adjust for the case where only a subset of the parameters 
+  # are calibrated). The posterior moments are computed using the SVD and Woodbury identity. This 
+  # assumes the number of calibration parameters is <= N_obs. 
+  pars_fixed_sel <- setdiff(seq(1,D), pars_cal_sel)
+  G_cal <- G[, pars_cal_sel]
+  theta_cal <- theta[pars_cal_sel]
+  Sig_theta_cal <- Sig_theta[pars_cal_sel, pars_cal_sel]
+  
+  if(length(pars_fixed_sel) == 0) {
+    G_fixed <- matrix(0, nrow = N_obs, ncol = 1)
+    theta_fixed <- 0
+  } else {
+    G_fixed <- G[, pars_fixed_sel]
+    theta_fixed <- theta[pars_fixed_sel]
+  }
+  y_adjusted <- matrix(data_obs, ncol=1) - G_fixed %*% theta_fixed
+  
+  # TODO: check SVD calculation. For now just directly taking inverse. 
+  # svd_list <- svd(G_cal)
+  # Cov_post <- Sig_theta_cal - Sig_theta_cal %*% diag(1 / (sig2_eps * (svd_list$d^(-2)) + diag(Sig_theta_cal))) %*% Sig_theta_cal
+  
+  Cov_post <- sig2_eps * solve(crossprod(G_cal) + sig2_eps * diag(1/diag(Sig_theta_cal)))
+  mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
+  true_posterior <- list(mean = mean_post, Cov = Cov_post)
+  
+  return(list(computer_model_data = computer_model_data, theta_prior_params = theta_prior_params, 
+              true_posterior = true_posterior))
   
 }
-
-
-# TODO: look into variance vs. nugget variance returned in pred object 
-calc_gp_pred_err <- function(gp_pred_mean, gp_pred_var, y_true) {
-  
-  sq_diff <- (y_true - gp_pred_mean)^2
-  N_obs <- length(y_true)
-  
-  return(list(rmse = sum(sq_diff) / N_obs, 
-              rmse_scaled = sum(sq_diff / gp_pred_var) / N_obs))
-  
-}
-
-
-# plot_lnp_fit_1d <- function(X_test, y_test, X_train, y_train, lnp_log_mean_pred, lnp_log_var_pred, 
-#                            vertical_line = NULL, xlab = "", ylab = "", main_title = "", CI_prob = 0.9) {
-# 
-#   order_pred <- order(X_test)
-#   order_train <- order(X_train)
-#   lnp_log_sd_pred <- sqrt(lnp_log_var_pred)
-#   
-#   # Confidence Intervals
-#   CI_tail_prob <- 0.5 * (1 - CI_prob)
-#   CI_plot_label <- paste0(CI_prob * 100, "% CI")
-#   CI_lower <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = TRUE)
-#   CI_upper <- qlnorm(CI_tail_prob, lnp_log_mean_pred, lnp_log_sd_pred, lower.tail = FALSE)
-#   
-#   # ggplot 
-#   df <- data.frame(x_test = X_test[order_pred,1], 
-#                    y_test = y_test[order_pred], 
-#                    y_test_pred = lnp_log_mean_pred[order_pred],
-#                    CI_lower = CI_lower[order_pred], 
-#                    CI_upper = CI_upper[order_pred], 
-#                    x_train = X_train[order_train,1], 
-#                    y_train = y_train[order_train])
-#   
-#   lnp_plot <- ggplot(data=df, aes(x = x_test, y = y_test_pred)) + 
-#                 geom_line(color = "blue") + 
-#                 geom_line(aes(y = y_test), color = "red") + 
-#                 geom_line(aes(y = CI_lower), color = "gray") + 
-#                 geom_line(aes(y = CI_upper), color = "gray") + 
-#                 geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = "gray", alpha = 0.5) + 
-#                 geom_point(aes(x = x_train, y = y_train), color = "red") + 
-#                 xlab(xlab) + 
-#                 ylab(paste0(ylab, " (", CI_plot_label, ")")) + 
-#                 ggtitle(main_title)
-#   
-#   # Add vertical line
-#   if(!is.null(vertical_line)) {
-#     gp_plot <- gp_plot + geom_vline(xintercept = vertical_line, linetype = 2, color = "pink1")
-#   }
-#   
-# }  
 
 
 generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals, 
@@ -979,9 +1603,12 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   ref_pars[["calibrate"]] <- rownames(ref_pars) %in% pars_cal_names
   ref_pars[pars_cal_sel, "true_value"] <- pars_cal_vals
   ref_pars[ref_pars$calibrate == FALSE, "true_value"] <- ref_pars[ref_pars$calibrate == FALSE, "best"]
+  theta_true <- ref_pars[pars_cal_sel, "true_value"]
+  names(theta_true) <- pars_cal_names
   
   # Run the model to generate the reference data, the ground truth. 
-  data_ref <- run_VSEM(pars_cal_vals, ref_pars, pars_cal_sel, PAR, output_vars)
+  data_ref <- run_VSEM(theta_vals = pars_cal_vals, ref_pars = ref_pars, pars_cal_sel = pars_cal_sel, 
+                       PAR_data = PAR, output_vars = output_vars)
 
   # Add observational noise. Assumes Gaussian noise, potentially correlated across output variables. 
   Lt <- chol(Sig_eps[output_vars, output_vars]) # Upper triangular Cholesky factor of output covariance
@@ -1016,7 +1643,10 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
               pars_cal_names = pars_cal_names, 
               output_vars = output_vars, 
               output_frequencies = output_frequencies, 
-              obs_start_day = obs_start_day))
+              obs_start_day = obs_start_day, 
+              forward_model = "VSEM", 
+              f = run_VSEM_single_input, 
+              theta_true = theta_true))
   
 }
 
@@ -1155,9 +1785,11 @@ generate_vsem_test_3 <- function(random_seed) {
 
 
 generate_vsem_test_4 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 4". This builds adds complexity 
-  # to test case 1 by adding an additional calibration parameter, and varying the observation 
-  # frequencies. 
+  # A convenience function to generate the VSEM data for "test case 4". This test is 
+  # identical to test case 3, with the addition of a second parameter `KEXT` (the 
+  # extinction coefficient in the GPP calculation). KEXT and LAR are not identifiable 
+  # in the ODE; they completely trade off. Thus, this test is intended to explore 
+  # calibration behavior in an extreme case of non-identifiability. 
   #
   # Args:
   #    random_seed: integer(1), random seed used to generate observation noise. 
@@ -1166,35 +1798,44 @@ generate_vsem_test_4 <- function(random_seed) {
   #    list, the list returned by `generate_vsem_test_data()`. 
   
   # Number of days.
-  N_time_steps <- 2048
+  N_time_steps <- 3650
   
   # Diagonal covariance across outputs.
-  Sig_eps <- diag(c(4.0, 2.0, 2.0, 2.0))
-  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
+  Sig_eps <- diag(c(4.0, 0.36))
+  rownames(Sig_eps) <- c("NEE", "LAI")
+  colnames(Sig_eps) <- c("NEE", "LAI")
   
-  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
-  # and 2.) residence time of above-ground vegetation. 
-  pars_cal_names <- c("KEXT", "tauV")
-  pars_cal_vals <- c(0.5, 1440)
+  # Single calibration parameter: Leaf Area Ratio (LAR)
+  pars_cal_names <- c("LAR", "KEXT")
+  pars_cal_vals <- c(1.5, 0.5)
   ref_pars <- VSEMgetDefaults()
   
-  # All outputs are observed daily, with no missing values. 
-  output_vars <- c("NEE", "Cv", "Cs", "CR")
-  output_frequencies <- c(1, 300, 365, 30)
-  obs_start_day <- c(1, 1, 1, 1)
+  # NEE is observed daily with no missing values. LAI is observed every three days.   
+  output_vars <- c("NEE", "LAI")
+  output_frequencies <- c(1, 3)
+  obs_start_day <- c(1, 1)
   
-  test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
-                                       ref_pars, output_vars, output_frequencies, obs_start_day)
+  test_list <- generate_vsem_test_data(random_seed = random_seed,
+                                       N_time_steps = N_time_steps , 
+                                       Sig_eps = Sig_eps, 
+                                       pars_cal_names = pars_cal_names, 
+                                       pars_cal_vals = pars_cal_vals,
+                                       ref_pars = ref_pars, 
+                                       output_vars = output_vars, 
+                                       output_frequencies = output_frequencies, 
+                                       obs_start_day = obs_start_day)
   return(test_list)
   
 }
 
 
 generate_vsem_test_5 <- function(random_seed) {
-  # A convenience function to generate the VSEM data for "test case 5". This is another two calibration 
-  # parameter test, which varies observation frequency, and now also includes time-independent correlation 
-  # between observation noise in the output variables. 
+  # A convenience function to generate the VSEM data for "test case 5". This test is 
+  # identical to test case 3, with the addition of a second parameter `Cs` (the 
+  # initial condition for the soil pool). This is also a counterpart ot test case 4, 
+  # which calibrates LAR and KEXT, which are completely unidentifiable. In this case
+  # the parameters LAR and Cs are less related, so comparing test cases 4 and 5 allow 
+  # for different degrees of non-identifiability to be tested. 
   #
   # Args:
   #    random_seed: integer(1), random seed used to generate observation noise. 
@@ -1203,28 +1844,25 @@ generate_vsem_test_5 <- function(random_seed) {
   #    list, the list returned by `generate_vsem_test_data()`. 
   
   # Number of days.
-  N_time_steps <- 3065
+  N_time_steps <- 3650
   
   # Diagonal covariance across outputs.
-  Sig_eps <- diag(c(5.0, 2.0, 2.0, 2.0))
-  rownames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  colnames(Sig_eps) <- c("NEE", "Cv", "Cs", "CR")
-  Sig_eps["Cs", "CR"] <- -0.2
-  Sig_eps["CR", "Cs"] <- -0.2
+  Sig_eps <- diag(c(4.0, 0.36))
+  rownames(Sig_eps) <- c("NEE", "LAI")
+  colnames(Sig_eps) <- c("NEE", "LAI")
   
-  # Single calibration parameters; 1.) extinction coefficient in Beer-Lambert law 
-  # and 2.) residence time of above-ground vegetation. 
-  pars_cal_names <- c("Cv", "tauR")
-  pars_cal_vals <- c(3.0, 1440)
+  # Single calibration parameter: Leaf Area Ratio (LAR)
+  pars_cal_names <- c("LAR", "Cs")
+  pars_cal_vals <- c(1.5, 15.0)
   ref_pars <- VSEMgetDefaults()
   
-  # All outputs are observed daily, with no missing values. 
-  output_vars <- c("NEE", "Cv", "Cs", "CR")
-  output_frequencies <- c(1, 300, 365, 30)
-  obs_start_day <- c(1, 1, 1, 1)
+  # NEE is observed daily with no missing values. LAI is observed every three days.   
+  output_vars <- c("NEE", "LAI")
+  output_frequencies <- c(1, 3)
+  obs_start_day <- c(1, 1)
   
   test_list <- generate_vsem_test_data(random_seed, N_time_steps, Sig_eps, pars_cal_names, pars_cal_vals,
-                                       ref_pars, output_vars, output_frequencies, obs_start_day <- c(1, 1, 1, 1))
+                                       ref_pars, output_vars, output_frequencies, obs_start_day)
   return(test_list)
   
 }
@@ -1336,224 +1974,538 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, 
 }
 
 
-# TODO: I think the range of the y-axis is just too large 
-integrate_loss_1d_log_weights <- function(loss_vals, log_weights, thetas, max_range = log(.Machine$double.xmax), equally_spaced) {
-  
-  min_idx <- 1
-  max_idx <- length(thetas)
 
-  if(diff(range(log_weights)) < max_range) {
-    return(loss_vals, exp(log_weights), thetas)
+# ------------------------------------------------------------------------------
+# MCMC Plotting Functions. 
+# ------------------------------------------------------------------------------
+
+
+get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = NULL, xlab = "samples", ylab = "density", 
+                          main_title = "Histogram", data_names = NULL) {
+  # Generates a single plot with one or more histograms. The input data `samples_list` must be a list of matrices. 
+  # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
+  # second element a matrix of samples from an approximate distribution. This function will select one column from 
+  # each matrix based on the index `col_sel`. Each selected column will be turned into a histogram. 
+  # Note that the matrices may have different lengths (numbers of samples).
+  #
+  # Args:
+  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
+  #    col_sel: integer(1), the column index to select from each matrix. i.e. this selects a particular parameter, whose
+  #             samples will be transformed into a histogram. 
+  #    bins: integer(1), number of bins to use in histogram. 
+  #    vertical_line: If not NULL, the x-intercept to be used for a plotted vertical line. 
+  #    xlab, ylab, main_title: x and y axis labels and plot title. 
+  #    data_names: character(), vector equal to the length of the list `samples_list`. These are the names used in 
+  #                the legend to identify the different histograms. 
+  #
+  # Returns:
+  #    ggplot2 object. 
+  
+  # Pad with NAs in the case that the number of samples is different across different parameters. 
+  N_samp <- sapply(samples_list, nrow)
+  if(length(unique(N_samp)) > 1) {
+    N_max <- max(N_samp)
+    for(j in seq_along(samples_list)) {
+      if(nrow(samples_list[[j]]) < N_max) {
+        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow = N_max - nrow(samples_list[[j]]), ncol = ncol(samples_list[[j]])))
+      }
+    }
   }
   
-  integral_approx <- 0
-  max_idx <- floor(max_idx / 2)
-  while(max_idx < length(thetas)) {
-    m <- min(log_weights[min_idx:max_idx])
-    M <- max(log_weights[min_idx:max_idx])
-    
-    if(M - m > max_range) {
-      max_idx <- max(floor(max_idx / 2), min_idx + 1)
-    } else {
-      shifted_log_weights <- log_weights[min_idx:max_idx] - m
-      val <- integrate_loss_1d(loss_vals[min_idx:max_idx], exp(shifted_log_weights), ) 
-    }
-    
-  }  
-
+  dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
+  if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
+  dt <- melt(dt, measure.vars = colnames(dt), na.rm = TRUE)
+  
+  plt <- ggplot(data = dt, aes(x = value, color = variable)) + 
+          geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+          xlab(xlab) + 
+          ylab(ylab) + 
+          ggtitle(main_title)
+  
+  if(!is.null(vertical_line)) {
+    plt <- plt + geom_vline(xintercept = vertical_line, color = "red")
+  }
+  
+  return(plt)
   
 }
 
 
-integrate_loss_1d <- function(loss_vals, weights, thetas, equally_spaced) {
-  # Approximates the integral ell(theta)* w(theta) dtheta over a one-dimensional region, 
-  # where ell() is some loss function and w() is some density function (typically the posterior). 
-  # Uses a trapezoidal numerical approximation. This function does not create the grid of theta
-  # values for the approximation, but rather assumes the arguments are vectors of function 
-  # evaluations of ell() and w() at some evenly spaced grid of theta values. 
-  # 
+get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "theta1", ylab = "theta2", main_titles = NULL) {
+  # Plots the contours of a 2D kernel density estimate. If `samples_list` contains multiple elements, then one plot will be 
+  # returned per element. Each element of `samples_list` is matrix of dimension N_samples x N_params. The vector `col_sel`
+  # determines which 2 columns will be used for the 2D KDE plot in each matrix. 
+  #
   # Args:
-  #    loss_vals: numeric(N), vector of ell() evaluations at the grid of evenly spaced points, where 
-  #          N is the number of grid points. 
-  #    weights: numeric(N), vector of weights for integral; this is often the post() evaluations 
-  #             at the grid of evenly spaced points.
-  #    thetas: numeric(N), the grid points. 
-  #    equally_spaced: logical(1), is the grid `thetas` equally spaced or not? 
+  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
+  #    col_sel: integer(1), the two column indees to select from each matrix. i.e. this selects two particular parameters, whose
+  #             samples will be used to compute the KDE. 
+  #    xlab, ylab, main_title: x and y axis labels and plot title. 
   #
   # Returns:
-  #    numeric, approximation of the integral given by the trapezoidal rule. 
+  #    list, of equal length to `samples_list`. Each element is a ggplot object. 
+                                        
+  if(is.null(main_titles)) main_titles <- paste0("2D KDE Countours: ", seq_along(samples_list))
+  plts <- vector(mode = "list", length = length(samples_list))
   
-  if(equally_spaced) {
-    d_theta <- thetas[2] - thetas[1]
+  for(j in seq_along(samples_list)) {
+    df <- data.frame(samples_list[[j]])
+    x <- colnames(df)[col_sel[1]]
+    y <- colnames(df)[col_sel[2]]
+    plts[[j]] <- ggplot(df, aes(x = .data[[x]], y = .data[[y]])) + 
+                  geom_density_2d_filled() + 
+                  xlab(xlab) + 
+                  ylab(ylab) + 
+                  ggtitle(main_titles[[j]])
+  }
+  
+  return(plts)
+  
+}
+
+
+get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
+
+  # Select columns to plot.  
+  n <- nrow(samp_df)
+  cols_sel <- select_mcmc_samp_cols(...)
+  samp_df_plot <- samp_df %>% select(matches(cols_sel))
+  col_names <- colnames(samp_df_plot)
+  
+  # Get starting iteration number for each parameter. 
+  start_itrs <- get_mcmc_burn_in_start_itrs(burn_in_start, colnames(samp_df_plot))
+  
+  # Generate one trace plot per column. 
+  plts <- vector(mode = "list", length = length(col_names))
+  
+  for(j in seq_along(plts)) {
+    y <- col_names[j]
+    itr_start <- start_itrs[j]
+    df <- samp_df_plot[itr_start:n, y, drop = FALSE]
+    colnames(df) <- "param"
+    df$itr <- itr_start:n
+    
+    plts[[j]] <- ggplot(data = df, aes(x = itr, y = param)) + 
+                 geom_line() + 
+                 ggtitle(paste0("Trace Plot: ", y)) + 
+                 xlab("Iteration")
+  }
+  
+  return(plts)
+  
+}
+
+
+get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1, bins = 30, vertical_lines = NULL, ...) {
+  # Generates one plot per parameter name. 
+  
+  # Select columns to plot.  
+  n <- nrow(samp_df)
+  cols_sel <- select_mcmc_samp_cols(param_names = param_names, ...)
+  samp_df_plot <- samp_df %>% select(matches(cols_sel))
+  col_names <- colnames(samp_df_plot)
+  
+  # Get starting iteration number for each parameter. 
+  start_itrs <- get_mcmc_burn_in_start_itrs(burn_in_start, colnames(samp_df_plot))
+  
+  # Convert data.frame to long format. 
+  samp_df_plot <- melt(as.data.table(samp_df_plot), measure.vars = colnames(samp_df_plot), na.rm = TRUE)
+  
+  # Produce one plot per parameter name. 
+  plts <- vector(mode = "list", length = length(param_names))
+  for(j in seq_along(plts)) {
+    df_param_cols <- grep(param_names[j], col_names, value = TRUE)
+    plts[[j]] <- ggplot(data = samp_df_plot[variable %in% df_param_cols], aes(x = value, color = variable)) + 
+                        geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+                        xlab(param_names[j]) + 
+                        ylab("Frequency") + 
+                        ggtitle(paste0("Marginal Distribution: ", param_names[j]))
+    
+    if(!is.null(vertical_lines)) {
+      plts[[j]] <- plts[[j]] + geom_vline(xintercept = vertical_lines[param_names[j]], color = "red")
+    }
+    
+  }
+  
+  return(plts)
+  
+}
+
+
+# get_2d_gp_pred_heatmap_plots <- function(emulator_info_list, X_test, raster = TRUE, emulator_pred_list = NULL) {
+#   
+#   emulator_pred_list <- vector(mode = "list", length = length(emulator_info_list))
+#   for(j in seq_along(emulator_info_list)) {
+#     predict_independent_GPs(X_pred = X_test, 
+#                             gp_obj_list = emulator_info_list[[j]]$gp_fits, 
+#                             gp_lib = emulator_info_list[[j]]$settings$gp_lib, 
+#                             include_cov_mat = FALSE, 
+#                             denormalize_predictions = TRUE, 
+#                             output_stats = emulator_info_list[[j]]$output_stats, 
+#                             transformation_method = emulator_info_list[[j]]$settings$transformation_method)
+#   }
+#                             
+#   
+# }
+# 
+# 
+# get_2d_gp_heatmap_plot <- function() {
+#   
+# }
+
+
+select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
+  # This function generates a vector of column names intended to select columns from a data.frame, in which each 
+  # column of the data.frame stores a set of samples from a particular parameter. The assumed column name structure 
+  # is "<test_label>_<parameter_label>_<parameter_types>", where <test_label> is used to identify different 
+  # MCMC schemes (e.g. for comparing different algorithms), <parameter_types> is currently either "theta" or 
+  # "sig_eps", and <param_names> provides the specific name for identifying a parameter. Specifying these values 
+  # in the arguments `test_labels`, `param_types`, `params_names` will concatenate every combination and return 
+  # the resulting column names. Specifying `col_names` overrides all other specifications, and simply returns 
+  # `col_names` itself; this is used when the user wants to manually select certain columns. Specifying only one 
+  # or two of `test_labels`, `param_types`, `params_names` will generate regular expressions to select all 
+  # of the variable(s) that are missing. For example, one could specify only `test_labels` = c("test1", "test2)
+  # and `param_types` = c("theta"), which would then generate a character vector used to select all columns 
+  # corresponding to tests 1 and 2 with parameter theta (and will include all theta parameters). Calling 
+  # this function will all arguments equal to NULL will return "*_*_*", which is a regular expression that 
+  # will select all columns under the assumed column name format. 
+  #
+  # Args:
+  #    See above description. 
+  #
+  # Returns:
+  #    character vector, containing either column names or regular expressions to select column names. 
+  
+  if(!is.null(col_names)) {
+    return(col_names)
   } else {
-    stop("Non equally spaced grid not currently supported.")
+    
+    # Deal with case that one or two of the inputs are missing. 
+    if(is.null(test_labels)) test_labels <- "*"
+    if(is.null(param_types)) param_types <- "*"
+    if(is.null(param_names)) param_names <- "*"
+    
+    # Generate column selector. 
+    col_combs <- paste(rep(test_labels, each = length(param_types)), param_types, sep = "_")
+    col_sel <- paste(rep(col_combs, each = length(param_names)), param_names, sep = "_")
+    return(col_sel)
+    
+  } 
+
+}
+
+
+get_mcmc_burn_in_start_itrs <- function(burn_in_start, samp_df_col_names) {
+  # Returns an integer vector of equal length as `samp_df_col_names` which contains 
+  # starting MCMC iteration for each respective variable in `samp_df_col_names` (all 
+  # iterations prior to the start iteration are considered burn-in, i.e. warm-up). 
+  # The logic for `burn_in_start` is as follows. If it is an unnamed vector of length 1  
+  # then it is assumed this is the starting iteration that is desired for all plots. 
+  # If it is an unnamed vector of multiple elements, then it is assumed that its length 
+  # and order corresponds to the plots that will be produced, in which case the respective 
+  # iterations will be used for each plot. An error will be thrown if the length does 
+  # not agree with the number of plots. Otherwise, `burn_in_start` must be a named 
+  # integer vector with the names equal to the values of the `test_labels`. `burn_in_start`
+  # is assumed to only be a function of the test labels, as typically the same burn-in is 
+  # used for all variables within the same MCMC run. In this case, the starting iterations 
+  # are mapped onto the appropriate plots using the names of the vector elements. If plots 
+  # of a certain test label are selected but not burn-in values passed, then the 
+  # burn-in start iteration defaults to 1. There is no issue if test labels are included 
+  # in `burn_in_start` but not in `samp_df_col_names`. This allows the user to set 
+  # `burn_in_start` for all tests at once and then simply pass in the whole thing 
+  # regardless of which subset of plots are being created without having to worry. 
+  
+  N_cols <- length(samp_df_col_names)
+  
+  # Set burn-in starting iteration values. 
+  if(is.null(names(burn_in_start)) && (length(burn_in_start) == 1)) {
+    burn_in_start <- rep(burn_in_start, N_cols)
+  } else if(is.null(names(burn_in_start))) {
+    if(length(burn_in_start) != N_cols) {
+      stop("<burn_in_start> is unnamed and its length does not agree with number of plots.")
+    }
+  } else {
+    burn_in_itrs <- vector(mode = "integer", length = N_cols)
+    for(i in 1:N_cols) {
+      test_label <- names(burn_in_start)[i]
+      idx_sel <- grep(test_label, samp_df_col_names)
+      burn_in_itrs[idx_sel] <- burn_in_start[i]
+    }
+    
+    # Assign remaining columns burn-in start iteration of 1. 
+    burn_in_itrs[burn_in_itrs == 0L] <- 1
   }
   
-  N_grid <- length(loss_vals)
-  0.5 * d_theta * (loss_vals[1]*weights[1] + loss_vals[N_grid]*weights[N_grid]) + d_theta * sum(loss_vals[2:(N_grid-1)] * weights[2:(N_grid-1)])
+  return(burn_in_itrs)
   
 }
 
 
-calculate_ground_truth_quantities <- function(theta_train_test_data, computer_model_data, theta_prior_params) {
-  # A convenience function used in emulator comparison tests that computes the ground truth log prior, likelihood, and posterior
-  # to be used for comparison with the emulated analogs. 
+# ------------------------------------------------------------------------------
+# Validation Functions
+# ------------------------------------------------------------------------------
+
+MCMC_Gibbs_linear_Gaussian_model <- function(computer_model_data, theta_prior_params, Sig_eps_prior_params, N_mcmc) {
+  # Implementation of a Gibbs sampler to sample posterior over `theta` and noise variance `sig2_eps`
+  # for the linear Gaussian model (see `generate_linear_Gaussian_test_data()`). Current assumptions: 
+  #    - theta has a zero-mean prior with diagonal prior covariance.
+  #    - Single output (p=1), with iid Gaussian noise model, meaning there is only a single variance parameter `sig2_eps`. 
+  #    - `sig2_eps` has an inverse Gamma prior. 
+  #    - All thetas are calibrated (none are fixed). See `generate_linear_Gaussian_test_data()` for comments on this. 
+  #      It will not be hard to remove this assumption. 
   #
   # Args:
-  #    theta_train_test_data: list, as returned by `get_train_test_data()`. 
-  #    computer_model_data: list, as returned by `generate_vsem_test_case()`. 
-  #    theta_prior_params: data.frame, containing prior information for calibration parameters. 
-  # 
+  #    `computer_model_data`, `theta_prior_params`, `Sig_eps_prior_params` are all the standard objects fed into 
+  #     the calibration procedure. The first two are returned by `generate_linear_Gaussian_test_data()`
+  #    N_mcmc: integer(1), number of MCMC iterations. 
+  #
   # Returns:
-  #    list, containing the calcualted ground truth log density evaluations (log prior, log likelihood, log posterior up to normalizing constant). 
+  #    list, with two elements `theta` and `sig2_eps`, each of which are matrices storing the MCMC samples. 
 
-  # True log likelihood evaluations at test inputs
-  vars_obs <- diag(computer_model_data$Sig_eps)
-  llik_test_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_test, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
-                                                normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
-  llik_test <- rowSums(llik_test_per_output)
-                                                  
-  # True log likelihood evaluations at design points
-  llik_train_per_output <- llik_product_Gaussian(SSR = theta_train_test_data$Y_train, vars_obs = vars_obs, n_obs = computer_model_data$n_obs, 
-                                                 normalize = TRUE, na.rm = TRUE, sum_output_lliks = FALSE) 
-  llik_train <- rowSums(llik_train_per_output)
+  d <- length(computer_model_data$pars_cal_sel)
+  Sig_theta <- diag(theta_prior_params$param2^2)
   
-  # Log prior evaluations
-  lprior_theta_test <- sapply(seq(1, nrow(theta_train_test_data$X_test)), function(i) calc_lprior_theta(theta_train_test_data$X_test[i,], theta_prior_params))
-  lprior_theta_train <- sapply(seq(1, nrow(theta_train_test_data$X_train)), function(i) calc_lprior_theta(theta_train_test_data$X_train[i,], theta_prior_params))
+  theta_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = d)
+  sig2_eps_samp_Gibbs <- matrix(nrow = N_mcmc, ncol = 1)
   
-  # Log posterior evaluations
-  lpost_theta_test <- llik_test + lprior_theta_test
-  lpost_theta_train <- llik_train + lprior_theta_train
+  theta_samp_Gibbs[1,] <- computer_model_data$theta_true
+  sig2_eps_samp_Gibbs[1,] <- diag(computer_model_data$Sig_eps)
+  theta_curr <- theta_samp_Gibbs[1,]
+  sig2_eps_curr <- sig2_eps_samp_Gibbs[1,] 
   
-  return(list(llik_test = llik_test, 
-              llik_train = llik_train, 
-              lprior_test = lprior_theta_test, 
-              lprior_train = lprior_theta_train, 
-              lpost_test = lpost_theta_test, 
-              lpost_train = lpost_theta_train, 
-              llik_test_per_output = llik_test_per_output, 
-              llik_train_per_output = llik_train_per_output))
   
-}
-
-
-run_emulator_comparison <- function(computer_model_data, emulator_settings, theta_prior_params, train_test_data_settings, true_theta_samples = NULL) {
-  # Currently just allow emulator_settings and train_test_data_settings to have multiple options (rows). 
-  
-  output_list <- list()
-  output_list[["emulator_settings"]] <- emulator_settings
-  output_list[["theta_prior_params"]] <- theta_prior_params
-  
-  # Synthetic data generation for VSEM model
-  output_list[["computer_model_data"]] <- computer_model_data
-  
-  # Design data and test data
-  output_list[["train_test_data_settings"]] <- train_test_data_settings
-  output_list[["theta_train_test_data"]] <- list()
-  any_log_SSR = any(emulator_settings["target"] == "log_SSR")
-  for(j in seq(1, nrow(train_test_data_settings))) {
-    data_setting_name <- paste0("data_setting_", j)
-    theta_train_test_data <- get_train_test_data(N_train = train_test_data_settings[j, "N_train"], 
-                                                 N_test = train_test_data_settings[j, "N_test"], 
-                                                 prior_params = theta_prior_params,
-                                                 extrapolate = train_test_data_settings[j, "extrapolate"], 
-                                                 ref_pars = computer_model_data$ref_pars,
-                                                 pars_cal_sel = computer_model_data$pars_cal_sel,
-                                                 data_obs = computer_model_data$data_obs, 
-                                                 PAR = computer_model_data$PAR_data,
-                                                 output_vars = computer_model_data$output_vars,
-                                                 scale_X = train_test_data_settings[j, "scale_X"], 
-                                                 normalize_Y = train_test_data_settings[j, "normalize_Y"],
-                                                 log_SSR = any_log_SSR, 
-                                                 joint_LHS = train_test_data_settings[j, "joint_LHS"], 
-                                                 method = train_test_data_settings[j, "method"], 
-                                                 order_1d = TRUE, 
-                                                 true_theta_samples = true_theta_samples)
-    output_list[["theta_train_test_data"]][[j]] <- theta_train_test_data
-  }
-  
-  # Run tests; each test is defined by an emulator setting/train_test_data setting combination.
-  output_list[["test_results"]] <- list()
-  for(i in seq(1, nrow(emulator_settings))) {
-    emulator_setting <- emulator_settings[i, ]
-    log_SSR = (emulator_setting["target"] == "log_SSR")
-    output_list[["test_results"]][[i]] <- list()
+  for(itr in seq(2, N_mcmc)) {
     
-    for(j in seq(1, nrow(train_test_data_settings))) {
-      data_setting_name <- paste0("data_setting_", j)
-      output_list[["test_results"]][[i]][[j]] <- run_emulator_test(computer_model_data, emulator_setting, theta_prior_params,
-                                                                   output_list[["theta_train_test_data"]][[j]])
-    }
+    # Sample theta conditional posterior. 
+    Cov_post <- sig2_eps_curr * solve(crossprod(G) + sig2_eps_curr * diag(1/diag(Sig_theta)))
+    mean_post <- (1/sig2_eps_curr) * tcrossprod(Cov_post, G) %*% computer_model_data$data_obs
+    L_post <- t(chol(Cov_post))
+    theta_curr <- mean_post + L_post %*% matrix(rnorm(nrow(L_post)), ncol=1)
+    theta_samp_Gibbs[itr,] <- theta_curr
+    
+    # Sample sig2_eps conditional posterior. 
+    a_post <- Sig_eps_prior_params$IG_shape + 0.5 * computer_model_data$n_obs + 1
+    b_post <- Sig_eps_prior_params$IG_scale + 0.5 * sum((computer_model_data$data_obs - G %*% matrix(theta_curr, ncol=1))^2)
+    sig2_eps_curr <- 1/rgamma(1, shape = a_post, rate = b_post)
+    sig2_eps_samp_Gibbs[itr,] <- sig2_eps_curr
+    
   }
   
-  return(output_list)
+  return(list(theta = theta_samp_Gibbs, sig2_eps = sig2_eps_samp_Gibbs))
   
 }
 
 
-# TODO: generalize to LNP
-run_emulator_test <- function(computer_model_data, emulator_settings, theta_prior_params, theta_train_test_data) {
+# ------------------------------------------------------------------------------
+# Calibration Test Functions: automating testing of different calibration schemes
+# ------------------------------------------------------------------------------
+
+run_calibration_emulator_comparison <- function(computer_model_data, theta_prior_params, emulator_settings, train_data, 
+                                                learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                test_data = NULL, N_mcmc_exact = 50000, N_mcmc_approx = 50000, 
+                                                run_exact_mcmc = TRUE,
+                                                test_labels = as.character(seq(1, nrow(emulator_settings))), ...) {
+  # Automates the comparison of emulator-based MCMC calibration across different emulator settings. 
+  # In particular, runs `run_calibration_single_emulator_setting()` for each emulator setting, where 
+  # distinct emulator settings are provided in the rows of `emulator_settings`. Optionally also runs
+  # exact (no emulator) calibration as a basis for comparison. Note that aside from the emulator settings, 
+  # everything else (e.g. train data, priors, computer model data) are held constant across runs. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    emulator_settings: data.frame, with columns "gp_lib", "kernel", "transformation_method", "scale_X", "normalize_y" used to specify 
+  #                       GP emulator settings. Each row is interpreted as one emulator setting, and a calibration will be executed 
+  #                       for each setting. 
+  #    train_data: matrix of dimension N x d, where N is the number of design points and d the dimension of the input space. The training 
+  #                inputs used to fit the GP emulator. 
+  #    learn_sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    test_data: matrix, of dimension M x d, where M is the number of test points and d the number of calibration parameters. If provided, GP 
+  #               predictions are computed at this set of points. Default is NULL. 
+  #    N_mcmc_exact: integer, the number of MCMC iterations used for the exact MCMC scheme (used only if `run_exact_mcmc` is TRUE). 
+  #    N_mcmc_approx: integer, the number of MCMC iterations used for each approximate emulator-assisted MCMC scheme. 
+  #    run_exact_mcmc: logical(1), if TRUE runs exact non-emulator assisted MCMC and includes results in return list. Default is TRUE. 
+  #    test_labels: character vector, of equal length to the number of rows in `emulator_settings`. These are labels used to identify each 
+  #                 test run for each emulator setting. Default is just to label them by the row numbers in `emulator_settings`. 
+  #    ...: additional MCMC arguments, see `mcmc_calibrate_ind_GP()` for options.
+  #
+  # Returns:
+  #    list, including element "mcmc_approx_list" which is a list of length equal to the number of rows in `emualator_settings`. This
+  #    sub-list contains the return value of `run_calibration_single_emulator_setting()` applied to each emulator setting. Also contains
+  #    element "test_labels" containing the test labels, and element "samp_mcmc_exact" storing the MCMC results for the exact 
+  #    calibration (NULL if `run_exact_mcmc` is FALSE). 
   
-  Sig_eps <- computer_model_data$Sig_eps
-  if(!all(Sig_eps[!diag(nrow(Sig_eps))] == 0)) stop("Non-diagonal output covariances not supported yet.")
-  sig2_outputs <- diag(Sig_eps)
+  # Run exact MCMC sampler (no emulator). 
+  if(run_exact_mcmc) {
+    time_start <- proc.time()
+    samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                                  theta_prior_params = theta_prior_params, 
+                                                  learn_sig_eps = learn_sig_eps,
+                                                  sig_eps_prior_params = sig_eps_prior_params,
+                                                  N_mcmc = N_mcmc_exact, ...)
+    mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
+  } else {
+    samp_mcmc_exact <- NULL
+    mcmc_exact_runtime <- NULL
+  }
   
-  # Calculate the ground truth quantities (likelihood, posterior, etc.)
-  ground_truth_quantities <- calculate_ground_truth_quantities(theta_train_test_data, computer_model_data, theta_prior_params)
-  
-  # Fit GPs
-  fit_LNP <- (emulator_settings$target == "log_SSR")
-  if(fit_LNP) stop("LNP not supported yet.")
-  gp_fits_list <- fit_independent_GPs(theta_train_test_data$X_train_preprocessed, theta_train_test_data$Y_train_preprocessed, 
-                                      emulator_settings$gp_lib, emulator_settings$kernel)
-  gp_fit_times <- gp_fits_list$times
-  gp_fits <- gp_fits_list$fits
-  
-  # Predict with GPs: returns predictions from GP without performing transformations (exponentiating, truncating, rectifying). These transformations 
-  # are intended to be performed later, e.g. when plotting with plot_gp_1d(). 
-  gp_pred_test <- predict_independent_GPs(theta_train_test_data$X_test_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                          output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                          transformation_method = "default")
-  gp_pred_train <- predict_independent_GPs(theta_train_test_data$X_train_preprocessed, gp_fits, emulator_settings$gp_lib, cov_mat = FALSE, denormalize_predictions = TRUE,
-                                           output_stats = theta_train_test_data$output_stats, exponentiate_predictions = FALSE, 
-                                           transformation_method = "default")
-  
-  # TODO: left off here:
-  #    - Need to update the below lines of code since need to perform the transformations before calculating SSR. 
-  #    - Should probably have a calc_SSR() function that allows the transformations to be performed. Or I should 
-  #      just perform the transformations and store them as separate elements of the list. Should probably have a 
-  #      "transform_gp_predictions()" function that accounts for all of the transformations.
-  
-  SSR_pred_mean_test <- sapply(gp_pred_test, function(pred) pred$mean)
-  SSR_pred_var_test <- sapply(gp_pred_test, function(pred) pred$sd2)
-  SSR_pred_mean_train <- sapply(gp_pred_train, function(pred) pred$mean)
-  SSR_pred_var_train <- sapply(gp_pred_train, function(pred) pred$sd2)
-  
-  # Compute GP predictive density of posterior approximation at test points
-  # post_approx_LNP_params_test <- get_gp_approx_posterior_LNP_params(diag(Sig_eps), ground_truth_quantities$lprior_test, 
-  #                                                                   SSR_pred_mean_test, SSR_pred_var_test, computer_model_data$n_obs)
-  # lpred_pi_test <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_test, 
-  #                                                       lnorm_log_mean = post_approx_LNP_params_test$mean_log, lnorm_log_var = post_approx_LNP_params_test$var_log)
-  # lpred_pi_train <- gp_approx_posterior_pred_log_density(ground_truth_quantities$lpost_train, sig2_outputs, 
-  #                                                        ground_truth_quantities$lprior_train, SSR_pred_mean_train, SSR_pred_var_train, computer_model_data$n_obs)
-  
-  return(list(ground_truth_quantities = ground_truth_quantities, 
-              gp_fits = gp_fits, 
-              gp_times = gp_fit_times, 
-              gp_pred_list_test = gp_pred_test, 
-              gp_pred_list_train = gp_pred_train, 
-              SSR_pred_mean_test = SSR_pred_mean_test, 
-              SSR_pred_var_test = SSR_pred_var_test, 
-              SSR_pred_mean_train = SSR_pred_mean_train, 
-              SSR_pred_var_train = SSR_pred_var_train))
-              
-              # post_pred_mean_log_test = post_approx_LNP_params_test$mean_log, 
-              # post_pred_var_log_test = post_approx_LNP_params_test$var_log, 
-              # lpost_pred_density_test = lpred_pi_test, 
-              # lpost_pred_density_train = lpred_pi_train))  
+  # Run separate emulator-assisted MCMC for each emulator setting.
+  # TODO: get parallelization to work.
+  FUN <- function(j) run_calibration_single_emulator_setting(computer_model_data = computer_model_data,
+                                                             theta_prior_params = theta_prior_params,
+                                                             emulator_setting = emulator_settings[j,],
+                                                             train_data = train_data,
+                                                             test_data = test_data,
+                                                             learn_sig_eps = learn_sig_eps,
+                                                             sig_eps_prior_params = sig_eps_prior_params,
+                                                             N_mcmc = N_mcmc_approx, ...)
+  # N_cores <- min(detectCores(), nrow(emulator_settings))
+  # approx_list <- mclapply(seq(1, nrow(emulator_settings)), FUN, mc.cores = N_cores)
+  approx_list <- lapply(seq(1, nrow(emulator_settings)), FUN)
+  names(approx_list) <- test_labels
+
+  return(list(samp_mcmc_exact = samp_mcmc_exact, 
+              mcmc_approx_list = approx_list, 
+              test_labels = test_labels, 
+              mcmc_exact_runtime = mcmc_exact_runtime))
   
 }
+
+
+run_calibration_single_emulator_setting <- function(computer_model_data, theta_prior_params, emulator_setting, train_data, 
+                                                    learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                                    test_data = NULL, N_mcmc = 50000, ...) {
+  # A convenience function that fits a GP emulator and runs emulator-assisted MCMC. Also optionally computes emulator predictions 
+  # at a set of test/validation points. Returns a list of all the relevant quantities. 
+  #
+  # Args:
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
+  #    emulator_setting: list, with elements "gp_lib", "kernel", "transformation_method", "scale_X", "normalize_y" used to specify 
+  #                      GP emulator settings. 
+  #    train_data: matrix of dimension N x d, where N is the number of design points and d the dimension of the input space. The training 
+  #                inputs used to fit the GP emulator. 
+  #    learn_sig_eps: logical, if TRUE treats observation covariance matrix as random and MCMC samples from joint 
+  #                   posterior over Sig_eps and theta. Otherwise, fixes Sig_eps at value `Sig_eps_init`.
+  #    sig_eps_prior_params: list, defining prior on Sig_eps. See `sample_prior_Sig_eps()` for details. Only required if `learn_Sig_eps` is TRUE.
+  #    test_data: matrix, of dimension M x d, where M is the number of test points and d the number of calibration parameters. If provided, GP 
+  #               predictions are computed at this set of points. Default is NULL. 
+  #    N_mcmc: integer, the number of MCMC iterations. 
+  #    ...: additional MCMC arguments, see `mcmc_calibrate_ind_GP()` for options. 
+  #
+  # Returns:
+  #    list, with elements "emulator_info", "samp_mcmc", and "gp_pred_list". The third is NULL if `test_data` is NULL. 
+  
+  # Select correct "output_stats" used to normalize response variable, depending on whether emulator is log-normal process or not. 
+  if(emulator_setting$transformation_method == "LNP") {
+    output_stats <- train_data$log_output_stats
+  } else {
+    output_stats <- train_data$output_stats
+  }
+  
+  # Fit GPs. 
+  gp_fits <- fit_independent_GPs(train_data$inputs_scaled, train_data$outputs_normalized, emulator_setting$gp_lib, emulator_setting$kernel)$fits
+
+  # Predict at test points.
+  if(!is.null(test_data)) {
+    gp_pred_list <- predict_independent_GPs(X_pred = test_data$inputs_scaled, gp_obj_list = gp_fits, gp_lib = emulator_setting$gp_lib, 
+                                            denormalize_predictions = TRUE, output_stats = output_stats)
+  } else {
+    gp_pred_list <- NULL
+  }
+  
+  # Truncate priors on calibration parameters. 
+  if(isTRUE(emulator_setting$truncate_theta_prior)) {
+    theta_prior_params <- truncate_prior_theta(theta_prior_params, train_data$input_bounds)
+  }
+  
+  # Emulator info list. 
+  emulator_info <- list(gp_fits = gp_fits, 
+                        input_bounds = train_data$input_bounds,
+                        output_stats = output_stats, 
+                        settings = emulator_setting)
+  
+  # Emulator-assisted MCMC. 
+  time_start <- proc.time()
+  samp_mcmc <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                     theta_prior_params = theta_prior_params,
+                                     emulator_info = emulator_info, 
+                                     learn_sig_eps = learn_sig_eps, 
+                                     sig_eps_prior_params = sig_eps_prior_params, 
+                                     N_mcmc = N_mcmc, ...)
+  mcmc_runtime <- (proc.time() - time_start)[["elapsed"]]
+                                     
+  return(list(emulator_info = emulator_info, 
+              samp_mcmc = samp_mcmc, 
+              gp_pred_list = gp_pred_list, 
+              mcmc_runtime = mcmc_runtime, 
+              theta_prior_params_trunc = theta_prior_params)) 
+                                               
+} 
+
+
+get_mcmc_samp_df <- function(calibration_results_list) {
+  # A convenience function that extracts the MCMC samples from `run_calibration_emulator_comparison()`
+  # and arranges them in a data.frame. The columns will contain all "theta" and "sig_eps" samples from 
+  # each approximate MCMC scheme. If exact MCMC results are also present in `calibration_results_list` 
+  # then the exact samples will also be included. This function is robust to the case when different 
+  # MCMC schemes have different numbers of samples, in which case those with fewer samples will 
+  # be padded with NAs. Column names for the approximate sample schemes are determined by 
+  # `calibration_results_list$test_labels` as well as the name of the sampled parameter. The name formatting
+  # is "<test_label>_<parameter_label>_<parameter_name>", where "<parameter_label>" is either "sig_eps" or 
+  # "theta". 
+  # 
+  # Samples from exact MCMC are labeled as "exact". Every MCMC algorithm is assumed to have "theta" 
+  # samples, but  may or may not have "sig_eps" samples, depending on whether the observation variance  
+  # was fixed or not. 
+  #
+  # Args:
+  #    calibration_results_list: list, the returned value from `run_calibration_emulator_comparison()`. 
+  #
+  # Returns:
+  #    data.frame, containing all MCMC samples as described above. 
+  
+  # Approximate samples list. 
+  mcmc_samp_list <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$samp_mcmc$samp)
+  names(mcmc_samp_list) <- names(calibration_results_list$mcmc_approx_list)
+  
+  # If exact samples are included, add to list. 
+  samp_mcmc_exact <- calibration_results_list$samp_mcmc_exact$samp
+  if(!is.null(samp_mcmc_exact)) {
+    mcmc_samp_list[["exact"]] <- samp_mcmc_exact
+  }
+
+  N_samp <- sapply(mcmc_samp_list, nrow)
+  N_max <- max(N_samp)
+  for(j in seq_along(mcmc_samp_list)) {
+    
+    # Pad with NAs in the case that the number of samples is different across different parameters.
+    if(nrow(mcmc_samp_list[[j]]) < N_max) {
+      mcmc_samp_list[[j]] <- rbind(mcmc_samp_list[[j]], matrix(NA, nrow = N_max - nrow(mcmc_samp_list[[j]]),
+                                                                   ncol = ncol(mcmc_samp_list[[j]])))         
+    }
+      
+    # Set column names. 
+    colnames(mcmc_samp_list[[j]]) <- paste(names(mcmc_samp_list)[j], colnames(mcmc_samp_list[[j]]), sep = "_")
+                                                        
+  }
+
+  # Combine approximate samples into single data.frame. 
+  df_samples <- as.data.frame(do.call("cbind", mcmc_samp_list))
+  
+  return(df_samples)
+  
+}
+
+
+
+
 
 
 
