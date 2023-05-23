@@ -1,0 +1,99 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Loss Emulation for Scalable Ecosystem Model Calibration}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Abstract}
+\begin{enumerate}
+\item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
+	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
+\item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. 
+\end{enumerate}
+
+
+\section{Introduction}
+
+
+\section{Methods}
+
+\subsection{Statistical Model}
+\subsubsection{Likelihood: Multi-objective calibration}
+\subsubsection{Priors}
+\subsubsection{Exact MCMC-based inference}
+
+\subsection{Loss Emulation}
+\subsubsection{Emulator Details}
+\subsubsection{Emulator-based MCMC inference}
+
+\subsection{Sequential Design}
+\begin{enumerate}
+\item \textbf{Problem}: While space-filling designs (e.g. via LHS or maximin) are common, they can be very inefficient in the Bayesian inverse problem setting. If the posterior distribution is concentrated in a small 
+subset of the parameter space, then space-filling designs will yield many design points in regions that are not of interest, while simultaneously under-sampling the region of significance.  \\
+	\textbf{Solution}: Sequential design approach that takes into account knowledge of the posterior as it proceeds. 
+\end{enumerate}
+
+
+\end{document}
+
+
+
+
