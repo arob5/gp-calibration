@@ -848,7 +848,7 @@ samp <- get_mcmc_samp_df(calibration_results_list)
 
 ## Comparing marginal distributions. 
 
-###
+# Set burn-in. 
 ```{r}
 mcmc_start_itrs <- c(exact = 10000, trunc_prior = 10000, trunc_proposal = 10000) 
 ```
@@ -891,7 +891,22 @@ for(plt in marginal_hist_plots_sig_eps) print(plt)
 ```
 
 ```{r}
+N_test <- 51^2
+
+# Validation data sets: 1.) grid based on prior and 2.) posterior samples. 
+transformation_method <- ifelse(any(emulator_settings == "LNP"), "LNP", NA_character_)
+
+test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_data = computer_model_data,  
+                                     scale_inputs = TRUE, normalize_response = TRUE, 
+                                     param_ranges = train_data$input_bounds, 
+                                     output_stats = train_data$output_stats, log_output_stats = train_data$log_output_stats,
+                                     transformation_method = transformation_method, design_method = "grid", 
+                                     na.rm = TRUE) 
+```
+
+```{r}
 emulator_info_list <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$emulator_info)
+emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list, X_test = test_data$inputs_scaled)
 ```
 
 ```{r}
