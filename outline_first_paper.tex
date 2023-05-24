@@ -134,6 +134,12 @@ sample from the approximate posterior
 	model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, thus motivating the choice to emulate $\Phi_p(\btheta)$. This has the advantage that $\Phi_p: \mathcal{D} \to \R$, thus requiring the 
 	approximation of $P$ univariate functions, instead of $G(\btheta)$ which has output dimension $T \times P$. 
 	
+\item \textbf{Problem}: Issues with emulating the $\Phi_p$: non-linear, need to account for uncertainty in approximation. \\
+\textbf{Solution}: GP emulators. \\
+I need to write out this section, but to establish notation I briefly note that I will write $\Phi_p^*$ to denote the posterior/predictive distribution; i.e. the random field approximation of $\Phi_p$. I intentionally refrain from calling 
+this the predictive \textit{GP} since technically this could be a rectified or truncated Gaussian, or sometimes a Student-t process. This induces a random field approximation of the likelihood, which I similarly write as 
+$\mathcal{L}^*$, noting that the randomness in $\mathcal{L}^*$ comes from $\Phi^*_1, \dots, \Phi^*_P$. 
+	
 \end{enumerate}
 
 \subsubsection{Emulator-based MCMC inference}
@@ -147,8 +153,8 @@ subset of the parameter space, then space-filling designs will yield many design
 	
 \subsection{Other things?}
 \begin{itemize}
-\item Scaling factors
-\item Imbalanced data constraints
+\item Scaling factors for PFTs. 
+\item Imbalanced data constraints. 
 \end{itemize}
 	
 \end{enumerate}
@@ -158,11 +164,27 @@ subset of the parameter space, then space-filling designs will yield many design
 
 \subsection{Evaluation Metrics}
 
+\begin{enumerate}
+\item Challenges: 
+	\begin{enumerate} 
+	\item Assessing GP performance in a way that takes into account the GP distribution, i.e. challenge of validating probabilistic forecasts. 
+	\item The fact that we would like metrics to take into account the true posterior over $\btheta$ when possible. 
+	\end{enumerate}
+\item \textit{Diagnostics for Gaussian Process Emulators} (Bastos and O'Hagan, 2009) \\
+Discusses various criteria for evaluating GP emulators. A lot of focus is on defining suitably standardized residuals, the tricky part being that GP residuals are correlated. For example, interpreting 
+a QQ plot with typical standardized residuals is a bit difficult given the fact that the residuals are correlated. 
+\item \textit{Diagnostics and Simulation-Based Methods for Validating Gaussian Process Emulators} (Al-Taweel, PhD thesis from 2018). 
+\item \textit{Quantifying Model Error in Bayesian Parameter Estimation} (White, PhD thesis from 2015)
+\item Strictly proper scoring rules/CRPS
+\item Would like to read up on some more applied papers (e.g. Simon Mak's work on emulating spatiotemporal flows) to see what sort of metrics they report. 
+\end{enumerate}
+
 \subsection{Range-Constrained GP}
 \subsubsection{Do nothing to constrain GP prior}
 \begin{itemize}
 \item Current approach; instead transform GP posterior to truncated or rectified Gaussian. 
 \item Concern is that the prior is wrong, so may compromise GP fit and uncertainty calibration. 
+\end{itemize}
 
 \subsubsection{Warped GP}
 \begin{itemize}
@@ -170,11 +192,20 @@ subset of the parameter space, then space-filling designs will yield many design
 \item We have seen that blindly applying the log-normal process (LNP) leads to very bad results due to the funneling effect of the log-transformation; i.e. the sum of squared residuals (SSR) often exhibits a very high dynamic range, 
 with some very large values and others that are almost zero. In the VSEM examples at least, this effect was especially bad as the funneling occurs at some values of SSR, which means the emulator fared worse in the 
 most important region of the parameter space. 
-\item In simple one-dimensional examples, I showed a while back that instead transforming the data as $\log\left(\Phi(\theta) + C \right)$ for a well-chosen constant $C$ could yield nice LNP results. One approach to explore 
+\item In simple one-dimensional examples, I showed a while back that instead transforming the data as $\log\left(\Phi_p(\theta) + C \right)$ for a well-chosen constant $C$ could yield nice LNP results. One approach to explore 
 would be to optimize the value of $C$. 
 \end{itemize}
 
-\end{itemize}
+\subsubsection{Other range-constrained GP methods that have been proposed:}
+\begin{enumerate}
+\item ``fit all available model data and impute a set of ``artificial data"" throughout the input space points that maintain the constraint.'' (Spiller et al, 2023)
+\item Another approach: modify the MLE for hyperparameter fitting. In particular, Pensoneault et al., 2020 propose a method whereby the lengthscale parameters are constrained so that the predictive GP obeys the 
+range constraint at untested inputs with high probability. This has the benefit that the predictive GP distribution is still Gaussian, as opposed to some other methods. 
+\item \textit{The Zero Problem: Gaussian Process Emulators for Range-Constrained Computer Models} (Spiller et al, 2023) \\
+They are dealing with zero-censored computer models, and they consider a prior on the computer model $f(\btheta)$: $f(\btheta) \sim \max \left\{0, g(\btheta) \right\}$ where $g \sim \mathcal{GP}$. Not that relevant to our 
+case but some interesting ideas here.  
+\end{enumerate}
+
 
 \subsection{Sequential Design}
 
