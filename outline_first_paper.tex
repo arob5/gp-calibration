@@ -64,13 +64,60 @@
 \tableofcontents
 \newpage
 
+\section{Notation}
+
+\subsection{Statistical Setting}
+We denote the vector of calibration parameters by $\btheta \in \Theta \subset \R^D$. The forward model (e.g. SIPNET or ED2) $G(\btheta)$ maps calibration parameters to the model outputs. Note that the forward 
+model also depends on initial conditions and model drivers, but these are fixed throughout the analysis so are suppressed in the notation. Model outputs consist 
+of $T$ time steps for each of $P$ output variables, so $G(\btheta) \in \mathbb{R}^{T \times P}$. We have observed data $Y \in \mathbb{R}^{T \times P}$, potentially with missing values. Let $T_p$ denote the number 
+of non-missing observations of output variable $p$. We index the observations of output $p$ as $\{y_{tp}\}_{t = 1}^{T_p}$, meaning that $Y$ is then technically a ragged matrix. 
+This is suitable for the model detailed below, as the ordering of the observations is inconsequential. 
+
+To measure error between model 
+predictions $G(\btheta)$ and observed data $Y$, we assume the following Gaussian noise model. 
+\begin{align*}
+\mathcal{L}(\btheta) := p(Y|\mathbf{\btheta}) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
+\end{align*}
+This likelihood assumes the errors are independent across time and output variable. Note that $\mathcal{L}(\btheta)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
+observations are simply ignored, hence the product from $t = 1, \dots, T_p$ for each output $p$.
+
+For notational convenience, we collect the variance parameters in the matrix $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_P^2 \right)$. 
+We denote the priors on the calibration and variance parameters as  $\pi_0(\btheta, \Sigma) = \pi_0(\btheta)\pi_0(\Sigma)$, assuming prior independence.  
+The variances $\sigma_p^2$ are assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
+\[\pi_0(\Sigma) = \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
+Combining these priors with the likelihood yields the posterior 
+\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto \mathcal{L}(\btheta)\pi_0(\btheta, \Sigma)\]
+
+\subsection{Surrogate Model}
+In this section we describe the emulator used to approximate the true likelihood $\mathcal{L}(\btheta)$. The likelihood can be written as 
+\begin{align*}
+\mathcal{L}(\btheta) &= \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
+			       &= \prod_{p = 1}^{P}  \prod_{t = 1}^{T_p} (2\pi \sigma_p^2)^{-1/2} \exp\left(-\frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2 \right) \\
+			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2\sigma_p^2} \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2  \right) \\
+			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2} \frac{\Phi_p(\btheta)}{\sigma_p^2} \right)
+\end{align*}
+where 
+\[\Phi_p(\btheta) := \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2\]
+is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\btheta)$ also depends on $Y$, but again we suppress this in the notation. The key observation 
+is that the model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, which means that approximating $\Phi_p(\btheta)$ will induce an approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\Phi(\btheta)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\Phi(\btheta)$ can be emulated without regard for the variance parameters, 
+and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \mathcal{D} \to \R$ also reduces the problem to 
+approximating $P$ univariate functions, instead of approximating $G(\btheta)$, which has output dimension $T \times P$. 
+
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
+\[\Phi_p(\cdot) \overset{ind}{\sim} \mathcal{GP}(\mu_p, k_p(\cdot, \cdot))\] 
+where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (i.e. kernel). The constant mean and kernel hyperparameters are fixed to their MLE estimates. We then run the forward model at carefully selected 
+\textit{design points} $\btheta_1, \dots, \btheta_N \in \Theta$ and compute $\{\Phi_p(\btheta_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. We denote the resulting observed data for output $p$ as 
+$\mathcal{D}_p := \left\{(\btheta_1, \Phi_p(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
+\[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
+
 \section{Abstract}
 \begin{enumerate}
 \item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
 	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
 \item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. \\
 \textbf{Solution}: Bayesian approach. 
-\item \textbf{Problem}: Bayesian inference with MCMC is infeasible when the forward model runtime is very costly. 
+\item \textbf{Problem}: Bayesian inference with MCMC is infeasible when the forward model runtime is very costly. \\
 \textbf{Solution}: Approximate the forward model. 
 \end{enumerate}
 
@@ -80,32 +127,14 @@
 
 \subsection{Statistical Model}
 \subsubsection{Likelihood: Multi-objective calibration}
-We denote the vector of calibration parameters by $\btheta \in \mathcal{D} \subset \R^D$. The forward model (e.g. SIPNET or ED2) $G(\btheta)$ maps calibration parameters to the model outputs. Model outputs consist 
-of $T$ time steps for each of $P$ output variables, so $G(\btheta) \in \mathbb{R}^{T \times P}$. We have observed data $Y \in \mathbb{R}^{T \times P}$, potentially with missing values. Let $T_p$ denote the number 
-of non-missing observations of output variable $p$. 
-
-To measure error between model 
-predictions $G(\btheta)$ and observed data $Y$, we assume the following Gaussian noise model. 
-\begin{align*}
-\mathcal{L}(\theta) := p(Y|\mathbf{\theta}) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
-\end{align*}
-This likelihood assumes the errors are independent across time and output variable. Note that $\mathcal{L}(\theta)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
-observations are simply ignored, hence the product from $t = 1, \dots, T_p$ for each output $p$. 
 
 \subsubsection{Priors}
-We denote the priors on the calibration parameters as $\btheta \sim \pi$. The variances $\sigma_p^2$ are assumed unknown and assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$.
-For notational convenience, we collect the variance parameters in the matrix $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_P^2 \right)$ and write 
-\[p(\Sigma) := \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
-We assume prior independence between $\pi(\btheta)$ and $p(\Sigma)$. 
 
 \bigskip
 \noindent
 \textbf{Question}: Does PEcAn currently always assume prior independence across the $\theta_d$? 
 
 \subsubsection{Exact MCMC-based inference}
-The ultimate goal is to characterize the posterior distribution 
-\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto \mathcal{L}(\btheta)\pi(\btheta)p(\Sigma)\]
-In theory, this can be accomplished with a Metropolis-within-Gibbs scheme. 
 
 \subsection{Loss Emulation}
 Every iteration of MCMC requires evaluation of the forward model $G(\btheta)$. If this evaluation is costly, then this will render MCMC computationally intractable. To address this, we employ a surrogate modeling approach. 
@@ -121,18 +150,7 @@ sample from the approximate posterior
 \begin{enumerate}
 \item \textbf{Problem}: The model output $G(\btheta)$ has dimension $T \times P$. For any reasonable number of time steps $T$, the high-dimensionality of the output renders the problem of directly emulating $G$ intractable.  \\
 	\textbf{Solution}: One approach is to reduce the dimensionality of the output by representing it with respect to a basis, and then instead emulate the mapping from $\btheta$ to the basis coefficients. We consider an alternative 
-	of instead directly emulating the loss between the forward model and observed data. In particular, note that 
-	\begin{align*}
-	\mathcal{L}(\btheta) &= \prod_{p = 1}^{P} \prod_{t = 1}^{T} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
-				       &= \prod_{p = 1}^{P}  \prod_{t = 1}^{T} (2\pi \sigma_p^2)^{-1/2} \exp\left(-\frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2 \right) \\
-				       &= (2\pi)^{-PT/2} \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2\sigma_p^2} \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2  \right) \\
-				       &= (2\pi)^{-PT/2} \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2} \frac{\Phi_p(\btheta)}{\sigma_p^2} \right)
-	\end{align*}
-	where 
-	\[\Phi_p(\btheta) := \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2\]
-	is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\btheta)$ also depends on $Y$, but again we suppress this in the notation. Therefore, the 
-	model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, thus motivating the choice to emulate $\Phi_p(\btheta)$. This has the advantage that $\Phi_p: \mathcal{D} \to \R$, thus requiring the 
-	approximation of $P$ univariate functions, instead of $G(\btheta)$ which has output dimension $T \times P$. 
+	of instead directly emulating the loss between the forward model and observed data. 
 	
 \item \textbf{Problem}: Issues with emulating the $\Phi_p$: non-linear, need to account for uncertainty in approximation. \\
 \textbf{Solution}: GP emulators. \\
