@@ -29,10 +29,12 @@
 \newcommand{\Ker}{\mathrm{Ker}}
 \newcommand{\Cov}{\mathrm{Cov}}
 \newcommand{\Prob}{\mathbb{P}}
+\newcommand{\btheta}{\boldsymbol{\theta}}
 \DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator*{\argmin}{argmin}
 \DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
 \setlist[1]{leftmargin=\parindent}
@@ -66,30 +68,122 @@
 \begin{enumerate}
 \item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
 	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
-\item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. 
+\item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. \\
+\textbf{Solution}: Bayesian approach. 
+\item \textbf{Problem}: Bayesian inference with MCMC is infeasible when the forward model runtime is very costly. 
+\textbf{Solution}: Approximate the forward model. 
 \end{enumerate}
 
-
 \section{Introduction}
-
 
 \section{Methods}
 
 \subsection{Statistical Model}
 \subsubsection{Likelihood: Multi-objective calibration}
+We denote the vector of calibration parameters by $\btheta \in \mathcal{D} \subset \R^D$. The forward model (e.g. SIPNET or ED2) $G(\btheta)$ maps calibration parameters to the model outputs. Model outputs consist 
+of $T$ time steps for each of $P$ output variables, so $G(\btheta) \in \mathbb{R}^{T \times P}$. We have observed data $Y \in \mathbb{R}^{T \times P}$, potentially with missing values. Let $T_p$ denote the number 
+of non-missing observations of output variable $p$. 
+
+To measure error between model 
+predictions $G(\btheta)$ and observed data $Y$, we assume the following Gaussian noise model. 
+\begin{align*}
+\mathcal{L}(\theta) := p(Y|\mathbf{\theta}) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
+\end{align*}
+This likelihood assumes the errors are independent across time and output variable. Note that $\mathcal{L}(\theta)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
+observations are simply ignored, hence the product from $t = 1, \dots, T_p$ for each output $p$. 
+
 \subsubsection{Priors}
+We denote the priors on the calibration parameters as $\btheta \sim \pi$. The variances $\sigma_p^2$ are assumed unknown and assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$.
+For notational convenience, we collect the variance parameters in the matrix $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_P^2 \right)$ and write 
+\[p(\Sigma) := \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
+We assume prior independence between $\pi(\btheta)$ and $p(\Sigma)$. 
+
+\bigskip
+\noindent
+\textbf{Question}: Does PEcAn currently always assume prior independence across the $\theta_d$? 
+
 \subsubsection{Exact MCMC-based inference}
+The ultimate goal is to characterize the posterior distribution 
+\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto \mathcal{L}(\btheta)\pi(\btheta)p(\Sigma)\]
+In theory, this can be accomplished with a Metropolis-within-Gibbs scheme. 
 
 \subsection{Loss Emulation}
+Every iteration of MCMC requires evaluation of the forward model $G(\btheta)$. If this evaluation is costly, then this will render MCMC computationally intractable. To address this, we employ a surrogate modeling approach. 
+The forward model $G(\btheta)$ is replaced by an an approximation $\hat{G}(\btheta)$ known as an \textit{emulator}. Assuming $\hat{G}(\btheta)$ is much faster to evaluate then we substitute it for the exact model and thus 
+sample from the approximate posterior
+ \[\hat{\pi}(\btheta, \Sigma) \propto \hat{\mathcal{L}}(\btheta)\pi(\btheta)p(\Sigma)\]
+ where 
+ \begin{align*}
+\hat{\mathcal{L}}(\theta) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| \hat{G}_{tp}(\btheta), \sigma_p^2 \right)
+\end{align*}
+ 
 \subsubsection{Emulator Details}
+\begin{enumerate}
+\item \textbf{Problem}: The model output $G(\btheta)$ has dimension $T \times P$. For any reasonable number of time steps $T$, the high-dimensionality of the output renders the problem of directly emulating $G$ intractable.  \\
+	\textbf{Solution}: One approach is to reduce the dimensionality of the output by representing it with respect to a basis, and then instead emulate the mapping from $\btheta$ to the basis coefficients. We consider an alternative 
+	of instead directly emulating the loss between the forward model and observed data. In particular, note that 
+	\begin{align*}
+	\mathcal{L}(\btheta) &= \prod_{p = 1}^{P} \prod_{t = 1}^{T} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
+				       &= \prod_{p = 1}^{P}  \prod_{t = 1}^{T} (2\pi \sigma_p^2)^{-1/2} \exp\left(-\frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2 \right) \\
+				       &= (2\pi)^{-PT/2} \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2\sigma_p^2} \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2  \right) \\
+				       &= (2\pi)^{-PT/2} \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2} \frac{\Phi_p(\btheta)}{\sigma_p^2} \right)
+	\end{align*}
+	where 
+	\[\Phi_p(\btheta) := \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2\]
+	is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\btheta)$ also depends on $Y$, but again we suppress this in the notation. Therefore, the 
+	model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, thus motivating the choice to emulate $\Phi_p(\btheta)$. This has the advantage that $\Phi_p: \mathcal{D} \to \R$, thus requiring the 
+	approximation of $P$ univariate functions, instead of $G(\btheta)$ which has output dimension $T \times P$. 
+	
+\end{enumerate}
+
 \subsubsection{Emulator-based MCMC inference}
+
 
 \subsection{Sequential Design}
 \begin{enumerate}
 \item \textbf{Problem}: While space-filling designs (e.g. via LHS or maximin) are common, they can be very inefficient in the Bayesian inverse problem setting. If the posterior distribution is concentrated in a small 
 subset of the parameter space, then space-filling designs will yield many design points in regions that are not of interest, while simultaneously under-sampling the region of significance.  \\
 	\textbf{Solution}: Sequential design approach that takes into account knowledge of the posterior as it proceeds. 
+	
+\subsection{Other things?}
+\begin{itemize}
+\item Scaling factors
+\item Imbalanced data constraints
+\end{itemize}
+	
 \end{enumerate}
+
+% Details on Specific Methods
+\section{Details on Specific Methods}
+
+\subsection{Evaluation Metrics}
+
+\subsection{Range-Constrained GP}
+\subsubsection{Do nothing to constrain GP prior}
+\begin{itemize}
+\item Current approach; instead transform GP posterior to truncated or rectified Gaussian. 
+\item Concern is that the prior is wrong, so may compromise GP fit and uncertainty calibration. 
+
+\subsubsection{Warped GP}
+\begin{itemize}
+\item For example, a log-normal or square root GP. 
+\item We have seen that blindly applying the log-normal process (LNP) leads to very bad results due to the funneling effect of the log-transformation; i.e. the sum of squared residuals (SSR) often exhibits a very high dynamic range, 
+with some very large values and others that are almost zero. In the VSEM examples at least, this effect was especially bad as the funneling occurs at some values of SSR, which means the emulator fared worse in the 
+most important region of the parameter space. 
+\item In simple one-dimensional examples, I showed a while back that instead transforming the data as $\log\left(\Phi(\theta) + C \right)$ for a well-chosen constant $C$ could yield nice LNP results. One approach to explore 
+would be to optimize the value of $C$. 
+\end{itemize}
+
+\end{itemize}
+
+\subsection{Sequential Design}
+
+\subsubsection{Sinsbeck and Nowak (2017)}
+
+
+\subsubsection{Ensemble Kalman Inversion}
+TODO
+
 
 
 \end{document}
