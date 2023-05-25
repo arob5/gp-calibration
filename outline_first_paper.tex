@@ -64,6 +64,7 @@
 \tableofcontents
 \newpage
 
+% Notation 
 \section{Notation}
 
 \subsection{Statistical Setting}
@@ -101,7 +102,7 @@ where
 is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\btheta)$ also depends on $Y$, but again we suppress this in the notation. The key observation 
 is that the model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, which means that approximating $\Phi_p(\btheta)$ will induce an approximation of the likelihood. The independence assumptions 
 that yield the product form of the likelihood make it so that $\Phi(\btheta)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\Phi(\btheta)$ can be emulated without regard for the variance parameters, 
-and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \mathcal{D} \to \R$ also reduces the problem to 
+and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \Theta \to \R$ also reduces the problem to 
 approximating $P$ univariate functions, instead of approximating $G(\btheta)$, which has output dimension $T \times P$. 
 
 Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
@@ -120,7 +121,20 @@ where
 \mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
 \end{align*}
 
+% Abstract 
 \section{Abstract}
+The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
+has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
+in empirically-determined estimates of process model parameters. A Bayesian statistical framework  
+
+\bigskip
+\textbf{Questions:} 
+\begin{enumerate}
+\item \textbf{What are the strengths and weaknesses of loss emulation?} \\ 
+In this high-dimensional output setting, some sort of dimensionality reduction is required. The alternatives to loss emulation are dynamic emulation (i.e. emulating the flow map) or 
+emulating the parameters in a basis representation of the output. 
+\end{enumerate}
+
 \begin{enumerate}
 \item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
 	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
@@ -241,6 +255,14 @@ case but some interesting ideas here.
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
+
+\section{References}
+\begin{itemize}
+\item Emulating dynamic non-linear simulators using Gaussian processes (Mohammadi et al, 2019)
+\item Emulating complex dynamical simulators with random Fourier features (Mohammadi et al, 2023)
+\item Sequential adaptive design for emulating costly computer codes (Mohammadi et al, 2022)
+\item Emulation-accelerated Hamiltonian Monte Carlo algorithms for parameter estimation and uncertainty quantification in differential equation models (Paun and Husmeier, 2021)
+\end{itemize}
 
 
 
