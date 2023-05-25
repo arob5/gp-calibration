@@ -340,11 +340,33 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 
 
 get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_inputs = FALSE, output_variables = NULL) {
-  # A convenience function for computing different GP emulator predictions on the same 
-  # set of validation points. This is mainly used for testing 
-  # when comparing different emulators. 
+  # A convenience function for computing different GP emulator predictions on the same set of validation points. 
+  # This is mainly used for testing when comparing different emulators. This function loops over each emulator, 
+  # returning the GP predictive means and variances at the test inputs `X_test`. All predictions are compiled 
+  # in a single data.frame. 
+  #
+  # Args:
+  #    emulator_info_list: Named list, where each element is an "emulator info" object. The emulator info objects 
+  #                        are themselves lists with elements "gp_fits", "input_bounds", "output_stats", and "settings". 
+  #    X_test: matrix, of dimension M x D, where M is the number of test inputs and D the dimension of the parameter space. 
+  #            The test inputs at which to predict. 
+  #    scale_inputs: If TRUE, uses the "input_bounds" element of the emulator info lists to scale `X_test` prior to prediction. 
+  #                  If FALSE, assumes `X_test` is already properly scaled. 
+  #    output_variables: character, vector of output variable names, which is passed to `predict_independent_GPs()`. If NULL, 
+  #                      `predict_independent_GPs()` just assigns numbers to the outputs. 
+  #
+  # Returns:
+  #    data.frame, with columns of the form "<test_label>_<pred_type>_<output_variable>". "<test_label>" identifies 
+  #    which emulator the prediction pertains to; these names are taken from the names in the list `emulator_info_list`. 
+  #    "<pred_type>" is either "mean", "var", or "var_nug" for the predictive mean, predictive variance, and nugget 
+  #    variance, respectively. "<output_variable>" is the name of the output variable to which the prediction 
+  #    corresponds. Additional columns are added for each emulator test with the output variable "total_SSR"
+  #    (sum of squared residuals). These columns simply sum over all output variables to yield the predictive 
+  #    quantities for the total SSR. Note that this is valid for the variances since the multi-output GPs consist 
+  #    of independent GPs for each output.  
   
   pred_list <- vector(mode = "list", length = length(emulator_info_list))
+  test_labels <- names(emulator_info_list)
   
   if(!scale_inputs) X_test_scaled <- X_test
   
@@ -354,26 +376,34 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
     if(scale_inputs) X_test_scaled <- scale_input_data(X_test, input_bounds = emulator_info_list[[j]]$input_bounds)
     
     # Compute GP predictive distribution. 
-    gp_pred_df <- predict_independent_GPs(X_pred = X_test_scaled, 
-                                          gp_obj_list = emulator_info_list[[j]]$gp_fits, 
-                                          gp_lib = emulator_info_list[[j]]$settings$gp_lib, 
-                                          include_cov_mat = FALSE, 
-                                          denormalize_predictions = TRUE,
-                                          output_stats = emulator_info_list[[j]]$output_stats, 
-                                          return_df = TRUE, 
-                                          output_variables = output_variables)
+    gp_test_pred_df <- predict_independent_GPs(X_pred = X_test_scaled, 
+                                               gp_obj_list = emulator_info_list[[j]]$gp_fits, 
+                                               gp_lib = emulator_info_list[[j]]$settings$gp_lib, 
+                                               include_cov_mat = FALSE, 
+                                               denormalize_predictions = TRUE,
+                                               output_stats = emulator_info_list[[j]]$output_stats, 
+                                               return_df = TRUE, 
+                                               output_variables = output_variables)
+
+    # Sum across columns to compute predictive mean and variance of total sum of squared residuals 
+    # (summed across all output variables). 
+    mean_cols <- grep("mean", colnames(gp_test_pred_df))
+    var_nug_cols <- grep("var_nug", colnames(gp_test_pred_df))
+    var_cols <- setdiff(grep("var", colnames(gp_test_pred_df)), var_nug_cols)
+    gp_test_pred_df[["mean_total_SSR"]] <- rowSums(gp_test_pred_df[, mean_cols, drop = FALSE])
+    gp_test_pred_df[["var_nug_total_SSR"]] <- rowSums(gp_test_pred_df[, var_nug_cols, drop = FALSE])
+    gp_test_pred_df[["var_total_SSR"]] <- rowSums(gp_test_pred_df[, var_cols, drop = FALSE])
     
-    # TODO: left off here. 
+    # Prepend test label to column names. 
+    colnames(gp_test_pred_df) <- paste(test_labels[j], colnames(gp_test_pred_df), sep = "_")
     
-    # Store results. 
-    pred_list[[j]] <- data.frame()
-    for(p in seq_along(gp_pred_list)) {
-      pred_list[[j]][[paste0("mean", p)]] <- gp_pred_list[[p]]$mean
-      pred_list[[j]][[paste0("mean", p)]] <- gp_pred_list[[p]]$mean
-    }
-    
+    # Combine with current data.frame. 
+    if(j == 1) gp_pred_df <- gp_test_pred_df
+    else gp_pred_df <- cbind(gp_pred_df, gp_test_pred_df)
+
   }
   
+  return(gp_pred_df)
   
 }
 

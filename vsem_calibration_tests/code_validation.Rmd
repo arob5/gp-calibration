@@ -837,8 +837,12 @@ print(paste0("Truncated prior: ", calibration_results_list$mcmc_approx_list[[1]]
 print(paste0("Truncated proposal: ", mcmc_trunc_prop_runtime))
 ```
 ```{r}
-# Add truncated proposal samples to the main list for convenience. 
-calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc = mcmc_trunc_prop_samp, mcmc_runtime = mcmc_trunc_prop_runtime)
+# Add truncated proposal samples to the main list for convenience. Note that both the truncated prior and truncated 
+# proposal methods use the same emulator. 
+calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc = mcmc_trunc_prop_samp, 
+                                                                      mcmc_runtime = mcmc_trunc_prop_runtime, 
+                                                                      emulator_info = calibration_results_list$mcmc_approx_list[[1]]$emulator_info)
+
 ```
 
 ```{r}
@@ -873,6 +877,7 @@ trace_plots <- get_trace_plots(samp, test_labels = "trunc_proposal", burn_in_sta
 for(plt in trace_plots) print(plt)
 ```
 
+### Comparison of marginal samples. 
 ```{r}
 marginal_hist_plots_theta <- get_mcmc_marginal_hist_plot(samp, param_names = computer_model_data$pars_cal_names, burn_in_start = mcmc_start_itrs, 
                                                          bins = 50, vertical_lines = computer_model_data$theta_true)
@@ -906,7 +911,8 @@ test_data <- get_input_output_design(N_test, theta_prior_params, computer_model_
 
 ```{r}
 emulator_info_list <- lapply(calibration_results_list$mcmc_approx_list, function(l) l$emulator_info)
-emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list, X_test = test_data$inputs_scaled)
+emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list, X_test = test_data$inputs_scaled, 
+                                                    output_variables = computer_model_data$output_vars)
 ```
 
 ```{r}
