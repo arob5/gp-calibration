@@ -1,0 +1,275 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\btheta}{\boldsymbol{\theta}}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Loss Emulation for Scalable Ecosystem Model Calibration}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% Notation 
+\section{Notation}
+
+\subsection{Statistical Setting}
+We denote the vector of calibration parameters by $\btheta \in \Theta \subset \R^D$. The forward model (e.g. SIPNET or ED2) $G(\btheta)$ maps calibration parameters to the model outputs. Note that the forward 
+model also depends on initial conditions and model drivers, but these are fixed throughout the analysis so are suppressed in the notation. Model outputs consist 
+of $T$ time steps for each of $P$ output variables, so $G(\btheta) \in \mathbb{R}^{T \times P}$. We have observed data $Y \in \mathbb{R}^{T \times P}$, potentially with missing values. Let $T_p$ denote the number 
+of non-missing observations of output variable $p$. We index the observations of output $p$ as $\{y_{tp}\}_{t = 1}^{T_p}$, meaning that $Y$ is then technically a ragged matrix. 
+This is suitable for the model detailed below, as the ordering of the observations is inconsequential. 
+
+To measure error between model 
+predictions $G(\btheta)$ and observed data $Y$, we assume the following Gaussian noise model. 
+\begin{align*}
+\mathcal{L}(\btheta) := p(Y|\mathbf{\btheta}) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
+\end{align*}
+This likelihood assumes the errors are independent across time and output variable. Note that $\mathcal{L}(\btheta)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
+observations are simply ignored, hence the product from $t = 1, \dots, T_p$ for each output $p$.
+
+For notational convenience, we collect the variance parameters in the matrix $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_P^2 \right)$. 
+We denote the priors on the calibration and variance parameters as  $\pi_0(\btheta, \Sigma) = \pi_0(\btheta)\pi_0(\Sigma)$, assuming prior independence.  
+The variances $\sigma_p^2$ are assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
+\[\pi_0(\Sigma) = \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
+Combining these priors with the likelihood yields the posterior 
+\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto \mathcal{L}(\btheta)\pi_0(\btheta, \Sigma)\]
+
+\subsection{Surrogate Model}
+In this section we describe the emulator used to approximate the true likelihood $\mathcal{L}(\btheta)$. The likelihood can be written as 
+\begin{align*}
+\mathcal{L}(\btheta) &= \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
+			       &= \prod_{p = 1}^{P}  \prod_{t = 1}^{T_p} (2\pi \sigma_p^2)^{-1/2} \exp\left(-\frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2 \right) \\
+			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2\sigma_p^2} \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2  \right) \\
+			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2} \frac{\Phi_p(\btheta)}{\sigma_p^2} \right)
+\end{align*}
+where 
+\[\Phi_p(\btheta) := \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2\]
+is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\btheta)$ also depends on $Y$, but again we suppress this in the notation. The key observation 
+is that the model evaluations $G(\btheta)$ only appear in the likelihood through the $\Phi_p(\btheta)$, which means that approximating $\Phi_p(\btheta)$ will induce an approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\Phi(\btheta)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\Phi(\btheta)$ can be emulated without regard for the variance parameters, 
+and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \Theta \to \R$ also reduces the problem to 
+approximating $P$ univariate functions, instead of approximating $G(\btheta)$, which has output dimension $T \times P$. 
+
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
+\[\Phi_p(\cdot) \overset{ind}{\sim} \mathcal{GP}(\mu_p, k_p(\cdot, \cdot))\] 
+where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (i.e. kernel). The constant mean and kernel hyperparameters are fixed to their MLE estimates. We then run the forward model at carefully selected 
+\textit{design points} $\btheta_1, \dots, \btheta_N \in \Theta$ and compute $\{\Phi_p(\btheta_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. 
+
+We denote the resulting observed data for output $p$ as 
+$\mathcal{D}_p := \left\{(\btheta_1, \Phi_1(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$ and collect the observed outputs in a vector 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^T$.
+
+Conditioning the GPs on the observed data yields the GP predictive distributions 
+\[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
+where 
+\begin{align*}
+\mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
+\end{align*}
+
+% Abstract 
+\section{Abstract}
+The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
+has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
+in empirically-determined estimates of process model parameters. A Bayesian statistical framework  
+
+\bigskip
+\textbf{Questions:} 
+\begin{enumerate}
+\item \textbf{What are the strengths and weaknesses of loss emulation?} \\ 
+In this high-dimensional output setting, some sort of dimensionality reduction is required. The alternatives to loss emulation are dynamic emulation (i.e. emulating the flow map) or 
+emulating the parameters in a basis representation of the output. 
+\item \textbf{What is the effect of range-constraint in loss emulation?} 
+\item \textbf{What are effective strategies for running emulator-assisted MCMC?}
+\end{enumerate}
+
+\begin{enumerate}
+\item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
+	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
+\item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. \\
+\textbf{Solution}: Bayesian approach. 
+\item \textbf{Problem}: Bayesian inference with MCMC is infeasible when the forward model runtime is very costly. \\
+\textbf{Solution}: Approximate the forward model. 
+\end{enumerate}
+
+\section{Introduction}
+
+\section{Methods}
+
+\subsection{Statistical Model}
+\subsubsection{Likelihood: Multi-objective calibration}
+
+\subsubsection{Priors}
+
+\bigskip
+\noindent
+\textbf{Question}: Does PEcAn currently always assume prior independence across the $\theta_d$? 
+
+\subsubsection{Exact MCMC-based inference}
+
+\subsection{Loss Emulation}
+Every iteration of MCMC requires evaluation of the forward model $G(\btheta)$. If this evaluation is costly, then this will render MCMC computationally intractable. To address this, we employ a surrogate modeling approach. 
+The forward model $G(\btheta)$ is replaced by an an approximation $\hat{G}(\btheta)$ known as an \textit{emulator}. Assuming $\hat{G}(\btheta)$ is much faster to evaluate then we substitute it for the exact model and thus 
+sample from the approximate posterior
+ \[\hat{\pi}(\btheta, \Sigma) \propto \hat{\mathcal{L}}(\btheta)\pi(\btheta)p(\Sigma)\]
+ where 
+ \begin{align*}
+\hat{\mathcal{L}}(\theta) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| \hat{G}_{tp}(\btheta), \sigma_p^2 \right)
+\end{align*}
+ 
+\subsubsection{Emulator Details}
+\begin{enumerate}
+\item \textbf{Problem}: The model output $G(\btheta)$ has dimension $T \times P$. For any reasonable number of time steps $T$, the high-dimensionality of the output renders the problem of directly emulating $G$ intractable.  \\
+	\textbf{Solution}: One approach is to reduce the dimensionality of the output by representing it with respect to a basis, and then instead emulate the mapping from $\btheta$ to the basis coefficients. We consider an alternative 
+	of instead directly emulating the loss between the forward model and observed data. 
+	
+\item \textbf{Problem}: Issues with emulating the $\Phi_p$: non-linear, need to account for uncertainty in approximation. \\
+\textbf{Solution}: GP emulators. \\
+I need to write out this section, but to establish notation I briefly note that I will write $\Phi_p^*$ to denote the posterior/predictive distribution; i.e. the random field approximation of $\Phi_p$. I intentionally refrain from calling 
+this the predictive \textit{GP} since technically this could be a rectified or truncated Gaussian, or sometimes a Student-t process. This induces a random field approximation of the likelihood, which I similarly write as 
+$\mathcal{L}^*$, noting that the randomness in $\mathcal{L}^*$ comes from $\Phi^*_1, \dots, \Phi^*_P$. 
+	
+\end{enumerate}
+
+\subsubsection{Emulator-based MCMC inference}
+
+
+\subsection{Sequential Design}
+\begin{enumerate}
+\item \textbf{Problem}: While space-filling designs (e.g. via LHS or maximin) are common, they can be very inefficient in the Bayesian inverse problem setting. If the posterior distribution is concentrated in a small 
+subset of the parameter space, then space-filling designs will yield many design points in regions that are not of interest, while simultaneously under-sampling the region of significance.  \\
+	\textbf{Solution}: Sequential design approach that takes into account knowledge of the posterior as it proceeds. 
+	
+\subsection{Other things?}
+\begin{itemize}
+\item Scaling factors for PFTs. 
+\item Imbalanced data constraints. 
+\end{itemize}
+	
+\end{enumerate}
+
+% Details on Specific Methods
+\section{Details on Specific Methods}
+
+\subsection{Evaluation Metrics}
+
+\begin{enumerate}
+\item Challenges: 
+	\begin{enumerate} 
+	\item Assessing GP performance in a way that takes into account the GP distribution, i.e. challenge of validating probabilistic forecasts. 
+	\item The fact that we would like metrics to take into account the true posterior over $\btheta$ when possible. 
+	\end{enumerate}
+\item \textit{Diagnostics for Gaussian Process Emulators} (Bastos and O'Hagan, 2009) \\
+Discusses various criteria for evaluating GP emulators. A lot of focus is on defining suitably standardized residuals, the tricky part being that GP residuals are correlated. For example, interpreting 
+a QQ plot with typical standardized residuals is a bit difficult given the fact that the residuals are correlated. 
+\item \textit{Diagnostics and Simulation-Based Methods for Validating Gaussian Process Emulators} (Al-Taweel, PhD thesis from 2018). 
+\item \textit{Quantifying Model Error in Bayesian Parameter Estimation} (White, PhD thesis from 2015)
+\item Strictly proper scoring rules/CRPS
+\item Would like to read up on some more applied papers (e.g. Simon Mak's work on emulating spatiotemporal flows) to see what sort of metrics they report. 
+\end{enumerate}
+
+\subsection{Range-Constrained GP}
+\subsubsection{Do nothing to constrain GP prior}
+\begin{itemize}
+\item Current approach; instead transform GP posterior to truncated or rectified Gaussian. 
+\item Concern is that the prior is wrong, so may compromise GP fit and uncertainty calibration. 
+\end{itemize}
+
+\subsubsection{Warped GP}
+\begin{itemize}
+\item For example, a log-normal or square root GP. 
+\item We have seen that blindly applying the log-normal process (LNP) leads to very bad results due to the funneling effect of the log-transformation; i.e. the sum of squared residuals (SSR) often exhibits a very high dynamic range, 
+with some very large values and others that are almost zero. In the VSEM examples at least, this effect was especially bad as the funneling occurs at some values of SSR, which means the emulator fared worse in the 
+most important region of the parameter space. 
+\item In simple one-dimensional examples, I showed a while back that instead transforming the data as $\log\left(\Phi_p(\theta) + C \right)$ for a well-chosen constant $C$ could yield nice LNP results. One approach to explore 
+would be to optimize the value of $C$. 
+\end{itemize}
+
+\subsubsection{Other range-constrained GP methods that have been proposed:}
+\begin{enumerate}
+\item ``fit all available model data and impute a set of ``artificial data"" throughout the input space points that maintain the constraint.'' (Spiller et al, 2023)
+\item Another approach: modify the MLE for hyperparameter fitting. In particular, Pensoneault et al., 2020 propose a method whereby the lengthscale parameters are constrained so that the predictive GP obeys the 
+range constraint at untested inputs with high probability. This has the benefit that the predictive GP distribution is still Gaussian, as opposed to some other methods. 
+\item \textit{The Zero Problem: Gaussian Process Emulators for Range-Constrained Computer Models} (Spiller et al, 2023) \\
+They are dealing with zero-censored computer models, and they consider a prior on the computer model $f(\btheta)$: $f(\btheta) \sim \max \left\{0, g(\btheta) \right\}$ where $g \sim \mathcal{GP}$. Not that relevant to our 
+case but some interesting ideas here.  
+\end{enumerate}
+
+
+\subsection{Sequential Design}
+
+\subsubsection{Sinsbeck and Nowak (2017)}
+
+
+\subsubsection{Ensemble Kalman Inversion}
+TODO
+
+\section{References}
+\begin{itemize}
+\item Emulating dynamic non-linear simulators using Gaussian processes (Mohammadi et al, 2019)
+\item Emulating complex dynamical simulators with random Fourier features (Mohammadi et al, 2023)
+\item Sequential adaptive design for emulating costly computer codes (Mohammadi et al, 2022)
+\item Emulation-accelerated Hamiltonian Monte Carlo algorithms for parameter estimation and uncertainty quantification in differential equation models (Paun and Husmeier, 2021)
+\end{itemize}
+
+
+
+\end{document}
+
+
+
+
