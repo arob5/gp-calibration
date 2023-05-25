@@ -107,9 +107,18 @@ approximating $P$ univariate functions, instead of approximating $G(\btheta)$, w
 Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
 \[\Phi_p(\cdot) \overset{ind}{\sim} \mathcal{GP}(\mu_p, k_p(\cdot, \cdot))\] 
 where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (i.e. kernel). The constant mean and kernel hyperparameters are fixed to their MLE estimates. We then run the forward model at carefully selected 
-\textit{design points} $\btheta_1, \dots, \btheta_N \in \Theta$ and compute $\{\Phi_p(\btheta_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. We denote the resulting observed data for output $p$ as 
-$\mathcal{D}_p := \left\{(\btheta_1, \Phi_p(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
+\textit{design points} $\btheta_1, \dots, \btheta_N \in \Theta$ and compute $\{\Phi_p(\btheta_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. 
+
+We denote the resulting observed data for output $p$ as 
+$\mathcal{D}_p := \left\{(\btheta_1, \Phi_1(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$ and collect the observed outputs in a vector 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^T$.
+
+Conditioning the GPs on the observed data yields the GP predictive distributions 
 \[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
+where 
+\begin{align*}
+\mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
+\end{align*}
 
 \section{Abstract}
 \begin{enumerate}
