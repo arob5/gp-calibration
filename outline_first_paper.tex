@@ -253,7 +253,33 @@ case but some interesting ideas here.
 \subsection{Sequential Design}
 
 \subsubsection{Sinsbeck and Nowak (2017)}
+Sinsbeck and Nowak propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $\mathcal{L}(\btheta)$ at each iteration of the sequential design procedure. 
+This likelihood approximation is then used to construct an acquisition function that targets regions of high posterior density. I summarize their method here, with adjustments to tailor the method to our loss-emulation setting. 
 
+\bigskip
+\noindent
+\textbf{Deterministic likelihood approximation.}
+The first step is to construct the deterministic likelihood approximation $\hat{\mathcal{L}}_n(\btheta)$ from 
+$\mathcal{L}^*_n(\btheta)$, where the subscript $n$ indicates that both the random field approximation $\mathcal{L}^*_n(\btheta)$ and deterministic approximation $\hat{\mathcal{L}}_n(\btheta)$ have been constructed from the data 
+$\mathcal{D}_n = \left\{(\btheta_1, \mathcal{L}(\btheta_1)), \dots, (\btheta_n, \mathcal{L}(\btheta_n)) \right\}$. One option is to define $\hat{\mathcal{L}}_n(\btheta)$ as the approximation resulting from plugging in the GP predictive 
+means. However, this fails to account for the uncertainty encoded by the GP predictive distribution. Sinsbeck and Nowak take a more principled approach, defining $\hat{\mathcal{L}}_n(\btheta)$ as the approximation that minimizes 
+a certain loss criterion. The loss criterion of choice is the prior-weighted $L^2$ error:
+\[\ell(\mathcal{L}, \mathcal{L}^\prime) := \E_{\btheta \sim \pi_0}\left[\left(\mathcal{L}(\btheta) - \mathcal{L}^\prime(\btheta) \right)^2 \right]\]
+However, in this setting the goal is to choose the $\hat{\mathcal{L}}_n$ that minimizes error with respect to a \textit{random} approximation $\mathcal{L}_n^*$. Thus, the error measure is defined as the 
+expectation of $\ell(\mathcal{L}^*_n, \hat{\mathcal{L}}_n)$ with respect to the GP $\Phi^*$. This yields the \textit{Bayes' risk}
+\[\mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) := \E_{\Phi^*} \E_{\pi_0} \left[\left(\mathcal{L}^*(\btheta) - \mathcal{L}(\btheta) \right)^2 \right] \]
+The deterministic approximation is taken as the minimizer  
+\[\hat{\mathcal{L}}_n := \text{argmin}_{\mathcal{L}_n} \mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) \]
+which can be shown to be given by 
+\[\hat{\mathcal{L}}_n(\btheta) = \E_{\Phi^*}\left[\mathcal{L}_n^*(\btheta) \right]\]
+i.e. the approximation resulting from integrating the GP out of the random field $\mathcal{L}_n^*(\btheta)$. With this approximation, the Bayes' risk reduces to the prior-weighted predictive variance 
+of $\mathcal{L}_n^*(\btheta)$: 
+\[\mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) = \E_{\pi_0} \Var_{\Phi^*}\left[\mathcal{L}_n^*(\btheta)\right]\] 
+The authors also consider a ``fully Bayesian'' likelihood estimation approach, which turns out to result in the same exact estimator. 
+
+\bigskip
+\noindent
+\textbf{Acquisition Function.}
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
@@ -261,6 +287,10 @@ TODO
 \section{References}
 \begin{itemize}
 \item Emulating dynamic non-linear simulators using Gaussian processes (Mohammadi et al, 2019)
+\item Mechanism-based emulation of dynamic simulation models: Concept and application in hydrology (Reichert et al, 2016)
+\item Gaussian process emulation of dynamic computer codes (Conti et al, 2009) (Resource for one-step-ahead emulator)
+\item Evolving Bayesian emulators for structured chaotic time series, with application to large climate models. (Williamson and Blaker, 2014)
+\item A dynamic modelling strategy for Bayesian computer model emulation (Liu and West, 2009)
 \item Emulating complex dynamical simulators with random Fourier features (Mohammadi et al, 2023)
 \item Sequential adaptive design for emulating costly computer codes (Mohammadi et al, 2022)
 \item Emulation-accelerated Hamiltonian Monte Carlo algorithms for parameter estimation and uncertainty quantification in differential equation models (Paun and Husmeier, 2021)
