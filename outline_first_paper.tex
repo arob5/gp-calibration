@@ -130,6 +130,7 @@ in empirically-determined estimates of process model parameters. A Bayesian stat
 \bigskip
 \textbf{Questions:} 
 \begin{enumerate}
+\item What are the weaknesses of current approaches to solving this problem? How does our method overcome these weaknesses? 
 \item \textbf{What are the strengths and weaknesses of loss emulation?} \\ 
 In this high-dimensional output setting, some sort of dimensionality reduction is required. The alternatives to loss emulation are dynamic emulation (i.e. emulating the flow map) or 
 emulating the parameters in a basis representation of the output. 
@@ -272,14 +273,32 @@ The deterministic approximation is taken as the minimizer
 \[\hat{\mathcal{L}}_n := \text{argmin}_{\mathcal{L}_n} \mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) \]
 which can be shown to be given by 
 \[\hat{\mathcal{L}}_n(\btheta) = \E_{\Phi^*}\left[\mathcal{L}_n^*(\btheta) \right]\]
-i.e. the approximation resulting from integrating the GP out of the random field $\mathcal{L}_n^*(\btheta)$. With this approximation, the Bayes' risk reduces to the prior-weighted predictive variance 
+i.e. the approximation resulting from integrating the GP out of the random field $\mathcal{L}_n^*(\btheta)$. Evaluated at the optimizer, the Bayes' risk reduces to the prior-weighted predictive variance 
 of $\mathcal{L}_n^*(\btheta)$: 
-\[\mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) = \E_{\pi_0} \Var_{\Phi^*}\left[\mathcal{L}_n^*(\btheta)\right]\] 
+\begin{align}
+\mathcal{R}(\mathcal{L}_n^*, \hat{\mathcal{L}}_n) = \E_{\pi_0} \Var_{\Phi^*}\left[\mathcal{L}_n^*(\btheta)\right] \label{Bayes_Risk}
+\end{align}
 The authors also consider a ``fully Bayesian'' likelihood estimation approach, which turns out to result in the same exact estimator. 
 
 \bigskip
 \noindent
 \textbf{Acquisition Function.}
+The authors propose a greedy one-step look ahead strategy. Intuitively, we assess the quality of a new design point $\tilde{\btheta}$ by considering the GP predictive distribution 
+at this proposed point $\tilde{\Phi} := \Phi(\tilde{\btheta})$. We use this predictive distribution to predict what Bayes' risk \ref{Bayes_Risk} would be were we to observe 
+$(\tilde{\btheta}, \tilde{\Phi})$ and condition on this additional observation. Recall that $\mathcal{R}(\mathcal{L}^*_n, \hat{\mathcal{L}}_n)$ denotes the Bayes' risk between the 
+random field approximation and optimal deterministic approximation. I introduce the notation $\tilde{\mathcal{L}}^*_n := \mathcal{L}^*_n|\tilde{\btheta}, \tilde{\Phi}$ to denote the 
+random field likelihood approximation conditioned on $(\tilde{\btheta}, \tilde{\Phi})$. Note that the forward model has not yet been run at input parameter $\tilde{\btheta}$ so 
+$\tilde{\Phi}$ is itself a random variable. I utilize the same notation for the GP itself, so that $\tilde{\Phi}^*_n := \Phi^*_n|\tilde{\btheta}, \tilde{\Phi}$
+
+With this notation established, $\mathcal{R}(\tilde{\mathcal{L}}^*_n, \hat{\mathcal{L}}_n)$ is an estimator for the future Bayes' risk, were we 
+to run the forward model at $\tilde{\btheta}$. In order to define a deterministic acquisition function, we must now integrate over the distribution of $\tilde{\Phi}$, in addition to the two other 
+integrals in the original definition of the Bayes' risk. This yields the acquisition function, 
+\begin{align}
+J_n(\tilde{\btheta}) &:=  \E_{\tilde{\Phi}} \mathcal{R}(\tilde{\mathcal{L}}^*_n, \hat{\mathcal{L}}_n) \\ 
+			     &= \E_{\tilde{\Phi}} \E_{\pi_0} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\Phi}_n^*(\btheta) \right]
+\end{align}
+Note that the acquisition function is a function of $\tilde{\btheta}$, a new design point; not to be confused with the $\btheta$ in the second line above, which is averaged over by 
+$\E_{\pi_0}(\cdot)$. 
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
@@ -294,6 +313,8 @@ TODO
 \item Emulating complex dynamical simulators with random Fourier features (Mohammadi et al, 2023)
 \item Sequential adaptive design for emulating costly computer codes (Mohammadi et al, 2022)
 \item Emulation-accelerated Hamiltonian Monte Carlo algorithms for parameter estimation and uncertainty quantification in differential equation models (Paun and Husmeier, 2021)
+\item Sequential design of computer exper- iments for the estimation of a probability of failure (Bect et al, 2012)
+\item Kriging Is Well-Suited to Parallelize Optimization (Ginsbourger et al, 2010)
 \end{itemize}
 
 
