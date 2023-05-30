@@ -145,11 +145,21 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
  G(\btheta; \bx_0) = \begin{pmatrix} \bx_0^T \\ \bx_\theta(\Delta t)^T \\  \bx_\theta(2\Delta t)^T \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^T \end{pmatrix} = 
  \begin{pmatrix} \bx_0^T \\ g_\theta(\bx_0)^T \\  g_\theta\left(g_\theta(\bx_0)\right)^T \\ \vdots \\ g_\theta^{(T-1)}(\bx_0)^T \end{pmatrix}
  \]
- where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(t)}$ to denote 
- the composition consisting of $t$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
+ where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(k)}$ to denote 
+ the composition consisting of $k$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
  some other time $t_0$ could of course be considered. 
  
-\cite{MOHAMMADI2019178}
+ There have been many proposals to emulate such dynamical systems. Many such approaches consider emulation of the trajectory $\{\bx_\theta(k\Delta t)\}_{k = 1}^{T-1}$ as a function of 
+ the initial condition $\bx_0$, but assuming fixed $\btheta$. This is not very useful when parameter calibration is the goal, as the dynamics change when $\btheta$ changes. I briefly summarize some 
+ of the relevant literature below. 
+ 
+ 
+\subsubsection{Emulating the Flow Map}
+Although they assume $\btheta$ to be fixed, Mohammadi et al (2018) \cite{MOHAMMADI2019178} propose some interesting ideas. They focus on emulating the flow map $g(\cdot)$ 
+(I omit the $\btheta$ subscript as it is constant here). The idea is to fix a small step $\Delta t$, and learn a map from the initial condition $\bx_0$ to $\bx(\Delta t)$. This produces an emulator 
+that can produce one-step-ahead predictions. Their emulator consists of $K$ univariate emulators, one for each $g_k(\cdot)$. Prediction requires iteratively composing GP predictions, which 
+propagates the uncertainty forward. This can actually be viewed as a deep GP, though it avoids the main difficulty of having to fit kernel hyperparameters in a deep GP. Inference is conducted 
+via a Monte Carlo approach, propagating GP samples iteratively through each time step. 
 
 \bigskip
 \textbf{Questions:} 
