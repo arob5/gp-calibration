@@ -1,0 +1,33 @@
+@article{MOHAMMADI2019178,
+title = {Emulating dynamic non-linear simulators using Gaussian processes},
+journal = {Computational Statistics & Data Analysis},
+volume = {139},
+pages = {178-196},
+year = {2019},
+issn = {0167-9473},
+doi = {https://doi.org/10.1016/j.csda.2019.05.006},
+url = {https://www.sciencedirect.com/science/article/pii/S0167947319301173},
+author = {Hossein Mohammadi and Peter Challenor and Marc Goodfellow},
+keywords = {Dynamic simulators, Gaussian processes, Lorenz system, Uncertainty propagation, van der Pol model},
+abstract = {The dynamic emulation of non-linear deterministic computer codes where the output is a time series, possibly multivariate, is examined. Such computer models simulate the evolution of some real-world phenomenon over time, for example models of the climate or the functioning of the human brain. The models we are interested in are highly non-linear and exhibit tipping points, bifurcations and chaotic behaviour. However, each simulation run could be too time-consuming to perform analyses that require many runs, including quantifying the variation in model output with respect to changes in the inputs. Therefore, Gaussian process emulators are used to approximate the output of the code. To do this, the flow map of the system under study is emulated over a short time period. Then, it is used in an iterative way to predict the whole time series. A number of ways are proposed to take into account the uncertainty of inputs to the emulators, after fixed initial conditions, and the correlation between them through the time series. The methodology is illustrated with two examples: the highly non-linear dynamical systems described by the Lorenz and van der Pol equations. In both cases, the predictive performance is relatively high and the measure of uncertainty provided by the method reflects the extent of predictability in each system.}
+}
+
+
+@article{doi:10.1137/15M1047659,
+author = {Sinsbeck, Michael and Nowak, Wolfgang},
+title = {Sequential Design of Computer Experiments for the Solution of Bayesian Inverse Problems},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {5},
+number = {1},
+pages = {640-664},
+year = {2017},
+doi = {10.1137/15M1047659},
+URL = { 
+    
+        https://doi.org/10.1137/15M1047659
+},
+eprint = {     
+        https://doi.org/10.1137/15M1047659
+},
+abstract = { We present a sequential design strategy for efficient sampling of model functions during the solution of Bayesian inverse problems. The model function is assumed to be computationally expensive and therefore is described by a random field (such as a Gaussian process emulator). The sequential design strategy is a greedy one-step look ahead method, minimizing the Bayes risk with respect to a loss function measuring the quadratic \$L^2\$-error in the likelihood estimate. Four numerical examples demonstrate that the proposed sampling method is more efficient than space-filling, prior-based designs. }
+}

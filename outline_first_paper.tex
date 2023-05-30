@@ -30,6 +30,8 @@
 \newcommand{\Cov}{\mathrm{Cov}}
 \newcommand{\Prob}{\mathbb{P}}
 \newcommand{\btheta}{\boldsymbol{\theta}}
+\newcommand{\bx}{\mathbf{x}}
+
 \DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator*{\argmin}{argmin}
@@ -112,9 +114,7 @@ where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (
 
 We denote the resulting observed data for output $p$ as 
 $\mathcal{D}_p := \left\{(\btheta_1, \Phi_1(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$ and collect the observed outputs in a vector 
-$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^T$.
-
-Conditioning the GPs on the observed data yields the GP predictive distributions 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^T$. Conditioning the GPs on the observed data yields the GP predictive distributions 
 \[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
 where 
 \begin{align*}
@@ -125,7 +125,31 @@ where
 \section{Abstract}
 The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
 has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
-in empirically-determined estimates of process model parameters. A Bayesian statistical framework  
+in empirically-determined estimates of process model parameters. A Bayesian statistical framework...
+
+From a methodological point of view, I see this paper as existing at the intersection of the computer experiments and Bayesian inverse problem fields. 
+
+\subsection{The big picture: dynamic emulators}
+I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
+defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
+\[\bx(t) = \left(x_1(t), \dots, x_K(t) \right)^T \]
+If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous then the \textit{one-step map} or \textit{flow map} $g: \R^K \to \R^K$ is time-independent: 
+ \[\bx(t + \Delta t) = g(\bx(t))\]
+ Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
+ vector-valued $g$ as a collection of $K$ univariate flow maps
+ \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_K(\bx(t)) \right)^T\]
+ so that $g_k: \R^K \to \R$ maps $\bx(t)$ to $\bx_k(t + \Delta t)$, the value of the $k^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
+ the parameters $\btheta$. I will reflect this dependence by writing $g_\theta$ and $\bx_\theta(t)$. The forward model $G: \R^D \to \R^{T \times P}$ defined previously can thus be characterized 
+ as 
+ \[
+ G(\btheta; \bx_0) = \begin{pmatrix} \bx_0^T \\ \bx_\theta(\Delta t)^T \\  \bx_\theta(2\Delta t)^T \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^T \end{pmatrix} = 
+ \begin{pmatrix} \bx_0^T \\ g_\theta(\bx_0)^T \\  g_\theta\left(g_\theta(\bx_0)\right)^T \\ \vdots \\ g_\theta^{(T-1)}(\bx_0)^T \end{pmatrix}
+ \]
+ where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(t)}$ to denote 
+ the composition consisting of $t$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
+ some other time $t_0$ could of course be considered. 
+ 
+\cite{MOHAMMADI2019178}
 
 \bigskip
 \textbf{Questions:} 
@@ -254,7 +278,7 @@ case but some interesting ideas here.
 \subsection{Sequential Design}
 
 \subsubsection{Sinsbeck and Nowak (2017)}
-Sinsbeck and Nowak propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $\mathcal{L}(\btheta)$ at each iteration of the sequential design procedure. 
+Sinsbeck and Nowak \cite{doi:10.1137/15M1047659} propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $\mathcal{L}(\btheta)$ at each iteration of the sequential design procedure. 
 This likelihood approximation is then used to construct an acquisition function that targets regions of high posterior density. I summarize their method here, with adjustments to tailor the method to our loss-emulation setting. 
 
 \bigskip
@@ -265,10 +289,11 @@ $\mathcal{L}^*_n(\btheta)$, where the subscript $n$ indicates that both the rand
 $\mathcal{D}_n = \left\{(\btheta_1, \mathcal{L}(\btheta_1)), \dots, (\btheta_n, \mathcal{L}(\btheta_n)) \right\}$. One option is to define $\hat{\mathcal{L}}_n(\btheta)$ as the approximation resulting from plugging in the GP predictive 
 means. However, this fails to account for the uncertainty encoded by the GP predictive distribution. Sinsbeck and Nowak take a more principled approach, defining $\hat{\mathcal{L}}_n(\btheta)$ as the approximation that minimizes 
 a certain loss criterion. The loss criterion of choice is the prior-weighted $L^2$ error:
-\[\ell(\mathcal{L}, \mathcal{L}^\prime) := \E_{\btheta \sim \pi_0}\left[\left(\mathcal{L}(\btheta) - \mathcal{L}^\prime(\btheta) \right)^2 \right]\]
+\[\ell(\mathcal{L}, \mathcal{L}^\prime) := \E_{\btheta}\left[\left(\mathcal{L}(\btheta) - \mathcal{L}^\prime(\btheta) \right)^2 \right]\]
+where the notation $\E_{\btheta}(\cdot)$ indicates integration with respect to the prior $\pi_0$. 
 However, in this setting the goal is to choose the $\hat{\mathcal{L}}_n$ that minimizes error with respect to a \textit{random} approximation $\mathcal{L}_n^*$. Thus, the error measure is defined as the 
 expectation of $\ell(\mathcal{L}^*_n, \hat{\mathcal{L}}_n)$ with respect to the GP $\Phi^*$. This yields the \textit{Bayes' risk}
-\[\mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) := \E_{\Phi^*} \E_{\pi_0} \left[\left(\mathcal{L}^*(\btheta) - \mathcal{L}(\btheta) \right)^2 \right] \]
+\[\mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) := \E_{\Phi^*} \E_{\btheta} \left[\left(\mathcal{L}^*(\btheta) - \mathcal{L}(\btheta) \right)^2 \right] \]
 The deterministic approximation is taken as the minimizer  
 \[\hat{\mathcal{L}}_n := \text{argmin}_{\mathcal{L}_n} \mathcal{R}(\mathcal{L}_n^*, \mathcal{L}_n) \]
 which can be shown to be given by 
@@ -276,7 +301,7 @@ which can be shown to be given by
 i.e. the approximation resulting from integrating the GP out of the random field $\mathcal{L}_n^*(\btheta)$. Evaluated at the optimizer, the Bayes' risk reduces to the prior-weighted predictive variance 
 of $\mathcal{L}_n^*(\btheta)$: 
 \begin{align}
-\mathcal{R}(\mathcal{L}_n^*, \hat{\mathcal{L}}_n) = \E_{\pi_0} \Var_{\Phi^*}\left[\mathcal{L}_n^*(\btheta)\right] \label{Bayes_Risk}
+\hat{\mathcal{R}}(\mathcal{L}_n^*) := \mathcal{R}(\mathcal{L}_n^*, \hat{\mathcal{L}}_n) = \E_{\btheta} \Var_{\Phi^*}\left[\mathcal{L}_n^*(\btheta)\right] \label{Bayes_Risk}
 \end{align}
 The authors also consider a ``fully Bayesian'' likelihood estimation approach, which turns out to result in the same exact estimator. 
 
@@ -285,23 +310,46 @@ The authors also consider a ``fully Bayesian'' likelihood estimation approach, w
 \textbf{Acquisition Function.}
 The authors propose a greedy one-step look ahead strategy. Intuitively, we assess the quality of a new design point $\tilde{\btheta}$ by considering the GP predictive distribution 
 at this proposed point $\tilde{\Phi} := \Phi(\tilde{\btheta})$. We use this predictive distribution to predict what Bayes' risk \ref{Bayes_Risk} would be were we to observe 
-$(\tilde{\btheta}, \tilde{\Phi})$ and condition on this additional observation. Recall that $\mathcal{R}(\mathcal{L}^*_n, \hat{\mathcal{L}}_n)$ denotes the Bayes' risk between the 
+$(\tilde{\btheta}, \tilde{\Phi})$ and condition on this additional observation. Recall that $\hat{\mathcal{R}}(\mathcal{L}_n^*)$ denotes the Bayes' risk between the 
 random field approximation and optimal deterministic approximation. I introduce the notation $\tilde{\mathcal{L}}^*_n := \mathcal{L}^*_n|\tilde{\btheta}, \tilde{\Phi}$ to denote the 
 random field likelihood approximation conditioned on $(\tilde{\btheta}, \tilde{\Phi})$. Note that the forward model has not yet been run at input parameter $\tilde{\btheta}$ so 
 $\tilde{\Phi}$ is itself a random variable. I utilize the same notation for the GP itself, so that $\tilde{\Phi}^*_n := \Phi^*_n|\tilde{\btheta}, \tilde{\Phi}$
 
-With this notation established, $\mathcal{R}(\tilde{\mathcal{L}}^*_n, \hat{\mathcal{L}}_n)$ is an estimator for the future Bayes' risk, were we 
+With this notation established, $\hat{\mathcal{R}}(\tilde{\mathcal{L}}^*_n)$ is an estimator for the future Bayes' risk, were we 
 to run the forward model at $\tilde{\btheta}$. In order to define a deterministic acquisition function, we must now integrate over the distribution of $\tilde{\Phi}$, in addition to the two other 
 integrals in the original definition of the Bayes' risk. This yields the acquisition function, 
 \begin{align}
-J_n(\tilde{\btheta}) &:=  \E_{\tilde{\Phi}} \mathcal{R}(\tilde{\mathcal{L}}^*_n, \hat{\mathcal{L}}_n) \\ 
-			     &= \E_{\tilde{\Phi}} \E_{\pi_0} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\Phi}_n^*(\btheta) \right]
+J_n(\tilde{\btheta}) &:=  \E_{\tilde{\Phi}} \hat{\mathcal{R}}(\tilde{\mathcal{L}}^*_n) \\ 
+			     &= \E_{\tilde{\Phi}} \E_{\btheta} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\mathcal{L}}_n^*(\btheta) \right]
 \end{align}
 Note that the acquisition function is a function of $\tilde{\btheta}$, a new design point; not to be confused with the $\btheta$ in the second line above, which is averaged over by 
 $\E_{\pi_0}(\cdot)$. 
 
+This is the final acquisition function considered in the paper. However, in our case the likelihood parameters $\Sigma$ are not known. We could consider augmenting to include these 
+parameters and integrate over the prior on the likelihood parameters as well: 
+\begin{align}
+J_n(\tilde{\btheta}) &:= \E_{\tilde{\Phi}} \E_{\Sigma} \E_{\btheta} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\mathcal{L}}_n^*(\btheta, \Sigma) \right]
+\end{align}
+
+\bigskip
+\noindent
+\textbf{Approximating the Acquisition Function.}
+
+\bigskip
+\noindent
+\textbf{Questions.}
+\begin{enumerate}
+\item How could this be modified to take advantage of parallel computing resources? 
+\item Are the authors assuming the likelihood parameters are known/fixed? How would we account for unknown likelihood parameters? 
+\end{enumerate}
+
 \subsubsection{Ensemble Kalman Inversion}
 TODO
+
+
+\bibliography{first_paper} 
+\bibliographystyle{ieeetr}
+
 
 \section{References}
 \begin{itemize}
