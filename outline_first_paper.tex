@@ -121,14 +121,6 @@ where
 \mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
 \end{align*}
 
-% Abstract 
-\section{Abstract}
-The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
-has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
-in empirically-determined estimates of process model parameters. A Bayesian statistical framework...
-
-From a methodological point of view, I see this paper as existing at the intersection of the computer experiments and Bayesian inverse problem fields. 
-
 \subsection{The big picture: dynamic emulators}
 I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
 defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
@@ -148,11 +140,54 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
  where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(k)}$ to denote 
  the composition consisting of $k$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
  some other time $t_0$ could of course be considered. 
+
+% Abstract 
+\section{Abstract}
+The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
+has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
+in empirically-determined estimates of process model parameters. A Bayesian statistical framework...
+
+% Background/Literature Review
+\section{Background/Literature Review}
+From a methodological point of view, I see this paper as existing at the intersection of the computer experiments and Bayesian inverse problem fields. 
  
+ \subsection{Likelihood Emulators/Loss Emulators/Scalarization}
+ The idea of reducing dimensionality by emulating some sort of scalar-valued function summarizing the model-data discrepancy (e.g. loss function, log-likelihood) is certainly well-known, but 
+ it is difficult to find any sort of systematic study of this approach or comparison to alternative approaches. 
+ 
+ The paper \cite{LEBEL2019158} utilizes a GP approximation of the log-likelihood 
+ $\ell(\btheta) := \log \mathcal{L}(\btheta)$. This requires fixing the likelihood parameters in advance. Their GP-assisted MCMC algorithm consists of posterior evaluations of the form 
+ \[\hat{\pi}(\btheta) = \frac{1}{L} \sum_{l = 1}^{L} \pi(\btheta|\ell_l) \text{, where } \ell_l \overset{iid}{\sim} \ell^*(\btheta)\]
+ where $\pi(\btheta|\ell_l)$ indicates the deterministic posterior density approximation constructed by plugging in $\ell_l$ in place of the true log-likelihood $\ell(\btheta)$. 
+ The current PEcAn approach generally utilizes the same approximation with $L = 1$ (and emulating $\Phi(\cdot)$ instead of $\ell(\cdot)$). For simplicity above, I wrote 
+ $\ell_l \overset{iid}{\sim} \ell^*(\btheta)$, indicating pointwise GP predictive draws. Surprisingly, this is not actually what the authors do. They are 
+ instead concerned with sampling GP trajectories (functions) $\ell_l(\cdot) \overset{iid}{\sim} \ell^*(\cdot)$; that is, they seek to draw GP realizations across the entire input space 
+ which respect the correlation structure, and then evaluate those realizations at $\btheta$ to obtain the final values $\{\ell_l\}_{l = 1}^{L} = \{\ell_l(\btheta)\}_{l = 1}^{L}$. Since doing this 
+ would require sampling the GP over a dense grid of points, they instead propose an approximation that only uses a sparse set of ``conditioning points''. The conditioning 
+ set $\Theta_c \subset \Theta$ is defined to target regions where the GP is confident that the likelihood is larger. In particular, it is defined as 
+ \begin{align*}
+\Theta_c &:= \left\{\btheta \in \Theta : \Prob\left(\ell^*(\btheta) > \ell^*(\btheta_{\text{max}}) \right) > \rho \right\} \\
+\btheta_{\text{max}} &:= \text{argmax}_{\btheta \in \Theta} \E\left[\ell^*(\btheta)\right]
+ \end{align*}
+ where $\rho \in [0, 1]$ is some specified threshold. i.e., the conditioning set is the subset of the input space where the GP assigns high probability of improvement. The authors' description is 
+ not entirely clear to me, but I believe this is what they do to construct each $\ell_l$: 
+ \begin{enumerate}
+ \item Draw samples at the conditioning points: $\ell(\Theta_c) \sim \ell^*(\Theta_c)$. 
+ \item Treat $\left(\Theta_c, \ell(\Theta_c)\right)$ as pseudo-data and condition the GP $\ell^*$ on this pseudo-data as if they were true observations. Denote the conditioned GP as $\ell^*_c$. 
+ \item Return $\ell_i := \E\left[\ell_c^*(\btheta) \right]$
+ \end{enumerate}
+ I believe the idea is to condition so that the uncertainty in the distribution collapses and the mean function of the conditioned GP is hopefully a good approximation of the trajectory. Note that 
+ $\left(\Theta_c, \ell(\Theta_c)\right)$ are observations of the true trajectory. All of this seems a bit odd to me given that ultimately a prediction is only required at $\btheta$, so why not just 
+ use the GP marginal?  
+ 
+ 
+ \subsection{Dynamic Emulators}
  There have been many proposals to emulate such dynamical systems. Many such approaches consider emulation of the trajectory $\{\bx_\theta(k\Delta t)\}_{k = 1}^{T-1}$ as a function of 
  the initial condition $\bx_0$, but assuming fixed $\btheta$. This is not very useful when parameter calibration is the goal, as the dynamics change when $\btheta$ changes. I briefly summarize some 
  of the relevant literature below. 
  
+ \subsubsection{Early work of Conti and O'Hagan}
+ Here I summarize the papers \cite{10.1093/biomet/asp028} and \cite{CONTI2010640}. 
  
 \subsubsection{Emulating the Flow Map}
 Although they assume $\btheta$ to be fixed, Mohammadi et al (2018) \cite{MOHAMMADI2019178} propose some interesting ideas. They focus on emulating the flow map $g(\cdot)$ 
