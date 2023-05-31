@@ -1,3 +1,4 @@
+
 @article{MOHAMMADI2019178,
 title = {Emulating dynamic non-linear simulators using Gaussian processes},
 journal = {Computational Statistics & Data Analysis},
@@ -270,5 +271,45 @@ author = {G. Perrin},
 keywords = {Bayesian framework, Computer experiment, Dynamic simulator, Gaussian process, Multi-output},
 abstract = {Simulation plays a major role in the conception, the optimization and the certification of complex systems. Of particular interest here is the calibration of the parameters of computer models from high-dimensional physical observations. When the run times of these computer codes is high, this work focuses on the numerical challenges associated with the statistical inference. In particular, several adaptations of the Gaussian Process Regression (GPR) to the high-dimensional or functional output case are presented for the emulation of computer codes from limited data. Then, an adaptive procedure is detailed to minimize the calibration parameters uncertainty at the minimal computational cost. The proposed method is eventually applied to two applications that are based on dynamic simulators.}
 }
+
+@article{Cleary_2021,
+	doi = {10.1016/j.jcp.2020.109716},
+  
+	url = {https://doi.org/10.1016\%2Fj.jcp.2020.109716},
+  
+	year = 2021,
+	month = {jan},
+  
+	publisher = {Elsevier {BV}
+},
+  
+	volume = {424},
+  
+	pages = {109716},
+  
+	author = {Emmet Cleary and Alfredo Garbuno-Inigo and Shiwei Lan and Tapio Schneider and Andrew M. Stuart},
+  
+	title = {Calibrate, emulate, sample},
+  
+	journal = {Journal of Computational Physics}
+}
+
+
+@article{https://doi.org/10.1029/2020MS002454,
+author = {Dunbar, Oliver R. A. and Garbuno-Inigo, Alfredo and Schneider, Tapio and Stuart, Andrew M.},
+title = {Calibration and Uncertainty Quantification of Convective Parameters in an Idealized GCM},
+journal = {Journal of Advances in Modeling Earth Systems},
+volume = {13},
+number = {9},
+pages = {e2020MS002454},
+keywords = {uncertainty quantification, model calibration, machine learning, general circulation model, parametric uncertainty, inverse problem},
+doi = {https://doi.org/10.1029/2020MS002454},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2020MS002454},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2020MS002454},
+note = {e2020MS002454 2020MS002454},
+abstract = {Abstract Parameters in climate models are usually calibrated manually, exploiting only small subsets of the available data. This precludes both optimal calibration and quantification of uncertainties. Traditional Bayesian calibration methods that allow uncertainty quantification are too expensive for climate models; they are also not robust in the presence of internal climate variability. For example, Markov chain Monte Carlo (MCMC) methods typically require model runs and are sensitive to internal variability noise, rendering them infeasible for climate models. Here we demonstrate an approach to model calibration and uncertainty quantification that requires only model runs and can accommodate internal climate variability. The approach consists of three stages: (a) a calibration stage uses variants of ensemble Kalman inversion to calibrate a model by minimizing mismatches between model and data statistics; (b) an emulation stage emulates the parameter-to-data map with Gaussian processes (GP), using the model runs in the calibration stage for training; (c) a sampling stage approximates the Bayesian posterior distributions by sampling the GP emulator with MCMC. We demonstrate the feasibility and computational efficiency of this calibrate-emulate-sample (CES) approach in a perfect-model setting. Using an idealized general circulation model, we estimate parameters in a simple convection scheme from synthetic data generated with the model. The CES approach generates probability distributions of the parameters that are good approximations of the Bayesian posteriors, at a fraction of the computational cost usually required to obtain them. Sampling from this approximate posterior allows the generation of climate predictions with quantified parametric uncertainties.},
+year = {2021}
+}
+
 
 

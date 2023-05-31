@@ -121,16 +121,16 @@ where
 \mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
 \end{align*}
 
-\subsection{The big picture: dynamic emulators}
+\subsection{Dynamic Simulators}
 I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
 defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
-\[\bx(t) = \left(x_1(t), \dots, x_K(t) \right)^T \]
-If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous then the \textit{one-step map} or \textit{flow map} $g: \R^K \to \R^K$ is time-independent: 
+\[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^T \]
+If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \to \R^P$ is time-invariant: 
  \[\bx(t + \Delta t) = g(\bx(t))\]
  Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
- vector-valued $g$ as a collection of $K$ univariate flow maps
- \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_K(\bx(t)) \right)^T\]
- so that $g_k: \R^K \to \R$ maps $\bx(t)$ to $\bx_k(t + \Delta t)$, the value of the $k^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
+ vector-valued $g$ as a collection of $P$ univariate flow maps
+ \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_P(\bx(t)) \right)^T\]
+ so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
  the parameters $\btheta$. I will reflect this dependence by writing $g_\theta$ and $\bx_\theta(t)$. The forward model $G: \R^D \to \R^{T \times P}$ defined previously can thus be characterized 
  as 
  \[
@@ -141,15 +141,73 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
  the composition consisting of $k$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
  some other time $t_0$ could of course be considered. 
 
+% The Big Picture
+\section{The Big Picture}
+In this section, I will take as given the motivation for using mechanistic models to study the terrestrial carbon cycle and the benefits of applying Bayesian statistical methods when using such models. 
+Given these assumptions, I would say the main goal from a methodological point of view is to \textit{develop scalable methods for calibrating ecosystem models which also provide well-calibrated
+uncertainty estimates.} To achieve the goal of scalability, we opt for an emulator-based approach. To help address the UQ goal, we use GPs as our emulator of choice. With these baseline assumptions 
+established, I detail below the challenges with this approach and how this work can go beyond existing literature to address some of these challenges. 
+
+\begin{enumerate}
+\item \textbf{Challenge}: Terrestrial ecosystem models are typically systems of ODEs, and hence the output of the forward model is time-valued, presenting a challenge for standard GP-based emulation. 
+	\begin{enumerate}
+	\item This problem is fairly well-studied (e.g. \cite{10.1093/biomet/asp028, doi:10.1198/016214507000000888, acp-11-12253-2011, MOHAMMADI2019178, 10.1214/09-BA415, doi:10.1137/120900915, psf2021003011}). 
+	My main takeaway from reviewing literature is that many of the proposed methods are \textit{not well-suited for large-scale Bayesian inverse problems}. 
+		\begin{enumerate}
+		\item The majority of the focus in the computer modeling literature is on directly emulating model outputs. This often results in either 1.) poor scalability (e.g. time-input emulator) or 2.) emulation approaches 
+		that are only relevant when $\btheta$ is fixed. 
+		\item In specific engineering/scientific fields there is more emphasis on parameter estimation, but it is difficult to find any sort of comprehensive examination of methods. 
+		\end{enumerate}
+		\item \textbf{Solution}: The loss-emulation approach is an attractive solution, as it directly targets the goal of model calibration, scales well in $T$, and reduces to the problem of emulation of univariate 
+		functions. 
+	\end{enumerate}
+\item \textbf{Challenge}: What are the relative merits and weaknesses of the loss emulation approach? 
+	\begin{enumerate} 
+	\item Loss-emulation is a subset of methods which I have seen referred to as \textit{scalarization}. The main alternative method in this vein is direct emulation of the log-likelihood. 
+	In our setting, the obvious benefit of loss-emulation over likelihood emulation is the ability to also perform inference over likelihood parameters. The alternative in likelihood emulation would 
+	require fixing the likelihood parameters in advance. On the other hand, the log-likelihood emulation approach has the benefit of being unconstrained, while the loss function must be non-negative. 
+	\item The primary alternatives to the loss emulation approach involve direct emulation of model outputs, which usually involves either 1.) emulating the coefficients of a basis representation for the 
+	outputs or 2.) utilizing one of various forms of ``dynamic emulators.''
+	\item \textbf{Solution}: We must demonstrate that the loss emulation approach represents an attractive choice when the goal is solving the inverse problem. In general this will require demonstrating that
+	the loss function can be reliably emulated by GPs. We can also emphasize the scalable nature of this approach, as compared to some of the alternatives. Some specifics to address when assessing the viability of emulators of the loss function: 
+		\begin{enumerate} 
+		\item Does the non-negativity of the loss function present a problem for GPs, either with regard to its mean estimation or uncertainty calibration? If so, are there effective methods to deal with the non-negativity constraint? 
+		\item How sensitive are emulation results to the choice of GP kernel? Which kernels seem to work well in this setting? 
+		\item How about alternative specifications of the mean function? Some authors have reported improved performance of GP emulators with polynomial mean functions. 
+		\end{enumerate}
+	\end{enumerate}
+\item \textbf{Challenge}: How should the emulator be integrated into the MCMC algorithm? 
+	\begin{enumerate}
+	\item How can the emulator be incorporated in such a way that allows for efficient sampling while also providing an adequate accounting of additional uncertainty introduced due to the GP 
+	approximation? 
+	\item \textbf{Solution}: We must demonstrate the benefits and weaknesses of the sampling-based approach. Benefits include better uncertainty propagation (assuming the GP is well-calibrated) 
+	and general applicability (don't have to compute expectations). Some other specifics: 
+		\begin{enumerate} 
+		\item What is the effect of jointly sampling the proposed/current parameters using GP predictive covariance?
+		\item What about drawing multiple GP samples $\Phi^{(1)}, \dots, \Phi^{(L)} \sim \Phi^*(\btheta)$ and utilizing a sample average
+		\[\hat{\pi}(\btheta) := \frac{1}{L} \sum_{l = 1}^{L} \hat{\pi}\left(\btheta|\Phi^{(l)}\right)? \]
+		\end{enumerate} 
+	\end{enumerate}
+\item \textbf{Challenge}: We would like an experimental design method that can be applies to settings where posteriors may be very concentrated relative to current knowledge about the parameters. 
+	\begin{enumerate}
+	\item It is very common in the literature for studies to default to LHS. This may be appropriate when the model response is over interest over the entire domain, but may be very inefficient 
+	when the goal is to solve an inverse problem. 
+	\item \textbf{Solution}: In our tests with relatively inexpensive models, it would enlightening to determine the extent of posterior contraction. We would also like to determine an experimental 
+	design scheme that is well-suited to this setting and places design points where they are needed relative to the true posterior. After an initial literature review, some promising methods to 
+	investigate include the sequential design scheme \ref{doi:10.1137/15M1047659} and the ensemble Kalman approach \ref{Cleary_2021, https://doi.org/10.1029/2020MS002454}. 
+	\end{enumerate}
+\item \textbf{Challenge: Validation and Model Checking}
+\end{enumerate}
+
+
 % Abstract 
-\section{Abstract}
-The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
-has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
-in empirically-determined estimates of process model parameters. A Bayesian statistical framework...
+% \section{Abstract}
+% The primary scientific goal is to improve prediction and understanding of ecosystem dynamics. By combining the strengths of mechanistic models and data-driven analysis, model-data fusion 
+% has proven to be a valuable approach in working towards this goal. Effective model-data fusion requires careful and robust uncertainty quantification. In particular, uncertainty must be acknowledged 
+% in empirically-determined estimates of process model parameters. A Bayesian statistical framework...
 
 % Background/Literature Review
 \section{Background/Literature Review}
-From a methodological point of view, I see this paper as existing at the intersection of the computer experiments and Bayesian inverse problem fields. 
  
  \subsection{Likelihood Emulators/Loss Emulators/Scalarization}
  The idea of reducing dimensionality by emulating some sort of scalar-valued function summarizing the model-data discrepancy (e.g. loss function, log-likelihood) is certainly well-known, but 
@@ -177,9 +235,8 @@ From a methodological point of view, I see this paper as existing at the interse
  \item Return $\ell_i := \E\left[\ell_c^*(\btheta) \right]$
  \end{enumerate}
  I believe the idea is to condition so that the uncertainty in the distribution collapses and the mean function of the conditioned GP is hopefully a good approximation of the trajectory. Note that 
- $\left(\Theta_c, \ell(\Theta_c)\right)$ are observations of the true trajectory. All of this seems a bit odd to me given that ultimately a prediction is only required at $\btheta$, so why not just 
- use the GP marginal?  
- 
+ $\left(\Theta_c, \ell(\Theta_c)\right)$ are observations of the true trajectory. It is interesting the authors' go to this trouble given that they could simply sample from the GP marginal 
+ $\ell^*(\btheta)$. 
  
  \subsection{Dynamic Emulators}
  There have been many proposals to emulate such dynamical systems. Many such approaches consider emulation of the trajectory $\{\bx_\theta(k\Delta t)\}_{k = 1}^{T-1}$ as a function of 
@@ -192,31 +249,9 @@ From a methodological point of view, I see this paper as existing at the interse
 \subsubsection{Emulating the Flow Map}
 Although they assume $\btheta$ to be fixed, Mohammadi et al (2018) \cite{MOHAMMADI2019178} propose some interesting ideas. They focus on emulating the flow map $g(\cdot)$ 
 (I omit the $\btheta$ subscript as it is constant here). The idea is to fix a small step $\Delta t$, and learn a map from the initial condition $\bx_0$ to $\bx(\Delta t)$. This produces an emulator 
-that can produce one-step-ahead predictions. Their emulator consists of $K$ univariate emulators, one for each $g_k(\cdot)$. Prediction requires iteratively composing GP predictions, which 
+that can produce one-step-ahead predictions. Their emulator consists of $P$ univariate emulators, one for each $g_p(\cdot)$. Prediction requires iteratively composing GP predictions, which 
 propagates the uncertainty forward. This can actually be viewed as a deep GP, though it avoids the main difficulty of having to fit kernel hyperparameters in a deep GP. Inference is conducted 
 via a Monte Carlo approach, propagating GP samples iteratively through each time step. 
-
-\bigskip
-\textbf{Questions:} 
-\begin{enumerate}
-\item What are the weaknesses of current approaches to solving this problem? How does our method overcome these weaknesses? 
-\item \textbf{What are the strengths and weaknesses of loss emulation?} \\ 
-In this high-dimensional output setting, some sort of dimensionality reduction is required. The alternatives to loss emulation are dynamic emulation (i.e. emulating the flow map) or 
-emulating the parameters in a basis representation of the output. 
-\item \textbf{What is the effect of range-constraint in loss emulation?} 
-\item \textbf{What are effective strategies for running emulator-assisted MCMC?}
-\end{enumerate}
-
-\begin{enumerate}
-\item \textbf{Problem}: Improve prediction and understanding of ecosystem dynamics. \\
-	\textbf{Solution}: Model-data fusion; combining strengths of mechanistic models and data-driven approaches. 
-\item \textbf{Problem}: Effective model-data fusion requires careful and robust UQ. In particular, uncertainty must be acknowledged in empirically-determined estimates of process model parameters. \\
-\textbf{Solution}: Bayesian approach. 
-\item \textbf{Problem}: Bayesian inference with MCMC is infeasible when the forward model runtime is very costly. \\
-\textbf{Solution}: Approximate the forward model. 
-\end{enumerate}
-
-\section{Introduction}
 
 \section{Methods}
 
@@ -354,21 +389,22 @@ The authors also consider a ``fully Bayesian'' likelihood estimation approach, w
 \noindent
 \textbf{Acquisition Function.}
 The authors propose a greedy one-step look ahead strategy. Intuitively, we assess the quality of a new design point $\tilde{\btheta}$ by considering the GP predictive distribution 
-at this proposed point $\tilde{\Phi} := \Phi(\tilde{\btheta})$. We use this predictive distribution to predict what Bayes' risk \ref{Bayes_Risk} would be were we to observe 
+at this proposed point $\tilde{\Phi} := \Phi(\tilde{\btheta})$. We use this predictive distribution to predict what the Bayes' risk \ref{Bayes_Risk} would be were we to observe 
 $(\tilde{\btheta}, \tilde{\Phi})$ and condition on this additional observation. Recall that $\hat{\mathcal{R}}(\mathcal{L}_n^*)$ denotes the Bayes' risk between the 
 random field approximation and optimal deterministic approximation. I introduce the notation $\tilde{\mathcal{L}}^*_n := \mathcal{L}^*_n|\tilde{\btheta}, \tilde{\Phi}$ to denote the 
 random field likelihood approximation conditioned on $(\tilde{\btheta}, \tilde{\Phi})$. Note that the forward model has not yet been run at input parameter $\tilde{\btheta}$ so 
 $\tilde{\Phi}$ is itself a random variable. I utilize the same notation for the GP itself, so that $\tilde{\Phi}^*_n := \Phi^*_n|\tilde{\btheta}, \tilde{\Phi}$
 
 With this notation established, $\hat{\mathcal{R}}(\tilde{\mathcal{L}}^*_n)$ is an estimator for the future Bayes' risk, were we 
-to run the forward model at $\tilde{\btheta}$. In order to define a deterministic acquisition function, we must now integrate over the distribution of $\tilde{\Phi}$, in addition to the two other 
+to run the forward model at $\tilde{\btheta}$. Unlike $\hat{\mathcal{R}}(\mathcal{L}^*_n)$, $\hat{\mathcal{R}}(\tilde{\mathcal{L}}^*_n)$ is a random quantity due to the fact that 
+we have not run the model at $\tilde{\btheta}$ and thus $\tilde{\Phi}$ is unknown. In order to define a deterministic acquisition function, we must now integrate over the distribution of $\tilde{\Phi}$, in addition to the two other 
 integrals in the original definition of the Bayes' risk. This yields the acquisition function, 
 \begin{align}
 J_n(\tilde{\btheta}) &:=  \E_{\tilde{\Phi}} \hat{\mathcal{R}}(\tilde{\mathcal{L}}^*_n) \\ 
 			     &= \E_{\tilde{\Phi}} \E_{\btheta} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\mathcal{L}}_n^*(\btheta) \right]
 \end{align}
 Note that the acquisition function is a function of $\tilde{\btheta}$, a new design point; not to be confused with the $\btheta$ in the second line above, which is averaged over by 
-$\E_{\pi_0}(\cdot)$. 
+$\E_{\btheta}(\cdot)$. 
 
 This is the final acquisition function considered in the paper. However, in our case the likelihood parameters $\Sigma$ are not known. We could consider augmenting to include these 
 parameters and integrate over the prior on the likelihood parameters as well: 
