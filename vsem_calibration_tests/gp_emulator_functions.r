@@ -414,13 +414,33 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
 
 
 get_gp_rmse <- function(gp_mean, y_true, ...) {
+  # Computes the root mean squared error between GP mean predictions and a true  
+  # baseline response.
+  #
+  # Args:
+  #    gp_mean: numeric, vector of GP mean predictions. 
+  #    y_true: numeric, vector of true response values. Must be equal length as `gp_mean`.
+  #
+  # Returns:
+  #    numeric, the RMSE. 
   
   return(sqrt(sum((gp_mean - y_true)^2)))
   
 }
 
 
-get_gp_srmse <- function(gp_mean, gp_var, y_true) {
+get_gp_srmse <- function(gp_mean, gp_var, y_true, ...) {
+  # Computes the standardized root mean squared error between GP mean predictions and a true  
+  # baseline response. The pointwise error is (mean_i - y_i)^2 / var_i, and the pointwise 
+  # errors are summed, and the square root of the sum is returned. 
+  #
+  # Args:
+  #    gp_mean: numeric, vector of GP mean predictions. 
+  #    gp_mean: numeric, vector of GP variance predictions.
+  #    y_true: numeric, vector of true response values. Must be equal length as `gp_mean`.
+  #
+  # Returns:
+  #    numeric, the standardized RMSE. 
   
   return(sqrt(sum((gp_mean - y_true)^2 / gp_var)))
   
@@ -428,6 +448,19 @@ get_gp_srmse <- function(gp_mean, gp_var, y_true) {
 
 
 get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NULL) {
+  # A convenience function to compute a GP metric for each output variable and return the 
+  # results. The GPs modeling each output are assumed independent. The names of the metric 
+  # functions are standardized as "get_gp_<metric>". 
+  #
+  # Args:
+  #    gp_mean_df: data.frame or matrix, of dimension M x P, where M is the number of test inputs 
+  #                and P the number of output variables. The GP predictive means at the test points. 
+  #    Y_true: matrix, of dimension M x P containing the true responses at the test inputs. 
+  #    gp_var_df: data.frame or matrix, of dimension M x P. The GP predictive variances at the test points.
+  #               Not required for every metric, so the default is NULL. 
+  #
+  # Returns: 
+  #    numeric, vector of length P containing the prediction metric for each output/GP. 
 
   metric_func <- get(paste0("get_gp_", metric))
   metrics <- sapply(seq(1, ncol(gp_mean_df)), function(j) metric_func(gp_mean = gp_mean_df[,j], 
@@ -439,43 +472,74 @@ get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NU
 }
 
 
-get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
-                                            metrics = c("rmse", "srmse", "crps", "mah", "nlpd_pointwise", "nlpd"), 
-                                            return_emulator_predictions = TRUE, scale_inputs = FALSE, output_variables = NULL) {
+get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, metrics, scale_inputs = FALSE, output_variables = NULL,
+                                            emulator_pred_df = NULL) {
+  # This function computes error metrics (or scores) for a set of different GPs, and returns the results in a data.frame 
+  # which can be used to compare the performance across the different GPs. 
+  #
+  # Args:
+  #    emulator_info_list: Named list, where each element is an "emulator info" object. The emulator info objects 
+  #                        are themselves lists with elements "gp_fits", "input_bounds", "output_stats", and "settings". 
+  #    X_test: matrix, of dimension M x D, where M is the number of test inputs and D the dimension of the parameter space. 
+  #            The test inputs at which to predict in order to compute prediction metrics. 
+  #    Y_test: matrix, of dimension M x P, the baseline true responses corresponding to the inputs `X_test`. The pth column 
+  #            contains the responses for the pth output variable. 
+  #    metrics: character(), vector of prediction metrics to include. Currently supports: "rmse" (root mean squared error), 
+  #             "srmse" (Standardized RMSE; normalized by GP predictive variances), "crps" (continuous rank probability score), 
+  #             "nlpd_pointwise" (negative log predictive density, summed over test points), 
+  #             "nlpd" (negative log predictive density, taking into account GP predictive covariance), "mah" (Mahalanobis distance). 
+  #             "mah" and "nlpd" require computation of the GP predictive covariance at the test points, while the other metrics do not. 
+  #    scale_inputs: If TRUE, uses the "input_bounds" element of the emulator info lists to scale `X_test` prior to prediction. 
+  #                  If FALSE, assumes `X_test` is already properly scaled. 
+  #    output_variables: character, vector of output variable names, which is passed to `predict_independent_GPs()`. If NULL, 
+  #                      `predict_independent_GPs()` just assigns numbers to the outputs. 
+  #    emulator_pred_df: list, the return value to `get_emulator_comparison_pred_df()` if this has already available. Otherwise this 
+  #                      function is run to compute the predictions. 
+  #
+  # Returns:
+  #    list, with elements "pred" (containing the data.frame of GP predictions) and "metrics" (containing the data.frame of GP metrics). 
+  
   # TODO: ensure Y_test has named columns.
   # TODO: enusre output_variables is non-NULL before passing to `get_emulator_comparison_pred_df()`. 
-  # TODO: for now not including any metrics that require predictive covariance; need to modify a lot of functions to allow this. 
+  # TODO: for now not including any metrics that require predictive covariance; need to modify a lot of functions to allow this.
+  # TODO: Note that when populating the metrics data.frame, the order of the output variables is crucial; should probably make this more 
+  #       robust to avoid mistakes with this. 
   
   # Compute emulator predictions. 
-  emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list = emulator_info_list, 
-                                                      X_test = X_test, 
-                                                      scale_inputs = scale_inputs, 
-                                                      output_variables = output_variables)
+  if(is.null(emulator_pred_df)) {
+    emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list = emulator_info_list, 
+                                                        X_test = X_test, 
+                                                        scale_inputs = scale_inputs, 
+                                                        output_variables = output_variables)
+  }
   
-  # Compute metrics for each emulator. 
+  # data.frame to store metrics. 
   test_labels <- names(emulator_info_list)
   df_pred_cols <- colnames(emulator_pred_df)
   Y_test <- Y_test[, output_variables, drop = FALSE]
-  metrics_df <- data.frame()
+  metrics_df <- as.data.table(expand.grid(test_labels, output_variables, metrics))
+  colnames(metrics_df) <- c("test_label", "output_variable", "metric_name")
+  metrics_df[, "metric_value"] <- NA_real_
   
+  # Compute metrics for each emulator.
   for(j in seq_along(emulator_info_list)) {
     
     # Extract columns pertaining to GP predictive means, variances, etc. 
-    test_label <- test_labels[j]
-    gp_mean_cols <- paste(test_label, "mean", output_variables, sep = "_")
-    gp_var_cols <- paste(test_label, "var", output_variables, sep = "_")
+    test_lab <- test_labels[j]
+    gp_mean_cols <- paste(test_lab, "mean", output_variables, sep = "_")
+    gp_var_cols <- paste(test_lab, "var", output_variables, sep = "_")
     
     # RMSE
     for(metric in metrics) {
-      print(metric)
-      rmse_j <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
-                                          gp_var_df = emulator_pred_df[, gp_var_cols, drop = FALSE],
-                                          Y_true = Y_test, 
-                                          metric = metric)
-      print(rmse_j)
+      metric_vals <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
+                                               gp_var_df = emulator_pred_df[, gp_var_cols, drop = FALSE],
+                                               Y_true = Y_test, 
+                                               metric = metric)
+      metrics_df[(test_label == test_lab) & (metric_name == metric), metric_value := metric_vals]
     }
-    
   }
+  
+  return(list(pred = emulator_pred_df, metrics = metrics_df))
   
 }
 
