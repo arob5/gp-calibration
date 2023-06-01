@@ -79,7 +79,7 @@ This is suitable for the model detailed below, as the ordering of the observatio
 To measure error between model 
 predictions $G(\btheta)$ and observed data $Y$, we assume the following Gaussian noise model. 
 \begin{align*}
-\mathcal{L}(\btheta) := p(Y|\mathbf{\btheta}) = \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
+\mathcal{L}(\btheta) := \log p(Y|\mathbf{\btheta}) = \sum_{p = 1}^{P} \sum_{t = 1}^{T_p} \log \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right)
 \end{align*}
 This likelihood assumes the errors are independent across time and output variable. Note that $\mathcal{L}(\btheta)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
 observations are simply ignored, hence the product from $t = 1, \dots, T_p$ for each output $p$.
@@ -89,15 +89,15 @@ We denote the priors on the calibration and variance parameters as  $\pi_0(\bthe
 The variances $\sigma_p^2$ are assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
 \[\pi_0(\Sigma) = \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
 Combining these priors with the likelihood yields the posterior 
-\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto \mathcal{L}(\btheta)\pi_0(\btheta, \Sigma)\]
+\[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto e^{\mathcal{L}(\btheta)}\pi_0(\btheta, \Sigma)\]
 
 \subsection{Surrogate Model}
-In this section we describe the emulator used to approximate the true likelihood $\mathcal{L}(\btheta)$. The likelihood can be written as 
+In this section we describe the emulator used to approximate the true log likelihood $\mathcal{L}(\btheta)$. The log likelihood can be written as 
 \begin{align*}
-\mathcal{L}(\btheta) &= \prod_{p = 1}^{P} \prod_{t = 1}^{T_p} \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
-			       &= \prod_{p = 1}^{P}  \prod_{t = 1}^{T_p} (2\pi \sigma_p^2)^{-1/2} \exp\left(-\frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2 \right) \\
-			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2\sigma_p^2} \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2  \right) \\
-			       &= (2\pi)^{-\frac{1}{2} \sum_{p = 1}^{P} T_p}  \prod_{p = 1}^{P}  (\sigma_p^2)^{-T_p/2} \exp\left(-\frac{1}{2} \frac{\Phi_p(\btheta)}{\sigma_p^2} \right)
+\mathcal{L}(\btheta) &= \sum_{p = 1}^{P} \sum_{t = 1}^{T_p} \log \mathcal{N}\left(y_{tp}| G_{tp}(\btheta), \sigma_p^2 \right) \\
+			       &= \sum_{p = 1}^{P}  \sum_{t = 1}^{T_p} \left[-\frac{1}{2} \log(2\pi \sigma_p^2) - \frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\btheta))^2\right]  \\
+			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[T_p \log\left(2\pi \sigma_p^2 \right) + \frac{1}{\sigma_p^2}\sum_{t = 1}^{T_p} \left(y_{tp} - G_{tp}(\btheta)\right)^2  \right] \\
+			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[T_p \log\left(2\pi \sigma_p^2 \right) + \frac{\Phi_p(\btheta)}{\sigma_p^2} \right] 
 \end{align*}
 where 
 \[\Phi_p(\btheta) := \sum_{t = 1}^{T_p} (y_{tp} - G_{tp}(\btheta))^2\]
@@ -114,32 +114,47 @@ where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (
 
 We denote the resulting observed data for output $p$ as 
 $\mathcal{D}_p := \left\{(\btheta_1, \Phi_1(\btheta_1)), \dots, (\btheta_P, \Phi_p(\btheta_P))  \right\}$ and collect the observed outputs in a vector 
-$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^T$. Conditioning the GPs on the observed data yields the GP predictive distributions 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]^{\top}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
 \[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
-where 
-\begin{align*}
-\mu_p^*(\btheta) &= \mu_p  - \mathbf{k}^T \mathbf{K}^{-1} \left(\boldsymbol{\phi}_p - \mu_p \right) \\
-\end{align*}
 
 \subsection{Dynamic Simulators}
 I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
 defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
-\[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^T \]
+\[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^{\top} \]
 If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \to \R^P$ is time-invariant: 
  \[\bx(t + \Delta t) = g(\bx(t))\]
  Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
  vector-valued $g$ as a collection of $P$ univariate flow maps
- \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_P(\bx(t)) \right)^T\]
+ \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_P(\bx(t)) \right)^{\top}\]
  so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
  the parameters $\btheta$. I will reflect this dependence by writing $g_\theta$ and $\bx_\theta(t)$. The forward model $G: \R^D \to \R^{T \times P}$ defined previously can thus be characterized 
  as 
  \[
- G(\btheta; \bx_0) = \begin{pmatrix} \bx_0^T \\ \bx_\theta(\Delta t)^T \\  \bx_\theta(2\Delta t)^T \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^T \end{pmatrix} = 
- \begin{pmatrix} \bx_0^T \\ g_\theta(\bx_0)^T \\  g_\theta\left(g_\theta(\bx_0)\right)^T \\ \vdots \\ g_\theta^{(T-1)}(\bx_0)^T \end{pmatrix}
+ G(\btheta; \bx_0) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
+ \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0)^{\top} \\  g_\theta\left(g_\theta(\bx_0)\right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0)^{\top} \end{pmatrix}
  \]
  where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(k)}$ to denote 
  the composition consisting of $k$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
  some other time $t_0$ could of course be considered. 
+
+\subsection{MCMC Algorithm}
+We consider the joint posterior $p(\btheta, \Sigma, \Phi^*|Y)$ and seek to marginalize out $\Phi^*$ in order to obtain the posterior of interest $p(\btheta, \Sigma|Y)$. A Gibbs sampling approach would proceed as 
+\begin{itemize}
+\item $\Phi \sim p(\Phi^*|\btheta, \Sigma, Y) = p(\Phi^*)$
+\item $\btheta \sim p(\btheta|\Sigma, \Phi^*, Y)$
+\item $\Sigma \sim p(\Sigma|\btheta, \Phi^*, Y)$
+\end{itemize}
+Under the model assumptions, the $\Phi^*$ and $\Sigma$ conditionals can be directly sampled from, while the $\btheta$ conditional requires a Metropolis step. The current PEcAn algorithm modifies the above by re-sampling 
+$p(\Phi^*)$ again before the final line. Thus, each sweep over the conditionals results in two samples from $\Phi^*$ and one sample each from $\btheta$ and $\Sigma$. It is also important to note that 
+$\Phi^*$ is a function, and in practice we only sample the function values at the points of interest. This implies the distribution sampled from is actually the marginal distribution of $\Phi^*(\btheta)$:
+\[\Phi(\btheta) \sim p(\Phi^*(\btheta))\]
+A more accurate high-level view of the current algorithm is thus given by 
+\begin{itemize}
+\item $\Phi(\btheta) \sim p(\Phi^*(\btheta))$
+\item $\btheta \sim p(\btheta|\Sigma, \Phi^*(\btheta), Y)$
+\item $\Phi(\btheta) \sim p(\Phi^*(\btheta))$
+\item $\Sigma \sim p(\Sigma|\btheta, \Phi^*(\btheta), Y)$
+\end{itemize}
 
 % The Big Picture
 \section{The Big Picture}
@@ -169,11 +184,13 @@ established, I detail below the challenges with this approach and how this work 
 	\item The primary alternatives to the loss emulation approach involve direct emulation of model outputs, which usually involves either 1.) emulating the coefficients of a basis representation for the 
 	outputs or 2.) utilizing one of various forms of ``dynamic emulators.''
 	\item \textbf{Solution}: We must demonstrate that the loss emulation approach represents an attractive choice when the goal is solving the inverse problem. In general this will require demonstrating that
-	the loss function can be reliably emulated by GPs. We can also emphasize the scalable nature of this approach, as compared to some of the alternatives. Some specifics to address when assessing the viability of emulators of the loss function: 
+	the loss function can be reliably emulated by GPs. We can also emphasize the scalable nature of this approach, as compared to some of the alternatives. 
+	Some specifics to address when assessing the viability of emulators of the loss function: 
 		\begin{enumerate} 
 		\item Does the non-negativity of the loss function present a problem for GPs, either with regard to its mean estimation or uncertainty calibration? If so, are there effective methods to deal with the non-negativity constraint? 
 		\item How sensitive are emulation results to the choice of GP kernel? Which kernels seem to work well in this setting? 
 		\item How about alternative specifications of the mean function? Some authors have reported improved performance of GP emulators with polynomial mean functions. 
+		\item This will also require developing reliable validation and model checking procedures for the emulator. 
 		\end{enumerate}
 	\end{enumerate}
 \item \textbf{Challenge}: How should the emulator be integrated into the MCMC algorithm? 
@@ -184,8 +201,6 @@ established, I detail below the challenges with this approach and how this work 
 	and general applicability (don't have to compute expectations). Some other specifics: 
 		\begin{enumerate} 
 		\item What is the effect of jointly sampling the proposed/current parameters using GP predictive covariance?
-		\item What about drawing multiple GP samples $\Phi^{(1)}, \dots, \Phi^{(L)} \sim \Phi^*(\btheta)$ and utilizing a sample average
-		\[\hat{\pi}(\btheta) := \frac{1}{L} \sum_{l = 1}^{L} \hat{\pi}\left(\btheta|\Phi^{(l)}\right)? \]
 		\end{enumerate} 
 	\end{enumerate}
 \item \textbf{Challenge}: We would like an experimental design method that can be applies to settings where posteriors may be very concentrated relative to current knowledge about the parameters. 
@@ -196,7 +211,6 @@ established, I detail below the challenges with this approach and how this work 
 	design scheme that is well-suited to this setting and places design points where they are needed relative to the true posterior. After an initial literature review, some promising methods to 
 	investigate include the sequential design scheme \ref{doi:10.1137/15M1047659} and the ensemble Kalman approach \ref{Cleary_2021, https://doi.org/10.1029/2020MS002454}. 
 	\end{enumerate}
-\item \textbf{Challenge: Validation and Model Checking}
 \end{enumerate}
 
 
@@ -214,30 +228,32 @@ established, I detail below the challenges with this approach and how this work 
  it is difficult to find any sort of systematic study of this approach or comparison to alternative approaches. 
  
  The paper \cite{LEBEL2019158} utilizes a GP approximation of the log-likelihood 
- $\ell(\btheta) := \log \mathcal{L}(\btheta)$. This requires fixing the likelihood parameters in advance. Their GP-assisted MCMC algorithm consists of posterior evaluations of the form 
- \[\hat{\pi}(\btheta) = \frac{1}{L} \sum_{l = 1}^{L} \pi(\btheta|\ell_l) \text{, where } \ell_l \overset{iid}{\sim} \ell^*(\btheta)\]
- where $\pi(\btheta|\ell_l)$ indicates the deterministic posterior density approximation constructed by plugging in $\ell_l$ in place of the true log-likelihood $\ell(\btheta)$. 
- The current PEcAn approach generally utilizes the same approximation with $L = 1$ (and emulating $\Phi(\cdot)$ instead of $\ell(\cdot)$). For simplicity above, I wrote 
- $\ell_l \overset{iid}{\sim} \ell^*(\btheta)$, indicating pointwise GP predictive draws. Surprisingly, this is not actually what the authors do. They are 
- instead concerned with sampling GP trajectories (functions) $\ell_l(\cdot) \overset{iid}{\sim} \ell^*(\cdot)$; that is, they seek to draw GP realizations across the entire input space 
- which respect the correlation structure, and then evaluate those realizations at $\btheta$ to obtain the final values $\{\ell_l\}_{l = 1}^{L} = \{\ell_l(\btheta)\}_{l = 1}^{L}$. Since doing this 
- would require sampling the GP over a dense grid of points, they instead propose an approximation that only uses a sparse set of ``conditioning points''. The conditioning 
- set $\Theta_c \subset \Theta$ is defined to target regions where the GP is confident that the likelihood is larger. In particular, it is defined as 
- \begin{align*}
-\Theta_c &:= \left\{\btheta \in \Theta : \Prob\left(\ell^*(\btheta) > \ell^*(\btheta_{\text{max}}) \right) > \rho \right\} \\
-\btheta_{\text{max}} &:= \text{argmax}_{\btheta \in \Theta} \E\left[\ell^*(\btheta)\right]
- \end{align*}
- where $\rho \in [0, 1]$ is some specified threshold. i.e., the conditioning set is the subset of the input space where the GP assigns high probability of improvement. The authors' description is 
- not entirely clear to me, but I believe this is what they do to construct each $\ell_l$: 
- \begin{enumerate}
- \item Draw samples at the conditioning points: $\ell(\Theta_c) \sim \ell^*(\Theta_c)$. 
- \item Treat $\left(\Theta_c, \ell(\Theta_c)\right)$ as pseudo-data and condition the GP $\ell^*$ on this pseudo-data as if they were true observations. Denote the conditioned GP as $\ell^*_c$. 
- \item Return $\ell_i := \E\left[\ell_c^*(\btheta) \right]$
- \end{enumerate}
- I believe the idea is to condition so that the uncertainty in the distribution collapses and the mean function of the conditioned GP is hopefully a good approximation of the trajectory. Note that 
- $\left(\Theta_c, \ell(\Theta_c)\right)$ are observations of the true trajectory. It is interesting the authors' go to this trouble given that they could simply sample from the GP marginal 
- $\ell^*(\btheta)$. 
+ $\mathcal{L}(\btheta)$. This requires fixing the likelihood parameters in advance. 
  
+%Their GP-assisted MCMC algorithm consists of posterior evaluations of the form 
+% \[\hat{\pi}(\btheta) = \frac{1}{L} \sum_{l = 1}^{L} \pi(\btheta|\ell_l) \text{, where } \ell_l \overset{iid}{\sim} \ell^*(\btheta)\]
+% where $\pi(\btheta|\ell_l)$ indicates the deterministic posterior density approximation constructed by plugging in $\ell_l$ in place of the true log-likelihood $\ell(\btheta)$. 
+% The current PEcAn approach generally utilizes the same approximation with $L = 1$ (and emulating $\Phi(\cdot)$ instead of $\ell(\cdot)$). For simplicity above, I wrote 
+% $\ell_l \overset{iid}{\sim} \ell^*(\btheta)$, indicating pointwise GP predictive draws. Surprisingly, this is not actually what the authors do. They are 
+% instead concerned with sampling GP trajectories (functions) $\ell_l(\cdot) \overset{iid}{\sim} \ell^*(\cdot)$; that is, they seek to draw GP realizations across the entire input space 
+% which respect the correlation structure, and then evaluate those realizations at $\btheta$ to obtain the final values $\{\ell_l\}_{l = 1}^{L} = \{\ell_l(\btheta)\}_{l = 1}^{L}$. Since doing this 
+% would require sampling the GP over a dense grid of points, they instead propose an approximation that only uses a sparse set of ``conditioning points''. The conditioning 
+% set $\Theta_c \subset \Theta$ is defined to target regions where the GP is confident that the likelihood is larger. In particular, it is defined as 
+% \begin{align*}
+%\Theta_c &:= \left\{\btheta \in \Theta : \Prob\left(\ell^*(\btheta) > \ell^*(\btheta_{\text{max}}) \right) > \rho \right\} \\
+%\btheta_{\text{max}} &:= \text{argmax}_{\btheta \in \Theta} \E\left[\ell^*(\btheta)\right]
+% \end{align*}
+% where $\rho \in [0, 1]$ is some specified threshold. i.e., the conditioning set is the subset of the input space where the GP assigns high probability of improvement. The authors' description is 
+% not entirely clear to me, but I believe this is what they do to construct each $\ell_l$: 
+% \begin{enumerate}
+% \item Draw samples at the conditioning points: $\ell(\Theta_c) \sim \ell^*(\Theta_c)$. 
+% \item Treat $\left(\Theta_c, \ell(\Theta_c)\right)$ as pseudo-data and condition the GP $\ell^*$ on this pseudo-data as if they were true observations. Denote the conditioned GP as $\ell^*_c$. 
+% \item Return $\ell_i := \E\left[\ell_c^*(\btheta) \right]$
+% \end{enumerate}
+% I believe the idea is to condition so that the uncertainty in the distribution collapses and the mean function of the conditioned GP is hopefully a good approximation of the trajectory. Note that 
+% $\left(\Theta_c, \ell(\Theta_c)\right)$ are observations of the true trajectory. It is interesting the authors' go to this trouble given that they could simply sample from the GP marginal 
+% $\ell^*(\btheta)$. 
+  
  \subsection{Dynamic Emulators}
  There have been many proposals to emulate such dynamical systems. Many such approaches consider emulation of the trajectory $\{\bx_\theta(k\Delta t)\}_{k = 1}^{T-1}$ as a function of 
  the initial condition $\bx_0$, but assuming fixed $\btheta$. This is not very useful when parameter calibration is the goal, as the dynamics change when $\btheta$ changes. I briefly summarize some 
