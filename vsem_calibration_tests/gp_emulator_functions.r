@@ -409,6 +409,78 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
 
 
 # ------------------------------------------------------------------------------
+# Evaluating GPs
+# ------------------------------------------------------------------------------
+
+
+get_gp_rmse <- function(gp_mean, y_true, ...) {
+  
+  return(sqrt(sum((gp_mean - y_true)^2)))
+  
+}
+
+
+get_gp_srmse <- function(gp_mean, gp_var, y_true) {
+  
+  return(sqrt(sum((gp_mean - y_true)^2 / gp_var)))
+  
+}
+
+
+get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NULL) {
+
+  metric_func <- get(paste0("get_gp_", metric))
+  metrics <- sapply(seq(1, ncol(gp_mean_df)), function(j) metric_func(gp_mean = gp_mean_df[,j], 
+                                                                      gp_var = gp_var_df[, j], 
+                                                                      y_true = Y_true[,j]))
+  
+  return(metrics)
+  
+}
+
+
+get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
+                                            metrics = c("rmse", "srmse", "crps", "mah", "nlpd_pointwise", "nlpd"), 
+                                            return_emulator_predictions = TRUE, scale_inputs = FALSE, output_variables = NULL) {
+  # TODO: ensure Y_test has named columns.
+  # TODO: enusre output_variables is non-NULL before passing to `get_emulator_comparison_pred_df()`. 
+  # TODO: for now not including any metrics that require predictive covariance; need to modify a lot of functions to allow this. 
+  
+  # Compute emulator predictions. 
+  emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list = emulator_info_list, 
+                                                      X_test = X_test, 
+                                                      scale_inputs = scale_inputs, 
+                                                      output_variables = output_variables)
+  
+  # Compute metrics for each emulator. 
+  test_labels <- names(emulator_info_list)
+  df_pred_cols <- colnames(emulator_pred_df)
+  Y_test <- Y_test[, output_variables, drop = FALSE]
+  metrics_df <- data.frame()
+  
+  for(j in seq_along(emulator_info_list)) {
+    
+    # Extract columns pertaining to GP predictive means, variances, etc. 
+    test_label <- test_labels[j]
+    gp_mean_cols <- paste(test_label, "mean", output_variables, sep = "_")
+    gp_var_cols <- paste(test_label, "var", output_variables, sep = "_")
+    
+    # RMSE
+    for(metric in metrics) {
+      print(metric)
+      rmse_j <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
+                                          gp_var_df = emulator_pred_df[, gp_var_cols, drop = FALSE],
+                                          Y_true = Y_test, 
+                                          metric = metric)
+      print(rmse_j)
+    }
+    
+  }
+  
+}
+
+
+# ------------------------------------------------------------------------------
 # Transforming GPs
 # ------------------------------------------------------------------------------
 
@@ -744,6 +816,12 @@ plot_gp_fit_2d <- function(X_test, X_train = NULL, y_test = NULL, gp_mean_pred =
   
   
   return(plt)  
+  
+}
+
+
+get_2d_gp_pred_heatmap_plots <- function(emulator_pred_df, X_test, raster = FALSE) {
+  # TODO
   
 }
 

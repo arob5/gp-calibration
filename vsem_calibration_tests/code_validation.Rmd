@@ -842,7 +842,12 @@ print(paste0("Truncated proposal: ", mcmc_trunc_prop_runtime))
 calibration_results_list$mcmc_approx_list[["trunc_proposal"]] <- list(samp_mcmc = mcmc_trunc_prop_samp, 
                                                                       mcmc_runtime = mcmc_trunc_prop_runtime, 
                                                                       emulator_info = calibration_results_list$mcmc_approx_list[[1]]$emulator_info)
+calibration_results_list$test_labels <- c(calibration_results_list$test_labels, "trunc_proposal")
 
+# Construct emulator info list. 
+emulator_info_list <- lapply(seq_along(calibration_results_list$mcmc_approx_list), 
+                             function(j) calibration_results_list$mcmc_approx_list[[j]]$emulator_info)
+names(emulator_info_list) <- calibration_results_list$test_labels
 ```
 
 ```{r}
@@ -916,7 +921,7 @@ emulator_pred_df <- get_emulator_comparison_pred_df(emulator_info_list, X_test =
 ```
 
 ```{r}
-gp_heatmap_plts <- get_2d_gp_pred_heatmap_plots(emulator_info_list, X_test, raster = TRUE)
+gp_heatmap_plts <- get_2d_gp_pred_heatmap_plots(emulator_pred_df, X_test, raster = TRUE)
 ```
 
 
