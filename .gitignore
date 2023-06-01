@@ -10,4 +10,6 @@
 output/
 images/
 renv/
+*.bbl
+*.blg
 .Rproj.user
