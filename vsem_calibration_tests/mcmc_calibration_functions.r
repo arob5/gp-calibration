@@ -587,7 +587,7 @@ get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NUL
   #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
   
   # Observed data. 
-  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars]
+  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars, drop = FALSE]
   
   # Run forward model if it has not been run yet. 
   if(is.null(model_outputs_list)) {
