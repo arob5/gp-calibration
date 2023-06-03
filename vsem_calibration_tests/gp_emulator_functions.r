@@ -190,6 +190,46 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
 }
 
 
+fit_emulator_design_list <- function(emulator_setting, design_list) {
+  # A function for fitting a single GP emulator to different designs. Returns 
+  # an "emulator_info_list", of length equal to the length of `design_list`. 
+  # Each element of the list is itself a list with elements "gp_fits", "input_bounds", 
+  # "output_stats", and "settings". 
+  #
+  # Args:
+  #    emulator_setting: list, with elements "gp_lib", "kernel", "transformation_method" 
+  #                      providing the GP specifications. 
+  #    design_list: list of designs for emulator, as returned by `get_design_list()`. 
+  #
+  # Returns:
+  #    list, the emulator info list as described above. The names of the list are set 
+  #    as the names of `design_list`. 
+  
+  emulator_info_list <- list()
+  is_LNP <- (emulator_setting$transformation_method == "LNP")
+  output_stats_sel <- ifelse(is_LNP, "log_output_stats", "output_stats")
+  outputs_normalized_sel <- ifelse(is_LNP, "log_outputs_normalized", "outputs_normalized")
+  
+  for(j in seq_along(design_list)) {
+    label <- names(design_list)[j]
+    
+    gp_fits <- fit_independent_GPs(X_train = design_list[[j]]$inputs_scaled, 
+                                   Y_train = design_list[[j]][[outputs_normalized_sel]], 
+                                   gp_lib = emulator_setting$gp_lib, 
+                                   gp_kernel = emulator_setting$kernel)$fits
+    
+    emulator_info_list[[label]] <- list(gp_fits = gp_fits, 
+                                        input_bounds = design_list[[j]]$input_bounds, 
+                                        output_stats = design_list[[j]][[output_stats_sel]], 
+                                        settings = emulator_setting)
+
+  }
+  
+  return(emulator_info_list)
+  
+}
+
+
 # ------------------------------------------------------------------------------
 # Predicting with GPs
 # ------------------------------------------------------------------------------
@@ -1254,7 +1294,7 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
 # TODO: update comments and think about a better way of handling log output stats. 
 get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
                                     param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
-                                     design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
+                                    design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
@@ -1511,6 +1551,110 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
   colnames(X_grid) <- rownames(theta_prior_params)
 
   return(X_grid)
+  
+}
+
+
+get_design_list <- function(design_settings, computer_model_data, theta_prior_params, reps = 1, include_log = FALSE, ...) {
+  # Creates a list of different designs (sets of emulator training points). Each row of 
+  # `design_settings` specifies one specific design specification. By settings `reps` > 1, 
+  # each design specification will be generated `reps` number of times. This is useful when 
+  # comparing emulators, in order to average over the randomness in the design algorithms. 
+  #
+  # Args:
+  #    design_settings: data.frame, with column names "N_design", "design_method", "scale_inputs", 
+  #                     and "normalize_response". Currently supported design methods are 
+  #                     "grid" and "LHS". "N_design" is the number of design points. 
+  #                     The scaling and normalizing columns are logicals, indicating whether 
+  #                     design points should be scaled to lie within a unit hypercube and 
+  #                     whether the design outputs/response values should be undergo a Z-score
+  #                     normalization. 
+  #    computer_model_data: list, the standard computer model data list. 
+  #    theta_prior_params: data.frame containing the prior distribution information of the input 
+  #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                        for the requirements of this data.frame. 
+  #    reps: integer(1), the number of reps of each design specification to create. Default is 1. 
+  #    include_log: logical(1), whether or not to include the log-transformed response in the designs. 
+  #                 Only relevant for the log-normal process emulator. 
+  #
+  # Returns: 
+  #    Returns a list of length `nrow(design_settings) * reps`. The names of the list are of the form 
+  #    "design<i>_rep<j>" where <i> is the corresponding row number in `design_settings` and <j> indexes 
+  #    the reps. 
+  
+  design_list <- list()
+  transformation_method <- ifelse(include_log, "LNP", NA_character_)
+  
+  for(i in seq(1, nrow(design_settings))) {
+    for(j in seq_len(reps)) {
+      label <- paste0("design", i, "_rep", j)
+      design_list[[label]] <- get_input_output_design(N_points = design_settings[i, "N_design"], 
+                                                      computer_model_data = computer_model_data, 
+                                                      theta_prior_params = theta_prior_params, 
+                                                      scale_inputs = design_settings[i, "scale_inputs"], 
+                                                      normalize_response = design_settings[i, "normalize_response"], 
+                                                      transformation_method = transformation_method,
+                                                      design_method = design_settings[i, "design_method"], 
+                                                      order_1d = TRUE,
+                                                      na.rm = TRUE, ...)
+    }
+  }
+  
+  return(design_list)
+  
+}
+
+
+get_design_list_test_data <- function(N_test_points, N_test_sets, design_method, design_list, computer_model_data, 
+                                      theta_prior_params, transformation_method = NA_character_, ...) {
+  # Creates validation/test sets given a list of design//training sets. The main impetus for this function 
+  # is that typically test points should only be generated within the bounds of the design set to avoid 
+  # GP extrapolation. Therefore, when testing across different designs, the validation sets must satisfy 
+  # the bounds for all designs. This function ensures all of these constraints are met so that each 
+  # validation set can be used to test every design without extrapolation. Note that the design list 
+  # is assumed to contain designs for a single emulator specification, meaning that if for example 
+  # a log-normal process is utilized, then all validation sets will contain the log-transformed 
+  # responses. It should also be noted that when transformed GP predictions back to the original, 
+  # un-normalized scale, the transformation applied will be different for each design. Therefore, 
+  # only the untransformed responses are returned here, rather than having to store a different 
+  # transformed validation set for each design set. Similarly, the Therefore, the validation sets must be 
+  # transformed when comparing to GP predictions that are on the original scale. Finally, note that 
+  # the validation sets created here are based on the prior distributions on the calibration parameters. 
+  # For certain validation exercises, it may be more desirable to test with respect to samples from the 
+  # posterior distribution. 
+  #
+  # Args:
+  #    
+  #
+  #
+  # Returns:
+  # 
+  # 
+  
+  validation_list <- vector(mode = "list", length = N_test_sets)
+  
+  # Set the param_ranges so that validation points are within the ranges for all designs. 
+  min_bounds_mat <- do.call("rbind", lapply(design_list, function(l) l$input_bounds[1,]))
+  max_bounds_mat <- do.call("rbind", lapply(design_list, function(l) l$input_bounds[2,]))
+  
+  min_bounds <- apply(min_bounds_mat, 2, max)
+  max_bounds <- apply(max_bounds_mat, 2, min)
+  param_ranges <- rbind(min_bounds, max_bounds)
+
+  for(j in seq_along(validation_list)) {
+    validation_list[[j]] <- get_input_output_design(N_points = N_test_points, 
+                                                    computer_model_data = computer_model_data, 
+                                                    theta_prior_params = theta_prior_params, 
+                                                    scale_inputs = FALSE, 
+                                                    normalize_response = FALSE, 
+                                                    param_ranges = param_ranges, 
+                                                    transformation_method = transformation_method, 
+                                                    design_method = design_method, 
+                                                    order_1d = TRUE, na.rm = TRUE, ...)
+    
+  }
+  
+  return(validation_list)
   
 }
 
