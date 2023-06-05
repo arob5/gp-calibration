@@ -388,23 +388,33 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 
 
 get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_inputs = FALSE,
-                                            output_variables = NULL, include_cov_mat = FALSE) {
+                                            denormalize_predictions = TRUE, output_variables = NULL, 
+                                            include_cov_mat = FALSE, transform_predictions = FALSE) {
   # A convenience function for computing different GP emulator predictions on the same set of validation points. 
   # This is mainly used for testing when comparing different emulators. This function loops over each emulator, 
   # returning the GP predictive means and variances at the test inputs `X_test`. All predictions are compiled 
-  # in a single data.frame. 
+  # in a single data.frame. GP predictions will be raw predictions if `transform_predictions` is FALSE; 
+  # otherwise, the predictions will be transformed according to the specified GP predictive distribution 
+  # (e.g. log-normal, truncated Gaussian, rectified Gaussian). In this case, the transformations are determined 
+  # by `emulator_info_list`. 
   #
   # Args:
   #    emulator_info_list: Named list, where each element is an "emulator info" object. The emulator info objects 
   #                        are themselves lists with elements "gp_fits", "input_bounds", "output_stats", and "settings". 
   #    X_test: matrix, of dimension M x D, where M is the number of test inputs and D the dimension of the parameter space. 
   #            The test inputs at which to predict. 
-  #    scale_inputs: If TRUE, uses the "input_bounds" element of the emulator info lists to scale `X_test` prior to prediction. 
+  #    scale_inputs: logical(1), if TRUE, uses the "input_bounds" element of the emulator info lists to scale `X_test` prior to prediction. 
   #                  If FALSE, assumes `X_test` is already properly scaled. 
+  #    denormalize_predictions: logical(1), if TRUE the GP predictions are returned on the original scale by inverting the normalization 
+  #                             transformation. Otherwise, the GP predictions are returned on the normalized scale. 
   #    output_variables: character, vector of output variable names, which is passed to `predict_independent_GPs()`. If NULL, 
   #                      `predict_independent_GPs()` just assigns numbers to the outputs. 
   #    include_cov_mat: logical(1), if TRUE, calculates and returns the N_pred x N_pred predictive covariance matrix 
   #             over the set of input points. Otherwise, only calculates the pointwise predictive variances.
+  #    transform_predictions: logical(1), GP predictions will be raw predictions if `transform_predictions` is FALSE; 
+  #                           otherwise, the predictions will be transformed according to the specified GP predictive distribution 
+  #                           (e.g. log-normal, truncated Gaussian, rectified Gaussian). In this case, the transformations are determined 
+  #                           by `emulator_info_list`.
   #
   # Returns:
   #    list, with two elements "df" and "cov_list". The former is a 
@@ -431,16 +441,21 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
     
     # Scale inputs. 
     if(scale_inputs) X_test_scaled <- scale_input_data(X_test, input_bounds = emulator_info_list[[j]]$input_bounds)
+    
+    # Determine transformation, if transforming predictions. 
+    transformation_method <- ifelse(transform_predictions, emulator_info_list[[j]]$settings$transformation_method, 
+                                                           NA_character_)
 
     # Compute GP predictive distribution. 
     gp_test_pred_list <- predict_independent_GPs(X_pred = X_test_scaled, 
                                                  gp_obj_list = emulator_info_list[[j]]$gp_fits, 
                                                  gp_lib = emulator_info_list[[j]]$settings$gp_lib, 
                                                  include_cov_mat = include_cov_mat, 
-                                                 denormalize_predictions = TRUE,
+                                                 denormalize_predictions = denormalize_predictions,
                                                  output_stats = emulator_info_list[[j]]$output_stats, 
                                                  return_df = TRUE, 
-                                                 output_variables = output_variables)
+                                                 output_variables = output_variables,  
+                                                 transformation_method = transformation_method)
     gp_test_pred_df <- gp_test_pred_list$df
     gp_cov_list[[test_label]] <- gp_test_pred_list$cov_list
     
@@ -602,25 +617,23 @@ get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NU
 }
 
 
-get_emulator_comparison_metrics_validation_list <- function(emulator_info_list, validation_data_list, metrics, 
-                                                            output_variables = NULL, transformation_method = NA_character_, 
-                                                            include_nug = TRUE) {
+get_emulator_comparison_metrics_validation_list <- function(emulator_info_list, X_test_list, Y_test_list, metrics, scale_inputs, 
+                                                            output_variables = NULL, include_nug = TRUE) {
   # A wrapper for `get_emulator_comparison_metrics()` that loops over a list of different validation/test data and combines 
-  # all of the results in a single data.table.  
+  # all of the results in a single data.table. 
   
   f_apply <- function(idx) {
     metrics_dt <- get_emulator_comparison_metrics(emulator_info_list = emulator_info_list, 
-                                                  X_test = validation_data_list[[idx]]$inputs, 
-                                                  Y_test = validation_data_list[[idx]]$outputs, 
+                                                  X_test = X_test_list[[idx]], 
+                                                  Y_test = Y_test_list[[idx]], 
                                                   metrics = metrics, 
                                                   scale_inputs = TRUE, 
                                                   output_variables = output_variables, 
-                                                  transformation_method = transformation_method, 
                                                   include_nug = include_nug)$metrics
     metrics_dt[, validation_data := idx]
   }
   
-  metrics_list <- lapply(seq_along(validation_data_list), f_apply)
+  metrics_list <- lapply(seq_along(X_test_list), f_apply)
                                                                                
   return(rbindlist(metrics_list, use.names = TRUE))
   
@@ -628,9 +641,11 @@ get_emulator_comparison_metrics_validation_list <- function(emulator_info_list, 
 
 
 get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, metrics, scale_inputs = FALSE, output_variables = NULL,
-                                            emulator_pred_list = NULL, transformation_method = NA_character_, include_nug = TRUE) {
+                                            emulator_pred_list = NULL, include_nug = TRUE) {
   # This function computes error metrics (or scores) for a set of different GPs, and returns the results in a data.frame 
-  # which can be used to compare the performance across the different GPs. 
+  # which can be used to compare the performance across the different GPs. The response data `Y_test` is assumed to be unnormalized. 
+  # The test inputs `X_test` may or may not be scaled, which can be accounted for by the argument `scale_inputs`. Metrics are 
+  # computed on the normalized scale. 
   #
   # Args:
   #    emulator_info_list: Named list, where each element is an "emulator info" object. The emulator info objects 
@@ -674,7 +689,10 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
                                                           X_test = X_test, 
                                                           scale_inputs = scale_inputs, 
                                                           output_variables = output_variables, 
-                                                          include_cov_mat = include_cov_mat)
+                                                          include_cov_mat = include_cov_mat, 
+                                                          denormalize_predictions = FALSE, 
+                                                          transform_predictions = TRUE)
+                                                          
   }
   emulator_pred_df <- emulator_pred_list$df
   
@@ -694,14 +712,16 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
     gp_mean_cols <- paste(test_lab, "mean", output_variables, sep = "_")
     gp_var_cols <- paste(test_lab, "var", output_variables, sep = "_")
     gp_nug_cols <- paste(test_lab, "var_nug", output_variables, sep = "_")
+    gp_var_df <- emulator_pred_df[, gp_var_cols, drop = FALSE] 
+    if(include_nug) gp_var_df <- gp_var_df + emulator_pred_df[, gp_nug_cols, drop = FALSE]
+    
+    # Normalize response data. 
+    Y_test_norm <- normalize_output_data(Y_test, output_stats = emulator_info_list[[j]]$output_stats)
     
     for(metric in metrics) {
-      gp_var_df <- emulator_pred_df[, gp_var_cols, drop = FALSE] 
-      if(include_nug) gp_var_df <- gp_var_df + emulator_pred_df[, gp_nug_cols, drop = FALSE]
-      
       metric_vals <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
                                                gp_var_df = gp_var_df,
-                                               Y_true = Y_test, 
+                                               Y_true = Y_test_norm, 
                                                metric = metric, 
                                                transformation_method = emulator_info_list[[j]]$settings$transformation_method, 
                                                gp_cov = emulator_pred_list$cov_list[[j]])
@@ -1084,7 +1104,7 @@ get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transfo
   # Returns:
   #    numeric(), vector of (potentially transformed) GP pointwise density evaluations, of equal length 
   #    as `y_vals`. 
-  
+
   gp_sd <- sqrt(gp_var)
   
   if(is.na(transformation_method)) {

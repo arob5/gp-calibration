@@ -981,8 +981,10 @@ print(emulator_metrics_test$metrics)
 
 ```{r}
 emulator_metrics_test <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list_test, 
-                                                                         validation_data_list = validation_list,
+                                                                         X_test_list = lapply(validation_list, function(l) l$inputs),
+                                                                         Y_test_list = lapply(validation_list, function(l) l$outputs),
                                                                          metrics = c("rmse", "srmse", "nlpd_pointwise"), 
+                                                                         scale_inputs = TRUE, 
                                                                          output_variables = computer_model_data$output_vars, 
                                                                          include_nug = TRUE)
 ```
