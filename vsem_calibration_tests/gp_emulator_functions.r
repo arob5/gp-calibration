@@ -602,8 +602,33 @@ get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NU
 }
 
 
+get_emulator_comparison_metrics_validation_list <- function(emulator_info_list, validation_data_list, metrics, 
+                                                            output_variables = NULL, transformation_method = NA_character_, 
+                                                            include_nug = TRUE) {
+  # A wrapper for `get_emulator_comparison_metrics()` that loops over a list of different validation/test data and combines 
+  # all of the results in a single data.table.  
+  
+  f_apply <- function(idx) {
+    metrics_dt <- get_emulator_comparison_metrics(emulator_info_list = emulator_info_list, 
+                                                  X_test = validation_data_list[[idx]]$inputs, 
+                                                  Y_test = validation_data_list[[idx]]$outputs, 
+                                                  metrics = metrics, 
+                                                  scale_inputs = TRUE, 
+                                                  output_variables = output_variables, 
+                                                  transformation_method = transformation_method, 
+                                                  include_nug = include_nug)$metrics
+    metrics_dt[, validation_data := idx]
+  }
+  
+  metrics_list <- lapply(seq_along(validation_data_list), f_apply)
+                                                                               
+  return(rbindlist(metrics_list, use.names = TRUE))
+  
+}
+
+
 get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, metrics, scale_inputs = FALSE, output_variables = NULL,
-                                            emulator_pred_list = NULL, transformation_method = NA_character_) {
+                                            emulator_pred_list = NULL, transformation_method = NA_character_, include_nug = TRUE) {
   # This function computes error metrics (or scores) for a set of different GPs, and returns the results in a data.frame 
   # which can be used to compare the performance across the different GPs. 
   #
@@ -629,6 +654,8 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   #                           "LNP", "rectified" and "truncated". The default, `NA_character_` will apply 
   #                           no transformation. This argument is only required by some metrics, such as 
   #                           "nlpd_pointwise" and "nlpd". 
+  #    include_nug: logical(1), if TRUE the predictive GP variance is the predictive variance of the latent function plug the nugget. 
+  #                 Otherwise, the nugget variance is not added. 
   #
   # Returns:
   #    list, with elements "pred" (containing the data.frame of GP predictions) and "metrics" (containing the data.frame of GP metrics). 
@@ -666,11 +693,14 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
     test_lab <- test_labels[j]
     gp_mean_cols <- paste(test_lab, "mean", output_variables, sep = "_")
     gp_var_cols <- paste(test_lab, "var", output_variables, sep = "_")
+    gp_nug_cols <- paste(test_lab, "var_nug", output_variables, sep = "_")
     
-    # RMSE
     for(metric in metrics) {
+      gp_var_df <- emulator_pred_df[, gp_var_cols, drop = FALSE] 
+      if(include_nug) gp_var_df <- gp_var_df + emulator_pred_df[, gp_nug_cols, drop = FALSE]
+      
       metric_vals <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
-                                               gp_var_df = emulator_pred_df[, gp_var_cols, drop = FALSE],
+                                               gp_var_df = gp_var_df,
                                                Y_true = Y_test, 
                                                metric = metric, 
                                                transformation_method = emulator_info_list[[j]]$settings$transformation_method, 
