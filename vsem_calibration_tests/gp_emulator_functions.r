@@ -265,8 +265,20 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
   #               `include_cov_mat` is FALSE). Default is FALSE (return list with named elements "mean", "var", "var_nug", "cov").
   #
   # Returns:
-  #    list, with named elements "mean", "var", "var_nug", "cov". Or a list of two elements, "df" and "cov" is `return_df` is TRUE. 
-  #    See above for details. 
+  #    list, potentially with named elements "mean", "var", "cov". If no transformation is applied, will also contain elements 
+  #    "var_nug" and "var_comb" containing the nugget variance and combined variance (var + var_nug). If a transformation is applied, 
+  #    "var_nug" will not be present, but "var_comb" will be. Depending on the tranformation, "var_comb" may no longer be the sum of 
+  #    var and var_nug. "cov" will be NULL if `include_cov_mat` is FALSE. Otherwise, it will include the predictive covariance matrix. 
+  #    The diagonal of this matrix equals "var", not "var_comb". To take into account the nugget variance as well, the diagonal of this 
+  #    matrix can simply be replaced with "var_comb". Due to the potential for transformations, it is recommended to work with 
+  #    "var" and "var_comb" instead of "var_nug". 
+  #
+  #    Alternatively returns a list of two elements, "df" and "cov" if `return_df` is TRUE. 
+  #    See above argument `return_df` for details. 
+  
+  if(!denormalize_predictions && !is.na(transformation_method)) {
+    message("Applying transformation to normalized predictions may not make sense; e.g. for truncated Gaussian.")
+  }
   
   pred_list_names <- c("mean", "var", "var_nug", "cov")
   pred_list <- vector(mode = "list", length = length(pred_list_names))
@@ -300,17 +312,20 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     }
   }
   
+  # Sum predictive variance of latent function value and nugget to obtain combined variance. 
+  pred_list[["var_comb"]] <- pred_list$var + pred_list$var_nug
+  
   # Apply transformation to GP predictions. 
   if(!is.na(transformation_method)) {
     pred_list_transformed <- transform_GP_predictions(pred_list$mean, pred_list$var, transformation_method = transformation_method, gp_cov = pred_list$cov)
-    pred_list_transformed[["var_nug"]] <- transform_GP_predictions(pred_list$mean, pred_list$var_nug, transformation_method = transformation_method)$var
+    pred_list_transformed[["var_comb"]] <- transform_GP_predictions(pred_list$mean, pred_list$var_comb, transformation_method = transformation_method)$var
     pred_list <- pred_list_transformed
   }
   
   if(return_df) {
     pred_df <- data.frame(mean = pred_list[["mean"]], 
                           var = pred_list[["var"]], 
-                          var_nug = pred_list[["var_nug"]])
+                          var_comb = pred_list[["var_comb"]])
     return(list(df = pred_df, cov = pred_list$cov))
   }
   
@@ -361,7 +376,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
-  #    with named elements "mean", "var", "var_nug", "cov" (the output of the function `predict_GP()` applied 
+  #    which is the return value of the function `predict_GP()` applied 
   #    to each GP in `gp_obj_list`). Or if `return_df` is TRUE, a list of two elements "df" and "cov_list". 
   #    See `return_df` above for details. 
   
@@ -420,10 +435,10 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
   #    list, with two elements "df" and "cov_list". The former is a 
   #    data.frame, with columns of the form "<test_label>_<pred_type>_<output_variable>". "<test_label>" identifies 
   #    which emulator the prediction pertains to; these names are taken from the names in the list `emulator_info_list`. 
-  #    "<pred_type>" is either "mean", "var", or "var_nug" for the predictive mean, predictive variance, and nugget 
-  #    variance, respectively. "<output_variable>" is the name of the output variable to which the prediction 
-  #    corresponds. Additional columns are added for each emulator test with the output variable "total_SSR"
-  #    (sum of squared residuals). These columns simply sum over all output variables to yield the predictive 
+  #    "<pred_type>" is either "mean", "var", or "var_comb" for the predictive mean, predictive variance, and combined 
+  #    variance (i.e. including nugget), respectively. "<output_variable>" is the name of the output variable to 
+  #    which the prediction  corresponds. Additional columns are added for each emulator test with the output variable 
+  #    "total_SSR" (sum of squared residuals). These columns simply sum over all output variables to yield the predictive 
   #    quantities for the total SSR. Note that this is valid for the variances since the multi-output GPs consist 
   #    of independent GPs for each output. The element "cov_list" is the list (of lists) of predictive covariance  
   #    matrices returned by `predict_independent_GPs()`; see this function as well as `predict_GP()` for more 
@@ -462,10 +477,10 @@ get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_in
     # Sum across columns to compute predictive mean and variance of total sum of squared residuals 
     # (summed across all output variables). 
     mean_cols <- grep("mean", colnames(gp_test_pred_df))
-    var_nug_cols <- grep("var_nug", colnames(gp_test_pred_df))
-    var_cols <- setdiff(grep("var", colnames(gp_test_pred_df)), var_nug_cols)
+    var_comb_cols <- grep("var_comb", colnames(gp_test_pred_df))
+    var_cols <- setdiff(grep("var", colnames(gp_test_pred_df)), var_comb_cols)
     gp_test_pred_df[["mean_total_SSR"]] <- rowSums(gp_test_pred_df[, mean_cols, drop = FALSE])
-    gp_test_pred_df[["var_nug_total_SSR"]] <- rowSums(gp_test_pred_df[, var_nug_cols, drop = FALSE])
+    gp_test_pred_df[["var_comb_total_SSR"]] <- rowSums(gp_test_pred_df[, var_comb_cols, drop = FALSE])
     gp_test_pred_df[["var_total_SSR"]] <- rowSums(gp_test_pred_df[, var_cols, drop = FALSE])
     
     # Prepend test label to column names. 
@@ -583,7 +598,12 @@ get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NU
                                       gp_cov = NULL, gp_L = NULL) {
   # A convenience function to compute a GP metric for each output variable and return the 
   # results. The GPs modeling each output are assumed independent. The names of the metric 
-  # functions are standardized as "get_gp_<metric>". 
+  # functions are standardized as "get_gp_<metric>". For metrics that require the GP predictive covariance, 
+  # it is assumed that `gp_var_df` contains the variances that are desired to be used as the diagonals 
+  # of the respective covariance matrices (i.e. these may include or not include the nugget). Thus, 
+  # the diagonal of the covariance matrix `gp_cov[[j]]` is replaced with the column `gp_var_df[,j]`. 
+  # Note that `predict_GP()` never includes the nugget in the diagonal of the predictive covariance, hence 
+  # the required adjustment here if necessary. 
   #
   # Args:
   #    gp_mean_df: data.frame or matrix, of dimension M x P, where M is the number of test inputs 
@@ -605,12 +625,20 @@ get_independent_gp_metric <- function(gp_mean_df, Y_true, metric, gp_var_df = NU
   #    numeric, vector of length P containing the prediction metric for each output/GP. 
 
   metric_func <- get(paste0("get_gp_", metric))
-  metrics <- sapply(seq(1, ncol(gp_mean_df)), function(j) metric_func(gp_mean = gp_mean_df[,j], 
-                                                                      gp_var = gp_var_df[, j], 
-                                                                      y_true = Y_true[,j], 
-                                                                      transformation_method = transformation_method, 
-                                                                      gp_cov = gp_cov[[j]], 
-                                                                      gp_L = gp_L))
+  
+  apply_func <- function(j) {
+    cov_mat <- gp_cov[[j]]
+    if(!is.null(cov_mat)) diag(cov_mat) <- gp_var_df[,j]
+    
+    metric_func(gp_mean = gp_mean_df[,j], 
+                gp_var = gp_var_df[, j], 
+                y_true = Y_true[,j], 
+                transformation_method = transformation_method, 
+                gp_cov = cov_mat, 
+                gp_L = gp_L)
+  }
+  
+  metrics <- sapply(seq(1, ncol(gp_mean_df)), apply_func)
   
   return(metrics)
   
@@ -645,7 +673,7 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   # This function computes error metrics (or scores) for a set of different GPs, and returns the results in a data.frame 
   # which can be used to compare the performance across the different GPs. The response data `Y_test` is assumed to be unnormalized. 
   # The test inputs `X_test` may or may not be scaled, which can be accounted for by the argument `scale_inputs`. Metrics are 
-  # computed on the normalized scale. 
+  # computed on the original (unnormalized) scale. 
   #
   # Args:
   #    emulator_info_list: Named list, where each element is an "emulator info" object. The emulator info objects 
@@ -653,7 +681,7 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   #    X_test: matrix, of dimension M x D, where M is the number of test inputs and D the dimension of the parameter space. 
   #            The test inputs at which to predict in order to compute prediction metrics. 
   #    Y_test: matrix, of dimension M x P, the baseline true responses corresponding to the inputs `X_test`. The pth column 
-  #            contains the responses for the pth output variable. 
+  #            contains the responses for the pth output variable. Must be on the original (unnormalize scale). 
   #    metrics: character(), vector of prediction metrics to include. Currently supports: "rmse" (root mean squared error), 
   #             "srmse" (Standardized RMSE; normalized by GP predictive variances), "crps" (continuous rank probability score), 
   #             "nlpd_pointwise" (negative log predictive density, summed over test points), 
@@ -690,9 +718,8 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
                                                           scale_inputs = scale_inputs, 
                                                           output_variables = output_variables, 
                                                           include_cov_mat = include_cov_mat, 
-                                                          denormalize_predictions = FALSE, 
+                                                          denormalize_predictions = TRUE, 
                                                           transform_predictions = TRUE)
-                                                          
   }
   emulator_pred_df <- emulator_pred_list$df
   
@@ -711,17 +738,18 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
     test_lab <- test_labels[j]
     gp_mean_cols <- paste(test_lab, "mean", output_variables, sep = "_")
     gp_var_cols <- paste(test_lab, "var", output_variables, sep = "_")
-    gp_nug_cols <- paste(test_lab, "var_nug", output_variables, sep = "_")
-    gp_var_df <- emulator_pred_df[, gp_var_cols, drop = FALSE] 
-    if(include_nug) gp_var_df <- gp_var_df + emulator_pred_df[, gp_nug_cols, drop = FALSE]
-    
-    # Normalize response data. 
-    Y_test_norm <- normalize_output_data(Y_test, output_stats = emulator_info_list[[j]]$output_stats)
+    gp_var_comb_cols <- paste(test_lab, "var_comb", output_variables, sep = "_")
+
+    if(include_nug) {
+      gp_var_df <- emulator_pred_df[, gp_var_comb_cols, drop = FALSE]
+    } else {
+      gp_var_df <- emulator_pred_df[, gp_var_cols, drop = FALSE]
+    }
     
     for(metric in metrics) {
       metric_vals <- get_independent_gp_metric(gp_mean_df = emulator_pred_df[, gp_mean_cols, drop = FALSE], 
                                                gp_var_df = gp_var_df,
-                                               Y_true = Y_test_norm, 
+                                               Y_true = Y_test, 
                                                metric = metric, 
                                                transformation_method = emulator_info_list[[j]]$settings$transformation_method, 
                                                gp_cov = emulator_pred_list$cov_list[[j]])
@@ -1799,8 +1827,9 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   
   gp_samples <- matrix(nrow = N_row, ncol = N_GPs)
   for(j in seq_len(N_GPs)) {
-    vars <- gp_pred_list[[j]]$var
-    if(include_nugget) vars <- vars + gp_pred_list[[j]]$var_nug
+    if(include_nugget) vars <- gp_pred_list[[j]]$var_comb
+    else vars <- gp_pred_list[[j]]$var
+    
     gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, vars, transformation_methods[j], idx_selector)
   }
   
