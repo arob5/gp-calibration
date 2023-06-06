@@ -2,6 +2,7 @@
 # gp_emulator_functions.r
 #
 
+library(scoringRules)
 
 # ------------------------------------------------------------------------------
 # Data Pre and Post-processing
@@ -525,7 +526,7 @@ get_gp_srmse <- function(gp_mean, gp_var, y_true, ...) {
   #
   # Args
   #    gp_mean: numeric, vector of GP mean predictions. 
-  #    gp_mean: numeric, vector of GP variance predictions.
+  #    gp_var: numeric, vector of GP variance predictions.
   #    y_true: numeric, vector of true response values. Must be equal length as `gp_mean`.
   #
   # Returns:
@@ -546,7 +547,7 @@ get_gp_nlpd_pointwise <- function(gp_mean, gp_var, y_true, transformation_method
   #
   # Args:
   #    gp_mean: numeric, vector of GP mean predictions. 
-  #    gp_mean: numeric, vector of GP variance predictions.
+  #    gp_var: numeric, vector of GP variance predictions.
   #    y_true: numeric, vector of true response values. Must be equal length as `gp_mean`.
   #    transformation_method: character(1), string specifying a transformation method; currently supports
   #                           "LNP", "rectified" and "truncated". `NA_character_` will apply 
@@ -590,6 +591,47 @@ get_gp_mah <- function(gp_mean, y_true, gp_cov = NULL, gp_L = NULL, eps = sqrt(.
   }
   
   return(sqrt(sum(forwardsolve(gp_L, y_true - gp_mean)^2)))
+  
+}
+
+
+get_gp_crps <- function(gp_mean, gp_var, y_true, transformation_method = NA_character_, ...) {
+  # Computes the continuous ranked probability score (CRPS) of a GP forecast based on 
+  # on the observed data `y_true`. `gp_mean` and `gp_var` are assumed to be vectors of 
+  # GP predictive means and variances at the test locations for the underlying/untransformed 
+  # GP. The predictive distribution can be tranformed into something non-Gaussian by specifying 
+  # `transformation_method`. The current allowed transformations "LNP" (log-normal process)
+  # "truncated" (zero-truncated Gaussian) and "rectified" (zero censored/rectified Gaussian)
+  # all admit closed-form expressions for the CRPS. The CRPS is computed at each test location 
+  # and the average over all test locations is returned. 
+  #
+  # Args:
+  #    gp_mean: numeric, vector of GP mean predictions. 
+  #    gp_var: numeric, vector of GP variance predictions.
+  #    y_true: numeric, vector of true response values. Must be equal length as `gp_mean`.
+  #    transformation_method: character(1), string specifying a transformation method; currently supports
+  #                           "LNP", "rectified" and "truncated". `NA_character_` will apply 
+  #                           no transformation. This is required as the log predictive density depends on the 
+  #                           predictive distribution, which may not always be Gaussian.
+  #
+  # Returns:
+  #    numeric, the average CRPS. 
+  
+  gp_sd <- sqrt(gp_var)
+  
+  if(is.na(transformation_method)) {
+    crps_vals <- crps_norm(y_true, mean = gp_mean, sd = gp_sd)
+  } else if(transformation_method == "LNP") {
+    crps_vals <- crps_lnorm(y_true, meanlog = gp_mean, sdlog = gp_sd)
+  } else if(transformation_method == "truncated") {
+    crps_vals <- crps_tnorm(y_true, location = gp_mean, scale = gp_sd, lower = 0)
+  } else if(transformation_method == "rectified") {
+    crps_vals <- crps_cnorm(y_true, location = gp_mean, scale = gp_sd, lower = 0)
+  } else {
+    stop("Invalid transformation method: ", transformation_method)
+  }
+  
+  return(mean(crps_vals))
   
 }
 
