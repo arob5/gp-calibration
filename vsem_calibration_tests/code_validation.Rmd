@@ -990,5 +990,16 @@ emulator_metrics_test <- get_emulator_comparison_metrics_validation_list(emulato
 ```
 
 
+```{r}
+plts <- plot_emulator_comparison_violin_plots(emulator_metrics_test, fill_col = "design",
+                                              metrics = c("crps", "rmse", "nlpd_pointwise"), 
+                                              output_variables = "y", 
+                                              include_points = TRUE, 
+                                              nrow = 1)
+plot(plts)
+```
+
+
+
 
 

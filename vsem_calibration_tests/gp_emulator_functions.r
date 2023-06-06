@@ -771,13 +771,17 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   Y_test <- Y_test[, output_variables, drop = FALSE]
   metrics_df <- as.data.table(expand.grid(test_labels, output_variables, metrics))
   colnames(metrics_df) <- c("test_label", "output_variable", "metric_name")
-  metrics_df[, "metric_value"] <- NA_real_
+  metrics_df[, metric_value := NA_real_]
+  metrics_df[, c("design_rep", "design") := NA_character_]
   
   # Compute metrics for each emulator.
   for(j in seq_along(emulator_info_list)) {
     
     # Extract columns pertaining to GP predictive means, variances, etc. 
     test_lab <- test_labels[j]
+    test_lab_split <- strsplit(test_lab, split = "_")[[1]]
+    metrics_df[test_label == test_lab, design := substr(test_lab_split[1], start = nchar(test_lab_split[1]), stop = nchar(test_lab_split[1]))]
+    metrics_df[test_label == test_lab, design_rep := substr(test_lab_split[2], start = nchar(test_lab_split[2]), stop = nchar(test_lab_split[2]))]
     gp_mean_cols <- paste(test_lab, "mean", output_variables, sep = "_")
     gp_var_cols <- paste(test_lab, "var", output_variables, sep = "_")
     gp_var_comb_cols <- paste(test_lab, "var_comb", output_variables, sep = "_")
@@ -1143,6 +1147,28 @@ plot_gp_fit_2d <- function(X_test, X_train = NULL, y_test = NULL, gp_mean_pred =
   
 }
 
+
+plot_emulator_comparison_violin_plots <- function(emulator_metrics_df, fill_col, metrics, output_variables, include_points = TRUE, nrow = 1) {
+  # `fill_col` will typically either be "design" (when comparison across different designs is desired) or "emulator_setting" (if comparison 
+  # across different emulator specifications is desired). 
+  
+  plts <- vector(mode = "list", length = length(metrics) * length(output_variables))
+  N_metrics <- length(metrics)
+  
+  for(i in seq_along(output_variables)) {
+    for(j in seq_along(metrics)) {
+      idx <- N_metrics * (i - 1) + j
+      plts[[idx]] <- ggplot(data = emulator_metrics_df[(metric_name == metrics[j]) & (output_variable == output_variables[i]),], 
+                            aes(x = .data[[fill_col]], y = metric_value, fill = .data[[fill_col]])) + 
+                      geom_violin() +
+                      ylab(paste(metrics[j], output_variables[i], sep = ", "))
+      if(include_points) plts[[idx]] <- plts[[idx]] + geom_jitter(color = "black", size = 0.8, alpha = 0.9, width = 0.2)
+    }
+  }
+  
+  return(arrangeGrob(grobs = plts, nrow = nrow))
+  
+}
 
 # get_2d_gp_pred_heatmap_plots <- function(emulator_pred_df, X_test, raster = FALSE) {
 #   # TODO

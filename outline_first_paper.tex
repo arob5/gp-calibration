@@ -430,7 +430,26 @@ J_n(\tilde{\btheta}) &:= \E_{\tilde{\Phi}} \E_{\Sigma} \E_{\btheta} \Var_{\tilde
 
 \bigskip
 \noindent
-\textbf{Approximating the Acquisition Function.}
+\textbf{Approximating the Acquisition Function.} \\
+I now consider approximation of the above acquisition function. For simplicity, I drop the dependence on $\Sigma$ for now (we can think of $\btheta$ as containing both the 
+calibration and likelihood parameters). I also suppose that the GP predictive distribution is Gaussian for now. First, recall that 
+\begin{align*}
+\tilde{L}_n^*(\btheta) &= \exp\left\{ -\frac{1}{2} \sum_{p = 1}^{P} \left[T_p \log\left(2\pi \sigma_p^2\right) + \frac{\tilde{\Phi}^*_p(\btheta)}{\sigma_p^2}\right] \right\} \\
+				&= C_{\Sigma} \prod_{p = 1}^{P} \exp\left\{\frac{\tilde{\Phi}^*_p(\btheta)}{2\sigma_p^2}\right\}
+\end{align*}
+Recalling the GP predictive distribution, we have 
+\[\frac{\tilde{\Phi}^*_p(\btheta)}{2\sigma_p^2}\bigg|\theta, \tilde{\Phi} \sim \mathcal{N}\left(\frac{\tilde{\mu}_p^*(\btheta)}{2\sigma_p^2}, \frac{\tilde{k}_p^*(\btheta)}{4\sigma_p^4} \right) \]
+Note that the predictive mean $\tilde{\mu}_p^*(\btheta)$ and variance $\tilde{k}_p^*(\btheta)$ are not known, since these are the predictive quantities given that the GP has been 
+conditioned on $\tilde{\Phi}$. 
+The exponential of the above quantity is log-normally distributed
+\[\exp\left\{\frac{\tilde{\Phi}^*_p(\btheta)}{2\sigma_p^2}\right\}\bigg|\theta, \tilde{\Phi} \sim \mathcal{LN}\left(\frac{\tilde{\mu}_p^*(\btheta)}{2\sigma_p^2}, \frac{\tilde{k}_p^*(\btheta)}{4\sigma_p^4} \right) \]
+so the expectation is available in closed-form:
+\[\E_{\tilde{\Phi}_p^*} \exp\left\{\frac{\tilde{\Phi}^*_p(\btheta)}{2\sigma_p^2}\right\} = \exp\left\{\frac{\tilde{\mu}_p^*(\btheta)}{2\sigma_p^2} + \frac{\tilde{k}_p^*(\btheta)}{8\sigma_p^4} \right\} \]
+Since the univariate GPs are independent, we obtain 
+\begin{align*}
+\E_{\tilde{\Phi}^*} \tilde{L}_n^*(\btheta) &= C_\Sigma \prod_{p = 1}^{P} \E_{\tilde{\Phi}_p^*} \exp\left\{\frac{\tilde{\Phi}^*_p(\btheta)}{2\sigma_p^2}\right\} \\
+							   &= C_\Sigma \exp\left\{\sum_{p = 1}^{P} \left[ \frac{\tilde{\mu}_p^*(\btheta)}{2\sigma_p^2} + \frac{\tilde{k}_p^*(\btheta)}{8\sigma_p^4} \right] \right\}
+\end{align*}
 
 \bigskip
 \noindent
