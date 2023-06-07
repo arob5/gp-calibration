@@ -1,0 +1,75 @@
+---
+title: "Emulator Metrics Illustration"
+author: "Andrew Roberts"
+date: '2023-06-07'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+source("mcmc_calibration_functions.r")
+source("gp_emulator_functions.r")
+```
+
+
+# Computer Model and Data 
+
+```{r}
+# Synthetic data generation
+computer_model_data <- generate_vsem_test_case(4)
+```
+
+```{r}
+print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
+```
+
+```{r echo = FALSE}
+for(output_var in computer_model_data$output_vars) {
+ plotTimeSeries(observed = computer_model_data$data_obs[, output_var],
+                predicted = computer_model_data$data_ref[, output_var], main = output_var) 
+}
+```
+
+# Priors 
+
+## Calibration Parameters 
+```{r, echo = FALSE} 
+# Priors 
+theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
+theta_prior_params[,"param1"] <- theta_prior_params[,"lower"]
+theta_prior_params[,"param2"] <- theta_prior_params[,"upper"]
+theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
+
+print(theta_prior_params)
+```
+
+
+## Likelihood Parameters 
+```{r}
+sig2_prior_info <- get_IG_priors_numerical_test(sig2_true = diag(computer_model_data$Sig_eps), 
+                                                bias_frac = c(0.1, -0.15), bins = 50,
+                                                coef_var = c(0.3, 0.5), return_prior_plots = TRUE, 
+                                                output_variables = computer_model_data$output_vars)
+sig_eps_prior_params <- sig2_prior_info$prior
+plts <- sig2_prior_info$plots
+
+grid.arrange(arrangeGrob(grobs = plts, nrow = 1))
+```
+
+
+
+
+
+
+
+

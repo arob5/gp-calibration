@@ -123,6 +123,16 @@
       "Hash": "22b546dd7e337f6c0c58a39983a496bc",
       "Requirements": []
     },
+    "RcppArmadillo": {
+      "Package": "RcppArmadillo",
+      "Version": "0.10.8.1.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "303dcd8a3fca86087e341ed5cc360abf",
+      "Requirements": [
+        "Rcpp"
+      ]
+    },
     "RcppEigen": {
       "Package": "RcppEigen",
       "Version": "0.3.3.9.1",
@@ -1011,6 +1021,19 @@
         "lifecycle",
         "munsell",
         "viridisLite"
+      ]
+    },
+    "scoringRules": {
+      "Package": "scoringRules",
+      "Version": "1.1.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "4c76801bae92ba0334e3f7b36a39e961",
+      "Requirements": [
+        "MASS",
+        "Rcpp",
+        "RcppArmadillo",
+        "knitr"
       ]
     },
     "shiny": {

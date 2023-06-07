@@ -14,7 +14,7 @@ library(mlegp)
 library(ggplot2)
 library(gridExtra)
 library(data.table)
-# library(BayesianTools)
+library(BayesianTools)
 
 source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
