@@ -73,11 +73,15 @@ scale_input_data <- function(X, input_bounds, inverse = FALSE) {
   #    matrix of dimension N_pred x d; the matrix X whose columns have been scaled according to `input_bounds`. 
   #
   
+  cols <- colnames(X)
+  
   if(inverse) {
     X <- X %*% diag(input_bounds[2,] - input_bounds[1,], ncol(X)) + matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)
   } else {
     X <- (X - matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*% diag(1/(input_bounds[2,] - input_bounds[1,]), ncol(X))
   }
+  
+  colnames(X) <- cols
   
   return(X)
 }
@@ -391,7 +395,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 
   if(return_df) {
     pred_df_list <- lapply(pred_list, function(l) l$df)
-    for(j in seq_along(pred_df_list)) colnames(pred_df_list[[j]]) <- paste(colnames(pred_df_list[[j]]), output_variables, sep = "_")
+    for(j in seq_along(pred_df_list)) colnames(pred_df_list[[j]]) <- paste(colnames(pred_df_list[[j]]), output_variables[j], sep = "_")
     df <- do.call("cbind", pred_df_list)
     cov_list <- lapply(pred_list, function(l) l$cov)
     return(list(df = df, cov_list = cov_list))
@@ -750,11 +754,11 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   # TODO: for now not including any metrics that require predictive covariance; need to modify a lot of functions to allow this.
   # TODO: Note that when populating the metrics data.frame, the order of the output variables is crucial; should probably make this more 
   #       robust to avoid mistakes with this. 
-  
+
   # Compute emulator predictions. Note that predictions are untransformed; i.e. these are GP predictions, not log-normal process
   # or any other transformed GP. The transformations are taken into account when the metrics are computed, if necessary. 
   if(is.null(emulator_pred_list)) {
-    include_cov_mat <- any(metrics %in% c("mah", "nlpd", "crps"))
+    include_cov_mat <- any(metrics %in% c("mah", "nlpd"))
     emulator_pred_list <- get_emulator_comparison_pred_df(emulator_info_list = emulator_info_list, 
                                                           X_test = X_test, 
                                                           scale_inputs = scale_inputs, 
@@ -1440,7 +1444,7 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
 # TODO: update comments and think about a better way of handling log output stats. 
 get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
                                     param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
-                                    design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
+                                    design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = TRUE) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 

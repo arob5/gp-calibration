@@ -16,6 +16,7 @@ library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
+source("numerical_experiment_functions.r")
 source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
 ```

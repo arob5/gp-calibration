@@ -323,7 +323,7 @@ run_VSEM_single_input <- function(par_val, computer_model_data = NULL, ref_pars 
   if("NEE" %in% output_vars) {
     VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
   }
-  
+
   # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
   # at time t. 
   if("LAI" %in% output_vars) {
@@ -2037,7 +2037,7 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
   # determines which 2 columns will be used for the 2D KDE plot in each matrix. 
   #
   # Args:
-  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
+  #    samples_list: list of matrices, each of dimension (num samples, 2). 
   #    col_sel: integer(1), the two column indees to select from each matrix. i.e. this selects two particular parameters, whose
   #             samples will be used to compute the KDE. 
   #    xlab, ylab, main_title: x and y axis labels and plot title. 
@@ -2064,7 +2064,164 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 }
 
 
+get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
+                                raster = FALSE, point_coords = NULL, main_title = "Heatmap") {
+  # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
+  # kernel density estimate from `samples`. The input locations are given by the 
+  # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
+  # then `raster = TRUE` may be set to create a classic heatmap produced over a dense 
+  # grid. Altenatively, if `X` consists of more sparsely sampled or non-evenly-spaced 
+  # locations, `raster = FALSE` should be set and the resulting plot will plot the 
+  # individual points, which will still be colored in heatmap fashion. 
+  #
+  # Args:
+  #    X: matrix, of dimension M x D with colnames specified. `param_names` will be used to 
+  #       select the two input dimensions of `X`. These define the input locations used in the 
+  #       heatmap. 
+  #    y: numeric(M), the scalar output value used to determine the colors in the heatmap. 
+  #    samples_kde: matrix, with colnames specified. `param_names` will be used to 
+  #                 select the two input dimensions of `samples_kde`. These input points 
+  #                 will not be part of the heatmap. Instead, they will be used to construct 
+  #                 a 2D KDE estimate and the contours of this KDE will be overlaid on the 
+  #                 heatmap. 
+  #    samples_points: matrix, with colnames specified. `param_names` will be used to 
+  #                    select the two input dimensions of `samples_points`. These input points 
+  #                    will be directly plotted as points on the plot and colored red. This 
+  #                    argument is typically used to plot design points. 
+  #    raster: logical(1), see above description. Set to TRUE when `X` is a dense grid of evenly-spaced  
+  #            points FALSE when the points in `X` are not evenly-spaced or are sparse. 
+  #    point_coords: numeric(2), coordinates to plot a single point as a red triangle. This typically 
+  #                  corresponds to the location of the true parameter value. 
+  #    main_title: character(1), the title of the plot. 
+  
+  if(length(param_names) != 2) stop("<param_names> must have length 2.")
+  
+  df <- as.data.frame(cbind(X[, param_names], y))
+  colnames(df) <- c("theta1", "theta2", "y")
+  
+  # Heatmap. 
+  if(raster) {
+    plt <- ggplot() + 
+            geom_tile(data = df, aes(x = theta1, y = theta2, fill = y)) + 
+            scale_fill_viridis(discrete=FALSE)
+  } else {
+    plt <- ggplot() + 
+            geom_point(data = df, aes(x = theta1, y = theta2, color = y)) + 
+            scale_color_viridis(discrete=FALSE)
+  }
+  
+  # Title and axis labels. 
+  plt <- plt + ggtitle(main_title) + xlab(param_names[1]) + ylab(param_names[2])
+  
+  # Density contours from samples. 
+  if(!is.null(samples_kde)) {
+    if(!all(param_names %in% colnames(samples_kde))) stop("<param_names> must be column names of <samples_kde>.")
+  
+    samples_kde <- as.data.frame(samples_kde[, param_names])
+    colnames(samples_kde) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2))
+  }
+  
+  # Plot points. 
+  if(!is.null(samples_points)) {
+    if(!all(param_names %in% colnames(samples_points))) stop("<param_names> must be column names of <samples_points>.")
+    samples_points <- as.data.frame(samples_points[, param_names])
+    colnames(samples_points) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2), color = "red")
+  }
+  
+  # Mark specific point in plot. 
+  if(!is.null(point_coords)) {
+    plt <- plt + geom_point(data = data.frame(theta1 = point_coords[1], theta2 = point_coords[2]), 
+                            aes(x = theta1, y = theta2), color = "red", shape = 17)
+  }
+  
+  return(plt)
+  
+}
+
+
+get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_names, response_surface, 
+                                         SSR_vals = NULL, theta_prior_params = NULL, output_variables = NULL, 
+                                         combine_outputs = TRUE, raster = FALSE, point_coords = NULL, 
+                                         samples_kde = NULL, samples_points = NULL, scale_inputs = FALSE, 
+                                         input_bounds = NULL, ...) {
+  # A wrapper for `get_2d_heatmap_plot()` that specializes in plotting quantities of interest 
+  # related to the calibration problem. This function can be used when the dimension of the 
+  # calibration parameter space is 2, or to plot 2-dimensional projections when the input 
+  # dimension is larger than 2. This function can plot a heatmap 
+  # of 1.) the SSR (sum of squared residual) surface, 2.) the likelihood surface,  
+  # 3.) the posterior surface, or 4.) the prior surface. It also allows the user to control 
+  # whether individual plots are generated for each output variable, or if all the output variables 
+  # should  be combined to plot the overall likelihood, posterior, etc. It also allows points 
+  # to be overlaid on the plot, which typically represent design points or samples 
+  # from a ground truth distribution. Additionally a single point can be added to 
+  # mark the true value of the parameters. 
+  #
+  # Args:
+  #    response_surface: character(1), either "SSR", "likelihood", "prior", or "posterior". 
+  #    ...: Other arguments passed to ggplot()
+  #
+  #
+  
+  theta_vals_unscaled <- as.matrix(theta_vals)
+  if(scale_inputs) {
+    theta_vals <- scale_input_data(theta_vals, input_bounds)
+    if(!is.null(point_coords)) point_coords <- scale_input_data(matrix(point_coords, nrow=1), input_bounds)
+    if(!is.null(samples_kde)) samples_kde <- scale_input_data(samples_kde, input_bounds)
+    if(!is.null(samples_points)) samples_points <- scale_input_data(samples_points, input_bounds)
+  } 
+  
+  if(response_surface == "SSR") {
+    
+    if(is.null(SSR_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
+    
+    plts <- get_2d_response_surface_plot_SSR(theta_vals = theta_vals, 
+                                             SSR_vals = SSR_vals, 
+                                             param_names = param_names, 
+                                             output_variables = output_variables, 
+                                             raster = raster, 
+                                             point_coords = point_coords, 
+                                             samples_kde = samples_kde, 
+                                             samples_points = samples_points)
+  }
+  
+  return(plts)
+  
+}
+
+
+get_2d_response_surface_plot_SSR <- function(theta_vals, SSR_vals, param_names, output_variables = NULL, 
+                                             raster = FALSE, point_coords = NULL, samples_kde = NULL,
+                                             samples_points = NULL) {
+  
+  if(!is.null(output_variables)) {
+    SSR_vals <- SSR_vals[, output_variables]
+  } else {
+    output_variables <- colnames(SSR_vals)
+  }
+  
+  plts <- vector(mode = "list", length = length(output_variables))
+  for(j in seq_along(plts)) {
+    plts[[j]] <- get_2d_heatmap_plot(X = theta_vals, 
+                                     y = SSR_vals[,j], 
+                                     param_names = param_names,
+                                     samples_kde = samples_kde, 
+                                     samples_points = samples_points, 
+                                     raster = raster, 
+                                     main_title = paste0("SSR: ", output_variables[j]), 
+                                     point_coords = point_coords)
+  }
+  
+  return(plts)
+  
+}
+                                  
+
 get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
+  # See `select_mcmc_samp_cols()` for details on how to specify columns which to plot. 
 
   # Select columns to plot.  
   n <- nrow(samp_df)
