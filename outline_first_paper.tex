@@ -493,6 +493,20 @@ where $C_\Sigma$ is a constant which depends on $\sigma_1^2, \dots, \sigma_p^2$.
 \frac{\pi^*(\tilde{\btheta})}{\pi(\btheta_i)} \sim \mathcal{LN}\left(\log\frac{\pi_0(\tilde{\btheta})}{\pi_0(\btheta_i)} + \frac{1}{2} \sum_{p = 1}^{P} \frac{\Phi_p(\btheta_i) - \mu_p^*(\tilde{\btheta})}{\sigma_p^2}, \frac{1}{4} \sum_{p = 1}^{P} \frac{k_p^*(\tilde{\btheta})}{\sigma_p^4} \right)
 \end{align*}
 
+\bigskip
+\noindent
+\textbf{Some issues to think about:}
+\begin{itemize}
+\item One concern is that the current design mostly consists of points in regions where the posterior density is very small. Then while the ``good'' points may have large $J(\tilde{\btheta}_m)$ these may get 
+drowned out in the sampling due to the fact that there are so many ``bad'' points. 
+\item Need to take into account the GP uncertainty to make sure we are sufficiently exploring the space in regions where the GP is uncertain. 
+\item Could be interesting to explore some sort of scheme that alternates optimization steps like $\btheta_{n + 1} := \text{argmax}_{1 \leq m \leq M} \sum_{i = 1}^{n} \frac{\E_{\Phi^*}\left[\pi^*(\tilde{\btheta})\right]}{\pi(\btheta_i)}$
+with sampling steps. 
+\item What is the effect of defining $J(\cdot)$ that includes the maximum in the acceptance probability vs. excluding the maximum? Intuitively, I would think that excluding it would encourage more emphasis on 
+optimization while including it would encourage more exploration. 
+\item How to include the likelihood parameters? Add another expectation over $\Sigma$? 
+\end{itemize}
+
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
