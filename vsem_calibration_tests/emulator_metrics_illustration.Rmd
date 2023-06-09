@@ -115,6 +115,7 @@ samp_exact_theta <- as.matrix(samp_exact_df[burn_in_exact:N_mcmc_exact, c("exact
 colnames(samp_exact_theta) <- c("LAR", "KEXT")
 ```
 
+### SSR Plot. 
 ```{r}
 plts <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
                                      theta_vals = theta_prior_design$inputs, 
@@ -128,6 +129,24 @@ plts <- get_2d_response_surface_plot(computer_model_data - computer_model_data,
                                      input_bounds = theta_prior_design$input_bounds)
 
 grid.arrange(arrangeGrob(grobs=plts, nrow=1))
+
+```
+
+### Posterior Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "posterior", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)
+
+plot(plt)
 
 ```
 
