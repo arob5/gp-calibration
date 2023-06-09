@@ -213,6 +213,11 @@ established, I detail below the challenges with this approach and how this work 
 	\end{enumerate}
 \end{enumerate}
 
+I conclude this section by summarizing what I believe to be the biggest challenges in this work. These challenges all stem from the characteristics of the response surface in this loss emulation setting: 
+the response surface tends to have 1.) a very large dynamic range and 2.) a very sharp dip at local optima. This presents a challenge both for selecting a design and fitting the GPs. A space-filling design 
+may completely miss the ``dips'', while placing many design points in regions with essentially zero posterior mass. The shape of the response surface also exhibits some non-stationarity, presenting issues 
+when optimizing GP hyperparameters. The main issue here is thus to develop an experimental design method and emulator fitting procedure that is able to cope with these challenges.
+
 
 % Abstract 
 % \section{Abstract}
@@ -458,6 +463,50 @@ Since the univariate GPs are independent, we obtain
 \item How could this be modified to take advantage of parallel computing resources? 
 \item Are the authors assuming the likelihood parameters are known/fixed? How would we account for unknown likelihood parameters? 
 \end{enumerate}
+
+\subsection{Targeting the Metropolis Acceptance Ratio}
+Let $\btheta_1, \dots, \btheta_n$ denote the current design. One idea is to select the next point $\btheta_{n + 1}$ in a way that reflects the transition probability in the MCMC sampler. 
+In particular, if the Metropolis acceptance probability of transitioning from any of the current design points to some point $\tilde{\btheta}$ is essentially zero, then this point should be 
+very unlikely to be selected as $\btheta_{n + 1}$. 
+
+For now I ignore the likelihood parameters and consider a symmetric MCMC proposal density. Let $J_i(\tilde{\btheta})$ denote the Metropolis acceptance probability for transitioning 
+from the design point $\btheta_i$, $1 \leq i \leq n$ to some other point $\tilde{\btheta} \in \Theta$; that is, 
+\[J_i(\tilde{\btheta}) = \max\left\{1, \frac{\pi(\tilde{\btheta})}{\pi(\btheta_i)} \right\}, 1 \leq i \leq n \]
+The model has already been run at the input $\tilde{\btheta}_i$ so $\pi(\btheta_i)$ may be evaluated up to the normalizing constant. However, $\pi(\tilde{\btheta})$ is unknown. For the moment 
+consider that it were known. In this case, we might choose the next design point by sampling it in such a way that is proportional to the acceptance probabilities. Define 
+\[J(\tilde{\btheta}) = \sum_{i = 1}^{n} J_i(\tilde{\btheta}) = \sum_{i = 1}^{n} \max\left\{1, \frac{\pi(\tilde{\btheta})}{\pi(\btheta_i)} \right\} \]
+We could also consider an alternative without the maximum
+\[J(\tilde{\btheta}) = \sum_{i = 1}^{n} \frac{\pi(\tilde{\btheta})}{\pi(\btheta_i)}\]
+One simple strategy for utilizing $J(\cdot)$ to select the next design point would be to first sample a space-filling design $\tilde{\btheta}_1, \dots, \tilde{\btheta}_M$. We could then define the following
+probability distribution over these points
+\[\mu_J(\tilde{\btheta}_m) := \frac{J(\tilde{\btheta}_m)}{\sum_{j = 1}^{M} J(\tilde{\btheta}_j)}, 1 \leq m \leq M\]
+and sample the next design point from $\tilde{\btheta}_1, \dots, \tilde{\btheta}_M$ according to this distribution. 
+
+Now we address the fact that we cannot actually evaluate the $\pi(\tilde{\btheta}_m)$. The natural thing to do is to consider the GP-induced approximation $\pi^*(\tilde{\btheta}_m)$. Recalling the 
+Gaussian likelihood, we have (for any point $\tilde{\btheta}$ at which the forward model has not been run and any current design point $\btheta_i$),
+\begin{align*}
+\frac{\pi^*(\tilde{\btheta})}{\pi(\btheta_i)} &= \frac{\pi_0(\tilde{\btheta}) C_\Sigma \exp\left(-\sum_{p = 1}^{P} \frac{\Phi_p^*(\tilde{\btheta})}{2\sigma_p^2} \right)}{\pi_0(\btheta_i)C_\Sigma \exp\left(- \sum_{p = 1}^{P} \frac{\Phi_p(\btheta_i)}{2\sigma_p^2} \right)} \\
+							    &= \frac{\pi_0(\tilde{\btheta})}{\pi_0(\btheta_i)} \cdot \exp\left(\frac{1}{2} \sum_{p = 1}^{P} \frac{\Phi_p(\btheta_i) - \Phi_p^*(\tilde{\btheta})}{\sigma_p^2} \right)
+\end{align*}
+where $C_\Sigma$ is a constant which depends on $\sigma_1^2, \dots, \sigma_p^2$. In the case that the predictive distributions of the $\Phi^*_p$ are $\mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot))$ then 
+\begin{align*}
+\frac{\pi^*(\tilde{\btheta})}{\pi(\btheta_i)} \sim \mathcal{LN}\left(\log\frac{\pi_0(\tilde{\btheta})}{\pi_0(\btheta_i)} + \frac{1}{2} \sum_{p = 1}^{P} \frac{\Phi_p(\btheta_i) - \mu_p^*(\tilde{\btheta})}{\sigma_p^2}, \frac{1}{4} \sum_{p = 1}^{P} \frac{k_p^*(\tilde{\btheta})}{\sigma_p^4} \right)
+\end{align*}
+
+\bigskip
+\noindent
+\textbf{Some issues to think about:}
+\begin{itemize}
+\item One concern is that the current design mostly consists of points in regions where the posterior density is very small. Then while the ``good'' points may have large $J(\tilde{\btheta}_m)$ these may get 
+drowned out in the sampling due to the fact that there are so many ``bad'' points. 
+\item Need to take into account the GP uncertainty to make sure we are sufficiently exploring the space in regions where the GP is uncertain. 
+\item Could be interesting to explore some sort of scheme that alternates optimization steps like $\btheta_{n + 1} := \text{argmax}_{1 \leq m \leq M} \sum_{i = 1}^{n} \frac{\E_{\Phi^*}\left[\pi^*(\tilde{\btheta})\right]}{\pi(\btheta_i)}$
+with sampling steps. 
+\item What is the effect of defining $J(\cdot)$ that includes the maximum in the acceptance probability vs. excluding the maximum? Intuitively, I would think that excluding it would encourage more emphasis on 
+optimization while including it would encourage more exploration. 
+\item How to include the likelihood parameters? Add another expectation over $\Sigma$? 
+\end{itemize}
+
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
