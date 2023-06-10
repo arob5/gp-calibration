@@ -115,6 +115,25 @@ samp_exact_theta <- as.matrix(samp_exact_df[burn_in_exact:N_mcmc_exact, c("exact
 colnames(samp_exact_theta) <- c("LAR", "KEXT")
 ```
 
+
+### Prior Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "prior", 
+                                    raster = TRUE, 
+                                    theta_prior_params = theta_prior_params,
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds)[[1]]
+
+plot(plt)
+
+```
+
+
 ### SSR Plot. 
 ```{r}
 plts <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
@@ -132,9 +151,46 @@ grid.arrange(arrangeGrob(grobs=plts, nrow=1))
 
 ```
 
+### Likelihood Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "likelihood", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    combine_outputs = TRUE, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)[[1]]
+
+plot(plt)
+```
+
+### Individual likelihoods. 
+```{r}
+plts <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "likelihood", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    combine_outputs = FALSE, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)
+
+grid.arrange(arrangeGrob(grobs=plts, nrow=1))
+```
+
+
 ### Posterior Plot. 
 ```{r}
-plt <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
+plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
                                     theta_vals = theta_prior_design$inputs, 
                                     param_names = computer_model_data$pars_cal_names, 
                                     response_surface = "posterior", 
