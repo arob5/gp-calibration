@@ -206,39 +206,6 @@ plot(plt)
 
 ```
 
-
-```{r}
-
-samp_exact_theta <- samp_exact_df[burn_in_exact:N_mcmc_exact, c("exact_theta_LAR", "exact_theta_KEXT")]
-colnames(samp_exact_theta) <- c("LAR", "KEXT")
-
-for(output_variable in computer_model_data$output_vars) {
-  plt <- get_2d_heatmap_plot(X = theta_prior_design$inputs, 
-                             y = theta_prior_design$outputs[, output_variable], 
-                             param_names = computer_model_data$pars_cal_names,
-                             samples = samp_exact_theta, 
-                             raster = TRUE, main_title = output_variable, 
-                             point_coords = computer_model_data$theta_true)
-  plot(plt)
-}
-```
-
-```{r}
-SSR_post <- get_computer_model_SSR(computer_model_data, theta_vals = as.matrix(samp_exact_theta))
-```
-
-```{r}
-for(output_variable in computer_model_data$output_vars) {
-  plt <- get_2d_heatmap_plot(X = samp_exact_theta, 
-                             y = SSR_post[, output_variable], 
-                             param_names = computer_model_data$pars_cal_names,
-                             samples = samp_exact_theta, 
-                             raster = FALSE, main_title = output_variable, 
-                             point_coords = computer_model_data$theta_true)
-  plot(plt)
-}
-```
-
 # Emulator: Varying number of design points. 
 
 ```{r, echo = FALSE}
@@ -251,15 +218,24 @@ emulator_settings <- data.frame(gp_lib = c("hetGP"),
 print(emulator_settings)
 ```
 
-
+We consider two latin hypercube designs (one with 20 design points and one with 30), as well as a design consisting of 30 points sampled from the true posterior for comparison. We consider 50 replications of each design so that the error metrics can be averaged over the replicates.  
 ```{r}
 
-design_settings <- data.frame(N_design = c(15, 20, 25), 
-                              design_method = c("LHS", "LHS", "LHS"), 
+# Number of design replications. 
+design_reps <- 50
+
+# The three design specifications to be used. 
+design_settings <- data.frame(N_design = c(20, 30, 30), 
+                              design_method = c("LHS", "LHS", "sample_candidates"), 
                               scale_inputs = TRUE, 
                               normalize_response = TRUE)
 
-design_list <- get_design_list(design_settings, computer_model_data, theta_prior_params, reps = 10)
+# Get designs. 
+design_list <- get_design_list(design_settings = design_settings, 
+                               computer_model_data = computer_model_data, 
+                               theta_prior_params = theta_prior_params,
+                               reps = design_reps, 
+                               design_candidates = samp_exact_theta)
 
 ```
 
