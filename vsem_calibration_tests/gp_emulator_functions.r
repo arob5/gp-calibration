@@ -38,6 +38,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   
   if(!is.null(X) && scale_X) {
     input_bounds <- apply(X, 2, range)
+    rownames(input_bounds) <- c("min", "max")
     X <- scale_input_data(X, input_bounds)
   } else {
     input_bounds <- NULL
@@ -1462,8 +1463,8 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #    normalize_response: logical(1), if TRUE will compute a Z-score transformation of the response/output variable. Will return the normalized 
   #                        variable in addition to the unnormalized one and will return the information used for the normalization so that the 
   #                        transformation can be inverted.
-  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions.
@@ -1553,8 +1554,8 @@ get_input_design <- function(N_points, theta_prior_params, design_method, scale_
   #    scale_inputs: logical(1), if TRUE will linearly scale the samples to the unit hypercube. Will return the scaled 
   #             sample in addition to the un-scaled one, and will also return the information used for the scaling 
   #             so that the transformation can be inverted. 
-  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions.
@@ -1616,11 +1617,11 @@ get_LHS_design <- function(N_points, theta_prior_params, param_ranges = NULL, or
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    param_ranges: matrix, of shape d x 2, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
-  #                  distributions. 
+  #                  distributions.
   #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
   #              the design points will be sorted in increasing order, with the training response 
@@ -1675,8 +1676,8 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    param_ranges: matrix, of shape d x 2, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions. 
@@ -1738,11 +1739,11 @@ get_sample_candidates_design <- function(N_points, candidates, weights = NULL, p
   #                sampling is done. 
   #    weights: numeric, of length equal to the number of rows of `candidates`. Non-negative weights used for the 
   #             sampling, passed to the `prob` argument of the base R function `sample()`. If NULL, uses uniform weights.
-  #    param_ranges: matrix, of shape d x 2, where d is the dimension of the parameter space. The first and second columns 
-  #                  are the lower and upper bounds on the sample ranges of each parameter, respectively. Default is NULL, 
-  #                  in which case  no additional bounds are imposed on the samples. If provided, these bounds are implemented 
-  #                  by setting the weights in `weights` corresponding to candidate points not satisfying the bound constraints 
-  #                  to zero. 
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
+  #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
+  #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
+  #                  distributions.
   #
   # Returns:
   #    matrix, of dimension N_points x d; a matrix consisting of the sub-collection of rows of `candidates`. 
@@ -1755,8 +1756,8 @@ get_sample_candidates_design <- function(N_points, candidates, weights = NULL, p
     
     outside_range <- rep(FALSE, N_candidates)
     for(d in 1:ncol(candidates)) {
-      outside_range <- outside_range | (candidates[,d] < param_ranges[d,1]) # Check lower bound. 
-      outside_range <- outside_range | (candidates[,d] > param_ranges[d,2]) # Check upper bound.
+      outside_range <- outside_range | (candidates[,d] < param_ranges[1,d]) # Check lower bound. 
+      outside_range <- outside_range | (candidates[,d] > param_ranges[2,d]) # Check upper bound.
     }
     
     weights[outside_range] <- 0

@@ -218,7 +218,7 @@ emulator_settings <- data.frame(gp_lib = c("hetGP"),
 print(emulator_settings)
 ```
 
-We consider two latin hypercube designs (one with 20 design points and one with 30), as well as a design consisting of 30 points sampled from the true posterior for comparison. We consider 50 replications of each design so that the error metrics can be averaged over the replicates.  
+We consider three Latin hypercube designs, with 20, 30, and 40 design points, respectively. We consider 50 replications of each design so that the error metrics can be averaged over the replicates.  
 ```{r}
 
 # Number of design replications. 
@@ -229,6 +229,7 @@ design_settings <- data.frame(N_design = c(20, 30, 30),
                               design_method = c("LHS", "LHS", "sample_candidates"), 
                               scale_inputs = TRUE, 
                               normalize_response = TRUE)
+                              
 
 # Get designs. 
 design_list <- get_design_list(design_settings = design_settings, 
@@ -261,12 +262,14 @@ validation_list <- get_design_list_test_data(N_test_points = N_test_points,
 
 ```{r}
 # Validation sets sampled from posterior. 
-validation_list_post <- vector(mode = "list", length = N_test_sets)
-for(j in seq_along(validation_list_post)) {
-  idx <- sample(seq_len(nrow(samp_exact_theta)), size = N_test_points, replace = FALSE)
-  validation_list_post[[j]]$inputs <- samp_exact_theta[idx,]
-  validation_list_post[[j]]$outputs <- SSR_post[idx,]
-}
+validation_list_post <- get_design_list_test_data(N_test_points = N_test_points, 
+                                                  N_test_sets = N_test_sets, 
+                                                  design_method = "sample_candidates", 
+                                                  design_list = design_list, 
+                                                  computer_model_data = computer_model_data, 
+                                                  theta_prior_params = theta_prior_params, 
+                                                  transformation_method = transformation_method, 
+                                                  design_candidates = samp_exact_theta)
 ```
 
 ```{r}
@@ -289,6 +292,10 @@ emulator_metrics_post <- get_emulator_comparison_metrics_validation_list(emulato
                                                                          include_nug = TRUE)
 ```
 
+We consider sampling validation points based on the prior and posterior. Validation points are sampled so that they satisfy the bounds 
+for all of the designs that are being tested (i.e. no emulators will be extrapolating). Since we sampled one of the designs from the 
+posterior (which is highly concentrated) this will have the effect that the samples based on the prior below are actually much more 
+similar to the posterior samples. 
 
 ### Validation points based on prior. 
 ```{r}
@@ -299,6 +306,7 @@ plts <- plot_emulator_comparison_violin_plots(emulator_metrics, fill_col = "desi
                                               nrow = 2)
 grid.arrange(plts)
 ```
+
 ### Validaton points sampled from posterior. 
 ```{r}
 plts <- plot_emulator_comparison_violin_plots(emulator_metrics_post, fill_col = "design",
