@@ -31,6 +31,7 @@
 \newcommand{\Prob}{\mathbb{P}}
 \newcommand{\btheta}{\boldsymbol{\theta}}
 \newcommand{\bx}{\mathbf{x}}
+\newcommand{\bw}{\mathbf{w}}
 
 \DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
 \DeclareMathOperator*{\argmax}{argmax}
@@ -121,21 +122,22 @@ $\boldsymbol{\phi}_p = \left[\Phi_1(\btheta_1), \dots, \Phi_P(\btheta_1) \right]
 I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
 defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
 \[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^{\top} \]
-If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \to \R^P$ is time-invariant: 
- \[\bx(t + \Delta t) = g(\bx(t))\]
+If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \times \R^Q \to \R^P$ is time-invariant: 
+ \[\bx(t + \Delta t) = g(\bx(t); \bw_{t + \Delta t})\]
+ where $\bw_{t + \Delta t}$ is a \textit{forcing input}. The forcing inputs are assumed known, and vary across time. 
  Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
  vector-valued $g$ as a collection of $P$ univariate flow maps
- \[g(\bx(t)) = \left(g_1(\bx(t)), \dots, g_P(\bx(t)) \right)^{\top}\]
+ \[g(\bx(t); \bw_{t + \Delta t}) = \left[g_1(\bx(t); \bw_{t + \Delta t}), \dots, g_P(\bx(t); \bw_{t + \Delta t}) \right]^{\top}\]
  so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
- the parameters $\btheta$. I will reflect this dependence by writing $g_\theta$ and $\bx_\theta(t)$. The forward model $G: \R^D \to \R^{T \times P}$ defined previously can thus be characterized 
+ the parameters $\btheta$. I will reflect this dependence by writing $g_{\btheta}$ and $\bx_{\btheta}(t)$. The forward model $G: \R^D \to \R^{T \times P}$ defined previously can thus be characterized 
  as 
  \[
- G(\btheta; \bx_0) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
- \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0)^{\top} \\  g_\theta\left(g_\theta(\bx_0)\right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0)^{\top} \end{pmatrix}
+ G(\btheta; \bx_0, \bw) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
+ \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0; \bw_1)^{\top} \\  g_\theta\left(g_\theta(\bx_0; \bw_1); \bw_2 \right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0; \bw)^{\top} \end{pmatrix}
  \]
  where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\btheta$, and I use the shorthand $g_\theta^{(k)}$ to denote 
- the composition consisting of $k$ applications of the map $g_\theta$. I have also assumed that the initial time is $0$, but 
- some other time $t_0$ could of course be considered. 
+ the composition consisting of $k$ applications of the map $g_\theta$. I also let $\bw := \{\bw_t\}_{t = 1}^{T}$ denote the sequence of forcing inputs. 
+ I have also assumed that the initial time is $0$, but some other time $t_0$ could of course be considered. 
 
 \subsection{MCMC Algorithm}
 We consider the joint posterior $p(\btheta, \Sigma, \Phi^*|Y)$ and seek to marginalize out $\Phi^*$ in order to obtain the posterior of interest $p(\btheta, \Sigma|Y)$. A Gibbs sampling approach would proceed as 
@@ -378,9 +380,57 @@ case but some interesting ideas here.
 
 \subsection{Sequential Design}
 
+\subsubsection{Notation and Background}
+Throughout this section I let $\mathcal{D}_n := \{[\btheta_1, \Phi(\btheta_1)], \dots, [\btheta_n, \Phi(\btheta_n)]\}$ denote the set of current (observed) design points and corresponding outputs. 
+The sequential design task is that of choosing the 
+next design point $\btheta_{n+1}$. For a GP $\Phi^*$, I let
+\[k_{\mathcal{D}_{n}}(\btheta) = \Var(\Phi^*(\btheta)|\mathcal{D}_{n})\]
+denote the predictive variance of the GP $\Phi^*$, which has been conditioned on data $\mathcal{D}_n$. Up to this point, I have been using $k^*(\btheta)$ to denote the predictive GP variance 
+at the input $\btheta$, where the asterisk differentiates the predictive (i.e. conditioned on $\mathcal{D}_n$) GP distribution from the GP prior. This notation did not make explicit the data being 
+conditioned on. However, in this experimental design context the emphasis is on design points so the notation $k_{\mathcal{D}_{n}}(\btheta)$ will prove more useful. 
+In the below notes, we will often be considering the merits of adding a new particular design point $\btheta_{n + 1}$. I denote by 
+\[k_{\mathcal{D}_{n+1}}(\btheta) = \Var(\Phi^*(\btheta)|\mathcal{D}_{n+1}) = \Var(\Phi^*(\btheta)|\mathcal{D}_{n}, [\btheta_{n+1}, \Phi(\btheta_{n+1})])\]
+the predictive variance at $\btheta$ for the GP that has also been conditioned on the new observation $[\btheta_{n+1}, \Phi(\btheta_{n+1})]$. Conveniently, the GP predictive 
+variance is not a function of the observed output $\Phi(\btheta_{n+1})$, so the above expression for the variance could just as well be written as conditioning only on 
+$\btheta_{n+1}$, rather than $[\btheta_{n+1}, \Phi(\btheta_{n+1})]$. 
+
+A commonly used acquisition function for choosing $\btheta_{n+1}$ is the \textit{integrated mean squared prediction error} (IMSPE). 
+\begin{align*}
+J(\btheta_{n+1}) = \int_{\Theta} k_{\mathcal{D}_{n+1}}(\btheta) \rho(\btheta) d\btheta = \E_{\btheta \sim \rho} \left[k_{\mathcal{D}_{n+1}}(\btheta) \right]
+\end{align*}
+where $\rho$ is some density on the input space $\Theta$. The next design point is selected by solving 
+\[\btheta_{n + 1} := \text{argmin}_{\tilde{\btheta}_{n+1} \in \Theta} J(\tilde{\btheta}_{n+1}) \]
+The IMSPE is intuitive in that it seeks to select the point that reduces the overall uncertainty (integrated over the whole input space, weighted by $\rho$) as much as possible. 
+The expectation defining the IMSPE is in general not analytically tractable, but is available in closed-form in simple settings, such as when the input space is a 
+hyperrectangle and $\rho(\btheta) \equiv 1$. For our purposes, it is important to emphasize that $J(\btheta_{n+1})$ is a well-defined, non-random quantity due to the fact 
+that the GP predictive variance does not depend on the output $\Phi(\btheta_{n+1})$. If it did depend on this output, then $J(\btheta_{n+1})$ would be random since 
+$\Phi(\btheta_{n+1})$ is not yet known. 
+
+The tricky thing about our setting is that we often want to consider the random field approximations $L^*(\tilde{\btheta})$ and $\pi^*(\tilde{\btheta})$ induced by the GP approximation 
+$\Phi^*(\tilde{\btheta})$. These random fields are no longer Gaussian, hence they do not have the convenient property that their predictive variances are independent of the observed 
+outputs. Therefore, defining an analog of IMSPE would require an additional integral averaging over the uncertainty in the model outputs. For example, 
+\begin{align*}
+J_{L}(\btheta_{n+1}) &= \E_{\Phi^*(\btheta_{n+1})} \E_{\btheta \sim \rho} \Var_{\Phi^*} \left(L^*(\btheta) | \mathcal{D}_{n+1} \right)
+\end{align*}
+Breaking this down, $\Var_{\Phi^*} \left(L^*(\btheta) | \mathcal{D}_{n+1} \right)$ is predictive variance at input $\btheta$ of the random field $L^*$. Note that this is conditioned on 
+$\mathcal{D}_{n+1}$, which includes the new (not-yet-observed) data point $[\btheta_{n+1}, \Phi(\btheta_{n+1})]$. $L^*$ is not Gaussian-distributed and hence this predictive variance
+does indeed depend on the unobserved output $\Phi(\btheta_{n+1})$. Therefore, the outer expectation $ \E_{\Phi^*(\btheta_{n+1})}$ integrates over the current 
+(conditional on $\mathcal{D}_n$) predictive GP distribution over $\Phi(\btheta_{n+1})$. The remaining expectation $\E_{\btheta \sim \rho}$ simply averages over the input 
+space as before, with $\rho$ allowing for the possibility of non-uniform weights. Although they do not motivate their proposed methods in this way, Sinsbeck and Nowak 
+\cite{doi:10.1137/15M1047659} essentially propose the use of $J_{L}(\btheta_{n+1})$ as an acquisition function for experimental design in Bayesian inverse problems. They 
+choose to weight by the prior when averaging over the input space (i.e., $\rho(\btheta) = \pi_0(\btheta)$). 
+
 \subsubsection{Sinsbeck and Nowak (2017)}
-Sinsbeck and Nowak \cite{doi:10.1137/15M1047659} propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $\mathcal{L}(\btheta)$ at each iteration of the sequential design procedure. 
+Sinsbeck and Nowak \cite{doi:10.1137/15M1047659} propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $L(\btheta)$ at each iteration of the sequential design procedure. 
 This likelihood approximation is then used to construct an acquisition function that targets regions of high posterior density. I summarize their method here, with adjustments to tailor the method to our loss-emulation setting. 
+
+\bigskip
+\noindent
+\textbf{Motivation from Integrated Mean Squared Prediction Error.}
+The authors do not introduce their method in this way, but I find this motivation to be helpful. The \textit{integrated mean squared prediction error} (IMSPE) is a commonly-used acquisition function for 
+experimental design with GPs. 
+
+
 
 \bigskip
 \noindent
@@ -463,6 +513,26 @@ Since the univariate GPs are independent, we obtain
 \item How could this be modified to take advantage of parallel computing resources? 
 \item Are the authors assuming the likelihood parameters are known/fixed? How would we account for unknown likelihood parameters? 
 \end{enumerate}
+
+\subsection{Sampling Design Points from the Approximate Posterior}
+Let $\btheta_1, \dots, \btheta_n$ denote the current design. The task is to select the next design point $\btheta_{n + 1}$. Consider first sampling a set of candidates 
+$\tilde{\btheta}_1, \dots, \tilde{\btheta}_M$ via a space-filling design (e.g. Latin hypercube). Supposing for the moment that posterior evaluations are cheap, then one approach 
+could be to select $\btheta_{n + 1}$ by sampling from the candidate points with weights 
+\begin{align*}
+w\left(\tilde{\btheta}_j\right) := \frac{\pi(\tilde{\btheta}_j)}{\sum_{m = 1}^{M} \pi(\tilde{\btheta}_m)}
+\end{align*}
+Of course, these weights also depend on the likelihood parameters $\Sigma$ which are unknown. If the variances are all comparable then an alternative for the weights that 
+does not depend on the likelihood parameters could be defined as 
+\begin{align*}
+w\left(\tilde{\btheta}_j\right) := \frac{\exp\left\{-\Phi(\tilde{\btheta}_j)\right\}}{\sum_{m = 1}^{M} \exp\left\{-\Phi(\tilde{\btheta}_m)\right\}}
+\end{align*}
+Alternatively, an estimate of the variances could be plugged in, or we could consider averaging over $\pi_0(\Sigma)$. Likelihood parameters aside, the obvious problem here is that 
+evaluation of these weights requires running the forward model at every candidate point, which is exactly what we are trying to avoid. We can instead replace the $\Phi$ with 
+the GP approximation $\Phi^*$, which induces an approximation to the posterior and hence the weights. We could then define the weights in various ways, one option being
+\begin{align*}
+w\left(\tilde{\btheta}_j\right) := \frac{\E_{\Phi^*} \left[\pi^*(\tilde{\btheta}_j)\right]}{\sum_{m = 1}^{M} \E_{\Phi^*} \left[\pi^*(\tilde{\btheta}_m)\right]}
+\end{align*}
+
 
 \subsection{Targeting the Metropolis Acceptance Ratio}
 Let $\btheta_1, \dots, \btheta_n$ denote the current design. One idea is to select the next point $\btheta_{n + 1}$ in a way that reflects the transition probability in the MCMC sampler. 
