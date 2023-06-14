@@ -12,10 +12,12 @@ library(lhs)
 library(hetGP)
 library(mlegp)
 library(ggplot2)
+library(viridis)
 library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
+source("numerical_experiment_functions.r")
 source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
 ```
@@ -66,8 +68,254 @@ plts <- sig2_prior_info$plots
 grid.arrange(arrangeGrob(grobs = plts, nrow = 1))
 ```
 
+# Exact MCMC Samples.
+
+## Exact MCMC. 
+```{r}
+N_mcmc_exact <- 50000
+
+time_start <- proc.time()
+samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                              theta_prior_params = theta_prior_params, 
+                                              learn_sig_eps = TRUE,
+                                              sig_eps_prior_params = sig_eps_prior_params,
+                                              N_mcmc = N_mcmc_exact)
+mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
+
+samp_exact_df <- as.data.frame(samp_mcmc_exact$samp)
+colnames(samp_exact_df) <- paste("exact", colnames(samp_exact_df), sep = "_")
+
+print(paste0("Exact MCMC runtime: ", mcmc_exact_runtime, " seconds."))
+```
+
+```{r}
+burn_in_exact <- c(exact = 10000)
+
+mcmc_exact_trace_plts <- get_trace_plots(samp_exact_df, burn_in_start = burn_in_exact, param_types = "theta")
+grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
+```
+
+```{r}
+mcmc_exact_trace_plts_sig_eps <- get_trace_plots(samp_exact_df, burn_in_start = burn_in_exact, param_types = "sig_eps")
+grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
+```
+      
+# True Response Surfaces. 
+
+```{r}
+# Evaluate over dense grid, and overlay posterior contours. 
+theta_prior_design <- get_input_output_design(N_points = 51^2, 
+                                              computer_model_data = computer_model_data, 
+                                              theta_prior_params = theta_prior_params, 
+                                              design_method = "grid")
+```
+
+```{r}
+samp_exact_theta <- as.matrix(samp_exact_df[burn_in_exact:N_mcmc_exact, c("exact_theta_LAR", "exact_theta_KEXT")])
+colnames(samp_exact_theta) <- c("LAR", "KEXT")
+```
 
 
+### Prior Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "prior", 
+                                    raster = TRUE, 
+                                    theta_prior_params = theta_prior_params,
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds)[[1]]
+
+plot(plt)
+
+```
+
+
+### SSR Plot. 
+```{r}
+plts <- get_2d_response_surface_plot(computer_model_data - computer_model_data, 
+                                     theta_vals = theta_prior_design$inputs, 
+                                     param_names = computer_model_data$pars_cal_names, 
+                                     response_surface = "SSR", 
+                                     SSR_vals = theta_prior_design$outputs, 
+                                     raster = TRUE, 
+                                     point_coords = computer_model_data$theta_true, 
+                                     samples_kde = samp_exact_theta, 
+                                     scale_inputs = TRUE, 
+                                     input_bounds = theta_prior_design$input_bounds)
+
+grid.arrange(arrangeGrob(grobs=plts, nrow=1))
+
+```
+
+### Likelihood Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "likelihood", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    combine_outputs = TRUE, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)[[1]]
+
+plot(plt)
+```
+
+### Individual likelihoods. 
+```{r}
+plts <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "likelihood", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    combine_outputs = FALSE, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)
+
+grid.arrange(arrangeGrob(grobs=plts, nrow=1))
+```
+
+
+### Posterior Plot. 
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = theta_prior_design$inputs, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "posterior", 
+                                    SSR_vals = theta_prior_design$outputs, 
+                                    raster = TRUE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)
+
+plot(plt)
+
+```
+
+# Emulator: Varying number of design points. 
+
+```{r, echo = FALSE}
+# Emulator settings
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
+                                kernel = "Gaussian", 
+                                transformation_method = c("truncated"),
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+print(emulator_settings)
+```
+
+We consider three Latin hypercube designs, with 20, 30, and 40 design points, respectively. We consider 50 replications of each design so that the error metrics can be averaged over the replicates.  
+```{r}
+
+# Number of design replications. 
+design_reps <- 50
+
+# The three design specifications to be used. 
+design_settings <- data.frame(N_design = c(20, 30, 30), 
+                              design_method = c("LHS", "LHS", "sample_candidates"), 
+                              scale_inputs = TRUE, 
+                              normalize_response = TRUE)
+                              
+
+# Get designs. 
+design_list <- get_design_list(design_settings = design_settings, 
+                               computer_model_data = computer_model_data, 
+                               theta_prior_params = theta_prior_params,
+                               reps = design_reps, 
+                               design_candidates = samp_exact_theta)
+
+```
+
+```{r}
+emulator_info_list<- fit_emulator_design_list(emulator_settings[1,], design_list)
+```
+
+```{r}
+# Validation sets sampled from prior. 
+N_test_points <- 20
+N_test_sets <- 100
+
+transformation_method <- ifelse(any(emulator_settings == "LNP"), "LNP", NA_character_)
+validation_list <- get_design_list_test_data(N_test_points = N_test_points, 
+                                             N_test_sets = N_test_sets, 
+                                             design_method = "LHS", 
+                                             design_list = design_list, 
+                                             computer_model_data = computer_model_data, 
+                                             theta_prior_params = theta_prior_params, 
+                                             transformation_method = transformation_method)
+
+```
+
+```{r}
+# Validation sets sampled from posterior. 
+validation_list_post <- get_design_list_test_data(N_test_points = N_test_points, 
+                                                  N_test_sets = N_test_sets, 
+                                                  design_method = "sample_candidates", 
+                                                  design_list = design_list, 
+                                                  computer_model_data = computer_model_data, 
+                                                  theta_prior_params = theta_prior_params, 
+                                                  transformation_method = transformation_method, 
+                                                  design_candidates = samp_exact_theta)
+```
+
+```{r}
+emulator_metrics <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list, 
+                                                                   X_test_list = lapply(validation_list, function(l) l$inputs),
+                                                                   Y_test_list = lapply(validation_list, function(l) l$outputs),
+                                                                   metrics = c("rmse", "srmse", "nlpd_pointwise", "crps"), 
+                                                                   scale_inputs = TRUE, 
+                                                                   output_variables = computer_model_data$output_vars, 
+                                                                   include_nug = TRUE)
+```
+
+```{r}
+emulator_metrics_post <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list, 
+                                                                         X_test_list = lapply(validation_list_post, function(l) as.matrix(l$inputs)),
+                                                                         Y_test_list = lapply(validation_list_post, function(l) as.matrix(l$outputs)),
+                                                                         metrics = c("rmse", "srmse", "nlpd_pointwise", "crps"), 
+                                                                         scale_inputs = TRUE, 
+                                                                         output_variables = computer_model_data$output_vars, 
+                                                                         include_nug = TRUE)
+```
+
+We consider sampling validation points based on the prior and posterior. Validation points are sampled so that they satisfy the bounds 
+for all of the designs that are being tested (i.e. no emulators will be extrapolating). Since we sampled one of the designs from the 
+posterior (which is highly concentrated) this will have the effect that the samples based on the prior below are actually much more 
+similar to the posterior samples. 
+
+### Validation points based on prior. 
+```{r}
+plts <- plot_emulator_comparison_violin_plots(emulator_metrics, fill_col = "design",
+                                              metrics = c("crps", "rmse", "nlpd_pointwise"), 
+                                              output_variables = computer_model_data$output_vars, 
+                                              include_points = FALSE, 
+                                              nrow = 2)
+grid.arrange(plts)
+```
+
+### Validaton points sampled from posterior. 
+```{r}
+plts <- plot_emulator_comparison_violin_plots(emulator_metrics_post, fill_col = "design",
+                                              metrics = c("crps", "rmse", "nlpd_pointwise"), 
+                                              output_variables = computer_model_data$output_vars, 
+                                              include_points = FALSE, 
+                                              nrow = 2)
+grid.arrange(plts)
+```
 
 
 

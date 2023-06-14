@@ -38,6 +38,7 @@ prep_GP_training_data <- function(X = NULL, Y = NULL, scale_X = FALSE, normalize
   
   if(!is.null(X) && scale_X) {
     input_bounds <- apply(X, 2, range)
+    rownames(input_bounds) <- c("min", "max")
     X <- scale_input_data(X, input_bounds)
   } else {
     input_bounds <- NULL
@@ -73,11 +74,15 @@ scale_input_data <- function(X, input_bounds, inverse = FALSE) {
   #    matrix of dimension N_pred x d; the matrix X whose columns have been scaled according to `input_bounds`. 
   #
   
+  cols <- colnames(X)
+  
   if(inverse) {
     X <- X %*% diag(input_bounds[2,] - input_bounds[1,], ncol(X)) + matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)
   } else {
     X <- (X - matrix(input_bounds[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*% diag(1/(input_bounds[2,] - input_bounds[1,]), ncol(X))
   }
+  
+  colnames(X) <- cols
   
   return(X)
 }
@@ -391,7 +396,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 
   if(return_df) {
     pred_df_list <- lapply(pred_list, function(l) l$df)
-    for(j in seq_along(pred_df_list)) colnames(pred_df_list[[j]]) <- paste(colnames(pred_df_list[[j]]), output_variables, sep = "_")
+    for(j in seq_along(pred_df_list)) colnames(pred_df_list[[j]]) <- paste(colnames(pred_df_list[[j]]), output_variables[j], sep = "_")
     df <- do.call("cbind", pred_df_list)
     cov_list <- lapply(pred_list, function(l) l$cov)
     return(list(df = df, cov_list = cov_list))
@@ -750,11 +755,11 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   # TODO: for now not including any metrics that require predictive covariance; need to modify a lot of functions to allow this.
   # TODO: Note that when populating the metrics data.frame, the order of the output variables is crucial; should probably make this more 
   #       robust to avoid mistakes with this. 
-  
+
   # Compute emulator predictions. Note that predictions are untransformed; i.e. these are GP predictions, not log-normal process
   # or any other transformed GP. The transformations are taken into account when the metrics are computed, if necessary. 
   if(is.null(emulator_pred_list)) {
-    include_cov_mat <- any(metrics %in% c("mah", "nlpd", "crps"))
+    include_cov_mat <- any(metrics %in% c("mah", "nlpd"))
     emulator_pred_list <- get_emulator_comparison_pred_df(emulator_info_list = emulator_info_list, 
                                                           X_test = X_test, 
                                                           scale_inputs = scale_inputs, 
@@ -1440,7 +1445,8 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
 # TODO: update comments and think about a better way of handling log output stats. 
 get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
                                     param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
-                                    design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = FALSE) {
+                                    design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = TRUE, 
+                                    design_candidates = NULL, design_candidates_weights = NULL) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
@@ -1457,8 +1463,8 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #    normalize_response: logical(1), if TRUE will compute a Z-score transformation of the response/output variable. Will return the normalized 
   #                        variable in addition to the unnormalized one and will return the information used for the normalization so that the 
   #                        transformation can be inverted.
-  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions.
@@ -1479,6 +1485,7 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
   #    na.rm: logical(1), whether or not to remove NA values from the sum of squares calculation, when computing L2 error between computer model 
   #           outputs and observed data. Default is FALSE. 
+  #    design_candidates, design_candidates_weights: Used by `get_sample_candidates_design()`, see explanation in `get_input_design()`. 
   #           
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
@@ -1486,8 +1493,16 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #    "log_outputs", "log_outputs_normalized", and "log_output_stats". 
   
   # Input points. 
-  design_list <- get_input_design(N_points, theta_prior_params, design_method, scale_inputs, param_ranges, order_1d, tail_prob_excluded)
-  
+  design_list <- get_input_design(N_points = N_points, 
+                                  theta_prior_params = theta_prior_params, 
+                                  design_method = design_method, 
+                                  scale_inputs = scale_inputs, 
+                                  param_ranges = param_ranges, 
+                                  order_1d = order_1d, 
+                                  tail_prob_excluded = tail_prob_excluded, 
+                                  design_candidates = design_candidates, 
+                                  design_candidates_weights = design_candidates_weights)
+
   # Run model at inputs to produce outputs. 
   design_list[["outputs"]] <- get_computer_model_SSR(computer_model_data, theta_vals = design_list$inputs, na.rm = na.rm)
   
@@ -1521,7 +1536,9 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
 }
 
 
-get_input_design <- function(N_points, theta_prior_params, design_method, scale_inputs, param_ranges = NULL, order_1d = FALSE, tail_prob_excluded = 0.01) {
+get_input_design <- function(N_points, theta_prior_params, design_method, scale_inputs, param_ranges = NULL, 
+                             order_1d = FALSE, tail_prob_excluded = 0.01, design_candidates = NULL, 
+                             design_candidates_weights = NULL) {
   # Generates a set of points in parameter space to be used in GP emulation. This can either be the training inputs or 
   # a validation/test set. Optionally scales the points to the unit hypercube. If `scale_inputs` is TRUE and `param_ranges` is NULL
   # then uses the range of the input points in each dimension to perform this scaling. If `scale_inputs` is TRUE and `param_ranges` is provided, then 
@@ -1533,12 +1550,12 @@ get_input_design <- function(N_points, theta_prior_params, design_method, scale_
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    design_method: character(1), the algorithm used to generate the inputs. Currently supports "LHS" or "grid". 
+  #    design_method: character(1), the algorithm used to generate the inputs. Currently supports "LHS", "grid", or "sample_candidates".  
   #    scale_inputs: logical(1), if TRUE will linearly scale the samples to the unit hypercube. Will return the scaled 
   #             sample in addition to the un-scaled one, and will also return the information used for the scaling 
   #             so that the transformation can be inverted. 
-  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions.
@@ -1549,6 +1566,14 @@ get_input_design <- function(N_points, theta_prior_params, design_method, scale_
   #    tail_prob_excluded: numeric(), this is only relevant in certain cases, such as a Gaussian prior with "grid" design method. In this case 
   #                        the Gaussian has infinite support, but the grid method requires bounded support. If `tail_prob_excluded` is 0.01 then 
   #                        these bounds will be set to the .5% and 99.5% quantiles of the Gaussian. 
+  #    design_candidates: matrix, with d columns. Only relevant for design method "sample_candidates". 
+  #                       A set of input points (with each row being a point) from which the design will be sampled. The points will 
+  #                       be sampled without replacement. By default the sampling will be uniform, but `design_candidates_weights` can 
+  #                       be specified for non-uniform sampling. 
+  #    design_candidates_weights: numeric, of length equal to the number of rows in `design_candidates`. Only relevant for design method "sample_candidates".
+  #                               The values must be non-negative, and will be normalized and used as weights for the respective points in `design_candidates`
+  #                               when sampling to select the design points. These weights are passed to the base R function `sample(..., replace = FALSE)`
+  #                               so see documentation of this function for more details. 
   #
   # Returns: 
   #    list, at the minimum this will have one named element "inputs", which is a N_points x d matrix containing the 
@@ -1561,6 +1586,9 @@ get_input_design <- function(N_points, theta_prior_params, design_method, scale_
     X_design <- get_LHS_design(N_points, theta_prior_params, param_ranges = param_ranges, order_1d = order_1d)
   } else if(design_method == "grid") {
     X_design <- get_grid_design(N_points, theta_prior_params, param_ranges = param_ranges)
+  } else if(design_method == "sample_candidates") {
+    X_design <- get_sample_candidates_design(N_points, candidates = design_candidates, 
+                                             weights = design_candidates_weights, param_ranges = param_ranges)
   } else {
     stop("Invalid design method: ", design_method)
   }
@@ -1589,11 +1617,11 @@ get_LHS_design <- function(N_points, theta_prior_params, param_ranges = NULL, or
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    param_ranges: matrix, of shape d x 2, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
-  #                  distributions. 
+  #                  distributions.
   #    order_1d: logical(1), only relevant if the dimension of the input space (i.e. the number of 
   #              calibration parameters) is one-dimensional. In this case, if `order_1d` is TRUE then 
   #              the design points will be sorted in increasing order, with the training response 
@@ -1648,8 +1676,8 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
   #    theta_prior_params: data.frame containing the prior distribution information of the input 
   #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
   #                        for the requirements of this data.frame. 
-  #    param_ranges: matrix, of shape d x 2, where d is the dimension of the parameter space. The rows correspond 
-  #                  to the respective rows in `theta_prior_params`. The first and second columns are the lower and
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
   #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
   #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
   #                  distributions. 
@@ -1701,6 +1729,50 @@ get_grid_design <- function(N_points, theta_prior_params, param_ranges = NULL, t
 }
 
 
+get_sample_candidates_design <- function(N_points, candidates, weights = NULL, param_ranges = NULL) {
+  # Samples a subset of the collection of points `candidates` without replacement, potentially 
+  # weighted by `weights` and ensuring bound constraints `param_ranges`. 
+  #
+  # Args:
+  #    N_points: integer(1), the number of points to sample. Must be less than the number of rows in `candidates`. 
+  #    candidates: matrix, each row is considered a point. This is the collection of candidate points from which the 
+  #                sampling is done. 
+  #    weights: numeric, of length equal to the number of rows of `candidates`. Non-negative weights used for the 
+  #             sampling, passed to the `prob` argument of the base R function `sample()`. If NULL, uses uniform weights.
+  #    param_ranges: matrix, of shape 2 x d, where d is the dimension of the parameter space. The columns correspond 
+  #                  to the respective rows in `theta_prior_params`. The first and second rows are the lower and
+  #                  upper bounds on the sample ranges of each parameter, respectively. Default is NULL, in which case 
+  #                  no additional bounds are imposed on the samples, other than those already provided by the prior 
+  #                  distributions.
+  #
+  # Returns:
+  #    matrix, of dimension N_points x d; a matrix consisting of the sub-collection of rows of `candidates`. 
+
+  N_candidates <- nrow(candidates)
+                 
+  # If `param_ranges` is specified, set weights to zero for candidates outside of the parameter range. 
+  if(!is.null(param_ranges)) {
+    if(is.null(weights)) weights <- rep(1, N_candidates)
+    
+    outside_range <- rep(FALSE, N_candidates)
+    for(d in 1:ncol(candidates)) {
+      outside_range <- outside_range | (candidates[,d] < param_ranges[1,d]) # Check lower bound. 
+      outside_range <- outside_range | (candidates[,d] > param_ranges[2,d]) # Check upper bound.
+    }
+    
+    weights[outside_range] <- 0
+    
+  }
+  
+  # Sample rows from `candidates`.                
+  sample_idx <- sample(1:N_candidates, size = N_points, replace = FALSE, prob = weights)
+  X_design <- candidates[sample_idx,,drop = FALSE]
+  
+  return(X_design)
+  
+}
+
+
 get_design_list <- function(design_settings, computer_model_data, theta_prior_params, reps = 1, include_log = FALSE, ...) {
   # Creates a list of different designs (sets of emulator training points). Each row of 
   # `design_settings` specifies one specific design specification. By settings `reps` > 1, 
@@ -1710,7 +1782,7 @@ get_design_list <- function(design_settings, computer_model_data, theta_prior_pa
   # Args:
   #    design_settings: data.frame, with column names "N_design", "design_method", "scale_inputs", 
   #                     and "normalize_response". Currently supported design methods are 
-  #                     "grid" and "LHS". "N_design" is the number of design points. 
+  #                     "grid", "LHS", and "sample_candidates". "N_design" is the number of design points. 
   #                     The scaling and normalizing columns are logicals, indicating whether 
   #                     design points should be scaled to lie within a unit hypercube and 
   #                     whether the design outputs/response values should be undergo a Z-score
@@ -1721,7 +1793,9 @@ get_design_list <- function(design_settings, computer_model_data, theta_prior_pa
   #                        for the requirements of this data.frame. 
   #    reps: integer(1), the number of reps of each design specification to create. Default is 1. 
   #    include_log: logical(1), whether or not to include the log-transformed response in the designs. 
-  #                 Only relevant for the log-normal process emulator. 
+  #                 Only relevant for the log-normal process emulator.
+  #    ...: other arguments passed to `get_input_output_design()`. For example, should inlcude "design_candidates" 
+  #         and "design_candidates_weights" if design method "sample_candidates" is being used. 
   #
   # Returns: 
   #    Returns a list of length `nrow(design_settings) * reps`. The names of the list are of the form 
@@ -1770,12 +1844,25 @@ get_design_list_test_data <- function(N_test_points, N_test_sets, design_method,
   # posterior distribution. 
   #
   # Args:
-  #    
-  #
+  #    N_test_points: integer(1), the number of validation points in the validation sets. 
+  #    N_test_sets: integer(1), the number of replicate validation sets to create. Determines the length of the 
+  #                 list returned by this function. 
+  #    design_method: character(1), determines the method used to sample the validation points. Currently supports
+  #                   "LHS", "grid", or "sample_candidates". 
+  #    design_list: list, as returned by `get_design_list()`. Only utilized here to set the parameter ranges to 
+  #                 be used when sampling the validation points. 
+  #    computer_model_data: list, the computer model data list. 
+  #    theta_prior_params: data.frame containing the prior distribution information of the input 
+  #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                        for the requirements of this data.frame. 
+  #    transformation_method: character(1), if `transformation_method` is "LNP", then will include the log-transformed response and output 
+  #                           statistics in addition to the non-log transformed versions. Transformations "rectified" and "truncated" have 
+  #                           no effect. 
+  #    ...: other arguments passed to `get_input_output_design()`. For example, should inlcude "design_candidates" 
+  #         and "design_candidates_weights" if design method "sample_candidates" is being used.
   #
   # Returns:
-  # 
-  # 
+  #    list, of length `N_test_sets`. Each element is itself a list returned by `get_input_output_design()`. 
   
   validation_list <- vector(mode = "list", length = N_test_sets)
   

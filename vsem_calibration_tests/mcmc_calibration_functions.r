@@ -21,7 +21,7 @@ library(LaplacesDemon)
 
 
 llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NULL, SSR = NULL, 
-                                  normalize = TRUE, na.rm = FALSE, sum_output_lliks = TRUE) {
+                                  normalize = TRUE, na.rm = TRUE, sum_output_lliks = TRUE) {
   # Evaluate Gaussian log-likelihood assuming independence across time and across
   # output variables. In order to calculate the log-likelihood, the forward model must be run and then 
   # the L2 difference between the forward model outputs and the observed data evaluated. This function can 
@@ -67,6 +67,8 @@ llik_product_Gaussian <- function(computer_model_data, vars_obs, theta_vals = NU
   # Either return likelihood for each output separately, or return single likelihood across all outputs. 
   if(sum_output_lliks) {
     return(rowSums(llik_outputs))
+  } else {
+    colnames(llik_outputs) <- colnames(SSR)
   }
   
   return(llik_outputs)
@@ -323,7 +325,7 @@ run_VSEM_single_input <- function(par_val, computer_model_data = NULL, ref_pars 
   if("NEE" %in% output_vars) {
     VSEM_output[, "NEE"] <- VSEM_output[, "NEE"] * 1000
   }
-  
+
   # Compute LAI, if included in output variables. LAI is simply LAR times the above-ground vegetation pool
   # at time t. 
   if("LAI" %in% output_vars) {
@@ -412,7 +414,7 @@ calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
   #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
   #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
   #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
-  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE 
+  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE. 
   #
   # Returns:
   #    The prior density evaluation log p(theta). Assumes prior independence, so the log-prior is the sum of the log-prior
@@ -425,10 +427,9 @@ calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
       return(-Inf)
     }
   }
-  
+
   lprior <- 0
-  
-  theta_prior_params[["val"]] <- theta
+  theta_prior_params[, "val"] <- theta
   Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Gaussian",]
   Uniform_priors <- theta_prior_params[theta_prior_params$dist == "Uniform",]
   Truncated_Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Truncated_Gaussian",]
@@ -2037,7 +2038,7 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
   # determines which 2 columns will be used for the 2D KDE plot in each matrix. 
   #
   # Args:
-  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
+  #    samples_list: list of matrices, each of dimension (num samples, 2). 
   #    col_sel: integer(1), the two column indees to select from each matrix. i.e. this selects two particular parameters, whose
   #             samples will be used to compute the KDE. 
   #    xlab, ylab, main_title: x and y axis labels and plot title. 
@@ -2064,7 +2065,373 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 }
 
 
+get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
+                                raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
+                                bigger_is_better = TRUE, legend_label = "y") {
+  # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
+  # kernel density estimate from `samples`. The input locations are given by the 
+  # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
+  # then `raster = TRUE` may be set to create a classic heatmap produced over a dense 
+  # grid. Altenatively, if `X` consists of more sparsely sampled or non-evenly-spaced 
+  # locations, `raster = FALSE` should be set and the resulting plot will plot the 
+  # individual points, which will still be colored in heatmap fashion. 
+  #
+  # Args:
+  #    X: matrix, of dimension M x D with colnames specified. `param_names` will be used to 
+  #       select the two input dimensions of `X`. These define the input locations used in the 
+  #       heatmap. 
+  #    y: numeric(M), the scalar output value used to determine the colors in the heatmap. 
+  #    samples_kde: matrix, with colnames specified. `param_names` will be used to 
+  #                 select the two input dimensions of `samples_kde`. These input points 
+  #                 will not be part of the heatmap. Instead, they will be used to construct 
+  #                 a 2D KDE estimate and the contours of this KDE will be overlaid on the 
+  #                 heatmap. 
+  #    samples_points: matrix, with colnames specified. `param_names` will be used to 
+  #                    select the two input dimensions of `samples_points`. These input points 
+  #                    will be directly plotted as points on the plot and colored red. This 
+  #                    argument is typically used to plot design points. 
+  #    raster: logical(1), see above description. Set to TRUE when `X` is a dense grid of evenly-spaced  
+  #            points FALSE when the points in `X` are not evenly-spaced or are sparse. 
+  #    point_coords: numeric(2), coordinates to plot a single point as a red triangle. This typically 
+  #                  corresponds to the location of the true parameter value. 
+  #    main_title: character(1), the title of the plot. 
+  #    bigger_is_better: logical(1), if TRUE interprets `y` such that larger values are "better" (i.e. higher 
+  #                      posterior density). Set to FALSE for values like SSR, where smaller is better. 
+  #    legend_label: character(1), the title for the legend which indicates the color scale. 
+  
+  if(length(param_names) != 2) stop("<param_names> must have length 2.")
+  color_direction <- ifelse(bigger_is_better, 1, -1)
+  
+  df <- as.data.frame(cbind(X[, param_names], y))
+  colnames(df) <- c("theta1", "theta2", "y")
+  
+  # Heatmap. 
+  if(raster) {
+    plt <- ggplot() + 
+            geom_tile(data = df, aes(x = theta1, y = theta2, fill = y)) + 
+            scale_fill_viridis(discrete=FALSE, direction = color_direction) + 
+            labs(fill = legend_label)
+  } else {
+    plt <- ggplot() + 
+            geom_point(data = df, aes(x = theta1, y = theta2, color = y)) + 
+            scale_color_viridis(discrete=FALSE, direction = color_direction) + 
+            labs(color = legend_label)
+  }
+  
+  # Title and axis labels. 
+  plt <- plt + ggtitle(main_title) + xlab(param_names[1]) + ylab(param_names[2])
+  
+  # Density contours from samples. 
+  if(!is.null(samples_kde)) {
+    if(!all(param_names %in% colnames(samples_kde))) stop("<param_names> must be column names of <samples_kde>.")
+  
+    samples_kde <- as.data.frame(samples_kde[, param_names])
+    colnames(samples_kde) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2))
+  }
+  
+  # Plot points. 
+  if(!is.null(samples_points)) {
+    if(!all(param_names %in% colnames(samples_points))) stop("<param_names> must be column names of <samples_points>.")
+    samples_points <- as.data.frame(samples_points[, param_names])
+    colnames(samples_points) <- c("theta1", "theta2")
+    
+    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2), color = "red")
+  }
+  
+  # Mark specific point in plot. 
+  if(!is.null(point_coords)) {
+    plt <- plt + geom_point(data = data.frame(theta1 = point_coords[1], theta2 = point_coords[2]), 
+                            aes(x = theta1, y = theta2), color = "red", shape = 17)
+  }
+  
+  return(plt)
+  
+}
+
+
+get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde = NULL, samples_points = NULL,  
+                                raster = FALSE, point_coords = NULL, main_title = NULL, 
+                                base_main_title = "Heatmap", bigger_is_better = TRUE, legend_label = "y") {
+  # A wrapper function around `get_2d_headmap_plot()` that allows `Y` to be multivariate. 
+  # Each column of `Y` is interpreted as the response variable for a different heatmap plot. 
+  # Each column is fed to `get_2d_headmap_plot()` and a list of plots is returned. 
+  #
+  # Args:
+  #    The same as `get_2d_headmap_plot()` except that `Y` is now a matrix, with each 
+  #    column a variable to use as the response in a heatmap plot. `Y` should have column names, 
+  #    which will be used to generate plot titles. The column names will be appended to 
+  #    `base_main_title` to create the full titles. If `main_title` is specified, this 
+  #    will be used as the plot titles, overwriting `base_main_title`. 
+  #
+  # Returns: 
+  #    list, of length equal to the number of columns of `Y`. The names of the list will be 
+  #    set to the corresponding column names of `Y`. Each element is the corresponding plot 
+  #    returned from `get_2d_heatmap_plot()`. 
+  
+  if(is.null(colnames(Y))) output_variables <- paste("output", seq(1, ncol(Y)))
+  else output_variables <- colnames(Y)
+  
+  plts <- vector(mode = "list", length = ncol(Y))
+  for(j in seq_along(plts)) {
+    
+    plt_title <- ifelse(is.null(main_title), paste(base_main_title, output_variables[j], sep = ": "), main_title)
+    
+    plts[[j]] <- get_2d_heatmap_plot(X = X, 
+                                     y = Y[,j], 
+                                     param_names = param_names, 
+                                     samples_kde = samples_kde, 
+                                     samples_points = samples_points,  
+                                     raster = raster, 
+                                     point_coords = point_coords, 
+                                     main_title = plt_title, 
+                                     bigger_is_better = bigger_is_better, 
+                                     legend_label = legend_label)
+  }
+  
+  names(plts) <- output_variables
+  
+  return(plts)
+   
+}
+
+
+get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_names, response_surface, 
+                                         theta_prior_params = NULL, output_variables = NULL, 
+                                         combine_outputs = TRUE, raster = FALSE, point_coords = NULL, 
+                                         samples_kde = NULL, samples_points = NULL, scale_inputs = FALSE, 
+                                         input_bounds = NULL, SSR_vals = NULL, llik_vals = NULL, 
+                                         lprior_vals = NULL, lpost_vals = NULL, ...) {
+  # A wrapper for `get_2d_heatmap_plot()` that specializes in plotting quantities of interest 
+  # related to the calibration problem. This function can be used when the dimension of the 
+  # calibration parameter space is 2, or to plot 2-dimensional projections when the input 
+  # dimension is larger than 2. This function can plot a heatmap 
+  # of 1.) the SSR (sum of squared residual) surface, 2.) the likelihood surface,  
+  # 3.) the posterior surface, or 4.) the prior surface. It also allows the user to control 
+  # whether individual plots are generated for each output variable, or if all the output variables 
+  # should  be combined to plot the overall likelihood, posterior, etc. It also allows points 
+  # to be overlaid on the plot, which typically represent design points or samples 
+  # from a ground truth distribution. Additionally a single point can be added to 
+  # mark the true value of the parameters. 
+  #
+  # Args:
+  #    response_surface: character(1), either "SSR", "likelihood", "prior", or "posterior".
+  #    combine_outputs: logical(1), currently only relevant if `response_surface` is "likelihood". 
+  #                     If TRUE, returns a single plot of the overall log-likelihood. Otherwise, 
+  #                     returns one plot per output variable, where each plot is a heatmap for the 
+  #                     log likelihood of that output. 
+  #    ...: Other arguments passed to ggplot(). 
+  #
+  #
+  
+  # If requested, scale input parameters based on `input_bounds`. Must save an unscaled version as well so that 
+  # SSR/llik/lpost values can be computed by running the forward model on the original (unscaled) inputs. Also, 
+  # the lprior values also require the unscaled inputs. 
+  theta_vals_unscaled <- as.matrix(theta_vals)
+  if(scale_inputs) {
+    theta_vals <- scale_input_data(theta_vals, input_bounds)
+    if(!is.null(point_coords)) point_coords <- scale_input_data(matrix(point_coords, nrow=1), input_bounds)
+    if(!is.null(samples_kde)) samples_kde <- scale_input_data(samples_kde, input_bounds)
+    if(!is.null(samples_points)) samples_points <- scale_input_data(samples_points, input_bounds)
+  } 
+  
+  if(response_surface == "SSR") {
+    
+    if(is.null(SSR_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
+    
+    plts <- get_2d_response_surface_plot_SSR(theta_vals = theta_vals, 
+                                             SSR_vals = SSR_vals, 
+                                             param_names = param_names, 
+                                             output_variables = output_variables, 
+                                             raster = raster, 
+                                             point_coords = point_coords, 
+                                             samples_kde = samples_kde, 
+                                             samples_points = samples_points)
+  } else if(response_surface == "prior") {
+    if(is.null(lprior_vals)) lprior_vals <- apply(theta_vals_unscaled, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
+    
+    plts <- get_2d_response_surface_plot_prior(theta_vals = theta_vals, 
+                                               param_names = param_names, 
+                                               raster = raster, 
+                                               point_coords = point_coords, 
+                                               samples_kde = samples_kde, 
+                                               samples_points = samples_points,
+                                               lprior_vals = lprior_vals, 
+                                               theta_prior_params = theta_prior_params)
+    
+  } else if(response_surface == "likelihood") {
+    if(is.null(SSR_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
+    
+    plts <- get_2d_response_surface_plot_likelihood(theta_vals = theta_vals,
+                                                    computer_model_data = computer_model_data, 
+                                                    param_names = param_names, 
+                                                    output_variables = output_variables, 
+                                                    combine_outputs = combine_outputs, 
+                                                    raster = raster, 
+                                                    point_coords = point_coords, 
+                                                    samples_kde = samples_kde, 
+                                                    samples_points = samples_points, 
+                                                    SSR_vals = SSR_vals, 
+                                                    llik_vals = llik_vals)
+                                                    
+  }  else if(response_surface == "posterior") {
+    
+    if(is.null(SSR_vals) && is.null(llik_vals) && is.null(lpost_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
+    if(is.null(lprior_vals)) lprior_vals <- apply(theta_vals_unscaled, 1, function(theta) calc_lprior_theta(theta, theta_prior_params)) 
+    
+    plts <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals,
+                                                   computer_model_data = computer_model_data, 
+                                                   param_names = param_names, 
+                                                   output_variables = output_variables, 
+                                                   raster = raster, 
+                                                   point_coords = point_coords,
+                                                   samples_kde = samples_kde, 
+                                                   samples_points = samples_points,
+                                                   SSR_vals = SSR_vals, 
+                                                   llik_vals = llik_vals, 
+                                                   lprior_vals = lprior_vals, 
+                                                   lpost_vals = lpost_vals, 
+                                                   theta_prior_params = theta_prior_params)
+  } else {
+    stop("Invalid response surface: ", response_surface)
+  }
+  
+  return(plts)
+  
+}
+
+
+get_2d_response_surface_plot_SSR <- function(theta_vals, SSR_vals, param_names, output_variables = NULL, 
+                                             raster = FALSE, point_coords = NULL, samples_kde = NULL,
+                                             samples_points = NULL) {
+  
+  if(!is.null(output_variables)) {
+    SSR_vals <- SSR_vals[, output_variables]
+  }
+  
+  plts <- get_2d_heatmap_plots(X = theta_vals, 
+                               Y = SSR_vals, 
+                               param_names = param_names,
+                               samples_kde = samples_kde, 
+                               samples_points = samples_points, 
+                               raster = raster, 
+                               base_main_title = "SSR",
+                               point_coords = point_coords, 
+                               bigger_is_better = FALSE, 
+                               legend_label = "SSR")
+  
+  return(plts)
+  
+}
+
+
+get_2d_response_surface_plot_prior <- function(theta_vals, param_names, raster = FALSE, 
+                                               point_coords = NULL, samples_kde = NULL, samples_points = NULL,
+                                               lprior_vals = NULL, theta_prior_params = NULL) {
+  # Even though this function is guaranteed to return a single plot, it returns a one element list to be 
+  # consistent with the other response surface plotting functions. 
+  
+  # Log prior evaluations. 
+  if(is.null(lprior_vals)) {
+    lprior_vals <- apply(theta_vals, 1, function(theta) calc_lprior_theta(theta, theta_prior_params)) 
+  }
+  
+  lprior_vals <- matrix(lprior_vals, ncol=1)
+  
+  # Heatmap plot. 
+  plts <- get_2d_heatmap_plots(X = theta_vals, 
+                               Y = lprior_vals, 
+                               param_names = param_names,
+                               samples_kde = samples_kde, 
+                               samples_points = samples_points, 
+                               raster = raster, 
+                               main_title = "Log Prior", 
+                               point_coords = point_coords,
+                               bigger_is_better = TRUE, 
+                               legend_label = "Log Prior")
+  
+  return(plts)
+  
+}
+                                    
+
+get_2d_response_surface_plot_likelihood <- function(theta_vals, computer_model_data, param_names, output_variables,  
+                                                    combine_outputs = TRUE, raster = FALSE, point_coords = NULL, 
+                                                    samples_kde = NULL, samples_points = NULL, SSR_vals = NULL, llik_vals = NULL) {
+  
+  # Log likelihood evaluations. 
+  if(is.null(llik_vals)) {
+    llik_vals <- llik_product_Gaussian(computer_model_data = computer_model_data, 
+                                       vars_obs = diag(computer_model_data$Sig_eps), 
+                                       theta_vals = theta_vals, 
+                                       SSR = SSR_vals, 
+                                       na.rm = TRUE, 
+                                       sum_output_lliks = combine_outputs)
+  }
+  
+  if(combine_outputs) {
+    llik_vals <- matrix(llik_vals, ncol = 1)
+    main_title <- "Log Likelihood"
+  } else {
+    main_title <- NULL
+  }
+  
+  # Heatmap plot(s). 
+  plts <- get_2d_heatmap_plots(X = theta_vals, 
+                               Y = llik_vals, 
+                               param_names = param_names,
+                               samples_kde = samples_kde, 
+                               samples_points = samples_points, 
+                               raster = raster, 
+                               base_main_title = "Log Likelihood", 
+                               main_title = main_title, 
+                               point_coords = point_coords,
+                               bigger_is_better = TRUE, 
+                               legend_label = "Log Likelihood")
+  
+  return(plts)
+  
+}
+                                         
+ 
+get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_data, param_names, output_variables, 
+                                                   raster = FALSE, point_coords = NULL, samples_kde = NULL, 
+                                                   samples_points = NULL, SSR_vals = NULL, llik_vals = NULL,  
+                                                   lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL) {
+  
+  # Log posterior evaluations. 
+  if(is.null(lpost_vals)) {
+    lpost_vals <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                               theta_vals = theta_vals, 
+                                               SSR = SSR_vals, 
+                                               vars_obs = diag(computer_model_data$Sig_eps), 
+                                               na.rm = TRUE, 
+                                               theta_prior_params = theta_prior_params, 
+                                               lprior_vals = lprior_vals,
+                                               return_list = FALSE)
+                                              
+  }
+  
+  # Heatmap plot. 
+  plt <- get_2d_heatmap_plot(X = theta_vals, 
+                             y = lpost_vals, 
+                             param_names = param_names,
+                             samples_kde = samples_kde, 
+                             samples_points = samples_points, 
+                             raster = raster, 
+                             main_title = "Log Posterior", 
+                             point_coords = point_coords,
+                             bigger_is_better = TRUE, 
+                             legend_label = "Log Posterior")
+  
+  return(plt)
+  
+}
+
+                                  
 get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
+  # See `select_mcmc_samp_cols()` for details on how to specify columns which to plot. 
 
   # Select columns to plot.  
   n <- nrow(samp_df)
