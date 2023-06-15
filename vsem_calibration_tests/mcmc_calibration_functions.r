@@ -458,7 +458,8 @@ calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
 calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
                                          SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
-  # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
+  # Evaluates the exact log-posterior theta conditional density, up to the normalizing constant. Note that this is the theta density, conditional 
+  # on the likelihood paramters, so the prior on the observation variances (Sigma) are included in the normaling constant, which is dropped. 
   # This functions provides the option to calculate the log prior and log likelihood from scratch, at the given parameter values `theta_vals` 
   # and other necessary arguments for computing these quantities. Or if these quantities have already been calculated, they can be passed 
   # directly. 
