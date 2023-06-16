@@ -1660,6 +1660,8 @@ get_LHS_design <- function(N_points, theta_prior_params, param_ranges = NULL, or
     X_LHS <- X_LHS[order(X_LHS),,drop=FALSE]
   }
   
+  colnames(X_LHS) <- rownames(theta_prior_params)
+  
   return(X_LHS)
   
 }
@@ -1995,22 +1997,23 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
 
 samp_GP_lpost_theta <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, 
                                 sig2_eps, N_samples = 1, gp_pred_list = NULL) {
-  # Should I have the option to pass in already scaled input data? 
+  # `theta_vals` should be unscaled.
   
   # Log prior evaluations. 
   lprior_vals <- calc_lprior_theta(theta_vals, theta_prior_params)
   
   # Compute GP predictive means and variances. 
-  theta_vals <- scale_input_data(theta_vals, input_bounds = emulator_info_list$input_bounds)
-  gp_pred_list <- predict_independent_GPs(X_pred = theta_vals, 
-                                          gp_obj_list = emulator_info_list$gp_fits,  
-                                          gp_lib = emulator_info_list$settings$gp_lib, 
-                                          denormalize_predictions = TRUE, 
-                                          output_stats = emulator_info_list$output_stats)
-  
+  if(is.null(gp_pred_list)) {
+    theta_vals <- scale_input_data(theta_vals, input_bounds = emulator_info_list$input_bounds)
+    gp_pred_list <- predict_independent_GPs(X_pred = theta_vals, 
+                                            gp_obj_list = emulator_info_list$gp_fits,  
+                                            gp_lib = emulator_info_list$settings$gp_lib, 
+                                            denormalize_predictions = TRUE, 
+                                            output_stats = emulator_info_list$output_stats)
+  }
   
   # Draw samples from random field approximation of log posterior. 
-  lpost_samp <- matrix(NA, nrow = N_samples, ncol = nrow(theta_vals))
+  lpost_samp <- matrix(NA, nrow = N_samples, ncol = length(gp_pred_list[[1]]$mean))
   
   for(t in seq_len(N_samples)) {
     SSR_samp <- sample_independent_GPs_pointwise(gp_pred_list = gp_pred_list, 
@@ -2024,7 +2027,6 @@ samp_GP_lpost_theta <- function(theta_vals, emulator_info_list, computer_model_d
                                                    lprior_vals = lprior_vals,
                                                    return_list = FALSE)
   }
-  
   
   if(N_samples == 1) return(lpost_samp[1,])
   

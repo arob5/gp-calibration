@@ -5,7 +5,7 @@
 # Andrew Roberts
 #
 
-bayes_opt_one_step <- function(emulator_info_list, sig2_eps, ) {
+bayes_opt_one_step <- function(emulator_info_list, sig2_eps) {
   
 }
 
@@ -43,8 +43,10 @@ optim.EI <- function(f, ninit, end)
 #    - For both optimization and design. 
 # ------------------------------------------------------------------------------
 
-acquisition_EI_MC <- function(emulator_info_list, theta_vals, lpost_min, computer_model_data, theta_prior_params, sig2_eps, N_MC_samples = 1000) {
+acquisition_EI_MC <- function(emulator_info_list, theta_vals, lpost_min, computer_model_data, 
+                              theta_prior_params, sig2_eps, N_MC_samples = 1000, gp_pred_list = NULL) {
   # Note that lpost_min should be the minimum posterior over both theta and Sigma, not over the conditional posterior. 
+  # `theta_vals` should be unscaled. 
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
   lpost_samp <- samp_GP_lpost_theta(theta_vals = theta_vals, 
@@ -52,13 +54,14 @@ acquisition_EI_MC <- function(emulator_info_list, theta_vals, lpost_min, compute
                                     computer_model_data = computer_model_data, 
                                     theta_prior_params = theta_prior_params, 
                                     sig2_eps = sig2_eps, 
-                                    N_samples = N_MC_samples)
-  
-  
+                                    N_samples = N_MC_samples, 
+                                    gp_pred_list = gp_pred_list)
+                                    
   # Monte Carlo estimates of acquisition at each point. 
-  alpha_EI_MC_estimates <- colMeans(pmax(0, lpost_min - lpost_samp))
+  alpha_EI_MC_estimates <- lpost_min - lpost_samp
+  alpha_EI_MC_estimates[alpha_EI_MC_estimates < 0] <- 0
   
-  return(alpha_EI_MC_estimates)
+  return(colMeans(alpha_EI_MC_estimates))
   
 }
 

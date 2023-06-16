@@ -152,7 +152,12 @@ grid.arrange(arrangeGrob(grobs=plts, nrow=1))
 ```
 
 The below plot is the same, except now it is plotted over the input values sampled from the true posterior, rather than 
-a grid of input values selected based on the prior bounds. 
+a grid of input values selected based on the prior bounds. On the right plot, we observe that the LAI SSR is small along the diagonal; 
+the think yellow region indicates many plausible combinations of the two parameters. The NEE constraint provides additional information 
+that further restricts the region of interest. In particular, we observe that the gradient in the NEE plot helps to identify plausible 
+values for KEXT. When the information of the two constraints is combined, we see that the resulting region approximately agrees with the 
+contours of the true posterior. This is verified in the analogous plot below, where the two constraints are combined in the single 
+product likelihood. 
 ```{r}
 plts <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
                                      theta_vals = samp_exact_theta, 
@@ -187,6 +192,24 @@ plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data,
 
 plot(plt)
 ```
+
+```{r}
+plt <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                    theta_vals = samp_exact_theta, 
+                                    param_names = computer_model_data$pars_cal_names, 
+                                    response_surface = "likelihood", 
+                                    SSR_vals = NULL, 
+                                    combine_outputs = TRUE, 
+                                    raster = FALSE, 
+                                    point_coords = computer_model_data$theta_true, 
+                                    samples_kde = samp_exact_theta, 
+                                    scale_inputs = TRUE, 
+                                    input_bounds = theta_prior_design$input_bounds, 
+                                    theta_prior_params = theta_prior_params)[[1]]
+
+plot(plt)
+```
+
 
 ### Individual likelihoods. 
 ```{r}
