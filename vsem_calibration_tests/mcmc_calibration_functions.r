@@ -2096,7 +2096,7 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 
 get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
                                 raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
-                                bigger_is_better = TRUE, legend_label = "y") {
+                                bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE) {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2134,16 +2134,22 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   df <- as.data.frame(cbind(X[, param_names], y))
   colnames(df) <- c("theta1", "theta2", "y")
   
+  plt_transformation <- ifelse(log_scale, "log10", "identity")
+  if(log_scale) {
+    main_title <- paste0(main_title, ", log10 scale")
+    legend_label <- paste0("log10 ", legend_label)
+  }
+  
   # Heatmap. 
   if(raster) {
     plt <- ggplot() + 
             geom_tile(data = df, aes(x = theta1, y = theta2, fill = y)) + 
-            scale_fill_viridis(discrete=FALSE, direction = color_direction) + 
+            scale_fill_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + 
             labs(fill = legend_label)
   } else {
     plt <- ggplot() + 
             geom_point(data = df, aes(x = theta1, y = theta2, color = y)) + 
-            scale_color_viridis(discrete=FALSE, direction = color_direction) + 
+            scale_color_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + 
             labs(color = legend_label)
   }
   
