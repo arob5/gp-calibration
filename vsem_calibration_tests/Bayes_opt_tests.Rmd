@@ -303,7 +303,7 @@ plot(PI_MC_plt)
 
 ```{r}
 
-Bayes_opt_settings <- list(acquisition_type = "EI_MC", opt_method = "grid", N_MC_samples = 1000)
+Bayes_opt_settings <- list(N_opt_iter = 10, acquisition_type = "EI_MC", opt_method = "grid", N_MC_samples = 1000)
 
 results <- bayes_opt_one_step(emulator_info_list = emulator_info_list,  
                               Bayes_opt_settings = Bayes_opt_settings,
@@ -317,16 +317,81 @@ results <- bayes_opt_one_step(emulator_info_list = emulator_info_list,
 
 ```
 
-emulator_info_list, design_input_curr, design_output_curr, design_best_idx,  
-                               acquisition_type, opt_method, computer_model_data, sig2_eps, theta_prior_params, ...)
 
-# Plots to consider doing: 
+```{r}
+
+design_settings <- list(design_method = "LHS", N_design = 20)
+
+Bayes_opt_results <- Bayes_opt(Bayes_opt_settings = Bayes_opt_settings, 
+                               init_design_settings = design_settings, 
+                               emulator_settings = emulator_settings, 
+                               computer_model_data = computer_model_data, 
+                               sig2_eps = diag(computer_model_data$Sig_eps), 
+                               theta_prior_params = theta_prior_params, 
+                               theta_grid_ref = prior_grid_info$inputs) 
+```
+
+```{r}
+lpost_true_theta <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                 theta_vals = computer_model_data$theta_true, 
+                                                 vars_obs = diag(computer_model_data$Sig_eps), 
+                                                 na.rm = TRUE, 
+                                                 theta_prior_params = theta_prior_params, 
+                                                 return_list = FALSE)
+
+BO_obj_plot <- ggplot(data = data.frame(itr = seq_along(Bayes_opt_results$best_idx), 
+                                        obj = Bayes_opt_results$objective_vals[Bayes_opt_results$best_idx])) + 
+               geom_point(mapping = aes(x = itr, y = obj)) + 
+               geom_hline(yintercept = lpost_true_theta, col = "red") + 
+               ggtitle("lpost highest observed value") + 
+               xlab("Iteration") + 
+               ylab("Log Posterior")
+              
+BO_obj_plot
+```
+
+```{r}
+plt <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
+                              computer_model_data = computer_model_data, 
+                              param_names = computer_model_data$pars_cal_names, 
+                              samples_kde = samp_exact_theta, 
+                              init_design_points = Bayes_opt_results$design_inputs[1:design_settings$N_design,],  
+                              sequential_design_points = Bayes_opt_results$design_inputs[(design_settings$N_design+1):nrow(Bayes_opt_results$design_inputs),], 
+                              raster = TRUE, 
+                              point_coords = computer_model_data$theta_true,  
+                              main_title = "lpost heatmap with Bayes Opt points.", 
+                              bigger_is_better = TRUE, 
+                              legend_label = "lpost")
+                              
+plt
+```
+
+```{r}
+plt <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_exact_theta, 
+                              computer_model_data = computer_model_data, 
+                              param_names = computer_model_data$pars_cal_names, 
+                              samples_kde = samp_exact_theta, 
+                              sequential_design_points = Bayes_opt_results$design_inputs[(design_settings$N_design+1):nrow(Bayes_opt_results$design_inputs),], 
+                              raster = FALSE, 
+                              point_coords = computer_model_data$theta_true,  
+                              main_title = "lpost heatmap with Bayes Opt points.", 
+                              bigger_is_better = TRUE, 
+                              legend_label = "lpost")
+                              
+plt
+```
+
+
+
+# Things to consider doing: 
 #     - Heatmap of error metrics to track where posterior approx is good/bad. 
 #     - Need to produce analogous plots to above, but not using the true likelihood parameters, 
 #       which in practice are not known. 
 #     - Look into local approximate GPs and Deep GPs. 
 #     - Look into weighting to approx posterior to avoid the situation above. 
 #     - Try to develop a CRPS objective for BayesOpt? 
+#     - Think about improving the efficiency regarding scaling inputs. Currently just passing in 
+#       unscaled inputs to all BayesOpt functions. 
 
 
 

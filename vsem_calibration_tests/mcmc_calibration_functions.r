@@ -2232,6 +2232,44 @@ get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde = NULL, samples_
 }
 
 
+get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param_names, samples_kde = NULL, init_design_points = NULL,  
+                              sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
+                              main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
+                              legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
+                              lpost_vals = NULL) {
+  # TODO: currently main title and legend label arguments do nothing. 
+  
+  
+  # Log Posterior response surface plot. 
+  plt <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals, 
+                                                computer_model_data = computer_model_data, 
+                                                param_names = param_names, 
+                                                output_variables = output_variables, 
+                                                raster = raster, 
+                                                point_coords = point_coords, 
+                                                samples_kde = samples_kde, 
+                                                samples_points = init_design_points, 
+                                                SSR_vals = SSR_vals, 
+                                                llik_vals = llik_vals,  
+                                                lprior_vals = lprior_vals, 
+                                                lpost_vals = lpost_vals, 
+                                                theta_prior_params = theta_prior_params)
+  
+  # Add sequentially chosen design points. 
+  if(!is.null(sequential_design_points)) {
+    sequential_design_points <- as.data.frame(sequential_design_points[, param_names, drop=FALSE])
+    colnames(sequential_design_points) <- c("theta1", "theta2")
+    sequential_design_points[, "ID"] <- as.character(seq(1, nrow(sequential_design_points)))
+    
+    plt <- plt + geom_text(data = sequential_design_points, mapping = aes(x = theta1, y = theta2, label = ID), color = "red")
+            
+  }  
+  
+  return(plt)
+  
+}
+
+
 get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_names, response_surface, 
                                          theta_prior_params = NULL, output_variables = NULL, 
                                          combine_outputs = TRUE, raster = FALSE, point_coords = NULL, 

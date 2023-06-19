@@ -5,6 +5,73 @@
 # Andrew Roberts
 #
 
+Bayes_opt <- function(Bayes_opt_settings, init_design_settings, emulator_settings, computer_model_data, 
+                      sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
+  # TODO: generalize so this works with log-normnal process. 
+  
+  # Create initial design and fit GP. 
+  design_info <- get_input_output_design(N_points = init_design_settings$N_design, 
+                                         design_method = init_design_settings$design_method, 
+                                         computer_model_data = computer_model_data, 
+                                         theta_prior_params = theta_prior_params, 
+                                         transformation_method = emulator_settings$transformation_method)
+  design_inputs <- design_info$inputs
+  
+  gp_fits <- fit_independent_GPs(X_train = design_info$inputs_scaled, 
+                                 Y_train = design_info$outputs_normalized, 
+                                 gp_lib = emulator_settings$gp_lib, 
+                                 gp_kernel = emulator_settings$kernel)$fits
+  
+  emulator_info_list <- list(gp_fits = gp_fits, 
+                             input_bounds = design_info$input_bounds, 
+                             output_stats = design_info$output_stats, 
+                             settings = emulator_settings)
+  
+  # Current observed objective values (i.e. log posterior values). 
+  design_objective_vals <- calc_lpost_theta_product_lik(theta_vals = design_inputs, 
+                                                        computer_model_data = computer_model_data,  
+                                                        SSR = design_info$outputs, 
+                                                        vars_obs = sig2_eps, 
+                                                        na.rm = TRUE, 
+                                                        return_list = FALSE, 
+                                                        theta_prior_params = theta_prior_params)
+  design_best_idx <- which.max(design_objective_vals)
+  
+  # Bayesian Optimization loop. 
+  for(i in seq_len(Bayes_opt_settings$N_opt_iter)) {
+    
+    design_idx_curr <- init_design_settings$N_design + i
+    
+    # Obtain new design point and corresponding objective value. 
+    opt_results <- bayes_opt_one_step(emulator_info_list = emulator_info_list, 
+                                      Bayes_opt_settings = Bayes_opt_settings, 
+                                      design_input_curr = design_inputs, 
+                                      design_objective_curr = design_objective_vals, 
+                                      design_best_idx = design_best_idx[i],  
+                                      computer_model_data = computer_model_data, 
+                                      sig2_eps = sig2_eps, 
+                                      theta_prior_params = theta_prior_params, 
+                                      theta_grid_ref = theta_grid_ref)
+    
+    design_inputs <- opt_results$input
+    design_objective_vals <- opt_results$objective
+    design_best_idx <- c(design_best_idx, opt_results$idx)
+
+    # Update GP. 
+    emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, 
+                                                         gp_lib = emulator_settings$gp_lib, 
+                                                         X_new = opt_results$input[design_idx_curr,,drop=FALSE], 
+                                                         Y_new = opt_results$SSR_new, 
+                                                         input_bounds = emulator_info_list$input_bounds, 
+                                                         output_stats = emulator_info_list$output_stats) 
+  }
+  
+  return(list(design_inputs = design_inputs, objective_vals = design_objective_vals, 
+              best_idx = design_best_idx, emulator_info_list = emulator_info_list))
+  
+}
+
+
 bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_input_curr, design_objective_curr, design_best_idx,  
                                computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
   # Note that this is all conditional on fixed likelihood parameters.                               
@@ -23,8 +90,10 @@ bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_in
                                     N_MC_samples = Bayes_opt_settings$N_MC_samples)
                                     
   # Run forward model at new point. 
+  SSR_new <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = theta_new, na.rm = TRUE)
   lpost_new <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                            theta_vals = matrix(theta_new, nrow=1), 
+                                            theta_vals = theta_new, 
+                                            SSR = SSR_new,
                                             vars_obs = sig2_eps, 
                                             na.rm = TRUE, 
                                             theta_prior_params = theta_prior_params, 
@@ -35,7 +104,8 @@ bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_in
   design_objective_curr <- c(design_objective_curr, lpost_new)
   if(lpost_new > design_objective_curr[design_best_idx]) design_best_idx <- length(design_objective_curr)
   
-  return(list(input = design_input_curr, objective = design_objective_curr, design_best_idx = design_best_idx))
+  return(list(input = design_input_curr, objective = design_objective_curr, 
+              idx = design_best_idx, SSR_new = SSR_new))
 
 }
 

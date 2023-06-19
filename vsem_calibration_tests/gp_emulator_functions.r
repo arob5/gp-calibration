@@ -167,7 +167,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
   # Args:
   #    X_train: matrix of shape N x d, where N is the number of design (training) points
   #             and d is the dimension of the input space. 
-  #    y_train: matrix of shape N x p, with jth column containing the training outputs 
+  #    Y_train: matrix of shape N x p, with jth column containing the training outputs 
   #             for the jth output variable corresponding to the training inputs. 
   #    gp_lib: character, string specifying the GP package to use. Currently supports 
   #            "mlegp" and "hetGP". 
@@ -192,6 +192,86 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
   }
   
   return(list(fits = GP_objects, times = GP_fit_times))
+  
+}
+
+
+update_GP <- function(gp_obj, gp_lib, X_new, y_new) {
+  # Updates a GP fit by conditioning on new data (X_new, y_new). Currently this is only 
+  # supported for `gp_lib == "hetGP"`. Currently, this updates GP hyperparameter fit and 
+  # then adds (X_new, y_new) to the design set, so that future predictive mean/variance 
+  # calculations will condition on (X_new, y_new) in addition to the previous design. 
+  # Note that `hetGP` also supports conditioning on the new data without updating 
+  # GP hyperparameters. This function could be expanded to allow for this if desired. 
+  # The new design data `X_new` and `y_new` are assumed to be properly scaled/normalized. 
+  # The function `update_independent_GPs()` offers the option to perform pre-processing on 
+  # the new data. 
+  #
+  # Args:
+  #    gp_obj: An object representing a GP fit, which will differ based on the library used to fit the GP. 
+  #    gp_lib: character(1), the library used to fit the GP. Currently supports "hetGP". 
+  #    X_new: matrix, the new design inputs, of shape M x D where M is the number of new inputs and 
+  #           D is the dimension of the input space. Note that these inputs should be properly scaled,
+  #           as this function does not pre-process the new design data. 
+  #    y_new: numeric, vector of length M. The outputs corresponding to the M new design points. 
+  #           Note that these inputs should be properly normalized ,
+  #           as this function does not pre-process the new design data.
+  #
+  # Returns:
+  #    The updated GP object. 
+  
+  if(gp_lib == "hetGP") {
+    gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new)
+  } else {
+    stop("Currently `update_GP` only supports GP library `hetGP`")
+  }
+  
+  return(gp_obj)
+  
+}
+
+
+update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new, input_bounds = NULL, output_stats = NULL) {
+  # A wrapper around `update_GP()` which udpates a set of independent GPs given new design 
+  # data `(X_new, Y_new)`. See `update_GP()` for more details. This function allows the option 
+  # to pre-process the data (i.e. scale inputs and normalize outputs). 
+  #
+  # Args:
+  #    gp_obj_list: A list of GP objects, each of which represents a GP fit to one of the outputs. The objects will 
+  #                differ based on the specific GP library used for fitting. All of the objects in the list must have 
+  #                been fit using the same library. 
+  #    gp_lib: character(1), the library used to fit the GP. Currently supports "hetGP". 
+  #    X_new: matrix, the new design inputs, of shape M x D where M is the number of new inputs and 
+  #           D is the dimension of the input space. Note that these inputs should be properly scaled,
+  #           as this function does not pre-process the new design data. 
+  #    Y_new: matrix of shape M x P, with pth column containing the training outputs 
+  #           for the pth output variable corresponding to the new inputs `X_new`.
+  #    input_bounds: matrix, of shape 2 x D. The columns correspond to the respective rows in `theta_prior_params`.
+  #                  The first and second rows are the lower and upper bounds on the sample ranges of each parameter,
+  #                  respectively. If not NULL, used to scale `X_new` prior to updating GPs. 
+  #    output_stats: matrix of dimensions 2x1. The matrix must have rownames "mean_Y" and "var_Y" storing the mean and 
+  #                  variance of the output variable used to compute the Z-scores. This object is 
+  #                  returned by prep_GP_training_data(). Note that `output_stats` 
+  #                  is assumed to be on the correct scale; e.g. for the log-normal process, 
+  #                  `output_stats` should be on the log-scale. If not NULL, used to normalize the outputs 
+  #                  `Y_new` prior to updating GPs. 
+  #
+  # Returns:
+  #    The updated list of GP objects. 
+  
+  # Pre-process data. 
+  if(!is.null(input_bounds)) {
+    X_new <- scale_input_data(X_new, input_bounds = input_bounds)
+  }
+  if(!is.null(output_stats)) {
+    Y_new <- normalize_output_data(Y_new, output_stats)
+  }
+  
+  for(j in seq_along(gp_fits)) {
+    gp_fits[[j]] <- update_GP(gp_fits[[j]], gp_lib, X_new, Y_new[,j])
+  }
+  
+  return(gp_fits)
   
 }
 
