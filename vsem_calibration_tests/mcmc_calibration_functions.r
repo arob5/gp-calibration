@@ -398,7 +398,37 @@ run_VSEM_single_input_old <- function(par_val, ref_pars = NULL, pars_cal_sel = N
 }
 
 
-calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
+calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds = FALSE) {
+  # A wrapper around `calc_lprior_theta_single_input()` that allows computation of the 
+  # log prior density at multiple input values. 
+  #
+  # Args:
+  #    theta_vals: matrix, each row is an input point. The number of columns equals the dimension of the input space.  
+  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2", and potentially columns 
+  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper)
+  #                         and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                         bound_upper = upper truncation value). 
+  #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
+  #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 
+  #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
+  #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
+  #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
+  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE. 
+  #
+  # Returns:
+  #    numeric, vector of log prior density evaluations, of equal length as the number of rows in `theta_vals`. 
+  
+  # If single input is passed as a numeric vector. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  return(apply(theta_vals, 1, function(theta) calc_lprior_theta_single_input(theta, theta_prior_params, check_bounds)))
+  
+}
+
+
+calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_bounds = FALSE) {
   # Evaluates the log prior density on calibration functions at specific values of the settings.  
   #
   # Args:
@@ -458,7 +488,8 @@ calc_lprior_theta <- function(theta, theta_prior_params, check_bounds = FALSE) {
 calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
                                          SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
-  # Evaluates the exact log-posterior density, up to the normalizing constant (model evidence). 
+  # Evaluates the exact log-posterior theta conditional density, up to the normalizing constant. Note that this is the theta density, conditional 
+  # on the likelihood paramters, so the prior on the observation variances (Sigma) are included in the normaling constant, which is dropped. 
   # This functions provides the option to calculate the log prior and log likelihood from scratch, at the given parameter values `theta_vals` 
   # and other necessary arguments for computing these quantities. Or if these quantities have already been calculated, they can be passed 
   # directly. 
@@ -477,9 +508,7 @@ calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL
   #    See `return_list` argument above. 
   
   # Prior
-  if(is.null(lprior_vals)) {
-    lprior_vals <- apply(theta_vals, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
-  }
+  if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals, theta_prior_params)
   
   # Likelihood
   if(is.null(llik_vals)) {
@@ -2067,7 +2096,7 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 
 get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
                                 raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
-                                bigger_is_better = TRUE, legend_label = "y") {
+                                bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE) {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2105,16 +2134,22 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   df <- as.data.frame(cbind(X[, param_names], y))
   colnames(df) <- c("theta1", "theta2", "y")
   
+  plt_transformation <- ifelse(log_scale, "log10", "identity")
+  if(log_scale) {
+    main_title <- paste0(main_title, ", log10 scale")
+    legend_label <- paste0("log10 ", legend_label)
+  }
+  
   # Heatmap. 
   if(raster) {
     plt <- ggplot() + 
             geom_tile(data = df, aes(x = theta1, y = theta2, fill = y)) + 
-            scale_fill_viridis(discrete=FALSE, direction = color_direction) + 
+            scale_fill_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + 
             labs(fill = legend_label)
   } else {
     plt <- ggplot() + 
             geom_point(data = df, aes(x = theta1, y = theta2, color = y)) + 
-            scale_color_viridis(discrete=FALSE, direction = color_direction) + 
+            scale_color_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + 
             labs(color = legend_label)
   }
   
@@ -2197,6 +2232,44 @@ get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde = NULL, samples_
 }
 
 
+get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param_names, samples_kde = NULL, init_design_points = NULL,  
+                              sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
+                              main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
+                              legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
+                              lpost_vals = NULL) {
+  # TODO: currently main title and legend label arguments do nothing. 
+  
+  
+  # Log Posterior response surface plot. 
+  plt <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals, 
+                                                computer_model_data = computer_model_data, 
+                                                param_names = param_names, 
+                                                output_variables = output_variables, 
+                                                raster = raster, 
+                                                point_coords = point_coords, 
+                                                samples_kde = samples_kde, 
+                                                samples_points = init_design_points, 
+                                                SSR_vals = SSR_vals, 
+                                                llik_vals = llik_vals,  
+                                                lprior_vals = lprior_vals, 
+                                                lpost_vals = lpost_vals, 
+                                                theta_prior_params = theta_prior_params)
+  
+  # Add sequentially chosen design points. 
+  if(!is.null(sequential_design_points)) {
+    sequential_design_points <- as.data.frame(sequential_design_points[, param_names, drop=FALSE])
+    colnames(sequential_design_points) <- c("theta1", "theta2")
+    sequential_design_points[, "ID"] <- as.character(seq(1, nrow(sequential_design_points)))
+    
+    plt <- plt + geom_text(data = sequential_design_points, mapping = aes(x = theta1, y = theta2, label = ID), color = "red")
+            
+  }  
+  
+  return(plt)
+  
+}
+
+
 get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_names, response_surface, 
                                          theta_prior_params = NULL, output_variables = NULL, 
                                          combine_outputs = TRUE, raster = FALSE, point_coords = NULL, 
@@ -2249,7 +2322,7 @@ get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_
                                              samples_kde = samples_kde, 
                                              samples_points = samples_points)
   } else if(response_surface == "prior") {
-    if(is.null(lprior_vals)) lprior_vals <- apply(theta_vals_unscaled, 1, function(theta) calc_lprior_theta(theta, theta_prior_params))
+    if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
     
     plts <- get_2d_response_surface_plot_prior(theta_vals = theta_vals, 
                                                param_names = param_names, 
@@ -2278,7 +2351,7 @@ get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_
   }  else if(response_surface == "posterior") {
     
     if(is.null(SSR_vals) && is.null(llik_vals) && is.null(lpost_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
-    if(is.null(lprior_vals)) lprior_vals <- apply(theta_vals_unscaled, 1, function(theta) calc_lprior_theta(theta, theta_prior_params)) 
+    if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
     
     plts <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals,
                                                    computer_model_data = computer_model_data, 
@@ -2333,10 +2406,7 @@ get_2d_response_surface_plot_prior <- function(theta_vals, param_names, raster =
   # consistent with the other response surface plotting functions. 
   
   # Log prior evaluations. 
-  if(is.null(lprior_vals)) {
-    lprior_vals <- apply(theta_vals, 1, function(theta) calc_lprior_theta(theta, theta_prior_params)) 
-  }
-  
+  if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals, theta_prior_params)
   lprior_vals <- matrix(lprior_vals, ncol=1)
   
   # Heatmap plot. 
