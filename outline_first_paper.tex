@@ -682,6 +682,64 @@ optimization while including it would encourage more exploration.
 \subsubsection{Ensemble Kalman Inversion}
 TODO
 
+% Range-Constrained GP
+\section{Range-Constrained GP}
+
+\subsection{Setup}
+Here I summarize the method proposed in Pensoneault et al (2020) to constrain the GP MLE in order to enforce non-negativity in the GP predictive 
+distribution. This has the benefit of maintaining the Gaussian predictive distribution, without having to resort to using truncated distributions. 
+They consider a zero-mean GP 
+\begin{align*}
+y(\cdot) \sim \mathcal{GP}(0, k(\cdot, \cdot)) 
+\end{align*}
+Let $(X, y)$ denote $N$ observed input-output pairs. Let $K$ denote the kernel matrix with entries $K_{ij} = k(x_i, x_j)$. 
+I assume (for reasons discussed below) the following kernel parameterization 
+\begin{align*}
+K = \nu\left(C + \tau^2 I_N \right)
+\end{align*}
+where $C$ has entries given by the squared exponential correlation function 
+\begin{align*}
+C_{ij} = \exp\left\{-\sum_{d = 1}^{D} \frac{((x_i)_d - (x_j)_d)^2}{\theta_d} \right\}
+\end{align*}
+Here, $\nu$ is the marginal variance, $\tau^2$ is the nugget, and $\theta_1, \dots, \theta_d$ are the lengthscale parameters. I will write 
+$\phi$ to indicate the collection of all of these hyperparameters. 
+Standard GP MLE proceeds by maximizing the marginal log-likelihood
+\begin{align*}
+\log p(y|X, \phi) &= -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\nu) - \frac{1}{2} \log \det(C) - \frac{1}{2\nu} y^\top C^{-1}y
+\end{align*}
+I denote the predictive distribution (the GP prior conditioned on observed data $(X, y)$) as 
+\begin{align*}
+y^*(\cdot) := y(\cdot)|X, y \sim \mathcal{GP}(\mu^*(\cdot), k^*(\cdot, \cdot)) 
+\end{align*}
+
+\subsection{Constrained Optimization}
+Pensoneault et al (2020) propose a probabalistic constraint in the MLE optimization. 
+\begin{align*}
+\max \log p(y|X, \phi) \text{ s.t. } \Prob(y^*(x) < 0) \leq \eta \ \forall x
+\end{align*}
+where $\eta$ is fixed at some small value. Since the distribution of $y^*(x)$ is Gaussian, then the constraint can be re-written as 
+\begin{align*}
+\Phi\left(-\frac{\mu^*(x)}{\sqrt{k^*(x)}} \right) \leq \eta
+\end{align*}
+where $\Phi(\cdot)$ is the standard normal distribution function. This can then be re-written as 
+\begin{align*}
+\mu^*(x) + \sqrt{k^*(x)} \Phi^{-1}(\eta) \geq 0
+\end{align*}
+Note that this is a functional constraint that must hold for all $x$. In practice, the authors propose enforcing the constraint on a fixed set of 
+control points $X_c = \{x^c_m\}_{m = 1}^{M}$. They also propose adding an additional constraint on the set of training points $X$. 
+\begin{align*}
+\abs{y_n - \mu^*(x_n)} \leq \epsilon \ \forall n = 1, \dots, N
+\end{align*}
+I don't completely understand why this is needed, but I guess it helps to stabilize the optimization algorithm in some sense. In any case, the final 
+constrained optimization problem looks like. 
+\begin{align*}
+\max &\log p(y|X, \phi) \\
+\text{s.t. } &0 \leq \mu^*(x^c_m) + \sqrt{k^*(x^c_m)} \Phi^{-1}(\eta) &&\forall m = 1, \dots M \\
+&0 \leq \epsilon - \abs{y_n - \mu^*(x_n)} &&\forall n = 1, \dots, N
+\end{align*}
+
+
+
 
 \bibliography{first_paper} 
 \bibliographystyle{ieeetr}
