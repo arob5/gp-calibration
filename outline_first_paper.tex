@@ -695,17 +695,21 @@ y(\cdot) \sim \mathcal{GP}(0, k(\cdot, \cdot))
 Let $(X, y)$ denote $N$ observed input-output pairs. Let $K$ denote the kernel matrix with entries $K_{ij} = k(x_i, x_j)$. 
 I assume (for reasons discussed below) the following kernel parameterization 
 \begin{align*}
-K = \nu C = \nu \left(C_0 + \tau^2 I_N \right)
+K = \tau^2 C = \tau^2 \left(C_0 + \eta^2 I_N \right)
 \end{align*}
 where $C_0$ has entries given by the squared exponential correlation function 
 \begin{align*}
-\left[C_0\right]_{ij} = \exp\left\{-\sum_{d = 1}^{D} \frac{((x_i)_d - (x_j)_d)^2}{\theta_d} \right\}
+\left[C_0\right]_{ij} = \exp\left\{-\sum_{d = 1}^{D} \frac{((x_i)_d - (x_j)_d)^2}{l^2_d} \right\}
 \end{align*}
-Here, $\nu$ is the marginal variance, $\tau^2$ is the nugget, and $\theta_1, \dots, \theta_d$ are the lengthscale parameters. I will write 
-$\phi$ to indicate the collection of all of these hyperparameters. 
+Since I will be leveraging some functions from the package \textit{hetGP} to implement the optimization I provide a translation between 
+this hyperparameterization and the one used in the package below. 
+\begin{align*}
+&g = \eta^2 &&\nu = \tau^2 &&&\theta_d = l_d^2
+\end{align*}
+I will write $\phi = \left[\ell_1^2, \dots, \ell_D^2, \eta^2, \tau^2 \right]^\top \in \R^{D+2}$ to indicate the vector containing all of these hyperparameters. 
 Standard GP MLE proceeds by maximizing the marginal log-likelihood
 \begin{align*}
-\log p(y|X, \phi) &= -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\nu) - \frac{1}{2} \log \det(C) - \frac{1}{2\nu} y^\top C^{-1}y
+\log p(y|X, \phi) &= -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\tau^2) - \frac{1}{2} \log \det(C) - \frac{1}{2\tau^2} y^\top C^{-1}y
 \end{align*}
 I denote the predictive distribution (the GP prior conditioned on observed data $(X, y)$) as 
 \begin{align*}
@@ -739,27 +743,41 @@ constrained optimization problem looks like.
 \end{align*}
 
 \subsection{Gradient Information}
-I now compute the gradient of the log-likelihood with respect to $\phi = (\theta, \tau^2, \nu)$. The following facts will be helpful. 
+I now compute the gradient of the log-likelihood with respect to $\phi$. The following facts will be helpful. 
 \begin{align*}
 &\frac{\partial C^{-1}}{\partial \cdot} = -C^{-1} \frac{\partial C}{\partial \cdot} C^{-1} && \frac{\partial \log\det C}{\partial \cdot} = \text{tr}\left(C^{-1} \frac{\partial C}{\partial \cdot} \right)
 \end{align*}
-Also note that $\theta_d$, $\tau^2$, $\nu$ are all constrained to be positive. The two main options for accounting for this constraint in the optimization are to 1.) parameterize the 
-objective function in terms of the log of these parameters or 2.) define bounds explicitly in the optimization (if allowed in the specific optimization algorithm). For now I consider the 
-latter in order to align with the \textit{hetGP} implementation. Denote $\ell(\phi) := \log p(y|X, \phi)$. For any hyperparameter $\phi_j \in \{\theta, \tau^2\}$ the general form of the gradient is 
+Also note that $l_d^2$, $\tau^2$, $\eta^2$ are all constrained to be positive. 
+The two main options for accounting for this constraint in the optimization are to 1.) parameterize the 
+objective function in terms of the log of these parameters or 2.) define bounds explicitly in the optimization (if allowed in the specific optimization algorithm). The \textit{hetGP} package 
+uses the latter. However, I will provide gradient expressions for both cases so that they are readily available. I write 
+$\tilde{\tau} := \log \tau$, $\tilde{l_d} := \log l_d$, and $\tilde{\eta} := \log \eta$ for the log parameterization.  
+I will provide derivations that treat $\tau$, $\tau^2$, or $\tilde{\tau}$ as the parameter and similarly for the other parameters. 
+
+Denote $\ell(\phi) := \log p(y|X, \phi)$. For any hyperparameter $\phi_j \in \{l^2_1, \dots, l^2_D, \eta^2 \}$ the general form of the gradient is 
 \begin{align*}
 \nabla_{\phi_j} \ell(\phi) &= -\frac{1}{2} \text{tr}\left(C^{-1} \frac{\partial C}{\partial \phi_j} \right) - \frac{1}{2\nu} y^\top \frac{\partial C^{-1}}{\partial \phi_j} y
 \end{align*}
 
 \subsubsection{Nugget Gradient}
-I will consider either defining $\tau$ or $\tau^2$ as the parameter. We have 
+We have 
 \begin{align*}
-&\frac{\partial C}{\partial \tau^2} = I_N, &&\frac{\partial C}{\partial \tau} = 2\tau I_N
+&\frac{\partial C}{\partial \eta^2} = I_N, &&\frac{\partial C}{\partial \eta} = 2\eta I_N, &&&\frac{\partial C}{\partial \tilde{\eta}} = 2e^{2\tilde{\eta}} I_N
+\end{align*}
+This yields, 
+\begin{align*}
+\nabla_{\eta^2} \ell(\phi) &= \frac{1}{2\tau^2} \norm{C^{-1}y}^2 - \frac{1}{2} \text{tr}(C^{-1}) \\
+\nabla_{\eta} \ell(\phi) &= \frac{\eta}{\tau^2} \norm{C^{-1}y}^2 - \eta \text{tr}(C^{-1}) \\
+\nabla_{\tilde{\eta}} \ell(\phi) &= \frac{e^{2\tilde{\eta}}}{\tau^2} \norm{C^{-1}y}^2 - e^{2\tilde{\eta}} \text{tr}(C^{-1})
 \end{align*}
 
+
 \subsubsection{Marginal Variance Gradient}
-This derivative is simpler as $\nu$ appears outside of $C$. We have 
+This derivative is simpler as $\tau^2$ appears outside of $C$. We have 
 \begin{align*}
-\nabla_{\nu} \ell(\phi) &= -\frac{N}{2\nu} + \frac{y^\top C^{-1} y}{2\nu^2}
+\nabla_{\tau^2} \ell(\phi) &= \frac{y^\top C^{-1} y}{2\tau^4} - \frac{N}{2\tau^2} \\
+\nabla_{\tau} \ell(\phi) &= \frac{y^\top C^{-1} y}{\tau^3} - \frac{N}{\tau} \\
+\nabla_{\tilde{\tau}} \ell(\phi) &= \frac{y^\top C^{-1} y}{e^{2\tilde{\tau}}} - N
 \end{align*}
 
 
