@@ -158,6 +158,9 @@ A more accurate high-level view of the current algorithm is thus given by
 \item $\Sigma \sim p(\Sigma|\btheta, \Phi^*(\btheta), Y)$
 \end{itemize}
 
+\subsubsection{Conditional Posteriors}
+
+
 % The Big Picture
 \section{The Big Picture}
 In this section, I will take as given the motivation for using mechanistic models to study the terrestrial carbon cycle and the benefits of applying Bayesian statistical methods when using such models. 
@@ -533,6 +536,104 @@ the GP approximation $\Phi^*$, which induces an approximation to the posterior a
 w\left(\tilde{\btheta}_j\right) := \frac{\E_{\Phi^*} \left[\pi^*(\tilde{\btheta}_j)\right]}{\sum_{m = 1}^{M} \E_{\Phi^*} \left[\pi^*(\tilde{\btheta}_m)\right]}
 \end{align*}
 
+\subsection{Bayesian Optimization to find MAP Estimate}
+Numerical examples with VSEM have shown that it is common for the posterior to be highly concentrated relative to the prior. Loosely speaking, the region of 
+non-negligible posterior mass sometimes looks like a tiny point in the input space. Space-filling or sequential design schemes may completely miss this region 
+of interest. Therefore, one approach is to first optimize, finding the MAP estimate to locate the general region of interest, and then proceed with a sequential 
+design scheme from there. Ideally, we seek 
+\begin{align*}
+\btheta_{\text{MAP}}, \Sigma_{\text{MAP}} = \text{argmax}_{\btheta, \Sigma} \pi(\btheta, \Sigma)
+\end{align*}
+Note that we are currently considering optimizing with respect to both the calibration parameters $\btheta$ and likelihood parameters $\Sigma$. 
+Function evaluations $\pi(\btheta, \Sigma)$ are expensive due to the fact that evaluating at a new value of $\btheta$ requires running the forward 
+model. However, for a fixed value of $\btheta$, evaluations at different values of $\Sigma$ is significantly cheaper. We therefore might consider 
+a coordinate ascent type algorithm, where $\btheta$ updates are given by a Bayesian optimization (BO) step, and $\Sigma$ updates by a traditional 
+optimization. We begin by considering the former, where $\Sigma$ is assumed fixed. Throughout these optimization notes, I will use the notation 
+\[\pi_n^{\min} := \min\left\{\pi(\btheta_1, \Sigma_1), \dots, \pi(\btheta_n, \Sigma_n) \right\}\]
+where $\left\{(\btheta_i, \Sigma_i) \right\}_{i = 1}^{n}$ are the inputs associated with the currently observed outputs. 
+
+\subsubsection{BO $\btheta$ update}
+The BO $\btheta$ update is accomplished via the minimization of an acquisition function $\alpha(\btheta)$. 
+\[\btheta_{n+1} := \text{argmin}_{\btheta \in \Theta} \alpha(\btheta) \]
+I first consider the expected improvement (EI) acquisition function, which in 
+this context looks like: 
+\begin{align*}
+\alpha_{\text{EI}}(\btheta) &= -\mathbbm{E}\left[\max\left\{0, \pi_n^{\min} - \pi_n^*(\btheta) \right\} \right]
+\end{align*}
+where the negative is included to align with the convention that acquisition functions are minimized. 
+This expectation is available in closed-form when the distribution of $\pi_n^*(\btheta)$ is Gaussian. However, in this case the distribution is not Gaussian so 
+we must resort to approximation. Consider a Monte Carlo approximation 
+\begin{align*}
+\alpha_{\text{EI}}(\btheta) &\approx \frac{1}{T} \sum_{t = 1}^{T} \max\left\{0, \pi_n^{\min} - \pi^{(t)}_n(\btheta) \right\}, \text{ where } \pi^{(t)}_n(\btheta) \overset{iid}{\sim} \pi_n^*(\btheta)
+\end{align*}
+
+\subsection{Minimizing $L^2$ error between log-likelihoods weighted by approximate posterior}
+Building on the Sinsbeck and Nowak approach, here are a few things to consider modifying. 
+\begin{enumerate}
+\item Instead of weighting by the prior ($\rho(\btheta) = \pi_0(\btheta)$) instead weight by the approximate posterior $\pi^*(\btheta)$. 
+\item Instead of minimizing error between likelihoods, minimize error between log-likelihoods. Or between log-posteriors. 
+\end{enumerate}
+
+Proceeding as in Sinsbeck and Nowak with these added modifications, I first define a loss function. 
+\begin{align*}
+\ell(f, g) := \E_{\btheta \sim \pi} \left[\left(f(\btheta) - g(\btheta) \right)^2 \right]
+\end{align*}
+This is a posterior-weighted $L^2$ error between the functions $f$ and $g$. In our case, $f$ and $g$ will be log-likelihoods. Since we are working with 
+$\mathcal{L}_n^*$, a random field approximation of the log-likelihood, we consider additionally integrating over the uncertainty in $\mathcal{L}_n^*$. This 
+yields the Bayes' risk 
+\begin{align*}
+\mathcal{R}_n(\tilde{\mathcal{L}}_n) := \E_{\btheta \sim \pi} \E_{\mathcal{L}_n^*}\left[\left(\mathcal{L}_n^*(\btheta) - \tilde{\mathcal{L}}_n(\btheta) \right)^2 \right]
+\end{align*}
+where $\tilde{\mathcal{L}}_n(\btheta)$ is some deterministic approximation to the likelihood, derived only using $\mathcal{D}_n$. The best deterministic approximation 
+according to the Bayes' risk is given by 
+\begin{align*}
+\hat{\mathcal{L}}_n &= \text{argmin}_{\tilde{\mathcal{L}}_n} \E_{\btheta \sim \pi} \E_{\mathcal{L}_n^*}\left[\left(\mathcal{L}_n^*(\btheta) - \tilde{\mathcal{L}}_n(\btheta) \right)^2 \right]
+\end{align*}
+The inner expectation is minimized pointwise by $\tilde{\mathcal{L}}_n(\btheta) = \E_{\mathcal{L}_n^*}\left[\mathcal{L}_n^*(\btheta) \right]$. Plugging in this minimizer, the Bayes' 
+risk becomes, 
+\begin{align*}
+\mathcal{R}_n(\hat{\mathcal{L}}_n) &=  \E_{\btheta \sim \pi} \E_{\mathcal{L}_n^*}\left[\left(\mathcal{L}_n^*(\btheta) - \E_{\mathcal{L}_n^*}\left[\mathcal{L}^*_n(\btheta)\right] \right)^2 \right] \\
+						      &= \E_{\btheta \sim \pi} \Var_{\mathcal{L}_n^*}\left[\mathcal{L}_n^*(\btheta) \right]
+\end{align*}
+which is the posterior-weighted predictive variance of $\mathcal{L}_n^*$. The design criterion is then defined as a one-step lookahead version of the Bayes' risk; i.e. we seek to 
+choose $\btheta_{n+1}$ such that conditioning $\mathcal{L}_n^*$ on the new observation $\left(\btheta_{n+1}, \mathcal{L}_{n+1} \right)$ 
+(where $\mathcal{L}_{n+1} := \mathcal{L}(\btheta_{n+1})$) would yield the largest reduction in Bayes' risk. This is essentially applying the Active Learning Cohn (ALC) 
+sequential design criterion to $\mathcal{L}_n^*$. There are two potential difficulties here: 
+\begin{enumerate}
+\item If $\mathcal{L}_n^*$ is not Gaussian, then the predictive variance $\Var_{\mathcal{L}_n^*}\left[\mathcal{L}_n^*(\btheta) \right]$ in general depends on the 
+response values $\mathcal{L}_1, \dots, \mathcal{L}_n$. Thus, computation of the predictive variance at $\btheta$ given hypothetical observation of 
+$\left(\btheta_{n+1}, \mathcal{L}_{n+1} \right)$ requires averaging over $\mathcal{L}_{n+1}$. This is in contrast to a GP, which has a predictive variance independent of 
+the response data. 
+\item The outer expectation requires integrating over the true posterior $\pi$, which is unknown. We instead consider replacing $\pi$ with an approximation constructed 
+using $\mathcal{L}_n^*$. Sinsbeck and Nowak instead consider integrating with respect to the known 
+prior $\pi_0$. In either case, generally there is no closed-form solution to this outer integral. 
+\end{enumerate}
+In general, the acquisition function is given by 
+\begin{align}
+J(\btheta_{n+1}) := \E_{\btheta \sim \rho} \E_{\mathcal{L}_{n+1}} \Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_{n+1} \right] \label{acquisition}
+\end{align}
+where $\mathcal{D}_{n+1} = \mathcal{D}_{n} \cup \left(\btheta_{n+1}, \mathcal{L}_{n+1} \right)$. I leave $\rho$ generic for now, but we can think of this as either 
+$\pi_0$, $\pi$ (in the idealized case), or some approximation to $\pi$. 
+
+\subsubsection{Case 1: Gaussian predictive distribution}
+Here I suppose that the $\Phi_p^*$ have Gaussian distributions. This simplifies matters by yielding a closed-form solution for the predictive variance in \ref{acquisition}. Moreover, 
+this predictive variance is independent of $\mathcal{L}_{n+1}$, thus eliminating the expectation $\E_{\mathcal{L}_{n+1}}$. We first recall that the log-likelihood has the form 
+\begin{align*}
+\mathcal{L}(\btheta) &= C_\Sigma - \frac{1}{2} \sum_{p = 1}^{P} \frac{\Phi_p(\btheta)}{\sigma_p^2}
+\end{align*} 
+Under the assumption of Gaussian predictive distributions, we then have 
+\begin{align*}
+\mathcal{L}^*(\btheta) &\sim \mathcal{N}\left(C_\Sigma - \frac{1}{2} \sum_{p = 1}^{P} \frac{\mu^*_p(\btheta)}{\sigma_p^2}, \frac{1}{4} \sum_{p = 1}^{P} \frac{k^*_p(\btheta)}{\sigma_p^4}  \right)
+\end{align*}
+I denote the above variance by $\Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_n \right]$ to make explicit the dependence on the data $\mathcal{D}_n$. In this setting, 
+$\Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_n \right]$ does not depend on $\mathcal{L}_1, \dots, \mathcal{L}_n$. In particular, $\Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_{n+1} \right]$
+does not depend on $\mathcal{L}_{n+1}$, which eliminates the expectation $\E_{\mathcal{L}_{n+1}}$ in \ref{acquisition}. 
+Thus, the acquisition function simplifies to 
+\begin{align}
+J(\btheta_{n+1}) := \E_{\btheta \sim \rho} \Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_{n+1} \right] \label{acquisition_Gaussian_case}
+\end{align}
+where the inner variance can be computed explicitly. 
+
 
 \subsection{Targeting the Metropolis Acceptance Ratio}
 Let $\btheta_1, \dots, \btheta_n$ denote the current design. One idea is to select the next point $\btheta_{n + 1}$ in a way that reflects the transition probability in the MCMC sampler. 
@@ -580,6 +681,105 @@ optimization while including it would encourage more exploration.
 
 \subsubsection{Ensemble Kalman Inversion}
 TODO
+
+% Range-Constrained GP
+\section{Range-Constrained GP}
+
+\subsection{Setup}
+Here I summarize the method proposed in Pensoneault et al (2020) to constrain the GP MLE in order to enforce non-negativity in the GP predictive 
+distribution. This has the benefit of maintaining the Gaussian predictive distribution, without having to resort to using truncated distributions. 
+They consider a zero-mean GP 
+\begin{align*}
+y(\cdot) \sim \mathcal{GP}(0, k(\cdot, \cdot)) 
+\end{align*}
+Let $(X, y)$ denote $N$ observed input-output pairs. Let $K$ denote the kernel matrix with entries $K_{ij} = k(x_i, x_j)$. 
+I assume (for reasons discussed below) the following kernel parameterization 
+\begin{align*}
+K = \tau^2 C = \tau^2 \left(C_0 + \eta^2 I_N \right)
+\end{align*}
+where $C_0$ has entries given by the squared exponential correlation function 
+\begin{align*}
+\left[C_0\right]_{ij} = \exp\left\{-\sum_{d = 1}^{D} \frac{((x_i)_d - (x_j)_d)^2}{l^2_d} \right\}
+\end{align*}
+Since I will be leveraging some functions from the package \textit{hetGP} to implement the optimization I provide a translation between 
+this hyperparameterization and the one used in the package below. 
+\begin{align*}
+&g = \eta^2 &&\nu = \tau^2 &&&\theta_d = l_d^2
+\end{align*}
+I will write $\phi = \left[\ell_1^2, \dots, \ell_D^2, \eta^2, \tau^2 \right]^\top \in \R^{D+2}$ to indicate the vector containing all of these hyperparameters. 
+Standard GP MLE proceeds by maximizing the marginal log-likelihood
+\begin{align*}
+\log p(y|X, \phi) &= -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\tau^2) - \frac{1}{2} \log \det(C) - \frac{1}{2\tau^2} y^\top C^{-1}y
+\end{align*}
+I denote the predictive distribution (the GP prior conditioned on observed data $(X, y)$) as 
+\begin{align*}
+y^*(\cdot) := y(\cdot)|X, y \sim \mathcal{GP}(\mu^*(\cdot), k^*(\cdot, \cdot)) 
+\end{align*}
+
+\subsection{Constrained Optimization}
+Pensoneault et al (2020) propose a probabalistic constraint in the MLE optimization. 
+\begin{align*}
+\max \log p(y|X, \phi) \text{ s.t. } \Prob(y^*(x) < 0) \leq \eta \ \forall x
+\end{align*}
+where $\eta$ is fixed at some small value. Since the distribution of $y^*(x)$ is Gaussian, then the constraint can be re-written as 
+\begin{align*}
+\Phi\left(-\frac{\mu^*(x)}{\sqrt{k^*(x)}} \right) \leq \eta
+\end{align*}
+where $\Phi(\cdot)$ is the standard normal distribution function. This can then be re-written as 
+\begin{align*}
+\mu^*(x) + \sqrt{k^*(x)} \Phi^{-1}(\eta) \geq 0
+\end{align*}
+Note that this is a functional constraint that must hold for all $x$. In practice, the authors propose enforcing the constraint on a fixed set of 
+control points $X_c = \{x^c_m\}_{m = 1}^{M}$. They also propose adding an additional constraint on the set of training points $X$. 
+\begin{align*}
+\abs{y_n - \mu^*(x_n)} \leq \epsilon \ \forall n = 1, \dots, N
+\end{align*}
+I don't completely understand why this is needed, but I guess it helps to stabilize the optimization algorithm in some sense. In any case, the final 
+constrained optimization problem looks like. 
+\begin{align*}
+\max &\log p(y|X, \phi) \\
+\text{s.t. } &0 \leq \mu^*(x^c_m) + \sqrt{k^*(x^c_m)} \Phi^{-1}(\eta) &&\forall m = 1, \dots M \\
+&0 \leq \epsilon - \abs{y_n - \mu^*(x_n)} &&\forall n = 1, \dots, N
+\end{align*}
+
+\subsection{Gradient Information}
+I now compute the gradient of the log-likelihood with respect to $\phi$. The following facts will be helpful. 
+\begin{align*}
+&\frac{\partial C^{-1}}{\partial \cdot} = -C^{-1} \frac{\partial C}{\partial \cdot} C^{-1} && \frac{\partial \log\det C}{\partial \cdot} = \text{tr}\left(C^{-1} \frac{\partial C}{\partial \cdot} \right)
+\end{align*}
+Also note that $l_d^2$, $\tau^2$, $\eta^2$ are all constrained to be positive. 
+The two main options for accounting for this constraint in the optimization are to 1.) parameterize the 
+objective function in terms of the log of these parameters or 2.) define bounds explicitly in the optimization (if allowed in the specific optimization algorithm). The \textit{hetGP} package 
+uses the latter. However, I will provide gradient expressions for both cases so that they are readily available. I write 
+$\tilde{\tau} := \log \tau$, $\tilde{l_d} := \log l_d$, and $\tilde{\eta} := \log \eta$ for the log parameterization.  
+I will provide derivations that treat $\tau$, $\tau^2$, or $\tilde{\tau}$ as the parameter and similarly for the other parameters. 
+
+Denote $\ell(\phi) := \log p(y|X, \phi)$. For any hyperparameter $\phi_j \in \{l^2_1, \dots, l^2_D, \eta^2 \}$ the general form of the gradient is 
+\begin{align*}
+\nabla_{\phi_j} \ell(\phi) &= -\frac{1}{2} \text{tr}\left(C^{-1} \frac{\partial C}{\partial \phi_j} \right) - \frac{1}{2\nu} y^\top \frac{\partial C^{-1}}{\partial \phi_j} y
+\end{align*}
+
+\subsubsection{Nugget Gradient}
+We have 
+\begin{align*}
+&\frac{\partial C}{\partial \eta^2} = I_N, &&\frac{\partial C}{\partial \eta} = 2\eta I_N, &&&\frac{\partial C}{\partial \tilde{\eta}} = 2e^{2\tilde{\eta}} I_N
+\end{align*}
+This yields, 
+\begin{align*}
+\nabla_{\eta^2} \ell(\phi) &= \frac{1}{2\tau^2} \norm{C^{-1}y}^2 - \frac{1}{2} \text{tr}(C^{-1}) \\
+\nabla_{\eta} \ell(\phi) &= \frac{\eta}{\tau^2} \norm{C^{-1}y}^2 - \eta \text{tr}(C^{-1}) \\
+\nabla_{\tilde{\eta}} \ell(\phi) &= \frac{e^{2\tilde{\eta}}}{\tau^2} \norm{C^{-1}y}^2 - e^{2\tilde{\eta}} \text{tr}(C^{-1})
+\end{align*}
+
+
+\subsubsection{Marginal Variance Gradient}
+This derivative is simpler as $\tau^2$ appears outside of $C$. We have 
+\begin{align*}
+\nabla_{\tau^2} \ell(\phi) &= \frac{y^\top C^{-1} y}{2\tau^4} - \frac{N}{2\tau^2} \\
+\nabla_{\tau} \ell(\phi) &= \frac{y^\top C^{-1} y}{\tau^3} - \frac{N}{\tau} \\
+\nabla_{\tilde{\tau}} \ell(\phi) &= \frac{y^\top C^{-1} y}{e^{2\tilde{\tau}}} - N
+\end{align*}
+
 
 
 \bibliography{first_paper} 
