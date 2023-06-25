@@ -709,8 +709,15 @@ this hyperparameterization and the one used in the package below.
 I will write $\phi = \left[\ell_1^2, \dots, \ell_D^2, \eta^2, \tau^2 \right]^\top \in \R^{D+2}$ to indicate the vector containing all of these hyperparameters. 
 Standard GP MLE proceeds by maximizing the marginal log-likelihood
 \begin{align*}
-\log p(y|X, \phi) &= -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\tau^2) - \frac{1}{2} \log \det(C) - \frac{1}{2\tau^2} y^\top C^{-1}y
+\ell(\phi) &:= \log p(y|X, \phi) = -\frac{N}{2}  \log(2\pi) - \frac{N}{2}\log(\tau^2) - \frac{1}{2} \log \det(C) - \frac{1}{2\tau^2} y^\top C^{-1}y
 \end{align*}
+To explore different parameterization options in the optimization, I will consider different parameterizations $\left[l_1^2, \dots, l_D^2, \eta^2, \tau^2 \right]^\top$, 
+$\left[l_1, \dots, l_D, \eta, \tau \right]^\top$, and $\left[\tilde{l}_1, \dots, \tilde{l}_D, \tilde{\eta}, \tilde{\tau} \right]^\top$, where 
+$\tilde{\tau} := \log \tau$, $\tilde{l_d} := \log l_d$, and $\tilde{\eta} := \log \eta$. The last parameterization gives rise to the following log marginal likelihood. 
+\begin{align*}
+\ell(\phi) &= -\frac{N}{2}  \log(2\pi) - N \tilde{\tau} - \frac{1}{2} \log \det(C) - \frac{1}{2e^{2\tilde{\tau}}} y^\top C^{-1}y
+\end{align*}
+
 I denote the predictive distribution (the GP prior conditioned on observed data $(X, y)$) as 
 \begin{align*}
 y^*(\cdot) := y(\cdot)|X, y \sim \mathcal{GP}(\mu^*(\cdot), k^*(\cdot, \cdot)) 
@@ -750,14 +757,30 @@ I now compute the gradient of the log-likelihood with respect to $\phi$. The fol
 Also note that $l_d^2$, $\tau^2$, $\eta^2$ are all constrained to be positive. 
 The two main options for accounting for this constraint in the optimization are to 1.) parameterize the 
 objective function in terms of the log of these parameters or 2.) define bounds explicitly in the optimization (if allowed in the specific optimization algorithm). The \textit{hetGP} package 
-uses the latter. However, I will provide gradient expressions for both cases so that they are readily available. I write 
-$\tilde{\tau} := \log \tau$, $\tilde{l_d} := \log l_d$, and $\tilde{\eta} := \log \eta$ for the log parameterization.  
+uses the latter. However, I will provide gradient expressions for both cases so that they are readily available.  
 I will provide derivations that treat $\tau$, $\tau^2$, or $\tilde{\tau}$ as the parameter and similarly for the other parameters. 
 
-Denote $\ell(\phi) := \log p(y|X, \phi)$. For any hyperparameter $\phi_j \in \{l^2_1, \dots, l^2_D, \eta^2 \}$ the general form of the gradient is 
+For any hyperparameter $\phi_j \in \{l^2_1, \dots, l^2_D, \eta^2 \}$ the general form of the gradient is 
 \begin{align*}
-\nabla_{\phi_j} \ell(\phi) &= -\frac{1}{2} \text{tr}\left(C^{-1} \frac{\partial C}{\partial \phi_j} \right) - \frac{1}{2\nu} y^\top \frac{\partial C^{-1}}{\partial \phi_j} y
+\nabla_{\phi_j} \ell(\phi) &= -\frac{1}{2} \text{tr}\left(C^{-1} \frac{\partial C}{\partial \phi_j} \right) - \frac{1}{2\tau^2} y^\top C^{-1} \frac{\partial C}{\partial \phi_j} C^{-1} y
 \end{align*}
+
+\subsubsection{Lengthscale Gradient}
+First we consider the derivatives of the squared exponential correlation function with respect to the lengthscales. 
+\begin{align*}
+\frac{\partial c(x, x^\prime)}{\partial l_d^2} &= \exp\left(-\sum_{d = 1}^{D} \frac{(x_d - x_d^\prime)^2}{l_d^2} \right) \frac{(x_d - x_d^\prime)^2}{l_d^4} \\
+\frac{\partial c(x, x^\prime)}{\partial l_d} &= \exp\left(-\sum_{d = 1}^{D} \frac{(x_d - x_d^\prime)^2}{l_d^2} \right) \frac{2(x_d - x_d^\prime)^2}{l_d^3} \\
+\frac{\partial c(x, x^\prime)}{\partial \tilde{l}_d} &= \exp\left(-\sum_{d = 1}^{D} \frac{(x_d - x_d^\prime)^2}{e^{2\tilde{l}_d}} \right) \frac{2(x_d - x_d^\prime)^2}{e^{2\tilde{l}_d}}
+\end{align*}
+Now, recalling that $C = C_0 + \eta^2 I_N$, we obtain $\frac{\partial C}{\partial l_d^2} = \frac{\partial C_0}{\partial l_d^2}$, with entries 
+\begin{align*}
+\left(\frac{\partial C}{\partial l_d^2} \right)_{ij} &= \left[C_0\right]_{ij} \frac{([x_i]_d - [x_j]_d)^2}{l_d^4} \\
+\left(\frac{\partial C}{\partial l_d} \right)_{ij} &= \left[C_0\right]_{ij} \frac{2([x_i]_d - [x_j]_d)^2}{l_d^3} \\
+\left(\frac{\partial C}{\partial \tilde{l}_d} \right)_{ij} &= \left[C_0\right]_{ij} \frac{2([x_i]_d - [x_j]_d)^2}{e^{2\tilde{l}_d}} \\
+\end{align*}
+We can then plug $\frac{\delta C}{\delta l_d^2}$ in for the generic gradient expression given above. Conveniently, the \textit{hetGP} function 
+\textit{partial\_d\_C\_Gaussian\_dtheta\_k} returns the matrix $\frac{\partial C}{\partial l_d^2}$. Note that despite the name of the function it only returns 
+this piece of the derivative; to complete the derivative calculation $\frac{\partial C}{\partial l_d^2}$ must be multiplied elementwise with $C_0$. 
 
 \subsubsection{Nugget Gradient}
 We have 
@@ -771,7 +794,6 @@ This yields,
 \nabla_{\tilde{\eta}} \ell(\phi) &= \frac{e^{2\tilde{\eta}}}{\tau^2} \norm{C^{-1}y}^2 - e^{2\tilde{\eta}} \text{tr}(C^{-1})
 \end{align*}
 
-
 \subsubsection{Marginal Variance Gradient}
 This derivative is simpler as $\tau^2$ appears outside of $C$. We have 
 \begin{align*}
@@ -779,6 +801,40 @@ This derivative is simpler as $\tau^2$ appears outside of $C$. We have
 \nabla_{\tau} \ell(\phi) &= \frac{y^\top C^{-1} y}{\tau^3} - \frac{N}{\tau} \\
 \nabla_{\tilde{\tau}} \ell(\phi) &= \frac{y^\top C^{-1} y}{e^{2\tilde{\tau}}} - N
 \end{align*}
+
+\section{Meeting: 6/26/23}
+
+\subsection{Summary}
+\begin{enumerate}
+\item Implemented general sequential design/Bayes opt code, as well as Monte Carlo approximations of expected improvement (PI) and probability of 
+improvement (PI) acquisition functions. 
+\item In highly correlated posterior example from last time, starting with an LHS of 20 points, and assuming known $\Sigma$, Bayes opt was able to find MAP in a couple iterations. 
+	\begin{enumerate}
+	\item Need to do lots more testing under different problem specifications. 
+	\item Need to extend to unknown $\Sigma$ case. 
+	\end{enumerate}
+\item Spent a while looking into non-negativity enforced GP regression. 
+	\begin{enumerate}
+	\item Motivation: wanted to have a GP emulator with a Gaussian (not truncated Gaussian, etc.) predictive distribution.   
+	\item After thinking about it more, the non-negativity method is perhaps not entirely satisfying. The squared exponential kernel may not provide enough flexibility to 
+	yield good results from the constrained optimization; a more holistic solution is probably to consider a non-stationary model instead (e.g. deep GP). 
+	\item Thus, it is probably best to focus on developing sequential design criteria that are amenable to approximation in the case of non-Gaussian predictive distributions. 
+	\item In the future, could be interesting to consider developing a DGP model for non-negative outputs. 
+	\end{enumerate}
+\item General design framework.
+	\begin{enumerate}
+	\item Goal: incorporate what has been learned about the posterior so far into selecting next design point. In practice this probably means sampling from the approximate 
+	posterior and designing a criterion that averages over the approximate posterior using the samples. 
+	\item Issue: obviously we could simply run the GP-approx MCMC to get samples from the approximate posterior, but doing this every time a new design point is to be selected is 
+	not ideal. 
+	\item An alternative is to use some sort of importance sampling type thing; e.g. obtain a LHS from the prior then weight the samples according to the approximate posterior in some 
+	way. The issue here is that the LHS could completely miss the region of interest. 
+	\end{enumerate}
+
+\end{enumerate}
+
+
+
 
 
 
