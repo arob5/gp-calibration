@@ -549,22 +549,21 @@ Function evaluations $\pi(\btheta, \Sigma)$ are expensive due to the fact that e
 model. However, for a fixed value of $\btheta$, evaluations at different values of $\Sigma$ is significantly cheaper. We therefore might consider 
 a coordinate ascent type algorithm, where $\btheta$ updates are given by a Bayesian optimization (BO) step, and $\Sigma$ updates by a traditional 
 optimization. We begin by considering the former, where $\Sigma$ is assumed fixed. Throughout these optimization notes, I will use the notation 
-\[\pi_n^{\min} := \min\left\{\pi(\btheta_1, \Sigma_1), \dots, \pi(\btheta_n, \Sigma_n) \right\}\]
+\[\pi_n^{\max} := \max\left\{\pi(\btheta_1, \Sigma_1), \dots, \pi(\btheta_n, \Sigma_n) \right\}\]
 where $\left\{(\btheta_i, \Sigma_i) \right\}_{i = 1}^{n}$ are the inputs associated with the currently observed outputs. 
 
 \subsubsection{BO $\btheta$ update}
 The BO $\btheta$ update is accomplished via the minimization of an acquisition function $\alpha(\btheta)$. 
-\[\btheta_{n+1} := \text{argmin}_{\btheta \in \Theta} \alpha(\btheta) \]
+\[\btheta_{n+1} := \text{argmax}_{\btheta \in \Theta} \alpha(\btheta) \]
 I first consider the expected improvement (EI) acquisition function, which in 
 this context looks like: 
 \begin{align*}
-\alpha_{\text{EI}}(\btheta) &= -\mathbbm{E}\left[\max\left\{0, \pi_n^{\min} - \pi_n^*(\btheta) \right\} \right]
+\alpha_{\text{EI}}(\btheta) &= \mathbbm{E}\left[\max\left\{0, \pi_n^*(\btheta) - \pi_n^{\max} \right\} \right]
 \end{align*}
-where the negative is included to align with the convention that acquisition functions are minimized. 
 This expectation is available in closed-form when the distribution of $\pi_n^*(\btheta)$ is Gaussian. However, in this case the distribution is not Gaussian so 
 we must resort to approximation. Consider a Monte Carlo approximation 
 \begin{align*}
-\alpha_{\text{EI}}(\btheta) &\approx \frac{1}{T} \sum_{t = 1}^{T} \max\left\{0, \pi_n^{\min} - \pi^{(t)}_n(\btheta) \right\}, \text{ where } \pi^{(t)}_n(\btheta) \overset{iid}{\sim} \pi_n^*(\btheta)
+\alpha_{\text{EI}}(\btheta) &\approx \frac{1}{T} \sum_{t = 1}^{T} \max\left\{0, \pi^{(t)}_n(\btheta) - \pi_n^{\max}\right\}, \text{ where } \pi^{(t)}_n(\btheta) \overset{iid}{\sim} \pi_n^*(\btheta)
 \end{align*}
 
 \subsection{Minimizing $L^2$ error between log-likelihoods weighted by approximate posterior}
@@ -806,6 +805,7 @@ This derivative is simpler as $\tau^2$ appears outside of $C$. We have
 
 \subsection{Summary}
 \begin{enumerate}
+\item URBAN update: replied to admins, seeing if there was more possibility for flexibility on the EH course. 
 \item Implemented general sequential design/Bayes opt code, as well as Monte Carlo approximations of expected improvement (PI) and probability of 
 improvement (PI) acquisition functions. 
 \item In highly correlated posterior example from last time, starting with an LHS of 20 points, and assuming known $\Sigma$, Bayes opt was able to find MAP in a couple iterations. 
@@ -830,12 +830,28 @@ improvement (PI) acquisition functions.
 	\item An alternative is to use some sort of importance sampling type thing; e.g. obtain a LHS from the prior then weight the samples according to the approximate posterior in some 
 	way. The issue here is that the LHS could completely miss the region of interest. 
 	\end{enumerate}
-
 \end{enumerate}
 
+\subsection{Bayes Opt and Experimental Design}
+\begin{enumerate}
+\item How to handle $\Sigma$ in optimization and design procedures? 
+\item Optimization of the acquisition function/design criterion? Library-based optimization or discrete optimization over a set of candidate points? 
+\item Obtaining samples from the approximate posterior in order to produce a posterior-weighted criterion. 
+\item Approximating 
+\[J(\btheta_{n+1}) := \E_{\btheta \sim \rho} \E_{\mathcal{L}_{n+1}} \Var\left[\mathcal{L}^*(\btheta) | \mathcal{D}_{n+1} \right] \]
+Need to think about analytical simplifications given truncated Gaussian predictive distribution. 
+\item Derive different acquisition criteria by considering metrics other than $L^2$ distance between log likelihoods. We could try to consider metrics that directly 
+target the posterior error. 
+\end{enumerate}
 
-
-
+\subsection{Non-negativity and non-stationarity}
+\begin{enumerate}
+\item Current tests have been using a truncated Gaussian predictive distribution. However, the GP prior does not encode the non-negativity constraint and hence 
+is placing prior mass on regions we know should have none. 
+\item A challenge with experimental design here is that there are often two different regimes in the SSR response surface: a large portion of the input space where the 
+gradient is rather small, and then a small portion of the input space where the SSR changes much more rapidly. Intuitively, more design points are needed 
+where the function changes more rapidly, but a stationary GP is prevented from recognizing these two regimes. This is relevant even without regard to the inverse problem/posterior.  
+\end{enumerate}
 
 
 \bibliography{first_paper} 
