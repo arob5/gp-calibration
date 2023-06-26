@@ -1,0 +1,125 @@
+---
+title: "Non-Negative Enforced GP Tests"
+author: "Andrew Roberts"
+date: '2023-06-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+source("numerical_experiment_functions.r")
+source("mcmc_calibration_functions.r")
+source("non_neg_constrained_GP.R")
+source("gp_emulator_functions.r")
+```
+
+
+# Test Data 
+$$
+\begin{align*}
+f(x) &= \exp\left(-20x \right), &&0 \leq x \leq 1
+\end{align*}
+$$
+```{r}
+f <- function(x) exp(-20*x)
+N <- 8
+X <- matrix(randomLHS(N, 1), ncol = 1)
+
+# Train data. 
+f_X <- f(X)
+noise_sd <- 0.1 * range(f_X)
+y <- f_X + noise_sd*rnorm(N)
+
+# Test data. 
+X_grid <- matrix(seq(0, 1, length.out = 101), ncol = 1)
+f_X_grid <- f(X_grid)
+```
+
+
+```{r}
+plot(X_grid, f_X_grid, col = "red", type = "l", main = "Test Example", xlab = "x", ylab = "y")
+points(X, y_X)
+```
+
+## homGP Fit
+```{r}
+gp_homGP <- mleHomGP(X, y_X, covtype = "Gaussian")
+
+print("homGP MLE hyperparameters:")
+print(paste0("theta: ", gp_homGP$theta))
+print(paste0("g: ", gp_homGP$g))
+print(paste0("nu: ", gp_homGP$nu_hat))
+```
+
+```{r}
+# Initial values (log parameterization): 
+mle_init <- list(l2 = 0.5 * log(gp_homGP$theta), 
+                 eta2 = 0.5 * log(gp_homGP$g), 
+                 tau2 = 0.5 * log(gp_homGP$nu_hat))
+
+parameterization <- list(l2 = "log", eta2 = "log", tau2 = "log")
+
+```
+
+```{r}
+# Testing that marginal likelihood and its gradient functions work. 
+llik_test <- marg_llik_GP(X = X, y = y, l2 = mle_init$l2, eta2 = mle_init$eta2, tau2 = mle_init$eta2, 
+                          beta0 = 0, covtype = "Gaussian", 
+                          parameterization = parameterization)
+
+grad_llik_test <- grad_marg_llik_GP(X = X, y = y, l2 = mle_init$l2, eta2 = mle_init$eta2, tau2 = mle_init$eta2, 
+                                    beta0 = 0, covtype = "Gaussian", parameterization = parameterization)
+                              
+
+```
+
+
+
+```{r}
+mleHomGP_test(X = X, y = y, lower_l2 = NULL, upper_l2 = NULL, known = NULL,
+              noiseControl = list(eta2_bounds = c(sqrt(.Machine$double.eps), 1e2)),
+              init = mle_init, maxit = 100, eps = sqrt(.Machine$double.eps),
+              settings = list(return_C_inv = TRUE, factr = 1e7), 
+              param = c(l = "log", eta = "log", tau = "log"))
+```
+
+
+# TODO: algorithms to try: 
+# 1.) fmincon in R package pracma
+# 2.) R package nloptr
+#
+# Alg:
+#    1. Run mleGPHom as usual. 
+#    2. Add constraint point where the departure from non-negativity is largest. 
+#    3. Run constrained opt, initialized using previous MLE estimates. 
+#    4. Iterate until non-negativity is satisfied at all test points. 
+#
+# Issue: Hard to check that non-negativity is satisfied everywhere. Ex: if we use LHS 
+#        sample to test, it might completely miss a region with negative predictions. 
+#
+# Could even use the points selected in sequential design/opt as the constraint points. 
+# i.e. fit normal GP on LHS, and select initial test points to test non-negativity 
+# constraint; if probabalistic constraint is not satisfied, iterate as above until 
+# it is. Then begin BayesOpt/sequential design procedure. If acquired point
+# theta_{n+1} breaks probabalistic constraint, add it as a constraint and re-run 
+# MLE with new constraint added.  
+#
+# Think about non-negativity enforced deep GP. Look into GP paper "the zero problem" 
+# that models max(0, f), f ~ GP. Could be used as output layer of DGP. Or use 
+# softmax as output layer. 
+
+
+
+
+
+
