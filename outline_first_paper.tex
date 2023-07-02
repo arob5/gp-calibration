@@ -92,6 +92,26 @@ The variances $\sigma_p^2$ are assigned inverse gamma priors $\sigma_p^2 \overse
 Combining these priors with the likelihood yields the posterior 
 \[\pi(\btheta, \Sigma) := p(\btheta, \sigma_1^2, \dots, \sigma_P^2|Y) \propto e^{\mathcal{L}(\btheta)}\pi_0(\btheta, \Sigma)\]
 
+\subsubsection{Conditional Posteriors}
+
+\bigskip
+\noindent
+\textbf{$\btheta$ conditional.}
+
+\bigskip
+\noindent
+\textbf{$\Sigma$ conditional.}
+The log posterior of $\Sigma$ given $\btheta$ is given by 
+\begin{align*}
+\log p(\Sigma|\btheta, Y) &\propto -\sum_{p = 1}^{P} \left[\left(a_p + T_p/2 + 1 \right)\log(\sigma_p^2) + \frac{b_p + \Phi_p(\btheta)/2}{2} \right] \\
+				      &\propto \sum_{p = 1}^{P} \mathcal{IG}\left(\sigma_p^2|a_p + T_p/2, b_p + \Phi_p(\btheta)/2 \right)
+\end{align*}
+That is, 
+\begin{align*}
+\sigma_p^2|\btheta, Y \overset{ind}{\sim} \mathcal{IG}\left(\sigma_p^2|a_p + T_p/2, b_p + \Phi_p(\btheta)/2 \right)
+\end{align*}
+
+
 \subsection{Surrogate Model}
 In this section we describe the emulator used to approximate the true log likelihood $\mathcal{L}(\btheta)$. The log likelihood can be written as 
 \begin{align*}
