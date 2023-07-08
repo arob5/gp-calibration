@@ -1,0 +1,492 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Local custom commands. 
+\include{local-defs}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{A Framework for Scalable Ecosystem Model Calibration}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% Calibration of Expensive Computer Models
+\section{Calibration of Expensive Computer Models}
+
+% Ecosystem Models 
+\section{Ecosystem Models}
+
+\subsection{The Very Simple Ecosystem Model}
+The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
+a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
+in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
+This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
+above-ground vegetation, below-ground vegetation, and soil organic matter. The carbon dynamics are forced by a single variable, the quantity of photosynthetically 
+active radiation (PAR), which represents the portion of the light spectrum usable by plants for photosynthesis. 
+Let $\state_v(\timeidx)$ (\textbf{v}egetation, above ground), $\state_r(\timeidx)$ (\textbf{r}oots), and $\state_s(\timeidx)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $\timeidx$. 
+The dynamics describing the carbon fluxes between these pools depend on $\text{NPP}(\timeidx)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $\timeidx$, 
+which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration, where GPP quantifies the amount of carbon 
+fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is (aside from a sign change) 
+NPP minus heterotrophic 
+respiration. Thus, in the VSEM model this means 
+\begin{align}
+-\text{NEE} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
+\end{align}
+The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
+The state equations describing the carbon dynamics are then given by
+\begin{align}
+\dot{\state}_v(\timeidx) &= \alpha_v \times \text{NPP}(\timeidx) - \frac{\state_v(\timeidx)}{\tau_v} \label{VSEM_ODE_system} \\
+\dot{\state}_r(\timeidx) &= (1.0 - \alpha_v) \times \text{NPP}(\timeidx) - \frac{\state_r(\timeidx)}{\tau_r} \nonumber \\
+\dot{\state}_s(\timeidx) &= \frac{\state_r(\timeidx)}{\tau_r} + \frac{\state_v(\timeidx)}{\tau_v} - \frac{\state_s(\timeidx)}{\tau_s} \nonumber 
+\end{align}
+where the parameters $\tau_v$, $\tau_r$, and $\tau_s$ are residence times or longevity parameters for above-ground vegetation, below-ground vegetation, and soil organic matter, 
+respectively. In particular, $\tau_v$ and $\tau_r$ represent the longevity of above and below ground biomass, respectively, while $\tau_s$ is the residence time of organic matter 
+in the soil. Carbon is thus assumed to be lost from the plant pools to the soil pool at fixed turnover rates, and similarly from the soil pool to the atmosphere. VSEM also makes the simplifying assumption that a fixed proportion of NPP is allocated to above and below ground vegetation, where $\alpha_v$ is the fraction
+allocated to the former. 
+
+The dynamics [\ref{VSEM_ODE_system}] are driven by the forcing effect of PAR, which drives the values of NPP and GPP over time. VSEM assumes a simple calculation, 
+where GPP is given by a product of three factors:
+\begin{enumerate}
+\item The amount of light available for photosynthesis (PAR) (MJ/$m^2$/day).
+\item Light-use efficiency (LUE), a measure of the efficiency at which vegetation can use light for photosynthesis. 
+\item The rate at which the available light decays as it passes downwards through a canopy of leaves. 
+\end{enumerate}
+The rate described in the third item above is modeled by the Beer-Lambert law, which yields an exponential decay rate $e^{-k*\text{LAI}}$, 
+where LAI is the \textit{leaf-area index}, defined as the ratio of one-sided leaf area per unit of ground area. LAI at time $\timeidx$ is assumed to be given by the product of a fixed 
+leaf-area ratio (LAR) and $\state_v(\timeidx)$. The constant $k$ is a fixed extinction rate controlling the rate of exponential decay. The full calculations for NPP are given below. 
+\begin{align}
+\text{LAI}(\timeidx, \state_v) &= \text{LAR} \times \state_v(\timeidx) \\
+\text{GPP}(\timeidx) &= \text{PAR}(\timeidx) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(\timeidx, \state_v) \right) \right) \nonumber \\
+\text{NPP}(\timeidx) &= (1 - \gamma) \times \text{GPP}(\timeidx) \nonumber
+\end{align}
+As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP.
+
+Potential calibration parameters $\theta$ of this model include $\alpha_v$, $\tau_v$, $\tau_r$, $\tau_s$, $\text{LAR}$, $k$, and $\gamma$, but it is common to fix some of the parameters at their 
+nominal values and calibrate the remaining subset. 
+Once the parameters $\bpar$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
+observations for NEE, $\state_v$, $\state_r$, and $\state_s$. The forward model $\fwd$ in this setting is given by an execution of the ODE solve, and represents
+the mapping from the inputs to these four resulting time series. A more detailed discussion of the forward model is given in the following section. 
+
+\subsection{Generic Dynamical Models}
+I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
+defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
+\[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^{\top} \]
+If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \times \R^Q \to \R^P$ is time-invariant: 
+ \[\bx(t + \Delta t) = g(\bx(t); \bw_{t + \Delta t})\]
+ where $\bw_{t + \Delta t}$ is a \textit{forcing input}. The forcing inputs are assumed known, and vary across time. 
+ Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
+ vector-valued $g$ as a collection of $P$ univariate flow maps
+ \[g(\bx(t); \bw_{t + \Delta t}) = \left[g_1(\bx(t); \bw_{t + \Delta t}), \dots, g_P(\bx(t); \bw_{t + \Delta t}) \right]^{\top}\]
+ so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
+ the parameters $\bpar$. I will reflect this dependence by writing $g_{\bpar}$ and $\bx_{\bpar}(t)$. The forward model $G: \R^{\Npar} \to \R^{\Ntime \times \Nout}$ defined previously can thus be characterized 
+ as 
+ \[
+ G(\bpar; \bx_0, \bw) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
+ \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0; \bw_1)^{\top} \\  g_\theta\left(g_\theta(\bx_0; \bw_1); \bw_2 \right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0; \bw)^{\top} \end{pmatrix}
+ \]
+ where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\bpar$, and I use the shorthand $g_\theta^{(k)}$ to denote 
+ the composition consisting of $k$ applications of the map $g_\theta$. I also let $\bw := \{\bw_t\}_{\timeidx = 1}^{T}$ denote the sequence of forcing inputs. 
+ I have also assumed that the initial time is $0$, but some other time $t_0$ could of course be considered. 
+
+% Bayesian Calibration 
+\section{Bayesian Calibration}
+
+\subsection{Statistical Setting}
+We denote the vector of calibration parameters by $\bpar \in \parspace \subset \R^{\Npar}$. The forward model (e.g. SIPNET or ED2) $\fwd(\bpar)$ maps calibration parameters to the model outputs. Note that the forward 
+model also depends on initial conditions and model drivers, but these are fixed throughout the analysis so are suppressed in the notation. Model outputs consist 
+of $T$ time steps for each of $P$ output variables, so $\fwd(\bpar) \in \mathbb{R}^{\Ntime \times \Nout}$. We have observed data $Y \in \mathbb{R}^{\Ntime \times \Nout}$, potentially with missing values. Let $\Ntime_{\outidx}$ denote the number 
+of non-missing observations of output variable $p$. We index the observations of output $p$ as $\{y_{tp}\}_{\timeidx = 1}^{\Ntime_{\outidx}}$, meaning that $Y$ is then technically a ragged matrix. 
+This is suitable for the model detailed below, as the ordering of the observations is inconsequential. 
+
+To measure error between model 
+predictions $\fwd(\bpar)$ and observed data $Y$, we assume the following Gaussian noise model. 
+\begin{align*}
+\llik(\bpar) := \log p(Y|\mathbf{\bpar}) = \sum_{p = 1}^{P} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(y_{tp}| G_{tp}(\bpar), \sigma_p^2 \right)
+\end{align*}
+This likelihood assumes the errors are independent across time and output variable. Note that $\llik(\bpar)$ depends on $Y$, but $Y$ is constant throughout the analysis so we drop it from the notation. Missing 
+observations are simply ignored, hence the product from $\timeidx = 1, \dots, \Ntime_{\outidx}$ for each output $p$.
+
+For notational convenience, we collect the variance parameters in the matrix $\Sigma := \text{diag}\left(\sigma_1^2, \dots, \sigma_P^2 \right)$. 
+We denote the priors on the calibration and variance parameters as  $\priorDens(\bpar, \Sigma) = \priorDens(\bpar)\priorDens(\Sigma)$, assuming prior independence.  
+The variances $\sigma_p^2$ are assigned inverse gamma priors $\sigma_p^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
+\[\priorDens(\Sigma) = \prod_{p = 1}^{P} \mathcal{IG}(\sigma_p^2|\alpha_p, \beta_p)\]
+Combining these priors with the likelihood yields the posterior 
+\[\postDens(\bpar, \Sigma) := p(\bpar, \sigma_1^2, \dots, \sigma_P^2|Y) \propto e^{\llik(\bpar)}\priorDens(\bpar, \Sigma)\]
+
+\subsubsection{Conditional Posteriors}
+
+\bigskip
+\noindent
+\textbf{$\bpar$ conditional.}
+
+\bigskip
+\noindent
+\textbf{$\Sigma$ conditional.}
+The log posterior of $\Sigma$ given $\bpar$ is given by 
+\begin{align*}
+\log p(\Sigma|\bpar, Y) &\propto -\sum_{p = 1}^{P} \left[\left(a_p + \Ntime_{\outidx}/2 + 1 \right)\log(\sigma_p^2) + \frac{b_p + \Phi_p(\bpar)/2}{2} \right] \\
+				      &\propto \sum_{p = 1}^{P} \mathcal{IG}\left(\sigma_p^2|a_p + \Ntime_{\outidx}/2, b_p + \Phi_p(\bpar)/2 \right)
+\end{align*}
+That is, 
+\begin{align*}
+\sigma_p^2|\bpar, Y \overset{ind}{\sim} \mathcal{IG}\left(\sigma_p^2|a_p + \Ntime_{\outidx}/2, b_p + \Phi_p(\bpar)/2 \right)
+\end{align*}
+
+% Surrogate Modeling
+\section{Surrogate Modeling}
+In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. The log likelihood can be written as 
+\begin{align*}
+\llik(\bpar) &= \sum_{p = 1}^{P} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(y_{tp}| G_{tp}(\bpar), \sigma_p^2 \right) \\
+			       &= \sum_{p = 1}^{P}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sigma_p^2) - \frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\bpar))^2\right]  \\
+			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[\Ntime_{\outidx} \log\left(2\postDens \sigma_p^2 \right) + \frac{1}{\sigma_p^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(y_{tp} - G_{tp}(\bpar)\right)^2  \right] \\
+			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[\Ntime_{\outidx} \log\left(2\postDens \sigma_p^2 \right) + \frac{\Phi_p(\bpar)}{\sigma_p^2} \right] 
+\end{align*}
+where 
+\[\Phi_p(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (y_{tp} - G_{tp}(\bpar))^2\]
+is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\bpar)$ also depends on $Y$, but again we suppress this in the notation. The key observation 
+is that the model evaluations $G(\bpar)$ only appear in the likelihood through the $\Phi_p(\bpar)$, which means that approximating $\Phi_p(\bpar)$ will induce an approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\Phi(\bpar)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\Phi(\bpar)$ can be emulated without regard for the variance parameters, 
+and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \parspace \to \R$ also reduces the problem to 
+approximating $P$ univariate functions, instead of approximating $G(\bpar)$, which has output dimension $\Ntime \times \Nout$. 
+
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
+\[\Phi_p(\cdot) \overset{ind}{\sim} \mathcal{GP}(\mu_p, k_p(\cdot, \cdot))\] 
+where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (i.e. kernel). The constant mean and kernel hyperparameters are fixed to their MLE estimates. We then run the forward model at carefully selected 
+\textit{design points} $\bpar_1, \dots, \bpar_N \in \parspace$ and compute $\{\Phi_p(\bpar_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. 
+
+We denote the resulting observed data for output $p$ as 
+$\mathcal{D}_p := \left\{(\bpar_1, \Phi_1(\bpar_1)), \dots, (\bpar_P, \Phi_p(\bpar_P))  \right\}$ and collect the observed outputs in a vector 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\bpar_1), \dots, \Phi_P(\bpar_1) \right]^{\top}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
+\[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
+
+\subsection{MCMC Algorithm}
+We consider the joint posterior $p(\bpar, \Sigma, \Phi^*|Y)$ and seek to marginalize out $\Phi^*$ in order to obtain the posterior of interest $p(\bpar, \Sigma|Y)$. A Gibbs sampling approach would proceed as 
+\begin{itemize}
+\item $\Phi \sim p(\Phi^*|\bpar, \Sigma, Y) = p(\Phi^*)$
+\item $\bpar \sim p(\bpar|\Sigma, \Phi^*, Y)$
+\item $\Sigma \sim p(\Sigma|\bpar, \Phi^*, Y)$
+\end{itemize}
+Under the model assumptions, the $\Phi^*$ and $\Sigma$ conditionals can be directly sampled from, while the $\bpar$ conditional requires a Metropolis step. The current PEcAn algorithm modifies the above by re-sampling 
+$p(\Phi^*)$ again before the final line. Thus, each sweep over the conditionals results in two samples from $\Phi^*$ and one sample each from $\bpar$ and $\Sigma$. It is also important to note that 
+$\Phi^*$ is a function, and in practice we only sample the function values at the points of interest. This implies the distribution sampled from is actually the marginal distribution of $\Phi^*(\bpar)$:
+\[\Phi(\bpar) \sim p(\Phi^*(\bpar))\]
+A more accurate high-level view of the current algorithm is thus given by 
+\begin{itemize}
+\item $\Phi(\bpar) \sim p(\Phi^*(\bpar))$
+\item $\bpar \sim p(\bpar|\Sigma, \Phi^*(\bpar), Y)$
+\item $\Phi(\bpar) \sim p(\Phi^*(\bpar))$
+\item $\Sigma \sim p(\Sigma|\bpar, \Phi^*(\bpar), Y)$
+\end{itemize}
+
+\subsubsection{Conditional Posteriors}
+
+\subsection{Loss Emulation}
+Every iteration of MCMC requires evaluation of the forward model $G(\bpar)$. If this evaluation is costly, then this will render MCMC computationally intractable. To address this, we employ a surrogate modeling approach. 
+The forward model $G(\bpar)$ is replaced by an an approximation $\hat{G}(\bpar)$ known as an \textit{emulator}. Assuming $\hat{G}(\bpar)$ is much faster to evaluate then we substitute it for the exact model and thus 
+sample from the approximate posterior
+ \[\hat{\postDens}(\bpar, \Sigma) \propto \hat{\llik}(\bpar)\postDens(\bpar)p(\Sigma)\]
+ where 
+ \begin{align*}
+\hat{\llik}(\theta) = \prod_{p = 1}^{P} \prod_{\timeidx = 1}^{\Ntime_{\outidx}} \mathcal{N}\left(y_{tp}| \hat{G}_{tp}(\bpar), \sigma_p^2 \right)
+\end{align*}
+ 
+\subsubsection{Emulator Details}
+\begin{enumerate}
+\item \textbf{Problem}: The model output $G(\bpar)$ has dimension $\Ntime \times \Nout$. For any reasonable number of time steps $T$, the high-dimensionality of the output renders the problem of directly emulating $G$ intractable.  \\
+	\textbf{Solution}: One approach is to reduce the dimensionality of the output by representing it with respect to a basis, and then instead emulate the mapping from $\bpar$ to the basis coefficients. We consider an alternative 
+	of instead directly emulating the loss between the forward model and observed data. 
+	
+\item \textbf{Problem}: Issues with emulating the $\Phi_p$: non-linear, need to account for uncertainty in approximation. \\
+\textbf{Solution}: GP emulators. \\
+I need to write out this section, but to establish notation I briefly note that I will write $\Phi_p^*$ to denote the posterior/predictive distribution; i.e. the random field approximation of $\Phi_p$. I intentionally refrain from calling 
+this the predictive \textit{GP} since technically this could be a rectified or truncated Gaussian, or sometimes a Student-t process. This induces a random field approximation of the likelihood, which I similarly write as 
+$\llik^*$, noting that the randomness in $\llik^*$ comes from $\Phi^*_1, \dots, \Phi^*_P$. 
+	
+\end{enumerate}
+
+\subsubsection{Emulator-based MCMC inference}
+
+
+\subsection{Sequential Design}
+\begin{enumerate}
+\item \textbf{Problem}: While space-filling designs (e.g. via LHS or maximin) are common, they can be very inefficient in the Bayesian inverse problem setting. If the posterior distribution is concentrated in a small 
+subset of the parameter space, then space-filling designs will yield many design points in regions that are not of interest, while simultaneously under-sampling the region of significance.  \\
+	\textbf{Solution}: Sequential design approach that takes into account knowledge of the posterior as it proceeds. 
+	
+\subsection{Other things?}
+\begin{itemize}
+\item Scaling factors for PFTs. 
+\item Imbalanced data constraints. 
+\end{itemize}
+	
+\end{enumerate}
+
+\subsection{Sequential Design}
+
+\subsubsection{Notation and Background}
+Throughout this section I let $\mathcal{D}_n := \{[\bpar_1, \Phi(\bpar_1)], \dots, [\bpar_n, \Phi(\bpar_n)]\}$ denote the set of current (observed) design points and corresponding outputs. 
+The sequential design task is that of choosing the 
+next design point $\bpar_{n+1}$. For a GP $\Phi^*$, I let
+\[k_{\mathcal{D}_{n}}(\bpar) = \Var(\Phi^*(\bpar)|\mathcal{D}_{n})\]
+denote the predictive variance of the GP $\Phi^*$, which has been conditioned on data $\mathcal{D}_n$. Up to this point, I have been using $k^*(\bpar)$ to denote the predictive GP variance 
+at the input $\bpar$, where the asterisk differentiates the predictive (i.e. conditioned on $\mathcal{D}_n$) GP distribution from the GP prior. This notation did not make explicit the data being 
+conditioned on. However, in this experimental design context the emphasis is on design points so the notation $k_{\mathcal{D}_{n}}(\bpar)$ will prove more useful. 
+In the below notes, we will often be considering the merits of adding a new particular design point $\bpar_{n + 1}$. I denote by 
+\[k_{\mathcal{D}_{n+1}}(\bpar) = \Var(\Phi^*(\bpar)|\mathcal{D}_{n+1}) = \Var(\Phi^*(\bpar)|\mathcal{D}_{n}, [\bpar_{n+1}, \Phi(\bpar_{n+1})])\]
+the predictive variance at $\bpar$ for the GP that has also been conditioned on the new observation $[\bpar_{n+1}, \Phi(\bpar_{n+1})]$. Conveniently, the GP predictive 
+variance is not a function of the observed output $\Phi(\bpar_{n+1})$, so the above expression for the variance could just as well be written as conditioning only on 
+$\bpar_{n+1}$, rather than $[\bpar_{n+1}, \Phi(\bpar_{n+1})]$. 
+
+A commonly used acquisition function for choosing $\bpar_{n+1}$ is the \textit{integrated mean squared prediction error} (IMSPE). 
+\begin{align*}
+J(\bpar_{n+1}) = \int_{\parspace} k_{\mathcal{D}_{n+1}}(\bpar) \rho(\bpar) d\bpar = \E_{\bpar \sim \rho} \left[k_{\mathcal{D}_{n+1}}(\bpar) \right]
+\end{align*}
+where $\rho$ is some density on the input space $\parspace$. The next design point is selected by solving 
+\[\bpar_{n + 1} := \text{argmin}_{\tilde{\bpar}_{n+1} \in \parspace} J(\tilde{\bpar}_{n+1}) \]
+The IMSPE is intuitive in that it seeks to select the point that reduces the overall uncertainty (integrated over the whole input space, weighted by $\rho$) as much as possible. 
+The expectation defining the IMSPE is in general not analytically tractable, but is available in closed-form in simple settings, such as when the input space is a 
+hyperrectangle and $\rho(\bpar) \equiv 1$. For our purposes, it is important to emphasize that $J(\bpar_{n+1})$ is a well-defined, non-random quantity due to the fact 
+that the GP predictive variance does not depend on the output $\Phi(\bpar_{n+1})$. If it did depend on this output, then $J(\bpar_{n+1})$ would be random since 
+$\Phi(\bpar_{n+1})$ is not yet known. 
+
+The tricky thing about our setting is that we often want to consider the random field approximations $L^*(\tilde{\bpar})$ and $\postDens^*(\tilde{\bpar})$ induced by the GP approximation 
+$\Phi^*(\tilde{\bpar})$. These random fields are no longer Gaussian, hence they do not have the convenient property that their predictive variances are independent of the observed 
+outputs. Therefore, defining an analog of IMSPE would require an additional integral averaging over the uncertainty in the model outputs. For example, 
+\begin{align*}
+J_{L}(\bpar_{n+1}) &= \E_{\Phi^*(\bpar_{n+1})} \E_{\bpar \sim \rho} \Var_{\Phi^*} \left(L^*(\bpar) | \mathcal{D}_{n+1} \right)
+\end{align*}
+Breaking this down, $\Var_{\Phi^*} \left(L^*(\bpar) | \mathcal{D}_{n+1} \right)$ is predictive variance at input $\bpar$ of the random field $L^*$. Note that this is conditioned on 
+$\mathcal{D}_{n+1}$, which includes the new (not-yet-observed) data point $[\bpar_{n+1}, \Phi(\bpar_{n+1})]$. $L^*$ is not Gaussian-distributed and hence this predictive variance
+does indeed depend on the unobserved output $\Phi(\bpar_{n+1})$. Therefore, the outer expectation $ \E_{\Phi^*(\bpar_{n+1})}$ integrates over the current 
+(conditional on $\mathcal{D}_n$) predictive GP distribution over $\Phi(\bpar_{n+1})$. The remaining expectation $\E_{\bpar \sim \rho}$ simply averages over the input 
+space as before, with $\rho$ allowing for the possibility of non-uniform weights. Although they do not motivate their proposed methods in this way, Sinsbeck and Nowak 
+\cite{doi:10.1137/15M1047659} essentially propose the use of $J_{L}(\bpar_{n+1})$ as an acquisition function for experimental design in Bayesian inverse problems. They 
+choose to weight by the prior when averaging over the input space (i.e., $\rho(\bpar) = \priorDens(\bpar)$). 
+
+\subsubsection{Sinsbeck and Nowak (2017)}
+Sinsbeck and Nowak \cite{doi:10.1137/15M1047659} propose a sequential design method which constructs and refines a deterministic approximation to the true likelihood $L(\bpar)$ at each iteration of the sequential design procedure. 
+This likelihood approximation is then used to construct an acquisition function that targets regions of high posterior density. I summarize their method here, with adjustments to tailor the method to our loss-emulation setting. 
+
+\bigskip
+\noindent
+\textbf{Motivation from Integrated Mean Squared Prediction Error.}
+The authors do not introduce their method in this way, but I find this motivation to be helpful. The \textit{integrated mean squared prediction error} (IMSPE) is a commonly-used acquisition function for 
+experimental design with GPs. 
+
+
+
+\bigskip
+\noindent
+\textbf{Deterministic likelihood approximation.}
+The first step is to construct the deterministic likelihood approximation $\hat{\llik}_n(\bpar)$ from 
+$\llik^*_n(\bpar)$, where the subscript $n$ indicates that both the random field approximation $\llik^*_n(\bpar)$ and deterministic approximation $\hat{\llik}_n(\bpar)$ have been constructed from the data 
+$\mathcal{D}_n = \left\{(\bpar_1, \llik(\bpar_1)), \dots, (\bpar_n, \llik(\bpar_n)) \right\}$. One option is to define $\hat{\llik}_n(\bpar)$ as the approximation resulting from plugging in the GP predictive 
+means. However, this fails to account for the uncertainty encoded by the GP predictive distribution. Sinsbeck and Nowak take a more principled approach, defining $\hat{\llik}_n(\bpar)$ as the approximation that minimizes 
+a certain loss criterion. The loss criterion of choice is the prior-weighted $L^2$ error:
+\[\ell(\llik, \llik^\prime) := \E_{\bpar}\left[\left(\llik(\bpar) - \llik^\prime(\bpar) \right)^2 \right]\]
+where the notation $\E_{\bpar}(\cdot)$ indicates integration with respect to the prior $\priorDens$. 
+However, in this setting the goal is to choose the $\hat{\llik}_n$ that minimizes error with respect to a \textit{random} approximation $\llik_n^*$. Thus, the error measure is defined as the 
+expectation of $\ell(\llik^*_n, \hat{\llik}_n)$ with respect to the GP $\Phi^*$. This yields the \textit{Bayes' risk}
+\[\mathcal{R}(\llik_n^*, \llik_n) := \E_{\Phi^*} \E_{\bpar} \left[\left(\llik^*(\bpar) - \llik(\bpar) \right)^2 \right] \]
+The deterministic approximation is taken as the minimizer  
+\[\hat{\llik}_n := \text{argmin}_{\llik_n} \mathcal{R}(\llik_n^*, \llik_n) \]
+which can be shown to be given by 
+\[\hat{\llik}_n(\bpar) = \E_{\Phi^*}\left[\llik_n^*(\bpar) \right]\]
+i.e. the approximation resulting from integrating the GP out of the random field $\llik_n^*(\bpar)$. Evaluated at the optimizer, the Bayes' risk reduces to the prior-weighted predictive variance 
+of $\llik_n^*(\bpar)$: 
+\begin{align}
+\hat{\mathcal{R}}(\llik_n^*) := \mathcal{R}(\llik_n^*, \hat{\llik}_n) = \E_{\bpar} \Var_{\Phi^*}\left[\llik_n^*(\bpar)\right] \label{Bayes_Risk}
+\end{align}
+The authors also consider a ``fully Bayesian'' likelihood estimation approach, which turns out to result in the same exact estimator. 
+
+\bigskip
+\noindent
+\textbf{Acquisition Function.}
+The authors propose a greedy one-step look ahead strategy. Intuitively, we assess the quality of a new design point $\tilde{\bpar}$ by considering the GP predictive distribution 
+at this proposed point $\tilde{\Phi} := \Phi(\tilde{\bpar})$. We use this predictive distribution to predict what the Bayes' risk \ref{Bayes_Risk} would be were we to observe 
+$(\tilde{\bpar}, \tilde{\Phi})$ and condition on this additional observation. Recall that $\hat{\mathcal{R}}(\llik_n^*)$ denotes the Bayes' risk between the 
+random field approximation and optimal deterministic approximation. I introduce the notation $\tilde{\llik}^*_n := \llik^*_n|\tilde{\bpar}, \tilde{\Phi}$ to denote the 
+random field likelihood approximation conditioned on $(\tilde{\bpar}, \tilde{\Phi})$. Note that the forward model has not yet been run at input parameter $\tilde{\bpar}$ so 
+$\tilde{\Phi}$ is itself a random variable. I utilize the same notation for the GP itself, so that $\tilde{\Phi}^*_n := \Phi^*_n|\tilde{\bpar}, \tilde{\Phi}$
+
+With this notation established, $\hat{\mathcal{R}}(\tilde{\llik}^*_n)$ is an estimator for the future Bayes' risk, were we 
+to run the forward model at $\tilde{\bpar}$. Unlike $\hat{\mathcal{R}}(\llik^*_n)$, $\hat{\mathcal{R}}(\tilde{\llik}^*_n)$ is a random quantity due to the fact that 
+we have not run the model at $\tilde{\bpar}$ and thus $\tilde{\Phi}$ is unknown. In order to define a deterministic acquisition function, we must now integrate over the distribution of $\tilde{\Phi}$, in addition to the two other 
+integrals in the original definition of the Bayes' risk. This yields the acquisition function, 
+\begin{align}
+J_n(\tilde{\bpar}) &:=  \E_{\tilde{\Phi}} \hat{\mathcal{R}}(\tilde{\llik}^*_n) \\ 
+			     &= \E_{\tilde{\Phi}} \E_{\bpar} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\llik}_n^*(\bpar) \right]
+\end{align}
+Note that the acquisition function is a function of $\tilde{\bpar}$, a new design point; not to be confused with the $\bpar$ in the second line above, which is averaged over by 
+$\E_{\bpar}(\cdot)$. 
+
+This is the final acquisition function considered in the paper. However, in our case the likelihood parameters $\Sigma$ are not known. We could consider augmenting to include these 
+parameters and integrate over the prior on the likelihood parameters as well: 
+\begin{align}
+J_n(\tilde{\bpar}) &:= \E_{\tilde{\Phi}} \E_{\Sigma} \E_{\bpar} \Var_{\tilde{\Phi}_n^*}\left[\tilde{\llik}_n^*(\bpar, \Sigma) \right]
+\end{align}
+
+\bigskip
+\noindent
+\textbf{Approximating the Acquisition Function.} \\
+I now consider approximation of the above acquisition function. For simplicity, I drop the dependence on $\Sigma$ for now (we can think of $\bpar$ as containing both the 
+calibration and likelihood parameters). I also suppose that the GP predictive distribution is Gaussian for now. First, recall that 
+\begin{align*}
+\tilde{L}_n^*(\bpar) &= \exp\left\{ -\frac{1}{2} \sum_{p = 1}^{P} \left[\Ntime_{\outidx} \log\left(2\postDens \sigma_p^2\right) + \frac{\tilde{\Phi}^*_p(\bpar)}{\sigma_p^2}\right] \right\} \\
+				&= C_{\Sigma} \prod_{p = 1}^{P} \exp\left\{\frac{\tilde{\Phi}^*_p(\bpar)}{2\sigma_p^2}\right\}
+\end{align*}
+Recalling the GP predictive distribution, we have 
+\[\frac{\tilde{\Phi}^*_p(\bpar)}{2\sigma_p^2}\bigg|\theta, \tilde{\Phi} \sim \mathcal{N}\left(\frac{\tilde{\mu}_p^*(\bpar)}{2\sigma_p^2}, \frac{\tilde{k}_p^*(\bpar)}{4\sigma_p^4} \right) \]
+Note that the predictive mean $\tilde{\mu}_p^*(\bpar)$ and variance $\tilde{k}_p^*(\bpar)$ are not known, since these are the predictive quantities given that the GP has been 
+conditioned on $\tilde{\Phi}$. 
+The exponential of the above quantity is log-normally distributed
+\[\exp\left\{\frac{\tilde{\Phi}^*_p(\bpar)}{2\sigma_p^2}\right\}\bigg|\theta, \tilde{\Phi} \sim \mathcal{LN}\left(\frac{\tilde{\mu}_p^*(\bpar)}{2\sigma_p^2}, \frac{\tilde{k}_p^*(\bpar)}{4\sigma_p^4} \right) \]
+so the expectation is available in closed-form:
+\[\E_{\tilde{\Phi}_p^*} \exp\left\{\frac{\tilde{\Phi}^*_p(\bpar)}{2\sigma_p^2}\right\} = \exp\left\{\frac{\tilde{\mu}_p^*(\bpar)}{2\sigma_p^2} + \frac{\tilde{k}_p^*(\bpar)}{8\sigma_p^4} \right\} \]
+Since the univariate GPs are independent, we obtain 
+\begin{align*}
+\E_{\tilde{\Phi}^*} \tilde{L}_n^*(\bpar) &= C_\Sigma \prod_{p = 1}^{P} \E_{\tilde{\Phi}_p^*} \exp\left\{\frac{\tilde{\Phi}^*_p(\bpar)}{2\sigma_p^2}\right\} \\
+							   &= C_\Sigma \exp\left\{\sum_{p = 1}^{P} \left[ \frac{\tilde{\mu}_p^*(\bpar)}{2\sigma_p^2} + \frac{\tilde{k}_p^*(\bpar)}{8\sigma_p^4} \right] \right\}
+\end{align*}
+
+\subsection{Bayesian Optimization to find MAP Estimate}
+Numerical examples with VSEM have shown that it is common for the posterior to be highly concentrated relative to the prior. Loosely speaking, the region of 
+non-negligible posterior mass sometimes looks like a tiny point in the input space. Space-filling or sequential design schemes may completely miss this region 
+of interest. Therefore, one approach is to first optimize, finding the MAP estimate to locate the general region of interest, and then proceed with a sequential 
+design scheme from there. Ideally, we seek 
+\begin{align*}
+\bpar_{\text{MAP}}, \Sigma_{\text{MAP}} = \text{argmax}_{\bpar, \Sigma} \postDens(\bpar, \Sigma)
+\end{align*}
+Note that we are currently considering optimizing with respect to both the calibration parameters $\bpar$ and likelihood parameters $\Sigma$. 
+Function evaluations $\postDens(\bpar, \Sigma)$ are expensive due to the fact that evaluating at a new value of $\bpar$ requires running the forward 
+model. However, for a fixed value of $\bpar$, evaluations at different values of $\Sigma$ is significantly cheaper. We therefore might consider 
+a coordinate ascent type algorithm, where $\bpar$ updates are given by a Bayesian optimization (BO) step, and $\Sigma$ updates by a traditional 
+optimization. We begin by considering the former, where $\Sigma$ is assumed fixed. Throughout these optimization notes, I will use the notation 
+\[\postDens_n^{\max} := \max\left\{\postDens(\bpar_1, \Sigma_1), \dots, \postDens(\bpar_n, \Sigma_n) \right\}\]
+where $\left\{(\bpar_i, \Sigma_i) \right\}_{i = 1}^{n}$ are the inputs associated with the currently observed outputs. 
+
+\subsubsection{BO $\bpar$ update}
+The BO $\bpar$ update is accomplished via the minimization of an acquisition function $\alpha(\bpar)$. 
+\[\bpar_{n+1} := \text{argmax}_{\bpar \in \parspace} \alpha(\bpar) \]
+I first consider the expected improvement (EI) acquisition function, which in 
+this context looks like: 
+\begin{align*}
+\alpha_{\text{EI}}(\bpar) &= \mathbbm{E}\left[\max\left\{0, \postDens_n^*(\bpar) - \postDens_n^{\max} \right\} \right]
+\end{align*}
+This expectation is available in closed-form when the distribution of $\postDens_n^*(\bpar)$ is Gaussian. However, in this case the distribution is not Gaussian so 
+we must resort to approximation. Consider a Monte Carlo approximation 
+\begin{align*}
+\alpha_{\text{EI}}(\bpar) &\approx \frac{1}{T} \sum_{\timeidx = 1}^{T} \max\left\{0, \postDens^{(t)}_n(\bpar) - \postDens_n^{\max}\right\}, \text{ where } \postDens^{(t)}_n(\bpar) \overset{iid}{\sim} \postDens_n^*(\bpar)
+\end{align*}
+
+\subsection{Minimizing $L^2$ error between log-likelihoods weighted by approximate posterior}
+Building on the Sinsbeck and Nowak approach, here are a few things to consider modifying. 
+\begin{enumerate}
+\item Instead of weighting by the prior ($\rho(\bpar) = \priorDens(\bpar)$) instead weight by the approximate posterior $\postDens^*(\bpar)$. 
+\item Instead of minimizing error between likelihoods, minimize error between log-likelihoods. Or between log-posteriors. 
+\end{enumerate}
+
+Proceeding as in Sinsbeck and Nowak with these added modifications, I first define a loss function. 
+\begin{align*}
+\ell(f, g) := \E_{\bpar \sim \postDens} \left[\left(f(\bpar) - g(\bpar) \right)^2 \right]
+\end{align*}
+This is a posterior-weighted $L^2$ error between the functions $f$ and $g$. In our case, $f$ and $g$ will be log-likelihoods. Since we are working with 
+$\llik_n^*$, a random field approximation of the log-likelihood, we consider additionally integrating over the uncertainty in $\llik_n^*$. This 
+yields the Bayes' risk 
+\begin{align*}
+\mathcal{R}_n(\tilde{\llik}_n) := \E_{\bpar \sim \postDens} \E_{\llik_n^*}\left[\left(\llik_n^*(\bpar) - \tilde{\llik}_n(\bpar) \right)^2 \right]
+\end{align*}
+where $\tilde{\llik}_n(\bpar)$ is some deterministic approximation to the likelihood, derived only using $\mathcal{D}_n$. The best deterministic approximation 
+according to the Bayes' risk is given by 
+\begin{align*}
+\hat{\llik}_n &= \text{argmin}_{\tilde{\llik}_n} \E_{\bpar \sim \postDens} \E_{\llik_n^*}\left[\left(\llik_n^*(\bpar) - \tilde{\llik}_n(\bpar) \right)^2 \right]
+\end{align*}
+The inner expectation is minimized pointwise by $\tilde{\llik}_n(\bpar) = \E_{\llik_n^*}\left[\llik_n^*(\bpar) \right]$. Plugging in this minimizer, the Bayes' 
+risk becomes, 
+\begin{align*}
+\mathcal{R}_n(\hat{\llik}_n) &=  \E_{\bpar \sim \postDens} \E_{\llik_n^*}\left[\left(\llik_n^*(\bpar) - \E_{\llik_n^*}\left[\llik^*_n(\bpar)\right] \right)^2 \right] \\
+						      &= \E_{\bpar \sim \postDens} \Var_{\llik_n^*}\left[\llik_n^*(\bpar) \right]
+\end{align*}
+which is the posterior-weighted predictive variance of $\llik_n^*$. The design criterion is then defined as a one-step lookahead version of the Bayes' risk; i.e. we seek to 
+choose $\bpar_{n+1}$ such that conditioning $\llik_n^*$ on the new observation $\left(\bpar_{n+1}, \llik_{n+1} \right)$ 
+(where $\llik_{n+1} := \llik(\bpar_{n+1})$) would yield the largest reduction in Bayes' risk. This is essentially applying the Active Learning Cohn (ALC) 
+sequential design criterion to $\llik_n^*$. There are two potential difficulties here: 
+\begin{enumerate}
+\item If $\llik_n^*$ is not Gaussian, then the predictive variance $\Var_{\llik_n^*}\left[\llik_n^*(\bpar) \right]$ in general depends on the 
+response values $\llik_1, \dots, \llik_n$. Thus, computation of the predictive variance at $\bpar$ given hypothetical observation of 
+$\left(\bpar_{n+1}, \llik_{n+1} \right)$ requires averaging over $\llik_{n+1}$. This is in contrast to a GP, which has a predictive variance independent of 
+the response data. 
+\item The outer expectation requires integrating over the true posterior $\postDens$, which is unknown. We instead consider replacing $\postDens$ with an approximation constructed 
+using $\llik_n^*$. Sinsbeck and Nowak instead consider integrating with respect to the known 
+prior $\priorDens$. In either case, generally there is no closed-form solution to this outer integral. 
+\end{enumerate}
+In general, the acquisition function is given by 
+\begin{align}
+J(\bpar_{n+1}) := \E_{\bpar \sim \rho} \E_{\llik_{n+1}} \Var\left[\llik^*(\bpar) | \mathcal{D}_{n+1} \right] \label{acquisition}
+\end{align}
+where $\mathcal{D}_{n+1} = \mathcal{D}_{n} \cup \left(\bpar_{n+1}, \llik_{n+1} \right)$. I leave $\rho$ generic for now, but we can think of this as either 
+$\priorDens$, $\postDens$ (in the idealized case), or some approximation to $\postDens$. 
+
+\subsubsection{Case 1: Gaussian predictive distribution}
+Here I suppose that the $\Phi_p^*$ have Gaussian distributions. This simplifies matters by yielding a closed-form solution for the predictive variance in \ref{acquisition}. Moreover, 
+this predictive variance is independent of $\llik_{n+1}$, thus eliminating the expectation $\E_{\llik_{n+1}}$. We first recall that the log-likelihood has the form 
+\begin{align*}
+\llik(\bpar) &= C_\Sigma - \frac{1}{2} \sum_{p = 1}^{P} \frac{\Phi_p(\bpar)}{\sigma_p^2}
+\end{align*} 
+Under the assumption of Gaussian predictive distributions, we then have 
+\begin{align*}
+\llik^*(\bpar) &\sim \mathcal{N}\left(C_\Sigma - \frac{1}{2} \sum_{p = 1}^{P} \frac{\mu^*_p(\bpar)}{\sigma_p^2}, \frac{1}{4} \sum_{p = 1}^{P} \frac{k^*_p(\bpar)}{\sigma_p^4}  \right)
+\end{align*}
+I denote the above variance by $\Var\left[\llik^*(\bpar) | \mathcal{D}_n \right]$ to make explicit the dependence on the data $\mathcal{D}_n$. In this setting, 
+$\Var\left[\llik^*(\bpar) | \mathcal{D}_n \right]$ does not depend on $\llik_1, \dots, \llik_n$. In particular, $\Var\left[\llik^*(\bpar) | \mathcal{D}_{n+1} \right]$
+does not depend on $\llik_{n+1}$, which eliminates the expectation $\E_{\llik_{n+1}}$ in \ref{acquisition}. 
+Thus, the acquisition function simplifies to 
+\begin{align}
+J(\bpar_{n+1}) := \E_{\bpar \sim \rho} \Var\left[\llik^*(\bpar) | \mathcal{D}_{n+1} \right] \label{acquisition_Gaussian_case}
+\end{align}
+where the inner variance can be computed explicitly. 
+
+\end{document}
+
+
+
+

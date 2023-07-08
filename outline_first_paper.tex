@@ -874,9 +874,89 @@ where the function changes more rapidly, but a stationary GP is prevented from r
 \end{enumerate}
 
 
+\section{Meeting: 7/5/23}
+\textbf{Primary goal:} Determine the minimal set of algorithms/methods, with regard to having a real implementation up and running as soon as possible. \\[.2cm]
+\textbf{Secondary goal:} Continue discussion of methods and directions for medium-term advancements.  
+
+\subsection{Minimum Viable Product}
+
+\subsubsection{Emulator}
+\begin{enumerate}
+\item Independent GP emulators 
+\item Package: \textit{hetGP}
+\item MLE estimation of constant mean, squared exponential kernel 
+\item Ignore non-negativity constraint, seeing if it actually ever presents an issue in real applications. 
+\item \textbf{TODOs}:
+	\begin{enumerate}
+	\item Determine a method to initialize the MCMC scheme; rather than sampling from the prior, we can use what has been learned about the 
+	posterior during the design phase. 
+	\item PEcAn implementation: generalize code to be able to utilize \textit{hetGP} in addition to \textit{mlegp}
+	\end{enumerate}
+\end{enumerate}
+
+\subsubsection{MCMC Algorithm}
+\begin{enumerate}
+\item Adaptive Metropolis-within-Gibbs scheme. 
+\item Sampling SSR for current and proposed values jointly using GP predictive correlation. 
+\item \textbf{TODOs:}
+	\begin{enumerate}
+	\item No new methodological developments required. 
+	\item PEcAn implementation: add ability to jointly sample current/proposed values. \textit{hetGP} allows option to return predictive covariance.
+	\item PEcAn implementation: for parameter bound constraints, add option to truncate the prior rather than using a truncated Gaussian proposal. 
+	\item PEcAn implementation: add implementation of AM algorithm (I believe currently uses AP algorithm). 
+	\item PEcAn implementation: fix ``re-sampling $\tau$'' issue.  
+	\end{enumerate}
+\end{enumerate}
+
+\subsubsection{Experimental Design}
+\begin{enumerate}
+\item Initial optimization phase; joint optimization over likelihood and calibration parameters. 
+\item Batch sequential design phase. 
+\item \textbf{TODOs:}
+	\begin{enumerate}
+	\item Implement batch Bayesian optimization method for the optimization phase: 
+		\begin{enumerate}
+		\item Select and test a batch BO acquisition function/algorithm. 
+		\item Determine stopping criterion; when to switch from optimization to design. 
+		\item Efficient implementation (\textit{hetGP} offers some optimization/design functions and fast GP updates).
+		\item Test in higher dimensions; VSEM test using all parameters. 
+		\end{enumerate}
+ 	\item Implement batch sequential design method for the design phase: 
+		\begin{enumerate}
+		\item Determine method for sequential design: since the approximate log-posterior is Gaussian we can compute the inner integral required by the IMSPE
+		design criterion. 
+		\item How to weight the IMSPE by the approximate posterior? Is it feasible to run approximate MCMC in between the batch design phase. 
+		\item How to conduct the batch IMSPE optimization at each iteration of the design phase? 
+		\end{enumerate}
+	\end{enumerate}
+\end{enumerate}
+
+\section{Future Goals}
+
+\subsection{Ensemble Kalman Methods}
+\begin{enumerate}
+\item Ensemble Kalman methods for optimization (EKI) and approximate sampling (EKS) seem to be natural candidates for the batch optimization and design 
+phases discussed above. They are inherently parallelizable and offer the ability to pre-condition MCMC (e.g. initialize the proposal covariance using the 
+empirical covariance computed over the particles). 
+\end{enumerate}
+
+\subsection{Other directions}
+\begin{enumerate}
+\item Determinantal point processes; e.g. \textit{Batched Gaussian Process Bandit Optimization via Determinantal Point Processes}
+\item Smarter methods for representing probability distributions with finite number of points: e.g. support points, Stein points 
+\end{enumerate}
+
+\section{Software}
+
+\subsection{Useful Packages}
+\begin{enumerate}
+\item \textit{KrigInv}: stepwise uncertainty reduction for GPs and multipoint expected improvement. 
+\end{enumerate}
+
+
+
 \bibliography{first_paper} 
 \bibliographystyle{ieeetr}
-
 
 \section{References}
 \begin{itemize}

@@ -1,0 +1,44 @@
+%!TEX root = SMA-book.tex
+
+% Bayesian Inverse Problems. 
+\newcommand{\spar}{\theta} % Parameter (scalar, non-bold)
+\newcommand{\bpar}{\boldsymbol{\theta}} % Parameter vector (bold)
+\newcommand{\parspace}{\Theta} % Parameter space
+\newcommand{\Npar}{D} % Dimension of parameter space
+\newcommand{\Nout}{P} % Number of output variables/data constraints/objectives
+\newcommand{\Ntime}{T} % Number of time steps
+\newcommand{\outidx}{p} % Primary index for output variable
+\newcommand{\timeidx}{t} % Primary index for time step
+\newcommand{\fwd}{G} % Forward model
+\newcommand{\llik}{\mathcal{L}} % Log-likelihood
+\newcommand{\priorDens}{\pi_0} % Prior density 
+\newcommand{\postDens}{\pi} % Posterior density
+\newcommand{\sdOut}{\sigma} % Standard deviation for observation error of single output in Gaussian likelihood
+\newcommand{\CovOut}{\Sigma} % Time-independent covariance matrix across all output variables
+
+% ODEs/Dynamic models. 
+\newcommand{\bstate}{\mathbf{y}} % State vector (bold)
+\newcommand{\state}{y} % State (scalar, non-bold)
+\newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
+\newcommand{\fwdOne}{g} % One-step flow map
+
+% Custom Commands
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\Ker}{\mathrm{Ker}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\btheta}{\boldsymbol{\theta}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bw}{\mathbf{w}}
+
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
