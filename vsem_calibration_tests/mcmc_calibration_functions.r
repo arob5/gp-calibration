@@ -10,7 +10,7 @@
 library(dplyr)
 library(parallel)
 library(mvtnorm)
-library(tmvtnorm)
+# library(tmvtnorm)
 library(truncnorm)
 library(LaplacesDemon)
 
