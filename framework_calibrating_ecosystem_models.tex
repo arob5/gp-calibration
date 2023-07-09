@@ -148,13 +148,13 @@ Under the likelihood \ref{likelihood}, $\llik(\bpar, \CovObs)$ takes the form
 \llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\stateTimeOut{\timeidx}{\outidx} | \fwdTimeOut{\timeidx}{\outidx}(\bpar), \sdOut_{\outidx}^2 \right)
 \end{align*}
 Missing observations are simply ignored. For future purposes, it will be useful to expand this sum of Gaussian densities and introduce some notation. To this end, the log likelihood can be written as 
-\begin{align*}
-\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \\
-	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right]  \\
+\begin{align}
+\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \nonumber \\
+	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right] \nonumber \\
 	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{1}{\sdOut_{\outidx}^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(\state_{\timeidx \outidx} - 
-	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \\
-	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] 
-\end{align*}
+	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \nonumber \\
+	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \label{llik}
+\end{align}
 where 
 \begin{align}
 \SSROut{\outidx}(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2
@@ -164,7 +164,9 @@ is the squared Euclidean error between the observations $\stateOut{\outidx}$ and
 With the likelihood established, we now define a prior distribution jointly over the calibration parameters $\btheta$ and likelihood variance parameters $\CovObs$. 
 We denote the prior density for this distribution as $\priorDens(\bpar, \CovObs) = \priorDens(\bpar)\priorDens(\CovObs)$, assuming prior independence between $\bpar$ and $\CovObs$.  
 The variances $\sdOut_{\outidx}^2$ are assigned inverse gamma priors $\sdOut_{\outidx}^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
-\[\priorDens(\CovObs) = \prod_{\outidx = 1}^{\Nout} \mathcal{IG}(\sdOut_{\outidx}^2|\alpha_p, \beta_p).\]
+\begin{align}
+\priorDens(\CovObs) = \prod_{\outidx = 1}^{\Nout} \mathcal{IG}(\sdOut_{\outidx}^2|\alpha_p, \beta_p). \label{inv_gamma_prior}
+\end{align}
 Combining these priors with the likelihood yields the posterior 
 \begin{align}
 \postDens(\bpar, \CovObs) := p(\bpar, \sdOut_{1}^2, \dots, \sdOut_{\Nout}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs).
@@ -244,7 +246,7 @@ We note that in practice the proposal covariance $\CovProp$ is typically adaptiv
 
 In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. The log likelihood can be written as 
 \begin{align*}
-\llik(\bpar) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \\
+\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \\
 	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right]  \\
 	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{1}{\sdOut_{\outidx}^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(\state_{\timeidx \outidx} - 
 	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \\
@@ -287,9 +289,27 @@ Here we have defined
 Regardless of whether one directly approximates the forward model, the likelihood, or a sufficient statistic of the likelihood, ultimately the emulator induces an approximation to the posterior 
 density $\postDens(\bpar, \CovObs|\stateMat)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
 a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs|\stateMat)$. In the case of loss emulation, recall that $\SSRPred{\designidx}(\bpar)$ denotes the random 
-variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar)$ and 
-$\log \postDens_{\designidx}(\bpar)$ to denote, respectively, the random approximation to the log-likelihood and log-posterior induced by the emulator (e.g. $\Phi_n(\btheta)$). The distribution of 
-these induced approximations will be important when considering sequential design criterions in the next section.  
+variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ and 
+$\log \postDens_{\designidx}(\bpar, \CovObs)$ to denote, respectively, the random approximation to the log-likelihood and log-posterior induced by the emulator (e.g. $\Phi_n(\btheta)$). The distribution of 
+these induced approximations will be important when considering sequential design criterions in the next section. We therefore characterize the induced distributions given the various emulation 
+targets below. 
+
+\bigskip
+\noindent
+\textbf{Loss Emulation.} We begin by considering the case where GP emulators are fit to the squared loss $\SSR(\bpar)$. Plugging the emulator $\SSR_n(\bpar)$ in place of $\SSR(\bpar)$ in the log-likelihood
+\ref{llik} yields the approximation 
+\begin{align*}
+\llik_{\designidx}(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSRPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right].
+\end{align*}
+Given that the above sum represents a linear combination of independent Gaussians 
+$\SSRPredOut{\designidx}{\outidx}(\bpar) \overset{\text{ind}}{\sim} \mathcal{N}(\GPMeanPredOut{\designidx}{\outidx}(\bpar), \GPMeanPredOut{\designidx}{\outidx}(\bpar, \bpar))$ then it follows that 
+$\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments 
+
+\begin{align}
+\E[\llik_{\designidx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \\
+\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\end{align}
+The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
 
 \subsection{Statistical Setting}
@@ -344,8 +364,16 @@ A more accurate high-level view of the current algorithm is thus given by
 % Appendix 
 \section{Appendix}
 
-\subsection{Conditional Posterior Computations: $\postDens(\bpar|\stateMat, \CovObs)$, $\postDens(\CovObs|\stateMat, \bpar)$}
-\textbf{TODO}
+\subsection{Posterior Computations}
+
+\subsubsection{Gaussian-Inverse Gamma Model}
+Here we calculate the conditional posterior distributions $\postDens(\bpar|\stateMat, \CovObs)$, $\postDens(\CovObs|\stateMat, \bpar)$ under the independent Gaussian 
+likelihood \ref{likelihood} and inverse Gamma prior \ref{inv_gamma_prior}. Under this model, the joint log posterior over $\bpar$, $\CovObs$ has the form 
+\begin{align*}
+\log \postDens(\bpar, \CovObs|\stateMat) &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}  + (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{-2}) - \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right]
+\end{align*}
+where in the first line we recall the derivation \ref{llik} for the log-likelihood. 
+
 
 \subsection{Sequential Design}
 \subsubsection{Optimizing $\postDens(\CovObs|\stateMat, \bpar)$}
