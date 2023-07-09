@@ -15,26 +15,30 @@
 \newcommand{\postDens}{\pi} % Posterior density
 \newcommand{\sdOut}{\sigma} % Standard deviation for observation error of single output in Gaussian likelihood
 \newcommand{\CovOut}{\Sigma} % Time-independent covariance matrix across all output variables
+\newcommand{\SSR}{\Phi} % Generic sum of squared errors
+\newcommand{\SSROut}{\Phi^{(\outidx)}} % Sum of squared errors for specific output
+
 
 % ODEs/Dynamic models. 
 \newcommand{\bstate}{\mathbf{y}} % State vector (bold)
 \newcommand{\state}{y} % State (scalar, non-bold)
+\newcommand{\stateMat}{\mathbf{Y}} % Matrix of observed states across all time steps (rows) and output variables (columns) 
 \newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
 \newcommand{\fwdOne}{g} % One-step flow map
 
-% Gaussian Processes (GPs)
-\newcommand{\GP}{\mathcal{GP}} % GP distribution 
-\newcommand{\GPmean}{\mu} % Generic GP mean function
-\newcommand{\GPker}{k} % Generic GP kernel/covariance function
-\newcommand{\GPmeanOutput}{\mu^{(\outidx)}} % Generic GP mean function
-\newcommand{\GPkerOutput}{k} % Generic GP kernel/covariance function
-
-
 % Experimental/Sequential Design and Optimization
 \newcommand{\Ninit}{N_0} % Initial number of design points/size of space-filling design 
+\newcommand{\Ndesign}{N} % Total number of design points  
 \newcommand{\designidx}{n} % Primary index for design points (sequential design)
 \newcommand{\batchidx}{b}  % Primary index for rounds in sequential batch design
 
+% Gaussian Processes (GPs)
+\newcommand{\GP}{\mathcal{GP}} % GP distribution 
+\newcommand{\GPMean}{\mu} % Generic GP prior mean function
+\newcommand{\GPKer}{k} % Generic GP prior kernel/covariance function
+\newcommand{\GPMeanOut}{\mu^{(\outidx)}} % Univariate GP prior mean function for specific output variable 
+\newcommand{\GPKerOut}{k^{(\outidx)}} % Univariate GP prior covariance function for specific output variable
+\newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
 
 % Custom Commands
 \newcommand*{\norm}[1]{\left\lVert#1\right\rVert}

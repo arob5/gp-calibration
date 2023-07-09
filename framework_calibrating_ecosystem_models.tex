@@ -136,6 +136,39 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
 \subsection{Basis Functions}
 
 \subsection{Likelihood and Loss Emulation}
+In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. The log likelihood can be written as 
+\begin{align*}
+\llik(\bpar) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \\
+	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right]  \\
+	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{1}{\sdOut_{\outidx}^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(\state_{\timeidx \outidx} - 
+	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \\
+	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut(\bpar)}{\sdOut_{\outidx}^2} \right] 
+\end{align*}
+where 
+\[\SSROut(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\]
+is the sum of squared errors between the observed data and the model output for the $\outidx^{\text{th}}$ output variable. Note that $\SSROut(\bpar)$ also depends on $\stateMat$, but again we suppress this in the notation. The key observation 
+is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\SSROut(\bpar)$, which means that approximating $\SSROut(\bpar)$ will induce an approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\SSR(\bpar)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\SSR(\bpar)$ can be emulated without regard for the variance parameters, 
+and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\SSROut: \parspace \to \R$ also reduces the problem to 
+approximating $\Nout$ univariate functions, instead of approximating $\fwd(\bpar)$, which has output dimension $\Ntime \times \Nout$. On a notational note, we collect the $\SSROut(\bpar)$ values into a $\Nout$-dimensional 
+vector $\SSR := \begin{pmatrix} \SSR^{(1)}(\bpar), \dots, \SSR^{(\Nout)}(\bpar) \end{pmatrix}^\top$.  
+
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\SSROut$ as unknown and assign them independent GP priors
+
+\[\SSROut(\cdot) \overset{\text{ind}}{\sim} \GP(\GPMeanOut(\cdot), \GPKerOut(\cdot, \cdot))\] 
+
+where $\GPMeanOut: \Omega \to \R$ and $\GPKerOut: \Omega \times \Omega \to \R_+$ are the mean and covariance function (i.e. kernel), respectively. 
+Suppose we have access to a dataset 
+\[\designData_{\Ndesign} = \left\{(\bpar_1, \SSR(\bpar_1)), \dots, (\bpar_{\Ndesign}, \SSR(\bpar_{\Ndesign})) \right\}\]
+consisting of a set of $\Ndesign$ values for the calibration parameter and their associated values of $\SSR$ resulting from full forward model evaluations. For brevity, we will henceforth denote 
+$\SSR_{\designidx} := \SSR(\bpar_{\designidx})$. 
+
+We then run the forward model at carefully selected \textit{design points} $\bpar_1, \dots, \bpar_N \in \parspace$ and compute $\{\SSROut(\bpar_{\designidx})\}_{1 \leq \outidx \leq \Nout, 1 \leq \designidx \leq \Ndesign}$. 
+
+We denote the resulting observed data for output $p$ as 
+$\mathcal{D}_p := \left\{(\bpar_1, \Phi_1(\bpar_1)), \dots, (\bpar_P, \Phi_p(\bpar_P))  \right\}$ and collect the observed outputs in a vector 
+$\boldsymbol{\phi}_p = \left[\Phi_1(\bpar_1), \dots, \Phi_P(\bpar_1) \right]^{\top}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
+\[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
 
 
 
@@ -182,30 +215,6 @@ That is,
 
 % Surrogate Modeling
 \section{Surrogate Modeling}
-In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. The log likelihood can be written as 
-\begin{align*}
-\llik(\bpar) &= \sum_{p = 1}^{P} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(y_{tp}| G_{tp}(\bpar), \sigma_p^2 \right) \\
-			       &= \sum_{p = 1}^{P}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sigma_p^2) - \frac{1}{2\sigma_p^2} (y_{tp} - G_{tp}(\bpar))^2\right]  \\
-			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[\Ntime_{\outidx} \log\left(2\postDens \sigma_p^2 \right) + \frac{1}{\sigma_p^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(y_{tp} - G_{tp}(\bpar)\right)^2  \right] \\
-			       &= -\frac{1}{2} \sum_{p = 1}^{P} \left[\Ntime_{\outidx} \log\left(2\postDens \sigma_p^2 \right) + \frac{\Phi_p(\bpar)}{\sigma_p^2} \right] 
-\end{align*}
-where 
-\[\Phi_p(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (y_{tp} - G_{tp}(\bpar))^2\]
-is the sum of squared errors between the observed data and the model output for the $p^{\text{th}}$ output variable. Note that $\Phi_p(\bpar)$ also depends on $Y$, but again we suppress this in the notation. The key observation 
-is that the model evaluations $G(\bpar)$ only appear in the likelihood through the $\Phi_p(\bpar)$, which means that approximating $\Phi_p(\bpar)$ will induce an approximation of the likelihood. The independence assumptions 
-that yield the product form of the likelihood make it so that $\Phi(\bpar)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\Phi(\bpar)$ can be emulated without regard for the variance parameters, 
-and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\Phi_p: \parspace \to \R$ also reduces the problem to 
-approximating $P$ univariate functions, instead of approximating $G(\bpar)$, which has output dimension $\Ntime \times \Nout$. 
-
-Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\Phi_p$ as unknown and assign them independent GP priors
-\[\Phi_p(\cdot) \overset{ind}{\sim} \mathcal{GP}(\mu_p, k_p(\cdot, \cdot))\] 
-where $\mu_p$ is a constant mean and $k_p(\cdot, \cdot)$ a covariance function (i.e. kernel). The constant mean and kernel hyperparameters are fixed to their MLE estimates. We then run the forward model at carefully selected 
-\textit{design points} $\bpar_1, \dots, \bpar_N \in \parspace$ and compute $\{\Phi_p(\bpar_n)\}_{1 \leq p \leq P, 1 \leq n \leq N}$. 
-
-We denote the resulting observed data for output $p$ as 
-$\mathcal{D}_p := \left\{(\bpar_1, \Phi_1(\bpar_1)), \dots, (\bpar_P, \Phi_p(\bpar_P))  \right\}$ and collect the observed outputs in a vector 
-$\boldsymbol{\phi}_p = \left[\Phi_1(\bpar_1), \dots, \Phi_P(\bpar_1) \right]^{\top}$. Conditioning the GPs on the observed data yields the GP predictive distributions 
-\[\Phi_p(\cdot)|\mathcal{D}_p := \Phi_p^*(\cdot) \sim \mathcal{GP}(\mu^*_p(\cdot), k_p^*(\cdot, \cdot)), \text{ for } p = 1, \dots, P\]
 
 \subsection{MCMC Algorithm}
 We consider the joint posterior $p(\bpar, \Sigma, \Phi^*|Y)$ and seek to marginalize out $\Phi^*$ in order to obtain the posterior of interest $p(\bpar, \Sigma|Y)$. A Gibbs sampling approach would proceed as 
