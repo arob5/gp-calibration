@@ -12,7 +12,10 @@
 \newcommand{\Ntime}{T} % Number of time steps
 \newcommand{\outidx}{p} % Primary index for output variable
 \newcommand{\timeidx}{t} % Primary index for time step
+\newcommand{\NTimeOut}[1]{T_{#1}} % Number of time steps
 \newcommand{\fwd}{G} % Forward model
+\newcommand{\fwdOut}[1]{G^{(#1)}} % Output of forward model for specific output variable
+\newcommand{\fwdTimeOut}[2]{G_{#1}^{(#2)}} % Output of forward model for specific output variable and at specific time step
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Posterior density
@@ -25,9 +28,11 @@
 \newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}}
 
 % ODEs/Dynamic models. 
+\newcommand{\state}{y} % Generic state (scalar, non-bold)
 \newcommand{\bstate}{\mathbf{y}} % Generic state vector (bold)
-\newcommand{\bstateOut}[1]{\bstate^{(#1)}} % State vector for specific output variable (bold)
-\newcommand{\state}{y} % State (scalar, non-bold)
+\newcommand{\stateOut}[1]{\bstate^{(#1)}} % State vector for specific output variable
+\newcommand{\stateTime}[1]{\bstate_{#1}} % State vector at specific time across all outputs 
+\newcommand{\stateTimeOut}[2]{\state_{#1}^{(#2)}} % State at specific time and for specific output
 \newcommand{\stateMat}{\mathbf{Y}} % Matrix of observed states across all time steps (rows) and output variables (columns) 
 \newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
 \newcommand{\fwdOne}{g} % One-step flow map
@@ -37,6 +42,8 @@
 \newcommand{\Ndesign}{N} % Total number of design points  
 \newcommand{\designidx}{n} % Primary index for design points (sequential design)
 \newcommand{\batchidx}{b}  % Primary index for rounds in sequential batch design
+\newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
+  \newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
 
 % Gaussian Processes (GPs)
 \newcommand{\GP}{\mathcal{GP}} % GP distribution 
@@ -50,6 +57,10 @@
 \newcommand{\GPKerPredOut}[2]{k_{#1}^{(#2)}} % Univariate GP covariance, conditioned on data, for specific output variable
 \newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
 \newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Kernel matrix, explicitly showing dependence on number of design points
+
+% MCMC 
+\newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
+\newcommand{\NMCMC}{T_{\text{MCMC}}} % Proposal covariance matrix
 
 % Custom Commands
 \newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
