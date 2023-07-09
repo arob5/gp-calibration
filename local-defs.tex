@@ -1,5 +1,8 @@
 %!TEX root = SMA-book.tex
 
+% General linear algebra.
+\newcommand{\oneVec}[1]{\boldsymbol{1}_{#1}}
+
 % Bayesian Inverse Problems. 
 \newcommand{\spar}{\theta} % Parameter (scalar, non-bold)
 \newcommand{\bpar}{\boldsymbol{\theta}} % Parameter vector (bold)
@@ -14,13 +17,16 @@
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Posterior density
 \newcommand{\sdOut}{\sigma} % Standard deviation for observation error of single output in Gaussian likelihood
-\newcommand{\CovOut}{\Sigma} % Time-independent covariance matrix across all output variables
+\newcommand{\CovObs}{\boldsymbol{\Sigma}} % Time-independent covariance matrix across all output variables
 \newcommand{\SSR}{\Phi} % Generic sum of squared errors
-\newcommand{\SSROut}{\Phi^{(\outidx)}} % Sum of squared errors for specific output
-
+\newcommand{\SSROut}[1]{\SSR^{(#1)}} % Sum of squared errors for specific output
+\newcommand{\SSRPred}[1]{\SSR_{#1}} % Random variable, SSR conditioned on data
+\newcommand{\SSRPredOut}[2]{\SSR_{#1}^{(#2)}} % Random variable; SSR conditioned on data for specific output
+\newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}}
 
 % ODEs/Dynamic models. 
-\newcommand{\bstate}{\mathbf{y}} % State vector (bold)
+\newcommand{\bstate}{\mathbf{y}} % Generic state vector (bold)
+\newcommand{\bstateOut}[1]{\bstate^{(#1)}} % State vector for specific output variable (bold)
 \newcommand{\state}{y} % State (scalar, non-bold)
 \newcommand{\stateMat}{\mathbf{Y}} % Matrix of observed states across all time steps (rows) and output variables (columns) 
 \newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
@@ -35,10 +41,15 @@
 % Gaussian Processes (GPs)
 \newcommand{\GP}{\mathcal{GP}} % GP distribution 
 \newcommand{\GPMean}{\mu} % Generic GP prior mean function
-\newcommand{\GPKer}{k} % Generic GP prior kernel/covariance function
-\newcommand{\GPMeanOut}{\mu^{(\outidx)}} % Univariate GP prior mean function for specific output variable 
-\newcommand{\GPKerOut}{k^{(\outidx)}} % Univariate GP prior covariance function for specific output variable
+\newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 
+\newcommand{\GPMeanPred}[1]{\mu_{#1}} % GP mean, conditioned on data 
+\newcommand{\GPMeanPredOut}[2]{\mu_{#1}^{(#2)}} % Univariate GP mean, conditioned on data, for specific output variable
+\newcommand{\GPKer}{k} % Generic GP prior covariance function
+\newcommand{\GPKerOut}[1]{k^{(#1)}} % Univariate GP prior covariance function for specific output variable 
+\newcommand{\GPKerPred}[1]{k_{#1}} % GP covariance, conditioned on data 
+\newcommand{\GPKerPredOut}[2]{k_{#1}^{(#2)}} % Univariate GP covariance, conditioned on data, for specific output variable
 \newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
+\newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Kernel matrix, explicitly showing dependence on number of design points
 
 % Custom Commands
 \newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
