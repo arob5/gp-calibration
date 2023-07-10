@@ -315,19 +315,28 @@ $\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments
 \end{align}
 The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
+% Surrogate-Assisted MCMC
 \subsection{Surrogate-Assisted MCMC}
 Recall that in the case of an expensive forward model $\fwd$, MCMC is often impractical due to the fact that each log-likelihood evaluation $\llik(\bpar, \CovObs)$ requires a forward model 
- run. In order to make MCMC feasible, we replace the expensive log-likelihood with the cheaper approximation $\llik_{\designidx}(\bpar, \CovObs)$. This implies that we will no longer be 
+ run. In order to make MCMC feasible, we replace the expensive log-likelihood with the cheaper approximation $\llik_{\Ndesign}(\bpar, \CovObs)$. This implies that we will no longer be 
  sampling from the exact posterior \ref{posterior_density}, but rather the approximation
  \begin{align}
- \postDens_{\designidx}(\bpar, \CovObs) = \exp\left(\llik_{\designidx}(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs) \label{approx_posterior_density}
+ \postDens_{\Ndesign}(\bpar, \CovObs) = \exp\left(\llik_{\Ndesign}(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs) \label{approx_posterior_density}
  \end{align}
- However, it is not immediately clear how to run MCMC on the approximate posterior given that, for each $\bpar$,  $\postDens_{\designidx}(\bpar, \CovObs)$ is a random variable. 
+ However, it is not immediately clear how to run MCMC on the approximate posterior given that, for each $\bpar$,  $\postDens_{\Ndesign}(\bpar, \CovObs)$ is a random variable. 
 
 % Sequential Design 
 \section{Sequential Design}
 
 \subsection{Basics of Sequential Design and Bayesian Optimization}
+
+\subsection{Acquisition Functions}
+Here we introduce acquisition functions that are tailored to solving Bayesian inverse problems. We first consider an acquisition introduced in Sinsbeck and Nowak (2017) and independently 
+in Surer et al (2023). We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
+\begin{align}
+\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\llik}} \Var\left[\llik_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\llik}) \right] \label{EIVAR}
+\end{align}
+
 
 \subsection{Batch Sequential Design}
 
@@ -342,8 +351,6 @@ be computed in closed form (see appendix). The optimal variances occupying the d
 \begin{align}
 \sdOut_{\outidx}^2 &= \frac{\SSROut{\outidx}(\currParMax{\designidx})/2 + \beta_{\outidx}}{\NTimeOut{\outidx}/2 + \alpha_{\outidx} + 1}
 \end{align}
-
-
 
 
 % Appendix 
@@ -392,8 +399,14 @@ Setting the derivative equal to zero and solving for $\sdOut^2_{\outidx}$ yields
 
 
 \subsubsection{EIVAR Acquisition Computations}
+In this section we provide computations related to the EIVAR criterion \ref{EIVAR} in the various emulation settings. Recall that EIVAR is generally defined as 
+\begin{align*}
+\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\llik}} \Var\left[\llik_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\llik}) \right] 
+\end{align*}
 
-
+\noindent
+\textbf{Loss Emulation.} 
+We begin by simplifying the EIVAR criterion  in the loss emulation setting. 
 
 
 
