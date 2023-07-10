@@ -169,7 +169,7 @@ The variances $\sdOut_{\outidx}^2$ are assigned inverse gamma priors $\sdOut_{\o
 \end{align}
 Combining these priors with the likelihood yields the posterior 
 \begin{align}
-\postDens(\bpar, \CovObs) := p(\bpar, \sdOut_{1}^2, \dots, \sdOut_{\Nout}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs).
+\postDens(\bpar, \CovObs) := p(\bpar, \sdOut_{1}^2, \dots, \sdOut_{\Nout}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs). \label{posterior_density}
 \end{align}
 Our main focus is on calibrating $\bpar$, while $\CovObs$ primarily act as nuisance parameters. Therefore, the primary object of interest is the marginal posterior
 \begin{align*}
@@ -186,7 +186,11 @@ the appendix. When dealing with log densities, we use the proportionality sign `
 
 \bigskip
 \noindent
-\textbf{$\bpar$ conditional.} \textbf{TODO}
+\textbf{$\bpar$ conditional.} 
+The log posterior of $\bpar$ given $\CovObs$ is given by 
+\begin{align*}
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\end{align*}
 
 \bigskip
 \noindent
@@ -311,14 +315,14 @@ $\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments
 \end{align}
 The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
-
-\subsection{Statistical Setting}
-We denote the vector of calibration parameters by $\bpar \in \parspace \subset \R^{\Npar}$. The forward model (e.g. SIPNET or ED2) $\fwd(\bpar)$ maps calibration parameters to the model outputs. Note that the forward 
-model also depends on initial conditions and model drivers, but these are fixed throughout the analysis so are suppressed in the notation. Model outputs consist 
-of $T$ time steps for each of $P$ output variables, so $\fwd(\bpar) \in \mathbb{R}^{\Ntime \times \Nout}$. We have observed data $Y \in \mathbb{R}^{\Ntime \times \Nout}$, potentially with missing values. Let $\Ntime_{\outidx}$ denote the number 
-of non-missing observations of output variable $p$. We index the observations of output $p$ as $\{y_{tp}\}_{\timeidx = 1}^{\Ntime_{\outidx}}$, meaning that $Y$ is then technically a ragged matrix. 
-This is suitable for the model detailed below, as the ordering of the observations is inconsequential. 
-
+\subsection{Surrogate-Assisted MCMC}
+Recall that in the case of an expensive forward model $\fwd$, MCMC is often impractical due to the fact that each log-likelihood evaluation $\llik(\bpar, \CovObs)$ requires a forward model 
+ run. In order to make MCMC feasible, we replace the expensive log-likelihood with the cheaper approximation $\llik_{\designidx}(\bpar, \CovObs)$. This implies that we will no longer be 
+ sampling from the exact posterior \ref{posterior_density}, but rather the approximation
+ \begin{align}
+ \postDens_{\designidx}(\bpar, \CovObs) = \exp\left(\llik_{\designidx}(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs) \label{approx_posterior_density}
+ \end{align}
+ However, it is not immediately clear how to run MCMC on the approximate posterior given that, for each $\bpar$,  $\postDens_{\designidx}(\bpar, \CovObs)$ is a random variable. 
 
 % Sequential Design 
 \section{Sequential Design}
@@ -339,27 +343,8 @@ be computed in closed form (see appendix). The optimal variances occupying the d
 \sdOut_{\outidx}^2 &= \frac{\SSROut{\outidx}(\currParMax{\designidx})/2 + \beta_{\outidx}}{\NTimeOut{\outidx}/2 + \alpha_{\outidx} + 1}
 \end{align}
 
-% Surrogate Modeling
-\section{Surrogate Modeling}
 
-\subsection{MCMC Algorithm}
-We consider the joint posterior $p(\bpar, \Sigma, \Phi^*|Y)$ and seek to marginalize out $\Phi^*$ in order to obtain the posterior of interest $p(\bpar, \Sigma|Y)$. A Gibbs sampling approach would proceed as 
-\begin{itemize}
-\item $\Phi \sim p(\Phi^*|\bpar, \Sigma, Y) = p(\Phi^*)$
-\item $\bpar \sim p(\bpar|\Sigma, \Phi^*, Y)$
-\item $\Sigma \sim p(\Sigma|\bpar, \Phi^*, Y)$
-\end{itemize}
-Under the model assumptions, the $\Phi^*$ and $\Sigma$ conditionals can be directly sampled from, while the $\bpar$ conditional requires a Metropolis step. The current PEcAn algorithm modifies the above by re-sampling 
-$p(\Phi^*)$ again before the final line. Thus, each sweep over the conditionals results in two samples from $\Phi^*$ and one sample each from $\bpar$ and $\Sigma$. It is also important to note that 
-$\Phi^*$ is a function, and in practice we only sample the function values at the points of interest. This implies the distribution sampled from is actually the marginal distribution of $\Phi^*(\bpar)$:
-\[\Phi(\bpar) \sim p(\Phi^*(\bpar))\]
-A more accurate high-level view of the current algorithm is thus given by 
-\begin{itemize}
-\item $\Phi(\bpar) \sim p(\Phi^*(\bpar))$
-\item $\bpar \sim p(\bpar|\Sigma, \Phi^*(\bpar), Y)$
-\item $\Phi(\bpar) \sim p(\Phi^*(\bpar))$
-\item $\Sigma \sim p(\Sigma|\bpar, \Phi^*(\bpar), Y)$
-\end{itemize}
+
 
 % Appendix 
 \section{Appendix}
@@ -368,11 +353,21 @@ A more accurate high-level view of the current algorithm is thus given by
 
 \subsubsection{Gaussian-Inverse Gamma Model}
 Here we calculate the conditional posterior distributions $\postDens(\bpar|\stateMat, \CovObs)$, $\postDens(\CovObs|\stateMat, \bpar)$ under the independent Gaussian 
-likelihood \ref{likelihood} and inverse Gamma prior \ref{inv_gamma_prior}. Under this model, the joint log posterior over $\bpar$, $\CovObs$ has the form 
+likelihood \ref{likelihood} and inverse Gamma prior \ref{inv_gamma_prior}. We allow for an arbitrary prior $\priorDens(\bpar)$ on the calibration parameters.
+Under this model, the joint log posterior over $\bpar$, $\CovObs$ has the form 
 \begin{align*}
-\log \postDens(\bpar, \CovObs|\stateMat) &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}  + (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{-2}) - \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right]
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto -\sum_{\outidx = 1}^{\Nout} \left[\frac{\Ntime_{\outidx}}{2} \log\left(2\pi \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{2\sdOut_{\outidx}^2}  - (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{-2}) + \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right] + \log\left[\priorDens(\bpar)\right] 
 \end{align*}
-where in the first line we recall the derivation \ref{llik} for the log-likelihood. 
+where in the first line we recall the derivation \ref{llik} for the log-likelihood. For the $\bpar$ conditional we drop terms without $\bpar$ dependence, yielding
+\begin{align*}
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\end{align*}
+We proceed similarly to derive the $\CovObs$ conditional \ref{cond_post_Cov}
+\begin{align*}
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto - \sum_{\outidx = 1}^{\Nout} \left[\frac{\Ntime_{\outidx}}{2} \log\left(2\pi \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{2\sdOut_{\outidx}^2}  + (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{2}) + \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right] \\
+&\propto - \sum_{\outidx = 1}^{\Nout} \left[(\Ntime_{\outidx}/2 + \alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^2) + \frac{\SSROut{\outidx}(\bpar)/2 + \beta_{\outidx}}{\sdOut_{\outidx}^2} \right] \\
+&\propto \sum_{\outidx = 1}^{\Nout} \log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right)
+\end{align*}
 
 
 \subsection{Sequential Design}
