@@ -232,7 +232,7 @@ The Metropolis-within-Gibbs procedure is outlined below.
 	\bigskip
 	
 	\textit{Gibbs step, sample $\CovObs$}: \\[.2cm]
-	Sample $\CovObs \sim  \postDens(\CovObs | \stateMat, \bpar^{(t)})$
+	Sample $\CovObs^{(t)} \sim  \postDens(\CovObs | \stateMat, \bpar^{(t)})$
 }
 \caption{MCMC algorithm: approximately sample $\postDens(\bpar, \CovObs|\stateMat)$}
 \end{algorithm}
@@ -248,22 +248,20 @@ We note that in practice the proposal covariance $\CovProp$ is typically adaptiv
 \subsection{Likelihood and Loss Emulation}
 \textbf{TODO: better to introduce all the GP notation in the $P = 1$ case to avoid all the superscripts. Then generalize later.}
 
-In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. The log likelihood can be written as 
+In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. Recall from \ref{llik} that the log likelihood can be written as 
 \begin{align*}
-\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \\
-	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right]  \\
-	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{1}{\sdOut_{\outidx}^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(\state_{\timeidx \outidx} - 
-	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \\
-	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] 
+\llik(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] 
 \end{align*}
 where 
-\[\SSROut{\outidx}(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\]
-is the sum of squared errors between the observed data and the model output for the $\outidx^{\text{th}}$ output variable. Note that $\SSROut{\outidx}(\bpar)$ also depends on $\stateMat$, but again we suppress this in the notation. The key observation 
-is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\SSROut{\outidx}(\bpar)$, which means that approximating $\SSROut{\outidx}(\bpar)$ will induce an approximation of the likelihood. The independence assumptions 
-that yield the product form of the likelihood make it so that $\SSR(\bpar)$ is a sufficient statistic which is not a function of the variance parameters. This means that $\SSR(\bpar)$ can be emulated without regard for the variance parameters, 
-and then inference can be performed over the variance parameters as usual. The choice to emulate the mappings $\SSROut{\outidx}: \parspace \to \R$ also reduces the problem to 
+\[\SSROut{\outidx}(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2.\]
+The key observation 
+is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\SSROut{\outidx}(\bpar)$, which means that replacing $\SSROut{\outidx}(\bpar)$ with a
+computationally cheaper approximation will induce a cheap approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\SSR(\bpar)$ is a sufficient statistic, and not a function of the variance parameters $\CovObs$. 
+This means that $\SSR(\bpar)$ can be emulated independently of the value of $\CovObs$, unlike in the likelihood emulation setting. 
+The choice to emulate the mappings $\SSROut{\outidx}: \parspace \to \R$ also reduces the problem to 
 approximating $\Nout$ univariate functions, instead of approximating $\fwd(\bpar)$, which has output dimension $\Ntime \times \Nout$. On a notational note, we collect the $\SSROut{\outidx}(\bpar)$ values into a $\Nout$-dimensional 
-vector $\SSR := \begin{pmatrix} \SSROut{1}(\bpar), \dots, \SSROut{\Nout}(\bpar) \end{pmatrix}^\top$.  
+vector $\SSR(\bpar) := \begin{pmatrix} \SSROut{1}(\bpar), \dots, \SSROut{\Nout}(\bpar) \end{pmatrix}^\top$.  
 
 Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\SSROut{\outidx}$ as unknown and assign them independent GP priors
 
@@ -295,7 +293,7 @@ density $\postDens(\bpar, \CovObs|\stateMat)$. In the case of Gaussian process e
 a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs|\stateMat)$. In the case of loss emulation, recall that $\SSRPred{\designidx}(\bpar)$ denotes the random 
 variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ and 
 $\log \postDens_{\designidx}(\bpar, \CovObs)$ to denote, respectively, the random approximation to the log-likelihood and log-posterior induced by the emulator (e.g. $\Phi_n(\btheta)$). The distribution of 
-these induced approximations will be important when considering sequential design criterions in the next section. We therefore characterize the induced distributions given the various emulation 
+these induced approximations will be important when considering sequential design criteria in the next section. We therefore characterize the induced distributions for the various emulation 
 targets below. 
 
 \bigskip
@@ -310,8 +308,8 @@ $\SSRPredOut{\designidx}{\outidx}(\bpar) \overset{\text{ind}}{\sim} \mathcal{N}(
 $\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments 
 
 \begin{align}
-\E[\llik_{\designidx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \\
-\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\E[\llik_{\designidx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \label{loss_emulation_dist} \\
+\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^4} \noindent
 \end{align}
 The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
@@ -331,14 +329,43 @@ Recall that in the case of an expensive forward model $\fwd$, MCMC is often impr
 \subsection{Basics of Sequential Design and Bayesian Optimization}
 
 \subsection{Acquisition Functions}
-Here we introduce acquisition functions that are tailored to solving Bayesian inverse problems. We first consider an acquisition introduced in Sinsbeck and Nowak (2017) and independently 
+Here we introduce acquisition functions that are tailored to solving Bayesian inverse problems. 
+
+\subsubsection{Expected Integrated Variance}
+We first consider an acquisition introduced in Sinsbeck and Nowak (2017) and independently 
 in Surer et al (2023). We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
 \begin{align}
-\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\llik}} \Var\left[\llik_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\llik}) \right] \label{EIVAR}
+\acq{\designidx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] \label{EIVAR}
 \end{align}
+The inner term is the predictive variance of the posterior approximation conditioned on $\designData_{\designidx} \cup (\tilde{\bpar}, \tilde{\postDens})$, where 
+$\tilde{\postDens} := \postDens(\tilde{\bpar})$ is the hypothetical posterior density evaluation at input $\tilde{\bpar}$. Since the forward model has not yet been evaluated at 
+this input, $\tilde{\postDens}$ is unknown, and hence the inner expectation $\E_{\tilde{\postDens}}$ integrates over this uncertainty. The outer expectation $\E_{\bpar \sim \rho}$
+averages this expected predictive variance across the input space $\parspace$, weighted by a density $\rho$. Both of the above mentioned papers take $\rho = \priorDens$, but we 
+also consider choosing $\rho$ to be an approximation to $\postDens$. We also note that we can alternatively consider $\postDens_{\designidx}(\bpar)$ to be either the 
+approximate posterior or log posterior density, but we present the generic EIVAR expression without the log for brevity. The criterion proposed in Sinsbeck and Nowak (2017) actually 
+considers targeting the likelihood approximation in place of the posterior. 
 
-
-\subsection{Batch Sequential Design}
+\bigskip
+\noindent
+\textbf{Loss Emulation.} The loss emulation setting yields a very convenient form of EIVAR, especially for the EIVAR version targeting the log posterior density. In this case,
+$\log \postDens_{\designidx}(\bpar)$ is Gaussian distributed and $\Var\left[\log \postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right]$ is 
+available in closed-form (see \ref{loss_emulation_dist}). Moreover, this variance does not depend on $\tilde{\postDens}$ so the inner expectation $\E_{\tilde{\postDens}}$ vanishes. 
+Therefore, the EIVAR expression simplifies to  
+setting is 
+\begin{align}
+\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)\right]}{\sdOut_{\outidx}^4}
+\end{align}
+where 
+\begin{align*}
+\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar) &= \GPKerPredOut{\designidx}{\outidx}(\bpar) - \left(\boldsymbol{\GPKerOut{\outidx}_{n,\tilde{\bpar}}}\right)^\top \left(\KerMatOut{\designidx, \tilde{\bpar}}{\outidx}\right)^{-1} \boldsymbol{\GPKerOut{\outidx}_{\designidx, \tilde{\bpar}}}
+\end{align*}
+and 
+\begin{align*}
+\boldsymbol{\GPKerOut{\outidx}_{\designidx, \tilde{\bpar}}} &= \begin{pmatrix} \GPKerOut{\outidx}(\bpar_1, \bpar), \dots, 
+														       \GPKerOut{\outidx}(\bpar_{\designidx}, \bpar), 
+														       \GPKerOut{\outidx}(\tilde{\bpar}, \bpar)  \end{pmatrix}^\top 
+\end{align*}
+and similarly $\KerMatOut{\designidx, \tilde{\bpar}}{\outidx}$ is the kernel matrix constructed from the extended design $\designData_{\designidx} \cup \{\tilde{\bpar}\}$.
 
 \subsection{Unknown $\CovObs$}
 The above algorithms have treated $\CovObs$ as fixed; here we return to the general setting where $\CovObs$ is unknown. To deal with this, we consider inserting an 
@@ -351,6 +378,8 @@ be computed in closed form (see appendix). The optimal variances occupying the d
 \begin{align}
 \sdOut_{\outidx}^2 &= \frac{\SSROut{\outidx}(\currParMax{\designidx})/2 + \beta_{\outidx}}{\NTimeOut{\outidx}/2 + \alpha_{\outidx} + 1}
 \end{align}
+
+\subsection{Batch Sequential Design}
 
 
 % Appendix 
@@ -408,6 +437,44 @@ In this section we provide computations related to the EIVAR criterion \ref{EIVA
 \textbf{Loss Emulation.} 
 We begin by simplifying the EIVAR criterion  in the loss emulation setting. 
 
+\section{Meeting: 7/11/2023}
+
+\subsection{General Updates}
+\begin{enumerate}
+\item URBAN would allow me to take SPH EH 851: Advanced GIS for Public Health and Climate Research. 
+\item Have begun reviewing PEcAn code and planning updates. 
+\item Working on writing up a full exposition for the model/algorithms so far. 
+\item Spent most of last week reading up on batch Bayesian optimization and sequential design. 
+\end{enumerate}
+
+\subsection{Experimental Design}
+\begin{align*}
+\acq{\designidx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
+\end{align*}
+
+\begin{enumerate}
+\item Sinsbeck and Nowak (2017) propose this criterion except targeting the likelihood approximation instead of the (unnormalized) posterior. They set $\rho = \priorDens$. 
+\item Surer, Plumlee, and Wild (2023) propose the same criterion (they target the posterior, as the acquisition function is defined above). They show that the 
+inner two integrals can be computed analytically in the PCA-GP setting. 
+\item To generalize this to the batch setting, Surer et al utilize a kriging believer approach. i.e. the batch of points is collected in a loop; when each point $\tilde{\bpar}$ is chosen, the GP is conditioned on $(\tilde{\bpar}, \mu(\tilde{\bpar}))$ where $\mu(\cdot)$ is the GP mean. This has the effect of updating the GP predictive variance without affecting 
+the GP mean. GP hyperparameters are updated only after a whole batch has been collected and the full model run at the points in the batch. Alternative batch Bayesian 
+optimization heuristics could also be used here; e.g. constant liar. 
+\item In our setting, if we target the unnormalized log posterior, then the variance is known in closed-form and does not depend on $\tilde{\postDens}$. We may also 
+be able to compute the two inner integrals when targeting the unnormalized posterior - I need to check. 
+\item Some questions I have: 
+	\begin{enumerate}
+	\item What is the effect of targeting the unnormalized posterior vs log posterior vs. (log) likelihood? 
+	\item Instead of weighting by $\rho = \priorDens$, what if we weight by an approximation to the true posterior by using MCMC samples to approximate the outer
+	integral? 
+	\end{enumerate}
+\end{enumerate}
+
+\subsection{Plan for Next Week}
+\begin{enumerate}
+\item Implement the above acquisition as well as other common Bayes Opt/sequential design acquisitions for comparison. 
+\item Continue planning updates to PEcAn code. 
+\item Continue working on writing exposition; will share the document once it is at a reasonable state of completion. 
+\end{enumerate}
 
 
 \end{document}

@@ -57,7 +57,8 @@
 \newcommand{\GPKerPred}[1]{k_{#1}} % GP covariance, conditioned on data 
 \newcommand{\GPKerPredOut}[2]{k_{#1}^{(#2)}} % Univariate GP covariance, conditioned on data, for specific output variable
 \newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
-\newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Kernel matrix, explicitly showing dependence on number of design points
+\newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points
+\newcommand{\KerMatOut}[2]{\mathbf{K}_{#1}^{(#2)}} % Kernel matrix for specific output 
 
 % MCMC 
 \newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
