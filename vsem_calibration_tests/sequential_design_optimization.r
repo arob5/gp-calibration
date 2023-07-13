@@ -5,10 +5,12 @@
 # Andrew Roberts
 #
 
-Bayes_opt <- function(Bayes_opt_settings, init_design_settings, emulator_settings, computer_model_data, 
-                      sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
-  # TODO: generalize so this works with log-normnal process. 
-  
+run_sequential_design_optimization <- function(acquisition_settings, init_design_settings, emulator_settings, computer_model_data, 
+                                               sig2_eps, theta_prior_params, theta_grid_ref = NULL, optimize_sig_eps = FALSE, 
+                                               sig_eps_prior_params = NULL) {
+  # TODO: generalize so this works with log-normal process. 
+  # If `optimize_sig_eps` is TRUE, then treat `sig2_eps` as the initial condition. 
+
   # Create initial design and fit GP. 
   design_info <- get_input_output_design(N_points = init_design_settings$N_design, 
                                          design_method = init_design_settings$design_method, 
@@ -28,6 +30,7 @@ Bayes_opt <- function(Bayes_opt_settings, init_design_settings, emulator_setting
                              settings = emulator_settings)
   
   # Current observed objective values (i.e. log posterior values). 
+  # TODO: should change this to be the full joint log-posterior, since we are optimizing over both theta and sig_eps. 
   design_objective_vals <- calc_lpost_theta_product_lik(theta_vals = design_inputs, 
                                                         computer_model_data = computer_model_data,  
                                                         SSR = design_info$outputs, 
@@ -36,32 +39,42 @@ Bayes_opt <- function(Bayes_opt_settings, init_design_settings, emulator_setting
                                                         return_list = FALSE, 
                                                         theta_prior_params = theta_prior_params)
   design_best_idx <- which.max(design_objective_vals)
+  SSR_best <- design_info$outputs[design_best_idx]
   
-  # Bayesian Optimization loop. 
-  for(i in seq_len(Bayes_opt_settings$N_opt_iter)) {
+  
+  # Sequential Design/Bayesian Optimization loop. 
+  for(i in seq_len(acquisition_settings$N_opt_iter)) {
     
-    design_idx_curr <- init_design_settings$N_design + i
+    # Optimize sig_eps, if specified. 
+    if(optimize_sig_eps) {
+      sig2_eps <- optimize_sig_eps_cond_post(SSR_theta = SSR_best, 
+                                             sig_eps_prior_params = sig_eps_prior_params,
+                                             n_obs = computer_model_data$n_obs)
+    }
+    
+    # Index of the first new design point being added. 
+    new_design_idx_curr <- init_design_settings$N_design + i
     
     # Obtain new design point and corresponding objective value. 
-    opt_results <- bayes_opt_one_step(emulator_info_list = emulator_info_list, 
-                                      Bayes_opt_settings = Bayes_opt_settings, 
-                                      design_input_curr = design_inputs, 
-                                      design_objective_curr = design_objective_vals, 
-                                      design_best_idx = design_best_idx[i],  
-                                      computer_model_data = computer_model_data, 
-                                      sig2_eps = sig2_eps, 
-                                      theta_prior_params = theta_prior_params, 
-                                      theta_grid_ref = theta_grid_ref)
+    acq_opt_results <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+                                                acquisition_settings = acquisition_settings, 
+                                                design_input_curr = design_inputs, 
+                                                design_objective_curr = design_objective_vals, 
+                                                design_best_idx = design_best_idx[i],  
+                                                computer_model_data = computer_model_data, 
+                                                sig2_eps = sig2_eps, 
+                                                theta_prior_params = theta_prior_params, 
+                                                theta_grid_ref = theta_grid_ref)
+    design_inputs <- acq_opt_results$inputs
+    design_objective_vals <- acq_opt_results$objectives
+    design_best_idx <- c(design_best_idx, acq_opt_results$idx)
+    SSR_best <- acq_opt_results$SSR_new[design_best_idx]
     
-    design_inputs <- opt_results$input
-    design_objective_vals <- opt_results$objective
-    design_best_idx <- c(design_best_idx, opt_results$idx)
-
     # Update GP. 
     emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, 
                                                          gp_lib = emulator_settings$gp_lib, 
-                                                         X_new = opt_results$input[design_idx_curr,,drop=FALSE], 
-                                                         Y_new = opt_results$SSR_new, 
+                                                         X_new = acq_opt_results$input[new_design_idx_curr:nrow(opt_results$input),,drop=FALSE], 
+                                                         Y_new = acq_opt_results$SSR_new, 
                                                          input_bounds = emulator_info_list$input_bounds, 
                                                          output_stats = emulator_info_list$output_stats) 
   }
@@ -71,6 +84,24 @@ Bayes_opt <- function(Bayes_opt_settings, init_design_settings, emulator_setting
   
 }
 
+
+optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
+  # Computes the closed form optimization of the conditional posterior p(Sig_eps | theta, Y) for the product likelihood 
+  # with inverse gamma priors on the variance parameters. 
+  #
+  # Args:
+  #    SSR_theta: numeric(), vector of length equal to the number of outputs P, containing the squared L2 errors for each output computed using 
+  #               the calibration input `theta` being conditioned upon in the conditional posterior. The value `theta` is not required to be 
+  #               explicitly passed here, only SSR(theta). 
+  #    sig_eps_prior_params: list, must contain elements named "IG_shape" and "IG_scale" which 
+  #                          each correspond to P-length vectors storing the parameters for the independent Inverse Gamma priors on each
+  #                          variance parameter.
+  #    n_obs: numeric(), vector of length equal to the number of outputs P. The number of observations for each output. 
+  
+  (0.5 * SSR_theta + sig_eps_prior_params$IG_scale) / (0.5 * n_obs + sig_eps_prior_params$IG_shape + 1)
+  
+}
+                           
 
 bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_input_curr, design_objective_curr, design_best_idx,  
                                computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
@@ -157,6 +188,35 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_ref, emulator
 
   return(theta_grid_ref[max_idx,])
 
+}
+
+
+optimize_multi_acquisition_KB <- function(acquisition_type, batch_size, theta_grid_ref, emulator_info_list, computer_model_data, 
+                                          theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
+                                          design_best_idx, N_MC_samples) {
+  
+  for(b in 1:batch_size) {
+    
+    # Optimize for single point selection. 
+    theta_new <- optimize_acquisition(acquisition_type = acquisition_type, 
+                                      opt_method = Bayes_opt_settings$opt_method, 
+                                      emulator_info_list = emulator_info_list, 
+                                      computer_model_data = computer_model_data, 
+                                      theta_prior_params = theta_prior_params, 
+                                      sig2_eps = sig2_eps, 
+                                      design_input_curr = design_input_curr, 
+                                      design_objective_curr = design_objective_curr,
+                                      design_best_idx = design_best_idx,
+                                      theta_grid_ref = theta_grid_ref, 
+                                      N_MC_samples = Bayes_opt_settings$N_MC_samples)
+    
+    # Update only GP predictive variance. 
+    
+    
+  }
+  
+  
+  
 }
 
 
