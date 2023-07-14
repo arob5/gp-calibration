@@ -51,6 +51,9 @@
 
 % Calibration of Expensive Computer Models
 \section{Calibration of Expensive Computer Models}
+We consider the problem of calibrating expensive ecosystem models in a Bayesian statistical framework, leveraging 
+Gaussian process (GP) surrogate models. More generally, the framework presented here is applicable to the problem of parameter 
+estimation for dynamical models taking the form of a system of ordinary differential equations (ODEs). 
 
 % Ecosystem Models 
 \section{Ecosystem Models}
@@ -430,12 +433,20 @@ Setting the derivative equal to zero and solving for $\sdOut^2_{\outidx}$ yields
 \subsubsection{EIVAR Acquisition Computations}
 In this section we provide computations related to the EIVAR criterion \ref{EIVAR} in the various emulation settings. Recall that EIVAR is generally defined as 
 \begin{align*}
-\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\llik}} \Var\left[\llik_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\llik}) \right] 
+\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
 \end{align*}
+where $\tilde{\postDens}$ be also be replaced by its logarithm. 
+
 
 \noindent
-\textbf{Loss Emulation.} 
+\textbf{Loss Emulation (log).} 
 We begin by simplifying the EIVAR criterion  in the loss emulation setting. 
+
+\noindent
+\textbf{Loss Emulation (log).} 
+
+
+
 
 \section{Meeting: 7/11/2023}
 

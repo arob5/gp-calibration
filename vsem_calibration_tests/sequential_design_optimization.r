@@ -10,6 +10,10 @@ run_sequential_design_optimization <- function(acquisition_settings, init_design
                                                sig_eps_prior_params = NULL) {
   # TODO: generalize so this works with log-normal process. 
   # If `optimize_sig_eps` is TRUE, then treat `sig2_eps` as the initial condition. 
+  # TODO: make sure input/output scaling is done correctly. 
+  # TODO: Need to clarify what `lpost_max` is tracking; I believe it should be conditional on the most recent 
+  #       value of sig2_eps. 
+  # TODO: track objective values, both in fixed sig_eps and optimized sig_eps setting. 
 
   # Create initial design and fit GP. 
   design_info <- get_input_output_design(N_points = init_design_settings$N_design, 
@@ -17,8 +21,7 @@ run_sequential_design_optimization <- function(acquisition_settings, init_design
                                          computer_model_data = computer_model_data, 
                                          theta_prior_params = theta_prior_params, 
                                          transformation_method = emulator_settings$transformation_method)
-  design_inputs <- design_info$inputs
-  
+
   gp_fits <- fit_independent_GPs(X_train = design_info$inputs_scaled, 
                                  Y_train = design_info$outputs_normalized, 
                                  gp_lib = emulator_settings$gp_lib, 
@@ -30,57 +33,75 @@ run_sequential_design_optimization <- function(acquisition_settings, init_design
                              settings = emulator_settings)
   
   # Current observed objective values (i.e. log posterior values). 
-  # TODO: should change this to be the full joint log-posterior, since we are optimizing over both theta and sig_eps. 
-  design_objective_vals <- calc_lpost_theta_product_lik(theta_vals = design_inputs, 
+  design_objective_vals <- calc_lpost_theta_product_lik(theta_vals = design_info$inputs, 
                                                         computer_model_data = computer_model_data,  
                                                         SSR = design_info$outputs, 
                                                         vars_obs = sig2_eps, 
                                                         na.rm = TRUE, 
                                                         return_list = FALSE, 
                                                         theta_prior_params = theta_prior_params)
-  design_best_idx <- which.max(design_objective_vals)
-  SSR_best <- design_info$outputs[design_best_idx]
-  
+  design_best_idx_curr <- which.max(design_objective_vals)
+  design_best_idx <- c(design_best_idx_curr)
+  lpost_max <- design_objective_vals[design_best_idx] # TODO: probably want to track lpost_max over time as well. 
+  new_design_idx_curr <- 1
   
   # Sequential Design/Bayesian Optimization loop. 
   for(i in seq_len(acquisition_settings$N_opt_iter)) {
     
     # Optimize sig_eps, if specified. 
     if(optimize_sig_eps) {
-      sig2_eps <- optimize_sig_eps_cond_post(SSR_theta = SSR_best, 
+      sig2_eps <- optimize_sig_eps_cond_post(SSR_theta = design_info$outputs[design_best_idx_curr], 
                                              sig_eps_prior_params = sig_eps_prior_params,
                                              n_obs = computer_model_data$n_obs)
     }
     
-    # Index of the first new design point being added. 
-    new_design_idx_curr <- init_design_settings$N_design + i
+    # Obtain new batch of design points (without running the forward model).  
+    inputs_new <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+                                           acquisition_settings = acquisition_settings, 
+                                           design_input_curr = design_info$inputs, 
+                                           design_objective_curr = design_objective_vals, 
+                                           design_best_idx = design_best_idx_curr,  
+                                           computer_model_data = computer_model_data, 
+                                           sig2_eps = sig2_eps, 
+                                           theta_prior_params = theta_prior_params, 
+                                           theta_grid_ref = theta_grid_ref)
+
+    # Run forward model at input points in batch.  
+    # TODO: this should be parallelized.
+    SSR_new <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = inputs_new, na.rm = TRUE)
+    lpost_new <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                              theta_vals = inputs_new, 
+                                              SSR = SSR_new,
+                                              vars_obs = sig2_eps, 
+                                              na.rm = TRUE, 
+                                              theta_prior_params = theta_prior_params, 
+                                              return_list = FALSE)
     
-    # Obtain new design point and corresponding objective value. 
-    acq_opt_results <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
-                                                acquisition_settings = acquisition_settings, 
-                                                design_input_curr = design_inputs, 
-                                                design_objective_curr = design_objective_vals, 
-                                                design_best_idx = design_best_idx[i],  
-                                                computer_model_data = computer_model_data, 
-                                                sig2_eps = sig2_eps, 
-                                                theta_prior_params = theta_prior_params, 
-                                                theta_grid_ref = theta_grid_ref)
-    design_inputs <- acq_opt_results$inputs
-    design_objective_vals <- acq_opt_results$objectives
-    design_best_idx <- c(design_best_idx, acq_opt_results$idx)
-    SSR_best <- acq_opt_results$SSR_new[design_best_idx]
+    # Update design and keep track of current MAP estimate. If conditional on a new sig_eps, then `design_best_idx_curr`
+    # is always updated. If sig_eps is fixed, then may not be updated. 
+    design_best_idx_new <- which.max(lpost_new)
+    if(optimize_sig_eps || (lpost_new[design_best_idx_new] > lpost_max)) {
+      design_best_idx_curr <- length(design_info$outputs) + design_best_idx_new
+      lpost_max <- lpost_new[design_best_idx_new]
+    }
+    design_best_idx <- c(design_best_idx, design_best_idx_curr)
+    design_info$inputs <- rbind(design_info$inputs, inputs_new)
+    design_info$outputs <- rbind(design_info$outputs, SSR_new)
+
+    # Index of the first new design point in batch added to the design.  
+    new_design_idx_curr <- new_design_idx_curr + acquisition_settings$batch_size
     
-    # Update GP. 
+    # Update GP (including hyperparameter estimates). 
+    # TODO: modify `update_independent_GPs()` so that it can optionally modify hyperparameter estimates or not. 
     emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, 
                                                          gp_lib = emulator_settings$gp_lib, 
-                                                         X_new = acq_opt_results$input[new_design_idx_curr:nrow(opt_results$input),,drop=FALSE], 
-                                                         Y_new = acq_opt_results$SSR_new, 
+                                                         X_new = inputs_new, 
+                                                         Y_new = SSR_new, 
                                                          input_bounds = emulator_info_list$input_bounds, 
                                                          output_stats = emulator_info_list$output_stats) 
   }
   
-  return(list(design_inputs = design_inputs, objective_vals = design_objective_vals, 
-              best_idx = design_best_idx, emulator_info_list = emulator_info_list))
+  return(list(emulator_info_list = emulator_info_list, design_best_idx))
   
 }
 
@@ -103,8 +124,49 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
 }
                            
 
-bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_input_curr, design_objective_curr, design_best_idx,  
-                               computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
+batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, design_input_curr, design_objective_curr,
+                                           design_best_idx, computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
+
+  # Deep copy of emulator. 
+  # TODO: write this function. 
+  gp_fits <- copy_independent_GPs(emulator_info_list$gp_fits)
+  
+  # Object to store batch of inputs. 
+  inputs_new <- matrix(nrow = acquisition_settings$batch_size, ncol = ncol(design_input_curr))
+  
+  # Acquire batch of input points (without running forward model). 
+  for(b in 1:acquisition_settings$batch_size) {
+
+    # Optimize sequential acquisition function.  
+    theta_new <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+                                          acquisition_settings = acquisition_settings, 
+                                          design_input_curr = design_input_curr, 
+                                          design_objective_curr = design_objective_curr, 
+                                          design_best_idx = design_best_idx, 
+                                          computer_model_data = computer_model_data, 
+                                          sig2_eps = sig2_eps, 
+                                          theta_prior_params = theta_prior_params, 
+                                          theta_grid_ref = theta_grid_ref)
+    inputs_new[b,] <- theta_new
+    
+    # Update GP (using e.g. kriging believer, constant liar, etc.) 
+    # TODO: write this function
+    emulator_info_list$gp_fits <- pseudo_update_independent_GPs(gp_fits = emulator_info_list$gp_fits, 
+                                                                gp_lib = emulator_settings$gp_lib, 
+                                                                X_new = theta_new, 
+                                                                pseudo_update_method = acquisition_settings$batch_heuristic, 
+                                                                input_bounds = emulator_info_list$input_bounds, 
+                                                                output_stats = emulator_info_list$output_stats)
+    
+  }
+  
+  return(inputs_new)
+  
+}
+
+
+acquisition_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_input_curr, design_objective_curr, design_best_idx,  
+                                     computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
   # Note that this is all conditional on fixed likelihood parameters.                               
   
   # Select next point by optimizing acquisition function.
@@ -119,24 +181,8 @@ bayes_opt_one_step <- function(emulator_info_list, Bayes_opt_settings, design_in
                                     design_best_idx = design_best_idx,
                                     theta_grid_ref = theta_grid_ref, 
                                     N_MC_samples = Bayes_opt_settings$N_MC_samples)
-                                    
-  # Run forward model at new point. 
-  SSR_new <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = theta_new, na.rm = TRUE)
-  lpost_new <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                            theta_vals = theta_new, 
-                                            SSR = SSR_new,
-                                            vars_obs = sig2_eps, 
-                                            na.rm = TRUE, 
-                                            theta_prior_params = theta_prior_params, 
-                                            return_list = FALSE)
-  
-  # Add new point to design. 
-  design_input_curr <- rbind(design_input_curr, matrix(theta_new, nrow=1))
-  design_objective_curr <- c(design_objective_curr, lpost_new)
-  if(lpost_new > design_objective_curr[design_best_idx]) design_best_idx <- length(design_objective_curr)
-  
-  return(list(input = design_input_curr, objective = design_objective_curr, 
-              idx = design_best_idx, SSR_new = SSR_new))
+                              
+  return(theta_new)
 
 }
 
