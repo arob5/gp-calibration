@@ -210,16 +210,16 @@ optimize_acquisition <- function(acquisition_type, opt_method, emulator_info_lis
   
 }
 
-
-optimize_acquisition_grid <- function(acquisition_type, theta_grid_ref, emulator_info_list, computer_model_data, 
+  
+optimize_acquisition_grid <- function(acquisition_type, theta_grid_opt, emulator_info_list, computer_model_data, 
                                       theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
-                                      design_best_idx, N_MC_samples) {
+                                      design_best_idx, N_MC_samples = NULL, theta_grid_integrate = NULL) {
   
   # Get acquisition function. 
   acquisition_func <- get(paste0("acquisition_", acquisition_type))
   
   # Evaluate acquisition function on grid of reference inputs. 
-  acquisition_vals_grid <- acquisition_func(theta_grid_ref = theta_grid_ref, 
+  acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_opt, 
                                             emulator_info_list = emulator_info_list,
                                             computer_model_data = computer_model_data, 
                                             theta_prior_params = theta_prior_params, 
@@ -271,14 +271,14 @@ optim.EI <- function(f, ninit, end)
 #    - For both optimization and design. 
 # ------------------------------------------------------------------------------
 
-acquisition_EI_MC <- function(theta_grid_ref, emulator_info_list, computer_model_data, 
+acquisition_EI_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
                               theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
                               design_best_idx, N_MC_samples = 1000, gp_pred_list = NULL) {
   # Note that lpost_min should be the maximum posterior over both theta and Sigma, not over the conditional posterior. 
   # `theta_vals` should be unscaled. 
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
-  lpost_samp <- samp_GP_lpost_theta(theta_vals = theta_grid_ref, 
+  lpost_samp <- samp_GP_lpost_theta(theta_vals = theta_vals, 
                                     emulator_info_list = emulator_info_list,
                                     computer_model_data = computer_model_data, 
                                     theta_prior_params = theta_prior_params, 
@@ -295,14 +295,14 @@ acquisition_EI_MC <- function(theta_grid_ref, emulator_info_list, computer_model
 }
 
 
-acquisition_PI_MC <- function(theta_grid_ref, emulator_info_list, computer_model_data, 
+acquisition_PI_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
                               theta_prior_params, sig2_eps, design_input_curr, design_objective_curr,
                               design_best_idx, N_MC_samples = 1000, gp_pred_list = NULL) {
   # Note that lpost_min should be the maximum posterior over both theta and Sigma, not over the conditional posterior. 
   # `theta_vals` should be unscaled. 
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
-  lpost_samp <- samp_GP_lpost_theta(theta_vals = theta_grid_ref, 
+  lpost_samp <- samp_GP_lpost_theta(theta_vals = theta_vals, 
                                     emulator_info_list = emulator_info_list,
                                     computer_model_data = computer_model_data, 
                                     theta_prior_params = theta_prior_params, 
@@ -318,13 +318,37 @@ acquisition_PI_MC <- function(theta_grid_ref, emulator_info_list, computer_model
   
 }
 
-
-acquisition_EIVAR_lpost <- function(theta_grid_ref, emulator_info_list, theta_prior_params, sig2_eps) {
-  # TODO: think about whether predictive variance computation can be sped up here; probably can use hetGP update function. 
+# TODO: I think it makes more sense to scale inputs prior to passing to acq functions, so all acq functions assume they are already 
+#       scaled. Look into updating this and where the inputs should be scaled. 
+acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_params, sig2_eps, theta_grid_integrate = theta_vals) {
+  # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
+  # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
+  # space is approximated by a finite sum over grid points `theta_grid_integrate`. By default, the grid values used are the same 
+  # values at which the acquisition function is to be evaluated; in the case that the acquisition is only being evaluated at one 
+  # or a handful of values, then this default for `theta_grid_integrate` should certainly be overwritten. 
   
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
   
+  # Vector to store EIVAR estimates at inputs `theta_vals`. 
+  EIVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
   
+  for(i in 1:nrow(theta_vals)) {
+    
+    # Update variance by conditioning on theta evaluation value.
+    gp_fits_conditioned <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib, 
+                                                  X_new = theta_vals[i,,drop=FALSE], Y_new = NULL, update_hyperparamters = FALSE, 
+                                                  input_bounds = emulator_info_list$input_bounds)
+    
+    # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
+    lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals = theta_grid_integrate, emulator_info_list = emulator_info_list, sig2_eps = sig2_eps, include_nugget = TRUE)
+    
+    # Estimate EIVAR via discrete sum over theta grid locations. 
+    EIVAR_est[i] <- mean(lpost_pred_var_grid)
+    
+  }
   
+  return(EIVAR_est)
   
 }
 

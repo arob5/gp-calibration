@@ -196,7 +196,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
 }
 
 
-update_GP <- function(gp_obj, gp_lib, X_new, y_new) {
+update_GP <- function(gp_obj, gp_lib, X_new, y_new = NULL, update_hyperparamters = FALSE) {
   # Updates a GP fit by conditioning on new data (X_new, y_new). Currently this is only 
   # supported for `gp_lib == "hetGP"`. Currently, this updates GP hyperparameter fit and 
   # then adds (X_new, y_new) to the design set, so that future predictive mean/variance 
@@ -214,14 +214,21 @@ update_GP <- function(gp_obj, gp_lib, X_new, y_new) {
   #           D is the dimension of the input space. Note that these inputs should be properly scaled,
   #           as this function does not pre-process the new design data. 
   #    y_new: numeric, vector of length M. The outputs corresponding to the M new design points. 
-  #           Note that these inputs should be properly normalized ,
-  #           as this function does not pre-process the new design data.
+  #           Note that these inputs should be properly normalized, as this function does not pre-process 
+  #           the new design data. If NULL, then only updates the GP predictive variance. This is equivalent 
+  #           to conditioning the GP on (X_new, mu(X_new)), where mu() is the GP predictive mean. 
+  #    update_hyperparameters: If TRUE, runs optimization to re-fit GP hyperparameters. Otherwise, 
+  #                            the hyperparamters are not changed. 
   #
   # Returns:
   #    The updated GP object. 
   
   if(gp_lib == "hetGP") {
-    gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new)
+    if(is.null(y_new)) y_new <- rep(NA, nrow(X_new))
+    
+    if(update_hyperparamters) gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new)
+    else gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new, maxit = 0)
+    
   } else {
     stop("Currently `update_GP` only supports GP library `hetGP`")
   }
@@ -231,7 +238,7 @@ update_GP <- function(gp_obj, gp_lib, X_new, y_new) {
 }
 
 
-update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new, input_bounds = NULL, output_stats = NULL) {
+update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new = NULL, update_hyperparamters = FALSE, input_bounds = NULL, output_stats = NULL) {
   # A wrapper around `update_GP()` which udpates a set of independent GPs given new design 
   # data `(X_new, Y_new)`. See `update_GP()` for more details. This function allows the option 
   # to pre-process the data (i.e. scale inputs and normalize outputs). 
@@ -244,8 +251,10 @@ update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new, input_bounds =
   #    X_new: matrix, the new design inputs, of shape M x D where M is the number of new inputs and 
   #           D is the dimension of the input space. Note that these inputs should be properly scaled,
   #           as this function does not pre-process the new design data. 
-  #    Y_new: matrix of shape M x P, with pth column containing the training outputs 
-  #           for the pth output variable corresponding to the new inputs `X_new`.
+  #    Y_new: matrix of shape M x P, with pth column containing the training outputs for the pth output variable
+  #           corresponding to the new inputs `X_new`. If NULL, only updates GP predictive variances; see `update_GP()`.
+  #    update_hyperparameters: If TRUE, runs optimization to re-fit GP hyperparameters. Otherwise, 
+  #                            the hyperparamters are not changed. 
   #    input_bounds: matrix, of shape 2 x D. The columns correspond to the respective rows in `theta_prior_params`.
   #                  The first and second rows are the lower and upper bounds on the sample ranges of each parameter,
   #                  respectively. If not NULL, used to scale `X_new` prior to updating GPs. 
@@ -263,12 +272,12 @@ update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new, input_bounds =
   if(!is.null(input_bounds)) {
     X_new <- scale_input_data(X_new, input_bounds = input_bounds)
   }
-  if(!is.null(output_stats)) {
+  if(!is.null(output_stats) && !is.null(Y_new)) {
     Y_new <- normalize_output_data(Y_new, output_stats)
   }
   
   for(j in seq_along(gp_fits)) {
-    gp_fits[[j]] <- update_GP(gp_fits[[j]], gp_lib, X_new, Y_new[,j])
+    gp_fits[[j]] <- update_GP(gp_fits[[j]], gp_lib, X_new, Y_new[,j], update_hyperparamters = update_hyperparamters)
   }
   
   return(gp_fits)
@@ -497,7 +506,7 @@ predict_lpost_GP_approx <- function(theta_vals, emulator_info_list, sig2_eps, in
   # other transformation is performed.
   #
   # Args:
-  #    theta_vals: matrix, of dim M x D. Each row is a D-dimensional unscaled input at which to predict. 
+  #    theta_vals: matrix, of dim M x D. Each row is a D-dimensional scaled input at which to predict. 
   #
   # Returns:
   #
@@ -513,6 +522,7 @@ predict_lpost_GP_approx <- function(theta_vals, emulator_info_list, sig2_eps, in
   lpost_pred_var <- 0.25 * rowSums(scaled_vars)  
   
   return(lpost_pred_var)
+  
 } 
 
 
