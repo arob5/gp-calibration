@@ -2108,17 +2108,23 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
 }
 
 
-samp_GP_lpost_theta <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, 
+samp_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list, computer_model_data, theta_prior_params, 
                                 sig2_eps, N_samples = 1, gp_pred_list = NULL) {
-  # `theta_vals` should be unscaled.
+
+  if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
+    stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
+  } else if(is.null(theta_vals_scaled)) {
+    theta_vals_scaled <- scale_input_data(theta_vals_unscaled, input_bounds = emulator_info_list$input_bounds)
+  } else if(is.null(theta_vals_unscaled)) {
+    theta_vals_unscaled <- scale_input_data(theta_vals_scaled, input_bounds = emulator_info_list$input_bounds, inverse = TRUE)
+  }
   
   # Log prior evaluations. 
-  lprior_vals <- calc_lprior_theta(theta_vals, theta_prior_params)
+  lprior_vals <- calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
   
   # Compute GP predictive means and variances. 
   if(is.null(gp_pred_list)) {
-    theta_vals <- scale_input_data(theta_vals, input_bounds = emulator_info_list$input_bounds)
-    gp_pred_list <- predict_independent_GPs(X_pred = theta_vals, 
+    gp_pred_list <- predict_independent_GPs(X_pred = theta_vals_scaled, 
                                             gp_obj_list = emulator_info_list$gp_fits,  
                                             gp_lib = emulator_info_list$settings$gp_lib, 
                                             denormalize_predictions = TRUE, 
