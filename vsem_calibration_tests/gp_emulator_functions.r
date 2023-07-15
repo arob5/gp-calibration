@@ -420,7 +420,9 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
 }
 
 
-# TODO: gp_lib, transformation_method, etc. should be allowed to be vectors here. 
+# TODO: 
+#    - should be able to return only mean or variance. 
+#    - update predict_GP so that it can return data.frame in wide or long format. 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
                                     output_stats = NULL, transformation_method = NA_character_, return_df = FALSE, 
                                     output_variables = NULL) {
@@ -486,6 +488,32 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   return(pred_list)
   
 }
+
+# TODO:
+#    - Need to be more careful that sig2_eps is ordered the same as the cols returned by predict_independent_GPs(). 
+predict_lpost_GP_approx <- function(theta_vals, emulator_info_list, sig2_eps, include_nugget = TRUE) {
+  # Note that this function assumes the random approximation to the unnormalized log posterior is a GP. This follows  
+  # from the assumption that the predictive distributions of the SSR emulators are GPs; thus, no truncated Gaussian or 
+  # other transformation is performed.
+  #
+  # Args:
+  #    theta_vals: matrix, of dim M x D. Each row is a D-dimensional unscaled input at which to predict. 
+  #
+  # Returns:
+  #
+  
+  # Mean and variance predictions for the underlying GP fits to SSR. 
+  SSR_pred_moments <- predict_independent_GPs(theta_vals, emulator_info_list$gp_fits, emulator_info_list$settings$gp_lib, denormalize_predictions = TRUE,
+                                              output_stats = emulator_info_list$output_stats, return_df = TRUE, 
+                                              output_variables = NULL)$df
+  
+  # Compute predictive variance of lpost approximation. 
+  col_pattern <- ifelse(include_nugget, "var_comb_output", "var_output")
+  scaled_vars <- SSR_pred_moments[, grep(col_pattern, colnames(SSR_pred_moments))] * diag(1/sig2_eps^2)
+  lpost_pred_var <- 0.25 * rowSums(scaled_vars)  
+  
+  return(lpost_pred_var)
+} 
 
 
 get_emulator_comparison_pred_df <- function(emulator_info_list, X_test, scale_inputs = FALSE,
@@ -1254,11 +1282,6 @@ plot_emulator_comparison_violin_plots <- function(emulator_metrics_df, fill_col,
   return(arrangeGrob(grobs = plts, nrow = nrow))
   
 }
-
-# get_2d_gp_pred_heatmap_plots <- function(emulator_pred_df, X_test, raster = FALSE) {
-#   # TODO
-#   
-# }
 
 
 get_GP_pointwise_predictive_density <- function(y_vals, gp_mean, gp_var, transformation_method = NA_character_, log = FALSE) {
@@ -2114,8 +2137,6 @@ samp_GP_lpost_theta <- function(theta_vals, emulator_info_list, computer_model_d
   
 }
                     
-
-
 
 
 

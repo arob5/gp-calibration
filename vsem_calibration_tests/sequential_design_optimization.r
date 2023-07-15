@@ -56,15 +56,15 @@ run_sequential_design_optimization <- function(acquisition_settings, init_design
     }
     
     # Obtain new batch of design points (without running the forward model).  
-    inputs_new <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
-                                           acquisition_settings = acquisition_settings, 
-                                           design_input_curr = design_info$inputs, 
-                                           design_objective_curr = design_objective_vals, 
-                                           design_best_idx = design_best_idx_curr,  
-                                           computer_model_data = computer_model_data, 
-                                           sig2_eps = sig2_eps, 
-                                           theta_prior_params = theta_prior_params, 
-                                           theta_grid_ref = theta_grid_ref)
+    inputs_new <- batch_acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+                                                 acquisition_settings = acquisition_settings, 
+                                                 design_input_curr = design_info$inputs, 
+                                                 design_objective_curr = design_objective_vals, 
+                                                 design_best_idx = design_best_idx_curr,  
+                                                 computer_model_data = computer_model_data, 
+                                                 sig2_eps = sig2_eps, 
+                                                 theta_prior_params = theta_prior_params, 
+                                                 theta_grid_ref = theta_grid_ref)
 
     # Run forward model at input points in batch.  
     # TODO: this should be parallelized.
@@ -237,35 +237,6 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_ref, emulator
 }
 
 
-optimize_multi_acquisition_KB <- function(acquisition_type, batch_size, theta_grid_ref, emulator_info_list, computer_model_data, 
-                                          theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
-                                          design_best_idx, N_MC_samples) {
-  
-  for(b in 1:batch_size) {
-    
-    # Optimize for single point selection. 
-    theta_new <- optimize_acquisition(acquisition_type = acquisition_type, 
-                                      opt_method = Bayes_opt_settings$opt_method, 
-                                      emulator_info_list = emulator_info_list, 
-                                      computer_model_data = computer_model_data, 
-                                      theta_prior_params = theta_prior_params, 
-                                      sig2_eps = sig2_eps, 
-                                      design_input_curr = design_input_curr, 
-                                      design_objective_curr = design_objective_curr,
-                                      design_best_idx = design_best_idx,
-                                      theta_grid_ref = theta_grid_ref, 
-                                      N_MC_samples = Bayes_opt_settings$N_MC_samples)
-    
-    # Update only GP predictive variance. 
-    
-    
-  }
-  
-  
-  
-}
-
-
 optim.EI <- function(f, ninit, end)
 {
   ## initialization
@@ -348,6 +319,14 @@ acquisition_PI_MC <- function(theta_grid_ref, emulator_info_list, computer_model
 }
 
 
+acquisition_EIVAR_lpost <- function(theta_grid_ref, emulator_info_list, theta_prior_params, sig2_eps) {
+  # TODO: think about whether predictive variance computation can be sped up here; probably can use hetGP update function. 
+  
+  
+  
+  
+  
+}
 
 
 
