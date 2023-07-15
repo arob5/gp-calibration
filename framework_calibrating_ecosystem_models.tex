@@ -280,8 +280,8 @@ $\SSR_{\designidx} := \SSR(\bpar_{\designidx})$. Conditioning the GPs on the obs
 \end{align}
 where 
 \begin{align}
-\GPMeanPredOut{\Ndesign}{\outidx}(\bpar) &= \GPMeanOut{\outidx}(\bpar) + \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} (\SSRVecPredOut{\Ndesign}{\outidx} - \GPMeanOut{\outidx}(\bpar) \oneVec{\Ndesign}) \\ 
-\GPKerPredOut{\Ndesign}{\outidx}(\bpar) &= \GPKerOut{\outidx}(\bpar) - \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} \boldsymbol{\GPKerOut{\outidx}_{\bpar}}
+\GPMeanPredOut{\Ndesign}{\outidx}(\bpar) &= \GPMeanOut{\outidx}(\bpar) + \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} (\SSRVecPredOut{\Ndesign}{\outidx} - \GPMeanOut{\outidx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
+\GPKerPredOut{\Ndesign}{\outidx}(\bpar) &= \GPKerOut{\outidx}(\bpar) - \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} \boldsymbol{\GPKerOut{\outidx}_{\bpar}} \label{GP_pred_var}
 \end{align}
 Here we have defined 
 \begin{align}
@@ -294,8 +294,19 @@ Here we have defined
 Regardless of whether one directly approximates the forward model, the likelihood, or a sufficient statistic of the likelihood, ultimately the emulator induces an approximation to the posterior 
 density $\postDens(\bpar, \CovObs|\stateMat)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
 a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs|\stateMat)$. In the case of loss emulation, recall that $\SSRPred{\designidx}(\bpar)$ denotes the random 
-variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ and 
-$\log \postDens_{\designidx}(\bpar, \CovObs)$ to denote, respectively, the random approximation to the log-likelihood and log-posterior induced by the emulator (e.g. $\Phi_n(\btheta)$). The distribution of 
+variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ 
+to denote the random approximation to the log-likelihood induced by the emulator; that is, 
+\begin{align}
+\llik_{\designidx}(\bpar, \CovObs) := -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSRPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right].
+\end{align}
+Similarly, we define 
+\begin{align*}
+\postDens_{\designidx}(\bpar, \CovObs) := \exp\left(\llik_{\designidx}(\bpar, \CovObs)\right) \priorDens(\bpar, \CovObs),
+\end{align*}
+the induced approximation to the unnormalized posterior density at input $\bpar$. We emphasize here that while the notation $\postDens(\bpar, \CovObs)$ refers to the 
+properly normalized posterior density, $\postDens_{\designidx}(\bpar, \CovObs)$ only approximates the \textit{unnormalized} posterior density. 
+
+The distribution of 
 these induced approximations will be important when considering sequential design criteria in the next section. We therefore characterize the induced distributions for the various emulation 
 targets below. 
 
@@ -316,15 +327,11 @@ $\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments
 \end{align}
 The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
-Since the log likelihood and unnormalized posterior random approximations are Gaussian, it follows that their non-log analogs have log-normal distributions. 
-We recall that the unnormalized posterior approximation is given by 
-\begin{align*}
-\postDens_{\designidx}(\bpar) &= \exp\left(\llik_{\designidx}(\bpar, \CovObs) \right)\priorDens(\bpar, \CovObs)
-\end{align*}
-So $\postDens_{\designidx}(\bpar)$ is log-normally distributed with 
+Since the logarithm of the likelihood and unnormalized posterior random approximations are Gaussian, it follows that their non-log analogs are log-normally distributed.
+In particular, $\postDens_{\designidx}(\bpar, \CovObs)$ is log-normally distributed with 
 \begin{align}
-\E\left[\postDens_{\designidx}(\bpar)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \log\left(\priorDens(\bpar, \CovObs)\right) \right\} \\
-\Var\left[\postDens_{\designidx}(\bpar)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designidx}(\bpar, \CovObs)] \right\} \label{post_approx_var}
+\E\left[\postDens_{\designidx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \log\left(\priorDens(\bpar, \CovObs)\right) \right\} \\
+\Var\left[\postDens_{\designidx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designidx}(\bpar, \CovObs)] \right\} \label{post_approx_var}
 \end{align}
 
 % Surrogate-Assisted MCMC
@@ -367,7 +374,7 @@ available in closed-form (see \ref{loss_emulation_dist}). Moreover, this varianc
 Therefore, the EIVAR expression simplifies to  
 setting is 
 \begin{align}
-\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)\right]}{\sdOut_{\outidx}^4}
+\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)\right]}{\sdOut_{\outidx}^4} \label{EIVAR_llik_loss_emulation}
 \end{align}
 where 
 \begin{align*}
@@ -444,11 +451,11 @@ Setting the derivative equal to zero and solving for $\sdOut^2_{\outidx}$ yields
 \subsubsection{EIVAR Acquisition Computations}
 In this section we provide computations related to the EIVAR criterion \ref{EIVAR} in the various emulation settings. Recall that EIVAR is generally defined as 
 \begin{align*}
-\acq{\designidx}(\tilde{\bpar}) = \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
+\acq{\designidx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designidx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
 \end{align*}
 where $\tilde{\postDens}$ be also be replaced by its logarithm. 
 
-
+\bigskip
 \noindent
 \textbf{Loss Emulation (log).} 
 We begin by deriving the EIVAR criterion in the loss emulation setting. Recall from \ref{llik_approx_var} that 
@@ -459,18 +466,36 @@ Conditioning on $(\tilde{\bpar}, \tilde{\llik}_{\designidx})$ thus yields
 \begin{align*}
 \Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\llik}_{\designidx})] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
 \end{align*}
-which does not depend on the unknown response $\tilde{\llik}_{\designidx}$. 
+which does not depend on the unknown response $\tilde{\llik}_{\designidx}$. Therefore the expectation $\E_{\tilde{\llik}}$ drops out and we are left with 
+\begin{align*}
+\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\end{align*}
+which is equal to \ref{EIVAR_llik_loss_emulation}.
 
+\bigskip
 \noindent
 \textbf{Loss Emulation.}
  We next consider directly targeting $\postDens_{\designidx}$ instead of its logarithm. We recall that the unnormalized posterior approximation is given 
  by 
  \begin{align*}
- \postDens_{\designidx}(\bpar) = \exp\left(\llik_{\designidx}(\bpar, \CovObs) \right)\priorDens(\bpar, \CovObs)
+ \postDens_{\designidx}(\bpar, \CovObs) &= \exp\left(\llik_{\designidx}(\bpar, \CovObs) \right)\priorDens(\bpar, \CovObs)
  \end{align*}
  Also recall from \ref{post_approx_var} that 
  \begin{align*}
- \Var\left[\postDens_{\designidx}(\bpar)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designidx}(\bpar, \CovObs)] \right\}
+ \Var\left[\postDens_{\designidx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designidx}(\bpar, \CovObs)] \right\}
+\end{align*}
+Therefore, 
+ \begin{align*}
+ \Var\left[\postDens_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})\right] &= \exp\left\{\E[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})]\right\} \exp\left\{\frac{1}{2}\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] \right\}
+\end{align*}
+
+The second exponential term is independent of $\tilde{\SSR}$. Indeed, from \ref{llik_approx_var} we find that
+\begin{align*}
+\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\end{align*}
+where $\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)$ does not depend on $\tilde{\SSR}$; see \ref{GP_pred_var}. The first term does have $\tilde{\SSR}$-dependence; from \ref{llik_approx_mean},
+\begin{align*}
+\E[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right]
 \end{align*}
 
 
