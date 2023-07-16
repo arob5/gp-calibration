@@ -26,6 +26,12 @@
 \newcommand{\SSRPred}[1]{\SSR_{#1}} % Random variable, SSR conditioned on data
 \newcommand{\SSRPredOut}[2]{\SSR_{#1}^{(#2)}} % Random variable; SSR conditioned on data for specific output
 \newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}}
+\newcommand{\fwdOutputMat}{\mathbf{S}} % In the case Nout = 1, this is the Ntime x Ndesign matrix of computer model outputs at the design points. 
+\newcommand{\basisOutputVec}{\mathbf{v}} % Basis vector for representing computer model output. 
+\newcommand{\NbasisVec}{R} % Number of basis vectors used in representing computer model output. 
+\newcommand{\basisVecIdx}{r} % Main index for indexing basis vectors used in representing computer model output. 
+\newcommand{\basisVecWeight}{w} % Weight scaling basis vectors used in representing computer model output; these are emulated by GPs.  
+
 
 % ODEs/Dynamic models. 
 \newcommand{\state}{y} % Generic state (scalar, non-bold)
