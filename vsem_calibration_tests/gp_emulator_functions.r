@@ -500,7 +500,10 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 
 # TODO:
 #    - Need to be more careful that sig2_eps is ordered the same as the cols returned by predict_independent_GPs(). 
-predict_lpost_GP_approx <- function(theta_vals, emulator_info_list, sig2_eps, include_nugget = TRUE) {
+#    - Having to select cols "var_comb_output" or "var_output" is awkward. 
+#    - Need to write function to compute sig_eps prior log density. 
+predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list,
+                                    sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE) {
   # Note that this function assumes the random approximation to the unnormalized log posterior is a GP. This follows  
   # from the assumption that the predictive distributions of the SSR emulators are GPs; thus, no truncated Gaussian or 
   # other transformation is performed.
@@ -511,15 +514,29 @@ predict_lpost_GP_approx <- function(theta_vals, emulator_info_list, sig2_eps, in
   # Returns:
   #
   
+  if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
+    stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
+  } else if(is.null(theta_vals_scaled)) {
+    theta_vals_scaled <- scale_input_data(theta_vals_unscaled, input_bounds = emulator_info_list$input_bounds)
+  } else if(is.null(theta_vals_unscaled)) {
+    theta_vals_unscaled <- scale_input_data(theta_vals_scaled, input_bounds = emulator_info_list$input_bounds, inverse = TRUE)
+  }
+  
   # Mean and variance predictions for the underlying GP fits to SSR. 
-  SSR_pred_moments <- predict_independent_GPs(theta_vals, emulator_info_list$gp_fits, emulator_info_list$settings$gp_lib, denormalize_predictions = TRUE,
-                                              output_stats = emulator_info_list$output_stats, return_df = TRUE, 
+  SSR_pred_moments <- predict_independent_GPs(theta_vals_scaled, emulator_info_list$gp_fits, emulator_info_list$settings$gp_lib, 
+                                              denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats, return_df = TRUE,
                                               output_variables = NULL)$df
   
   # Compute predictive variance of lpost approximation. 
   col_pattern <- ifelse(include_nugget, "var_comb_output", "var_output")
   scaled_vars <- SSR_pred_moments[, grep(col_pattern, colnames(SSR_pred_moments))] * diag(1/sig2_eps^2)
-  lpost_pred_var <- 0.25 * rowSums(scaled_vars)  
+  lpost_pred_var <- 0.25 * rowSums(scaled_vars) + calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
+  
+  # Optionally include prior on likelihood variance parameters, in which case `lpost` refers to the point unnormalized 
+  # posterior pi(theta, Sigma), rather than the conditional posterior pi(theta|Sigma). 
+  if(include_sig_eps_prior) {
+    stop("Inclusion of sig eps prior not yet implemented.") 
+  }
   
   return(lpost_pred_var)
   
@@ -2106,7 +2123,6 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   return(gp_samples)
   
 }
-
 
 samp_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list, computer_model_data, theta_prior_params, 
                                 sig2_eps, N_samples = 1, gp_pred_list = NULL) {
