@@ -251,15 +251,22 @@ representation of the computer model output. For ease of notation, we introduce 
 as $P$ independent applications of the method described here. We thus consider representing the computer model $\fwd: \parspace \to \R^{\Ntime}$ as a linear 
 combination of basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$,
 \begin{align}
-\fwd(\bpar) &= \sum_{\basisVecIdx = 1}^{\NbasisVec} \basisVecWeight_{\basisVecIdx}(\bpar) \basisOutputVec _{\basisVecIdx} + \epsilon_{\fwd}
+\fwd(\bpar) &= \sum_{\basisVecIdx = 1}^{\NbasisVec} \basisVecWeight_{\basisVecIdx}(\bpar) \basisOutputVec _{\basisVecIdx} + \epsilon_{\fwd} \label{basis_representation}
 \end{align}
 If the above basis representation is accurate (i.e., error $\epsilon_{\fwd}$ is small) then the problem has been reduced from fitting a multi-output emulator for
 $\fwd: \parspace \to \R^{\Ntime}$ to fitting $\NbasisVec$ independent univariate emulators for the weights $\basisVecWeight_{\basisVecIdx}: \bpar \to \R$. 
 
 While the basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$ can be constructed via many different methods, we follow Higton et al and 
 consider the specific case where principal components analysis (PCA) is applied. Assuming the forward model has been run at design inputs $\bpar_1, \dots, \bpar_N$, we 
-stack the corresponding outputs $\fwd(\bpar_1), \dots, \fwd(\bpar_N)$ as the columns of an $\Ntime \times \Ndesign$
-matrix $\fwdOutputMat$.
+stack the corresponding normalized outputs $(\fwd(\bpar_1) - \centerVec)/\scaleVec, \dots, (\fwd(\bpar_N) - \centerVec)/\scaleVec$ as the columns of a 
+$\Ntime \times \Ndesign$ matrix $\fwdOutputMat$. The expression $(\fwd(\bpar_{\designidx}) - \centerVec)/\scaleVec$ indicates component-wise operations, 
+where $\centerVec$ and $\scaleVec$ are centering and scaling vectors used to normalize model outputs. We then obtain the basis matrix $\basisMat$, with columns 
+$\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$, via the singular value decomposition (SVD) of $\fwdOutputMat^\top$ truncated at $\NbasisVec$ basis vectors, 
+\begin{align}
+\fwdOutputMat^\top &\approx \mathbf{U} \mathbf{D} \basisMat^\top. 
+\end{align}
+The weights corresponding to these basis vectors are then given by $\basisWeightMat = \fwdOutputMat^\top \basisMat$, with entries 
+$\basisWeightMat_{\designidx \basisVecIdx} = \basisVecWeight_{\basisVecIdx}(\bpar_{\designidx})$. 
 
 % Likelihood and loss emulation
 \subsection{Likelihood and Loss Emulation}
