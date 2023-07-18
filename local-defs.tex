@@ -1,64 +1,75 @@
 %!TEX root = SMA-book.tex
 
-% General linear algebra.
+% Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
+
+
+% --------------------------------------------------------------------------------------------------
+% General Math.  
+% --------------------------------------------------------------------------------------------------
+
+% Common math commands. 
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand{\R}{\mathbb{R}}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+% Linear algebra.
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bw}{\mathbf{w}}
 \newcommand{\oneVec}[1]{\boldsymbol{1}_{#1}}
 
+% Probability. 
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+
+% --------------------------------------------------------------------------------------------------
 % Bayesian Inverse Problems. 
+% --------------------------------------------------------------------------------------------------
+
+% General inverse problems.
+
 \newcommand{\spar}{\theta} % Parameter (scalar, non-bold)
 \newcommand{\bpar}{\boldsymbol{\theta}} % Parameter vector (bold)
-\newcommand{\parspace}{\Theta} % Parameter space
-\newcommand{\Npar}{D} % Dimension of parameter space
-\newcommand{\Nout}{P} % Number of output variables/data constraints/objectives
-\newcommand{\Ntime}{T} % Number of time steps
-\newcommand{\outidx}{p} % Primary index for output variable
-\newcommand{\timeidx}{t} % Primary index for time step
-\newcommand{\NTimeOut}[1]{T_{#1}} % Number of time steps
+\newcommand{\parSpace}{\Theta} % Parameter space
 \newcommand{\fwd}{G} % Forward model
-\newcommand{\fwdOut}[1]{G^{(#1)}} % Output of forward model for specific output variable
-\newcommand{\fwdTimeOut}[2]{G_{#1}^{(#2)}} % Output of forward model for specific output variable and at specific time step
-\newcommand{\llik}{\mathcal{L}} % Log-likelihood
+\newcommand{\Npar}{D} % Dimension of parameter space
+\newcommand{\Nobj}{P} % Number of output variables/data constraints/objectives
+\newcommand{\llik}{\mathcal{L}} % Log-likelihood 
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Posterior density
-\newcommand{\sdOut}{\sigma} % Standard deviation for observation error of single output in Gaussian likelihood
-\newcommand{\CovObs}{\boldsymbol{\Sigma}} % Time-independent covariance matrix across all output variables
-\newcommand{\SSR}{\Phi} % Generic sum of squared errors
-\newcommand{\SSROut}[1]{\SSR^{(#1)}} % Sum of squared errors for specific output
-\newcommand{\SSRPred}[1]{\SSR_{#1}} % Random variable, SSR conditioned on data
+\newcommand{\objIdx}{p} % Primary index for indexing objective (i.e. data constraint or output variable) in multi-objective problems.
+\newcommand{\indexObj}[2][\objIdx]{{#2}^{(#1)}} % Adds objective index to a variable.
+
+% Gaussian likelihood, Inverse Gamma prior model. 
+
+\newcommand{\IGShape}{\alpha} % Shape parameter for inverse Gamma prior.
+\newcommand{\IGScale}{\beta} % Scale parameter for inverse Gamma prior. 
+\newcommand{\sdObs}{\sigma} % Standard deviation for observation error of single objective in Gaussian likelihood. 
+\newcommand{\CovObs}{\boldsymbol{\Sigma}} % Time-independent covariance matrix across all output variables/objectives
+\newcommand{\SSR}{\Phi} % Sum of squared error (SSR) function, as a function of the parameter. 
+
+\newcommand{\SSRPred}[1]{\SSR_{#1}} % Random variable, SSR conditioned on data 
 \newcommand{\SSRPredOut}[2]{\SSR_{#1}^{(#2)}} % Random variable; SSR conditioned on data for specific output
 \newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}}
 
-% Basis function approach for emulating high-dimensional computer model output. 
-\newcommand{\fwdOutputMat}{\mathbf{M}} % In the case Nout = 1, this is the Ntime x Ndesign matrix of computer model outputs at the design points. 
-\newcommand{\basisOutputVec}{\mathbf{v}} % Basis vector for representing computer model output. 
-\newcommand{\basisMat}{\mathbf{V}} % Matrix containing basis vectors for computer model output as columns. 
-\newcommand{\NbasisVec}{R} % Number of basis vectors used in representing computer model output. 
-\newcommand{\basisVecIdx}{r} % Main index for indexing basis vectors used in representing computer model output. 
-\newcommand{\basisVecWeight}{w} % Weight scaling basis vectors used in representing computer model output; these are emulated by GPs. 
-\newcommand{\basisWeightMat}{\mathbf{W}} % Matrix of weights, of dimension Ndesign x NbasisVec
-\newcommand{\centerVec}{\mathbf{m}} % Vector used to center the computer model outputs. 
-\newcommand{\scaleVec}{\mathbf{s}} %  Vector used to scale the computer model outputs. 
 
-% ODEs/Dynamic models. 
-\newcommand{\state}{y} % Generic state (scalar, non-bold)
-\newcommand{\bstate}{\mathbf{y}} % Generic state vector (bold)
-\newcommand{\stateOut}[1]{\bstate^{(#1)}} % State vector for specific output variable
-\newcommand{\stateTime}[1]{\bstate_{#1}} % State vector at specific time across all outputs 
-\newcommand{\stateTimeOut}[2]{\state_{#1}^{(#2)}} % State at specific time and for specific output
-\newcommand{\stateMat}{\mathbf{Y}} % Matrix of observed states across all time steps (rows) and output variables (columns) 
-\newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
-\newcommand{\fwdOne}{g} % One-step flow map
+% --------------------------------------------------------------------------------------------------
+% Gaussian Processes. 
+% --------------------------------------------------------------------------------------------------
 
-% Experimental/Sequential Design and Optimization
-\newcommand{\Ninit}{N_0} % Initial number of design points/size of space-filling design 
-\newcommand{\Ndesign}{N} % Total number of design points  
-\newcommand{\designidx}{n} % Primary index for design points (sequential design)
-\newcommand{\batchidx}{b}  % Primary index for rounds in sequential batch design
-\newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
-\newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
-\newcommand{\acq}[1]{\mathcal{A}_{#1}} % Acquisition function
+% Generic GP commands. 
+\newcommand{\GP}{\mathcal{GP}} % GP distribution.
+\newcommand{\f}{f} % Generic univariate target function on which GP prior is placed. 
+\newcommand{\fObs}[1][\designidx]{\mathbf{\f}_{#1}} % Vector of observed target function evaluations.  
 
-% Gaussian Processes (GPs)
-\newcommand{\GP}{\mathcal{GP}} % GP distribution 
+\newcommand{\bbf}{\mathbf{f}} % Bold version of target function; e.g. to be used to denote a vector of function evaluations. 
 \newcommand{\GPMean}{\mu} % Generic GP prior mean function
 \newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 
 \newcommand{\GPMeanPred}[1]{\mu_{#1}} % GP mean, conditioned on data 
@@ -71,27 +82,53 @@
 \newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points
 \newcommand{\KerMatOut}[2]{\mathbf{K}_{#1}^{(#2)}} % Kernel matrix for specific output 
 
-% MCMC 
+% GP emulators for high-dimensional outputs using basis function approach (Higdon et al). 
+\newcommand{\fwdOutputMat}{\mathbf{M}} % In the case Nout = 1, this is the Ntime x Ndesign matrix of computer model outputs at the design points. 
+\newcommand{\basisOutputVec}{\mathbf{v}} % Basis vector for representing computer model output. 
+\newcommand{\basisMat}{\mathbf{V}} % Matrix containing basis vectors for computer model output as columns. 
+\newcommand{\NbasisVec}{R} % Number of basis vectors used in representing computer model output. 
+\newcommand{\basisVecIdx}{r} % Main index for indexing basis vectors used in representing computer model output. 
+\newcommand{\basisVecWeight}{w} % Weight scaling basis vectors used in representing computer model output; these are emulated by GPs. 
+\newcommand{\basisWeightMat}{\mathbf{W}} % Matrix of weights, of dimension Ndesign x NbasisVec
+\newcommand{\centerVec}{\mathbf{m}} % Vector used to center the computer model outputs. 
+\newcommand{\scaleVec}{\mathbf{s}} %  Vector used to scale the computer model outputs. 
+
+% --------------------------------------------------------------------------------------------------
+% Dynamical Models. 
+% --------------------------------------------------------------------------------------------------
+
+% ODEs/Dynamic models. 
+\newcommand{\timeIdx}{t} % Primary index for time step
+\newcommand{\Ntime}{T} % Number of time steps
+\newcommand{\NTimeOut}[1]{T_{#1}} % Number of time steps \NTimeOut -> \indexObj{\Ntime}
+\newcommand{\indexTime}[2][\timeIdx]{{#2}_{#1}} % Adds time index to a variable.
+\newcommand{\state}{y} % Generic state (scalar, non-bold)
+\newcommand{\bstate}{\mathbf{y}} % Generic state vector (bold)
+\newcommand{\stateOut}[1]{\bstate^{(#1)}} % State vector for specific output variable
+\newcommand{\stateTime}[1]{\bstate_{#1}} % State vector at specific time across all outputs 
+\newcommand{\stateTimeOut}[2]{\state_{#1}^{(#2)}} % State at specific time and for specific output
+\newcommand{\stateMat}{\mathbf{Y}} % Matrix of observed states across all time steps (rows) and output variables (columns) 
+\newcommand{\bforce}{\mathbf{w}} % Forcing input (bold)
+\newcommand{\fwdOne}{g} % One-step flow map
+
+% --------------------------------------------------------------------------------------------------
+% Experimental/Sequential Design and Optimization. 
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\Ninit}{N_0} % Initial number of design points/size of space-filling design 
+\newcommand{\Ndesign}{N} % Total number of design points  
+\newcommand{\designidx}{n} % Primary index for design points (sequential design)
+\newcommand{\batchidx}{b}  % Primary index for rounds in sequential batch design
+\newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
+\newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
+\newcommand{\acq}[1]{\mathcal{A}_{#1}} % Acquisition function
+
+% --------------------------------------------------------------------------------------------------
+% Markov Chain Monte Carlo. 
+% --------------------------------------------------------------------------------------------------
+
+% Generic MCMC commands. 
 \newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
 \newcommand{\NMCMC}{T_{\text{MCMC}}} % Proposal covariance matrix
-
-% Custom Commands
-\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
-\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
-\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
-\newcommand{\E}{\mathbb{E}}
-\newcommand{\Var}{\mathrm{Var}}
-\newcommand{\R}{\mathbb{R}}
-\newcommand{\N}{\mathcal{N}}
-\newcommand{\Ker}{\mathrm{Ker}}
-\newcommand{\Cov}{\mathrm{Cov}}
-\newcommand{\Prob}{\mathbb{P}}
-\newcommand{\btheta}{\boldsymbol{\theta}}
-\newcommand{\bx}{\mathbf{x}}
-\newcommand{\bw}{\mathbf{w}}
-
-\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
-\DeclareMathOperator*{\argmax}{argmax}
-\DeclareMathOperator*{\argmin}{argmin}
-\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+\newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 

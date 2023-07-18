@@ -65,8 +65,8 @@ in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianToo
 This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
 above-ground vegetation, below-ground vegetation, and soil organic matter. The carbon dynamics are forced by a single variable, the quantity of photosynthetically 
 active radiation (PAR), which represents the portion of the light spectrum usable by plants for photosynthesis. 
-Let $\state_v(\timeidx)$ (\textbf{v}egetation, above ground), $\state_r(\timeidx)$ (\textbf{r}oots), and $\state_s(\timeidx)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $\timeidx$. 
-The dynamics describing the carbon fluxes between these pools depend on $\text{NPP}(\timeidx)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $\timeidx$, 
+Let $\state_v(\timeIdx)$ (\textbf{v}egetation, above ground), $\state_r(\timeIdx)$ (\textbf{r}oots), and $\state_s(\timeIdx)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $\timeIdx$. 
+The dynamics describing the carbon fluxes between these pools depend on $\text{NPP}(\timeIdx)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $\timeIdx$, 
 which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration, where GPP quantifies the amount of carbon 
 fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is (aside from a sign change) 
 NPP minus heterotrophic 
@@ -77,9 +77,9 @@ respiration. Thus, in the VSEM model this means
 The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
 The state equations describing the carbon dynamics are then given by
 \begin{align}
-\dot{\state}_v(\timeidx) &= \alpha_v \times \text{NPP}(\timeidx) - \frac{\state_v(\timeidx)}{\tau_v} \label{VSEM_ODE_system} \\
-\dot{\state}_r(\timeidx) &= (1.0 - \alpha_v) \times \text{NPP}(\timeidx) - \frac{\state_r(\timeidx)}{\tau_r} \nonumber \\
-\dot{\state}_s(\timeidx) &= \frac{\state_r(\timeidx)}{\tau_r} + \frac{\state_v(\timeidx)}{\tau_v} - \frac{\state_s(\timeidx)}{\tau_s} \nonumber 
+\dot{\state}_v(\timeIdx) &= \alpha_v \times \text{NPP}(\timeIdx) - \frac{\state_v(\timeIdx)}{\tau_v} \label{VSEM_ODE_system} \\
+\dot{\state}_r(\timeIdx) &= (1.0 - \alpha_v) \times \text{NPP}(\timeIdx) - \frac{\state_r(\timeIdx)}{\tau_r} \nonumber \\
+\dot{\state}_s(\timeIdx) &= \frac{\state_r(\timeIdx)}{\tau_r} + \frac{\state_v(\timeIdx)}{\tau_v} - \frac{\state_s(\timeIdx)}{\tau_s} \nonumber 
 \end{align}
 where the parameters $\tau_v$, $\tau_r$, and $\tau_s$ are residence times or longevity parameters for above-ground vegetation, below-ground vegetation, and soil organic matter, 
 respectively. In particular, $\tau_v$ and $\tau_r$ represent the longevity of above and below ground biomass, respectively, while $\tau_s$ is the residence time of organic matter 
@@ -94,12 +94,12 @@ where GPP is given by a product of three factors:
 \item The rate at which the available light decays as it passes downwards through a canopy of leaves. 
 \end{enumerate}
 The rate described in the third item above is modeled by the Beer-Lambert law, which yields an exponential decay rate $e^{-k*\text{LAI}}$, 
-where LAI is the \textit{leaf-area index}, defined as the ratio of one-sided leaf area per unit of ground area. LAI at time $\timeidx$ is assumed to be given by the product of a fixed 
-leaf-area ratio (LAR) and $\state_v(\timeidx)$. The constant $k$ is a fixed extinction rate controlling the rate of exponential decay. The full calculations for NPP are given below. 
+where LAI is the \textit{leaf-area index}, defined as the ratio of one-sided leaf area per unit of ground area. LAI at time $\timeIdx$ is assumed to be given by the product of a fixed 
+leaf-area ratio (LAR) and $\state_v(\timeIdx)$. The constant $k$ is a fixed extinction rate controlling the rate of exponential decay. The full calculations for NPP are given below. 
 \begin{align}
-\text{LAI}(\timeidx, \state_v) &= \text{LAR} \times \state_v(\timeidx) \\
-\text{GPP}(\timeidx) &= \text{PAR}(\timeidx) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(\timeidx, \state_v) \right) \right) \nonumber \\
-\text{NPP}(\timeidx) &= (1 - \gamma) \times \text{GPP}(\timeidx) \nonumber
+\text{LAI}(\timeIdx, \state_v) &= \text{LAR} \times \state_v(\timeIdx) \\
+\text{GPP}(\timeIdx) &= \text{PAR}(\timeIdx) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(\timeIdx, \state_v) \right) \right) \nonumber \\
+\text{NPP}(\timeIdx) &= (1 - \gamma) \times \text{GPP}(\timeIdx) \nonumber
 \end{align}
 As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP.
 
@@ -120,14 +120,14 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
  vector-valued $g$ as a collection of $P$ univariate flow maps
  \[g(\bx(t); \bw_{t + \Delta t}) = \left[g_1(\bx(t); \bw_{t + \Delta t}), \dots, g_P(\bx(t); \bw_{t + \Delta t}) \right]^{\top}\]
  so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
- the parameters $\bpar$. I will reflect this dependence by writing $g_{\bpar}$ and $\bx_{\bpar}(t)$. The forward model $G: \R^{\Npar} \to \R^{\Ntime \times \Nout}$ defined previously can thus be characterized 
+ the parameters $\bpar$. I will reflect this dependence by writing $g_{\bpar}$ and $\bx_{\bpar}(t)$. The forward model $G: \R^{\Npar} \to \R^{\Ntime \times \Nobj}$ defined previously can thus be characterized 
  as 
  \[
  G(\bpar; \bx_0, \bw) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
  \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0; \bw_1)^{\top} \\  g_\theta\left(g_\theta(\bx_0; \bw_1); \bw_2 \right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0; \bw)^{\top} \end{pmatrix}
  \]
  where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\bpar$, and I use the shorthand $g_\theta^{(k)}$ to denote 
- the composition consisting of $k$ applications of the map $g_\theta$. I also let $\bw := \{\bw_t\}_{\timeidx = 1}^{T}$ denote the sequence of forcing inputs. 
+ the composition consisting of $k$ applications of the map $g_\theta$. I also let $\bw := \{\bw_t\}_{\timeIdx = 1}^{T}$ denote the sequence of forcing inputs. 
  I have also assumed that the initial time is $0$, but some other time $t_0$ could of course be considered. 
 
 % Bayesian Calibration 
@@ -137,42 +137,43 @@ If we consider discretizing at constant time steps $\Delta t$ then since the sys
 In this section we provide a brief overview of the Bayesian approach to computer model calibration, which has been recently favored by researchers due to its ability to quantify 
 uncertainties in the calibration process. We begin by defining a likelihood function $p(\stateMat|\bpar)$ that relates the observed field data $\stateMat$ to the forward model prediction 
 $\fwd(\bpar)$. Throughout most of this article, we assume the following Gaussian likelihood 
+
 \begin{align}
-\stateOut{\outidx}, \CovObs | \bpar \overset{\text{ind}}{\sim} \mathcal{N}_{\Ntime_{\outidx}}(\fwdOut{\outidx}(\bpar), \sdOut_{\outidx}^2 I) \label{likelihood}
+\stateOut{\objIdx}, \CovObs | \bpar \overset{\text{ind}}{\sim} \mathcal{N}_{\indexObj{\Ntime}}(\indexObj{\fwd}(\bpar), \sdObs_{\objIdx}^2 I) \label{likelihood}
 \end{align}
 For notational convenience, we have collected the 
-variance parameters in the matrix $\CovObs := \text{diag}\left(\sdOut_1^2, \dots, \sdOut_{\Nout}^2 \right)$. 
+variance parameters in the matrix $\CovObs := \text{diag}\left(\sdObs_1^2, \dots, \sdObs_{\Nobj}^2 \right)$. 
 This likelihood assumes the errors are independent across time and output variable. 
 We will typically work with the log of the likelihood, denoted by 
 $\llik(\bpar, \CovObs) := \log p(\stateMat|\bpar, \CovObs)$. Note that $\llik(\bpar, \CovObs)$ depends on the data $\stateMat$, 
 but $\stateMat$ is constant throughout the analysis so we drop it from the notation.
 Under the likelihood \ref{likelihood}, $\llik(\bpar, \CovObs)$ takes the form 
 \begin{align*}
-\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\stateTimeOut{\timeidx}{\outidx} | \fwdTimeOut{\timeidx}{\outidx}(\bpar), \sdOut_{\outidx}^2 \right)
+\llik(\bpar, \CovObs) &= \sum_{\objIdx = 1}^{\Nobj} \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \log \mathcal{N}\left(\stateTimeOut{\timeIdx}{\objIdx} | \indexObj{\indexTime{\fwd}}(\bpar), \sdObs_{\objIdx}^2 \right)
 \end{align*}
 Missing observations are simply ignored. For future purposes, it will be useful to expand this sum of Gaussian densities and introduce some notation. To this end, the log likelihood can be written as 
 \begin{align}
-\llik(\bpar, \CovObs) &= \sum_{\outidx = 1}^{\Nout} \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \log \mathcal{N}\left(\state_{\timeidx \outidx}| \fwd_{\timeidx \outidx}(\bpar), \sdOut_{\outidx}^2 \right) \nonumber \\
-	         &= \sum_{\outidx = 1}^{\Nout}  \sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left[-\frac{1}{2} \log(2\postDens \sdOut_{\outidx}^2) - \frac{1}{2\sdOut_{\outidx}^2} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2\right] \nonumber \\
-	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{1}{\sdOut_{\outidx}^2}\sum_{\timeidx = 1}^{\Ntime_{\outidx}} \left(\state_{\timeidx \outidx} - 
-	                \fwd_{\timeidx \outidx}(\bpar)\right)^2  \right] \nonumber \\
-	         &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \label{llik}
+\llik(\bpar, \CovObs) &= \sum_{\objIdx = 1}^{\Nobj} \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \log \mathcal{N}\left(\state_{\timeIdx \objIdx}| \fwd_{\timeIdx \objIdx}(\bpar), \sdObs_{\objIdx}^2 \right) \nonumber \\
+	         &= \sum_{\objIdx = 1}^{\Nobj}  \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \left[-\frac{1}{2} \log(2\postDens \sdObs_{\objIdx}^2) - \frac{1}{2\sdObs_{\objIdx}^2} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2\right] \nonumber \\
+	         &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{1}{\sdObs_{\objIdx}^2}\sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \left(\state_{\timeIdx \objIdx} - 
+	                \fwd_{\timeIdx \objIdx}(\bpar)\right)^2  \right] \nonumber \\
+	         &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2} \right] \label{llik}
 \end{align}
 where 
 \begin{align}
-\SSROut{\outidx}(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2
+\indexObj{\SSR}(\bpar) := \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2
 \end{align}
-is the squared Euclidean error between the observations $\stateOut{\outidx}$ and computer model predictions $\fwdOut{\outidx}(\bpar)$ for the $\outidx^{\text{th}}$ data constraint. 
+is the squared Euclidean error between the observations $\stateOut{\objIdx}$ and computer model predictions $\indexObj{\fwd}(\bpar)$ for the $\objIdx^{\text{th}}$ data constraint. 
 
-With the likelihood established, we now define a prior distribution jointly over the calibration parameters $\btheta$ and likelihood variance parameters $\CovObs$. 
+With the likelihood established, we now define a prior distribution jointly over the calibration parameters $\bpar$ and likelihood variance parameters $\CovObs$. 
 We denote the prior density for this distribution as $\priorDens(\bpar, \CovObs) = \priorDens(\bpar)\priorDens(\CovObs)$, assuming prior independence between $\bpar$ and $\CovObs$.  
-The variances $\sdOut_{\outidx}^2$ are assigned inverse gamma priors $\sdOut_{\outidx}^2 \overset{ind}{\sim} \mathcal{IG}(\alpha_p, \beta_p)$ so that 
+The variances $\sdObs_{\objIdx}^2$ are assigned inverse gamma priors $\sdObs_{\objIdx}^2 \overset{ind}{\sim} \mathcal{IG}(\indexObj{\IGShape}, \indexObj{\IGScale})$ so that 
 \begin{align}
-\priorDens(\CovObs) = \prod_{\outidx = 1}^{\Nout} \mathcal{IG}(\sdOut_{\outidx}^2|\alpha_p, \beta_p). \label{inv_gamma_prior}
+\priorDens(\CovObs) = \prod_{\objIdx = 1}^{\Nobj} \mathcal{IG}(\sdObs_{\objIdx}^2|\indexObj{\IGShape}, \indexObj{\IGScale}). \label{inv_gamma_prior}
 \end{align}
 Combining these priors with the likelihood yields the posterior 
 \begin{align}
-\postDens(\bpar, \CovObs) := p(\bpar, \sdOut_{1}^2, \dots, \sdOut_{\Nout}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs). \label{posterior_density}
+\postDens(\bpar, \CovObs) := p(\bpar, \sdObs_{1}^2, \dots, \sdObs_{\Nobj}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs). \label{posterior_density}
 \end{align}
 Our main focus is on calibrating $\bpar$, while $\CovObs$ primarily act as nuisance parameters. Therefore, the primary object of interest is the marginal posterior
 \begin{align*}
@@ -192,7 +193,7 @@ the appendix. When dealing with log densities, we use the proportionality sign `
 \textbf{$\bpar$ conditional.} 
 The log posterior of $\bpar$ given $\CovObs$ is given by 
 \begin{align*}
-\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
 \end{align*}
 
 \bigskip
@@ -200,13 +201,13 @@ The log posterior of $\bpar$ given $\CovObs$ is given by
 \textbf{$\CovObs$ conditional.}
 The log posterior of $\CovObs$ given $\bpar$ is given by 
 \begin{align*}
-\log \postDens(\CovObs|\bpar, \stateMat) &\propto -\sum_{\outidx = 1}^{\Nout} \left[\left(\alpha_{\outidx} + \Ntime_{\outidx}/2 + 1 \right)\log(\sdOut_{\outidx}^2) + \frac{\beta_{\outidx} + 
-								  \SSROut{\outidx}(\bpar)/2}{2} \right] \\
-				      			       &\propto \sum_{\outidx = 1}^{\Nout} \log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right)
+\log \postDens(\CovObs|\bpar, \stateMat) &\propto -\sum_{\objIdx = 1}^{\Nobj} \left[\left(\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1 \right)\log(\sdObs_{\objIdx}^2) + \frac{\indexObj{\IGScale} + 
+								  \indexObj{\SSR}(\bpar)/2}{2} \right] \\
+				      			       &\propto \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
 \end{align*}
 That is, 
 \begin{align}
-\sdOut_{\outidx}^2|\bpar, \stateMat &\overset{\text{ind}}{\sim} \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right) \label{cond_post_Cov}
+\sdObs_{\objIdx}^2|\bpar, \stateMat &\overset{\text{ind}}{\sim} \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right) \label{cond_post_Cov}
 \end{align}
 
 The Metropolis-within-Gibbs procedure is outlined below. 
@@ -223,10 +224,10 @@ The Metropolis-within-Gibbs procedure is outlined below.
 	\For{$t = 1, \dots, \NMCMC$} {
 	\textit{MH step, sample $\bpar$}: \\[.2cm]
 	Sample $\bpar^\prime \sim \mathcal{N}_{\Npar}(\bpar^{(t - 1)}, \CovProp)$ \\
-	$\alpha(\bpar^{(t - 1)}, \bpar^\prime) := \min\left\{1, \frac{\postDens(\bpar^\prime|\stateMat, \CovObs^{(t-1)})}{\postDens(\bpar^{(t-1)}|\stateMat, \CovObs^{(t-1)})} \right\}$ \\
+	$\accProbMH(\bpar^{(t - 1)}, \bpar^\prime) := \min\left\{1, \frac{\postDens(\bpar^\prime|\stateMat, \CovObs^{(t-1)})}{\postDens(\bpar^{(t-1)}|\stateMat, \CovObs^{(t-1)})} \right\}$ \\
 
 	 Sample $U \sim \mathcal{U}[0, 1]$ \\
-	 \If{$U < \alpha(\bpar^{(t - 1)}, \bpar^\prime)$} {
+	 \If{$U < \accProbMH(\bpar^{(t - 1)}, \bpar^\prime)$} {
 	 	$\bpar^{(t)} := \bpar^\prime$ \\
 	 } \Else {
 		$\bpar^{(t)} := \bpar^{(t - 1)}$ \\
@@ -244,17 +245,52 @@ We note that in practice the proposal covariance $\CovProp$ is typically adaptiv
 % Emulator-Based Calibration for Dynamic Models
 \section{Emulator-Based Calibration for Dynamic Models}
 
+% Gaussian Process Emulators
+\subsection{Gaussian Process Emulators}
+In the below sections, we will consider the problem of interpolating some univariate target function $\f: \parSpace \to \R$. The specific target will vary based on the 
+emulation strategy, so we introduce the generic GP background and notation here for the generic target $\f$. We suppose we have access to training data 
+$\designData_{\Ndesign} := (\bpar_{1:\Ndesign}, \bbf_{1:\Ndesign}) := \left\{(\bpar_{\designidx}, \f(\bpar_{\designidx}))\right\}_{\designidx = 1}^{\Ndesign}$ consisting of the observed outputs of the target $\bbf_{1:\Ndesign} := \bbf(\bpar_{1:\Ndesign}) :=  \begin{pmatrix} \f(\bpar_1), \dots, \f(\bpar_\Ndesign) \end{pmatrix}^\top$ at a set of $N$ 
+\textit{design points} $\bpar_{1:\Ndesign} := \begin{pmatrix} \bpar_1, \dots, \bpar_N \end{pmatrix}^\top$. The task is then to predict the output $\f(\bpar)$ at unobserved input $\bpar$. GPs provide a probabilistic solution to this problem, 
+whereby uncertainty about $\f(\bpar)$ is represented via the prior distribution 
+\begin{align}
+\f(\cdot) \sim \GP(\GPMean(\cdot), \GPKer(\cdot, \cdot)). \label{GP_prior_generic}
+\end{align}
+where $\GPMean: \parSpace \to \R$ and $\GPKer: \parSpace \times \parSpace \to \R$ are, respectively, the mean function and covariance function (i.e. kernel)
+of the GP. Formally, \ref{GP_prior_generic} means that at any finite set of inputs $\bpar_{1:M} \subset \parSpace$ the vector of function values evaluated at those inputs 
+$\bbf_{1:M}$ is multivariate Gaussian distributed
+\begin{align}
+\bbf_{1:M} \sim \mathcal{N}_{M}(\GPMean(\bpar_{1:M}), \GPKer(\bpar_{1:M}, \bpar_{1:M})),
+\end{align}
+where $\GPKer(\bpar_{1:M}, \bpar_{1:M})$ is the $M \times M$ matrix with entries $\GPKer(\bpar_{1:M}, \bpar_{1:M})_{ij} = \GPKer(\bpar_i, \bpar_j)$.
+
+Prediction at new points $\tilde{\bpar}_{1:M}$ then proceeds by conditioning the GP on the observed data $\designData_{\Ndesign}$. This defines the 
+GP \textit{predictive distribution} over the unobserved target responses $\tilde{\bbf}_{1:M}$, which is conveniently also Gaussian:
+\begin{align}
+\tilde{\bbf}_{1:M} | \designData_{\Ndesign} &\sim \GP(\GPMean_{\Ndesign}(\tilde{\bpar}_{1:M}), \GPKer_{\Ndesign}(\tilde{\bpar}_{1:M}))
+\end{align}
+The subscripts on $\GPMean_{\Ndesign}(\cdot)$ and $\GPKer_{\Ndesign}(\cdot, \cdot)$ serve to differentiate the mean and covariance functions of the predictive 
+distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the training data set. 
+The predictive quantities are available in closed-form, and given by the well-known formulas 
+\begin{align}
+\GPMean_{\Ndesign}(\tilde{\bpar}_{1:M}) &= \GPMean(\tilde{\bpar}_{1:M}) - \GPKer(\tilde{\bpar}_{1:M}, \bpar_{1:N}) \KerMat{\Ndesign}^{-1} \GPKer(\bpar_{1:N}, \tilde{\bpar}_{1:M}) \label{kriging_eqns_multivariate}
+\end{align}
+where $\KerMat{\Ndesign} := \GPKer(\bpar_{1:\Ndesign}, \bpar_{1:\Ndesign})$. While, the equations \ref{kriging_eqns_multivariate} provide the full multivariate normal 
+predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs
+ \begin{align}
+\GPMean_{\Ndesign}(\tilde{\bpar}_m) &= \GPMean(\tilde{\bpar}_{m}) - \GPKer(\tilde{\bpar}_{m}, \bpar_{1:N}) \KerMat{\Ndesign}^{-1} \GPKer(\bpar_{1:N}, \tilde{\bpar}_{m}) \label{kriging_eqns}
+\end{align}
+
 % Basis functions
-\subsection{Basis Functions}
+\subsection{Approach 1: Basis Functions}
 A well-established method to deal with high-dimensional outputs, proposed in Higdon et al, is to emulate the coefficients scaling basis vectors in a basis 
 representation of the computer model output. For ease of notation, we introduce the method in the case $P = 1$; the multi-objective case will simply follow 
-as $P$ independent applications of the method described here. We thus consider representing the computer model $\fwd: \parspace \to \R^{\Ntime}$ as a linear 
+as $P$ independent applications of the method described here. We thus consider representing the computer model $\fwd: \parSpace \to \R^{\Ntime}$ as a linear 
 combination of basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$,
 \begin{align}
-\fwd(\bpar) &= \sum_{\basisVecIdx = 1}^{\NbasisVec} \basisVecWeight_{\basisVecIdx}(\bpar) \basisOutputVec _{\basisVecIdx} + \epsilon_{\fwd} \label{basis_representation}
+\fwd(\bpar) &= \sum_{\basisVecIdx = 1}^{\NbasisVec} \basisVecWeight_{\basisVecIdx}(\bpar) \basisOutputVec _{\basisVecIdx} + \epsilon \label{basis_representation}
 \end{align}
-If the above basis representation is accurate (i.e., error $\epsilon_{\fwd}$ is small) then the problem has been reduced from fitting a multi-output emulator for
-$\fwd: \parspace \to \R^{\Ntime}$ to fitting $\NbasisVec$ independent univariate emulators for the weights $\basisVecWeight_{\basisVecIdx}: \bpar \to \R$. 
+If the above basis representation is accurate (i.e., error $\epsilon$ is small) then the problem has been reduced from fitting a multi-output emulator for
+$\fwd: \parSpace \to \R^{\Ntime}$ to fitting $\NbasisVec$ independent univariate emulators for the weights $\basisVecWeight_{\basisVecIdx}: \bpar \to \R$. 
 
 While the basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$ can be constructed via many different methods, we follow Higton et al and 
 consider the specific case where principal components analysis (PCA) is applied. Assuming the forward model has been run at design inputs $\bpar_1, \dots, \bpar_N$, we 
@@ -266,48 +302,49 @@ $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$, via the singular value
 \fwdOutputMat^\top &\approx \mathbf{U} \mathbf{D} \basisMat^\top. 
 \end{align}
 The weights corresponding to these basis vectors are then given by $\basisWeightMat = \fwdOutputMat^\top \basisMat$, with entries 
-$\basisWeightMat_{\designidx \basisVecIdx} = \basisVecWeight_{\basisVecIdx}(\bpar_{\designidx})$. 
+$\basisWeightMat_{\designidx \basisVecIdx} = \basisVecWeight_{\basisVecIdx}(\bpar_{\designidx})$. Thus, for the $r^{\text{th}}$ emulator we have training data 
+$\{(\bpar_{\designidx},  \basisVecWeight_{\basisVecIdx}(\bpar_{\designidx}))\}_{\designidx = 1}^{\Ndesign}$. 
 
 % Likelihood and loss emulation
-\subsection{Likelihood and Loss Emulation}
+\subsection{Approach 2: Likelihood and Loss Emulation}
 \textbf{TODO: better to introduce all the GP notation in the $P = 1$ case to avoid all the superscripts. Then generalize later.}
 
 In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. Recall from \ref{llik} that the log likelihood can be written as 
 \begin{align*}
-\llik(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] 
+\llik(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2} \right] 
 \end{align*}
 where 
-\[\SSROut{\outidx}(\bpar) := \sum_{\timeidx = 1}^{\Ntime_{\outidx}} (\state_{\timeidx \outidx} - \fwd_{\timeidx \outidx}(\bpar))^2.\]
+\[\indexObj{\SSR}(\bpar) := \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2.\]
 The key observation 
-is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\SSROut{\outidx}(\bpar)$, which means that replacing $\SSROut{\outidx}(\bpar)$ with a
+is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\indexObj{\SSR}(\bpar)$, which means that replacing $\indexObj{\SSR}(\bpar)$ with a
 computationally cheaper approximation will induce a cheap approximation of the likelihood. The independence assumptions 
 that yield the product form of the likelihood make it so that $\SSR(\bpar)$ is a sufficient statistic, and not a function of the variance parameters $\CovObs$. 
 This means that $\SSR(\bpar)$ can be emulated independently of the value of $\CovObs$, unlike in the likelihood emulation setting. 
-The choice to emulate the mappings $\SSROut{\outidx}: \parspace \to \R$ also reduces the problem to 
-approximating $\Nout$ univariate functions, instead of approximating $\fwd(\bpar)$, which has output dimension $\Ntime \times \Nout$. On a notational note, we collect the $\SSROut{\outidx}(\bpar)$ values into a $\Nout$-dimensional 
-vector $\SSR(\bpar) := \begin{pmatrix} \SSROut{1}(\bpar), \dots, \SSROut{\Nout}(\bpar) \end{pmatrix}^\top$.  
+The choice to emulate the mappings $\indexObj{\SSR}: \parSpace \to \R$ also reduces the problem to 
+approximating $\Nobj$ univariate functions, instead of approximating $\fwd(\bpar)$, which has output dimension $\Ntime \times \Nobj$. On a notational note, we collect the $\indexObj{\SSR}(\bpar)$ values into a $\Nobj$-dimensional 
+vector $\SSR(\bpar) := \begin{pmatrix} \indexObj[1]{\SSR}(\bpar), \dots, \indexObj[\Nobj]{\SSR}(\bpar) \end{pmatrix}^\top$.  
 
-Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\SSROut{\outidx}$ as unknown and assign them independent GP priors
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\indexObj{\SSR}$ as unknown and assign them independent GP priors
 
-\[\SSROut{\outidx}(\cdot) \overset{\text{ind}}{\sim} \GP(\GPMeanOut{\outidx}(\cdot), \GPKerOut{\outidx}(\cdot, \cdot))\] 
+\[\indexObj{\SSR}(\cdot) \overset{\text{ind}}{\sim} \GP(\GPMeanOut{\objIdx}(\cdot), \GPKerOut{\objIdx}(\cdot, \cdot))\] 
 
-where $\GPMeanOut{\outidx}: \parspace \to \R$ and $\GPKerOut{\outidx}: \parspace \times \parspace \to \R_+$ are the mean and covariance function (i.e. kernel), respectively. 
+where $\GPMeanOut{\objIdx}: \parSpace \to \R$ and $\GPKerOut{\objIdx}: \parSpace \times \parSpace \to \R_+$ are the mean and covariance function (i.e. kernel), respectively. 
 Suppose we have access to observed data 
 \[\designData_{\Ndesign} = \left\{(\bpar_1, \SSR(\bpar_1)), \dots, (\bpar_{\Ndesign}, \SSR(\bpar_{\Ndesign})) \right\}\]
 consisting of a set of $\Ndesign$ values for the calibration parameter and their associated values of $\SSR$ resulting from full forward model evaluations. For brevity, we will henceforth denote 
 $\SSR_{\designidx} := \SSR(\bpar_{\designidx})$. Conditioning the GPs on the observed data yields the GP predictive distributions
 \begin{align} 
-\SSRPredOut{\Ndesign}{\outidx}(\cdot) := \SSROut{\outidx}(\cdot)|\designData_{\Ndesign} \overset{\text{ind}}{\sim} \GP(\GPMeanPredOut{\Ndesign}{\outidx}(\cdot), \GPKerPredOut{\Ndesign}{\outidx}(\cdot, \cdot)), \text{ for } \outidx = 1, \dots, \Nout
+\SSRPredOut{\Ndesign}{\objIdx}(\cdot) := \indexObj{\SSR}(\cdot)|\designData_{\Ndesign} \overset{\text{ind}}{\sim} \GP(\GPMeanPredOut{\Ndesign}{\objIdx}(\cdot), \GPKerPredOut{\Ndesign}{\objIdx}(\cdot, \cdot)), \text{ for } \objIdx = 1, \dots, \Nobj
 \end{align}
 where 
 \begin{align}
-\GPMeanPredOut{\Ndesign}{\outidx}(\bpar) &= \GPMeanOut{\outidx}(\bpar) + \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} (\SSRVecPredOut{\Ndesign}{\outidx} - \GPMeanOut{\outidx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
-\GPKerPredOut{\Ndesign}{\outidx}(\bpar) &= \GPKerOut{\outidx}(\bpar) - \left(\boldsymbol{\GPKerOut{\outidx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} \boldsymbol{\GPKerOut{\outidx}_{\bpar}} \label{GP_pred_var}
+\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPMeanOut{\objIdx}(\bpar) + \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} (\SSRVecPredOut{\Ndesign}{\objIdx} - \GPMeanOut{\objIdx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
+\GPKerPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPKerOut{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\bpar}} \label{GP_pred_var}
 \end{align}
 Here we have defined 
 \begin{align}
-\boldsymbol{\GPKerOut{\outidx}_{\bpar}} &:= \begin{pmatrix} \GPKerOut{\outidx}(\bpar_1, \bpar), \dots, \GPKerOut{\outidx}(\bpar_{\Ndesign}, \bpar)  \end{pmatrix}^\top \\ 
-\SSRVecPredOut{\Ndesign}{\outidx} &:= \begin{pmatrix} \SSRPredOut{1}{\outidx}, \dots, \SSRPredOut{\Ndesign}{\outidx} \end{pmatrix}^{\top}
+\boldsymbol{\GPKerOut{\objIdx}_{\bpar}} &:= \begin{pmatrix} \GPKerOut{\objIdx}(\bpar_1, \bpar), \dots, \GPKerOut{\objIdx}(\bpar_{\Ndesign}, \bpar)  \end{pmatrix}^\top \\ 
+\SSRVecPredOut{\Ndesign}{\objIdx} &:= \begin{pmatrix} \SSRPredOut{1}{\objIdx}, \dots, \SSRPredOut{\Ndesign}{\objIdx} \end{pmatrix}^{\top}
 \end{align}
 
 % Induced Posterior Density Approximation
@@ -315,10 +352,10 @@ Here we have defined
 Regardless of whether one directly approximates the forward model, the likelihood, or a sufficient statistic of the likelihood, ultimately the emulator induces an approximation to the posterior 
 density $\postDens(\bpar, \CovObs|\stateMat)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
 a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs|\stateMat)$. In the case of loss emulation, recall that $\SSRPred{\designidx}(\bpar)$ denotes the random 
-variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\btheta$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ 
+variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\bpar$. We extend this notation, writing $\llik_{\designidx}(\bpar, \CovObs)$ 
 to denote the random approximation to the log-likelihood induced by the emulator; that is, 
 \begin{align}
-\llik_{\designidx}(\bpar, \CovObs) := -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSRPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right].
+\llik_{\designidx}(\bpar, \CovObs) := -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\SSRPredOut{\designidx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right].
 \end{align}
 Similarly, we define 
 \begin{align*}
@@ -336,15 +373,15 @@ We begin by considering the case where GP emulators are fit to the squared loss 
 Plugging the emulator $\SSR_n(\bpar)$ in place of $\SSR(\bpar)$ in the log-likelihood
 \ref{llik} yields the approximation 
 \begin{align*}
-\llik_{\designidx}(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\SSRPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right].
+\llik_{\designidx}(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\SSRPredOut{\designidx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right].
 \end{align*}
 Given that the above sum represents a linear combination of independent Gaussians 
-$\SSRPredOut{\designidx}{\outidx}(\bpar) \overset{\text{ind}}{\sim} \mathcal{N}(\GPMeanPredOut{\designidx}{\outidx}(\bpar), \GPKerPredOut{\designidx}{\outidx}(\bpar, \bpar))$ then it follows that 
+$\SSRPredOut{\designidx}{\objIdx}(\bpar) \overset{\text{ind}}{\sim} \mathcal{N}(\GPMeanPredOut{\designidx}{\objIdx}(\bpar), \GPKerPredOut{\designidx}{\objIdx}(\bpar, \bpar))$ then it follows that 
 $\llik_{\designidx}(\bpar, \CovObs)$ is Gaussian, with moments 
 
 \begin{align}
-\E[\llik_{\designidx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right] \label{llik_approx_mean} \\
-\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^4} \label{llik_approx_var}
+\E[\llik_{\designidx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designidx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right] \label{llik_approx_mean} \\
+\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designidx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4} \label{llik_approx_var}
 \end{align}
 The distribution of $\log \postDens_{\designidx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
 
@@ -382,7 +419,7 @@ in Surer et al (2023). We adopt the latter paper's convention of referring to th
 The inner term is the predictive variance of the posterior approximation conditioned on $\designData_{\designidx} \cup (\tilde{\bpar}, \tilde{\postDens})$, where 
 $\tilde{\postDens} := \postDens(\tilde{\bpar})$ is the hypothetical posterior density evaluation at input $\tilde{\bpar}$. Since the forward model has not yet been evaluated at 
 this input, $\tilde{\postDens}$ is unknown, and hence the inner expectation $\E_{\tilde{\postDens}}$ integrates over this uncertainty. The outer expectation $\E_{\bpar \sim \rho}$
-averages this expected predictive variance across the input space $\parspace$, weighted by a density $\rho$. Both of the above mentioned papers take $\rho = \priorDens$, but we 
+averages this expected predictive variance across the input space $\parSpace$, weighted by a density $\rho$. Both of the above mentioned papers take $\rho = \priorDens$, but we 
 also consider choosing $\rho$ to be an approximation to $\postDens$. We also note that we can alternatively consider $\postDens_{\designidx}(\bpar)$ to be either the 
 approximate posterior or log posterior density, but we present the generic EIVAR expression without the log for brevity. The criterion proposed in Sinsbeck and Nowak (2017) actually 
 considers targeting the likelihood approximation in place of the posterior. 
@@ -395,30 +432,30 @@ available in closed-form (see \ref{loss_emulation_dist}). Moreover, this varianc
 Therefore, the EIVAR expression simplifies to  
 setting is 
 \begin{align}
-\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)\right]}{\sdOut_{\outidx}^4} \label{EIVAR_llik_loss_emulation}
+\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)\right]}{\sdObs_{\objIdx}^4} \label{EIVAR_llik_loss_emulation}
 \end{align}
 where 
 \begin{align*}
-\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar) &= \GPKerPredOut{\designidx}{\outidx}(\bpar) - \left(\boldsymbol{\GPKerOut{\outidx}_{n,\tilde{\bpar}}}\right)^\top \left(\KerMatOut{\designidx, \tilde{\bpar}}{\outidx}\right)^{-1} \boldsymbol{\GPKerOut{\outidx}_{\designidx, \tilde{\bpar}}}
+\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar) &= \GPKerPredOut{\designidx}{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{n,\tilde{\bpar}}}\right)^\top \left(\KerMatOut{\designidx, \tilde{\bpar}}{\objIdx}\right)^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\designidx, \tilde{\bpar}}}
 \end{align*}
 and 
 \begin{align*}
-\boldsymbol{\GPKerOut{\outidx}_{\designidx, \tilde{\bpar}}} &= \begin{pmatrix} \GPKerOut{\outidx}(\bpar_1, \bpar), \dots, 
-														       \GPKerOut{\outidx}(\bpar_{\designidx}, \bpar), 
-														       \GPKerOut{\outidx}(\tilde{\bpar}, \bpar)  \end{pmatrix}^\top 
+\boldsymbol{\GPKerOut{\objIdx}_{\designidx, \tilde{\bpar}}} &= \begin{pmatrix} \GPKerOut{\objIdx}(\bpar_1, \bpar), \dots, 
+														       \GPKerOut{\objIdx}(\bpar_{\designidx}, \bpar), 
+														       \GPKerOut{\objIdx}(\tilde{\bpar}, \bpar)  \end{pmatrix}^\top 
 \end{align*}
-and similarly $\KerMatOut{\designidx, \tilde{\bpar}}{\outidx}$ is the kernel matrix constructed from the extended design $\designData_{\designidx} \cup \{\tilde{\bpar}\}$.
+and similarly $\KerMatOut{\designidx, \tilde{\bpar}}{\objIdx}$ is the kernel matrix constructed from the extended design $\designData_{\designidx} \cup \{\tilde{\bpar}\}$.
 
 \subsection{Unknown $\CovObs$}
 The above algorithms have treated $\CovObs$ as fixed; here we return to the general setting where $\CovObs$ is unknown. To deal with this, we consider inserting an 
-optimization step into algorithm \textbf{TODO: need to add algorithm above} after each batch $\btheta$ run:
+optimization step into algorithm \textbf{TODO: need to add algorithm above} after each batch $\bpar$ run:
 \begin{align}
 \CovObs_{\designidx} &:= \argmax_{\CovObs} \postDens(\CovObs|\stateMat, \currParMax{\designidx}) \label{Cov_optimization}
 \end{align}
 Recalling from \ref{cond_post_Cov} that $\postDens(\CovObs|\stateMat, \currParMax{\designidx})$ is a product of inverse gamma densities, the optimum $\CovObs_{\designidx}$ can 
 be computed in closed form (see appendix). The optimal variances occupying the diagonal of $\CovObs_{\designidx}$ are given by 
 \begin{align}
-\sdOut_{\outidx}^2 &= \frac{\SSROut{\outidx}(\currParMax{\designidx})/2 + \beta_{\outidx}}{\NTimeOut{\outidx}/2 + \alpha_{\outidx} + 1}
+\sdObs_{\objIdx}^2 &= \frac{\indexObj{\SSR}(\currParMax{\designidx})/2 + \indexObj{\IGScale}}{\indexObj{\Ntime}{\objIdx}/2 + \indexObj{\IGShape} + 1}
 \end{align}
 
 \subsection{Batch Sequential Design}
@@ -434,17 +471,17 @@ Here we calculate the conditional posterior distributions $\postDens(\bpar|\stat
 likelihood \ref{likelihood} and inverse Gamma prior \ref{inv_gamma_prior}. We allow for an arbitrary prior $\priorDens(\bpar)$ on the calibration parameters.
 Under this model, the joint log posterior over $\bpar$, $\CovObs$ has the form 
 \begin{align*}
-\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto -\sum_{\outidx = 1}^{\Nout} \left[\frac{\Ntime_{\outidx}}{2} \log\left(2\pi \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{2\sdOut_{\outidx}^2}  - (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{-2}) + \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right] + \log\left[\priorDens(\bpar)\right] 
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto -\sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\Ntime}}{2} \log\left(2\pi \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{2\sdObs_{\objIdx}^2}  - (\indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^{-2}) + \frac{\indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] + \log\left[\priorDens(\bpar)\right] 
 \end{align*}
 where in the first line we recall the derivation \ref{llik} for the log-likelihood. For the $\bpar$ conditional we drop terms without $\bpar$ dependence, yielding
 \begin{align*}
-\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\frac{\SSROut{\outidx}(\bpar)}{\sdOut_{\outidx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
 \end{align*}
 We proceed similarly to derive the $\CovObs$ conditional \ref{cond_post_Cov}
 \begin{align*}
-\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto - \sum_{\outidx = 1}^{\Nout} \left[\frac{\Ntime_{\outidx}}{2} \log\left(2\pi \sdOut_{\outidx}^2 \right) + \frac{\SSROut{\outidx}(\bpar)}{2\sdOut_{\outidx}^2}  + (\alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^{2}) + \frac{\beta_{\outidx}}{\sdOut_{\outidx}^2} \right] \\
-&\propto - \sum_{\outidx = 1}^{\Nout} \left[(\Ntime_{\outidx}/2 + \alpha_{\outidx} + 1)\log(\sdOut_{\outidx}^2) + \frac{\SSROut{\outidx}(\bpar)/2 + \beta_{\outidx}}{\sdOut_{\outidx}^2} \right] \\
-&\propto \sum_{\outidx = 1}^{\Nout} \log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right)
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto - \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\Ntime}}{2} \log\left(2\pi \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{2\sdObs_{\objIdx}^2}  + (\indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^{2}) + \frac{\indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] \\
+&\propto - \sum_{\objIdx = 1}^{\Nobj} \left[(\indexObj{\Ntime}/2 + \indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^2) + \frac{\indexObj{\SSR}(\bpar)/2 + \indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] \\
+&\propto \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
 \end{align*}
 
 
@@ -452,20 +489,20 @@ We proceed similarly to derive the $\CovObs$ conditional \ref{cond_post_Cov}
 \subsubsection{Optimizing $\postDens(\CovObs|\stateMat, \bpar)$}
 Here we derive the solution to the optimization problem \ref{Cov_optimization}. We recall from \ref{cond_post_Cov} that 
 \begin{align*}
-\log \postDens(\CovObs|\stateMat, \bpar) &= \sum_{\outidx = 1}^{\Nout} \log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right)
+\log \postDens(\CovObs|\stateMat, \bpar) &= \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
 \end{align*}
 Thus, each term can be optimized independently. We have, 
 \begin{align*}
-\log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right) &\propto -[\alpha_{\outidx} + \Ntime_{\outidx}/2 + 1]\log(\sdOut^2_{\outidx})
-																									       - \frac{1}{\sdOut^2_{\outidx}} [\beta_{\outidx} + \SSROut{\outidx}(\bpar)/2]
+\log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right) &\propto -[\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1]\log(\sdObs^2_{\objIdx})
+																									       - \frac{1}{\sdObs^2_{\objIdx}} [\indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2]
 \end{align*}
 so 
 \begin{align*}
-\frac{d}{d\sdOut_{\outidx}^2}\left[\log \mathcal{IG}\left(\sdOut_{\outidx}^2|\alpha_{\outidx} + \Ntime_{\outidx}/2, \beta_{\outidx} + \SSROut{\outidx}(\bpar)/2 \right)\right] &= -\frac{1}{\sdOut_{\outidx}^2}[\alpha_{\outidx} + \Ntime_{\outidx}/2 + 1] + \frac{1}{\sdOut_{\outidx}^4} [\beta_{\outidx} + \SSROut{\outidx}(\bpar)/2]
+\frac{d}{d\sdObs_{\objIdx}^2}\left[\log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)\right] &= -\frac{1}{\sdObs_{\objIdx}^2}[\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1] + \frac{1}{\sdObs_{\objIdx}^4} [\indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2]
 \end{align*}
-Setting the derivative equal to zero and solving for $\sdOut^2_{\outidx}$ yields
+Setting the derivative equal to zero and solving for $\sdObs^2_{\objIdx}$ yields
 \begin{align*}
-\sdOut_{\outidx}^2 &= \frac{\SSROut{\outidx}(\bpar)/2 + \beta_{\outidx}}{\NTimeOut{\outidx}/2 + \alpha_{\outidx} + 1}
+\sdObs_{\objIdx}^2 &= \frac{\indexObj{\SSR}(\bpar)/2 + \indexObj{\IGScale}}{\indexObj{\Ntime}{\objIdx}/2 + \indexObj{\IGShape} + 1}
 \end{align*}
 
 
@@ -481,15 +518,15 @@ where $\tilde{\postDens}$ be also be replaced by its logarithm.
 \textbf{Loss Emulation (log).} 
 We begin by deriving the EIVAR criterion in the loss emulation setting. Recall from \ref{llik_approx_var} that 
 \begin{align*}
-\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\Var[\llik_{\designidx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designidx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
 \end{align*}
 Conditioning on $(\tilde{\bpar}, \tilde{\llik}_{\designidx})$ thus yields 
 \begin{align*}
-\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\llik}_{\designidx})] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\llik}_{\designidx})] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
 \end{align*}
 which does not depend on the unknown response $\tilde{\llik}_{\designidx}$. Therefore the expectation $\E_{\tilde{\llik}}$ drops out and we are left with 
 \begin{align*}
-\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\acq{\designidx}(\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
 \end{align*}
 which is equal to \ref{EIVAR_llik_loss_emulation}.
 
@@ -512,11 +549,11 @@ Therefore,
 
 The second exponential term is independent of $\tilde{\SSR}$. Indeed, from \ref{llik_approx_var} we find that
 \begin{align*}
-\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= \frac{1}{4} \sum_{\outidx = 1}^{\Nout} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^4}
+\Var[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
 \end{align*}
-where $\GPKerPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)$ does not depend on $\tilde{\SSR}$; see \ref{GP_pred_var}. The first term does have $\tilde{\SSR}$-dependence; from \ref{llik_approx_mean},
+where $\GPKerPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)$ does not depend on $\tilde{\SSR}$; see \ref{GP_pred_var}. The first term does have $\tilde{\SSR}$-dependence; from \ref{llik_approx_mean},
 \begin{align*}
-\E[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\outidx = 1}^{\Nout} \left[\Ntime_{\outidx} \log\left(2\postDens \sdOut_{\outidx}^2 \right) + \frac{\GPMeanPredOut{\designidx, \tilde{\bpar}}{\outidx}(\bpar)}{\sdOut_{\outidx}^2} \right]
+\E[\llik_{\designidx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designidx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right]
 \end{align*}
 
 
