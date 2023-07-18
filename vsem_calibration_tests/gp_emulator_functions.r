@@ -503,16 +503,41 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 #    - Having to select cols "var_comb_output" or "var_output" is awkward. 
 #    - Need to write function to compute sig_eps prior log density. 
 predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list,
-                                    sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE) {
-  # Note that this function assumes the random approximation to the unnormalized log posterior is a GP. This follows  
-  # from the assumption that the predictive distributions of the SSR emulators are GPs; thus, no truncated Gaussian or 
-  # other transformation is performed.
+                                    sig2_eps, theta_prior_params, include_nugget = TRUE,  
+                                    gp_pred_list = NULL, include_sig_eps_prior = FALSE) {
+  # In the loss emulation setting, where the squared error maps (SSR) are modeled as GPs, these GPs induce a 
+  # random field approximation on the unnormalized log (conditional) posterior 
+  # log pi(theta|Sigma) := log p(Y|theta, Sigma) + log pi_0(theta). This random field approximation is also 
+  # a Gaussian process over the input space of calibration parameters `theta`. This function computes the predictive 
+  # variance of this random field representation of the unnormalized log (conditional) posterior at a discrete set of input 
+  # locations `theta_vals_unscaled`. Note that this function assumes the predictive distribution of the GP emulators 
+  # is Gaussian; thus, it may differ slightly from a Monte Carlo estimate given that in reality the distribution 
+  # is truncated or rectified Gaussian due to the fact that negative sampled SSR values are not allowed. 
   #
   # Args:
-  #    theta_vals: matrix, of dim M x D. Each row is a D-dimensional scaled input at which to predict. 
+  #    theta_vals_scaled: matrix of dimension M x D of input locations (scaled to lie in unit hypercube) at which to sample
+  #                       the log density values. Each row is a location. 
+  #    theta_vals_scaled: matrix, of dimension M x D; the same as `theta_vals_scaled` but the inputs are unscaled. Both the 
+  #                       scaled and unscaled inputs are required here, but only one of them need be passed, as the scaling 
+  #                       can be performed using the information in `emulator_info_list$input_bounds`. 
+  #    emulator_info_list: list, the emulator info list. 
+  #    sig2_eps: numeric, vector of length P containing the observation variance parameters. 
+  #    theta_prior_params: data.frame containing the prior distribution information of the input 
+  #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                        for the requirements of this data.frame. 
+  #    include_nugget: logical, if TRUE includes the GP nugget variance in the variance calculations. 
+  #    gp_pred_list: A list, as returned by `predict_independent_GPs()`. This allows the predictive means and 
+  #                  variances of the underlying GP emulators evaluated at the input locations at the to be passed 
+  #                  if they have already been computed. If NULL, they are computed here. 
+  #    include_sig_eps_prior: If TRUE, sample from the unnormalized log joint posterior, instead of the conditional; 
+  #                           see description above for clarification. 
   #
   # Returns:
+  #    numeric, vector of length M containing the predictive variance evaluations at the M inputs. 
   #
+  
+  # TODO: include mean calculation; if mean is not required, only `theta_vals_scaled` is needed so don't unnecesarily 
+  #       perform inverse scaling. Thus should also make `theta_prior_params` optional argument. 
   
   if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
     stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
@@ -523,17 +548,23 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
   }
   
   # Mean and variance predictions for the underlying GP fits to SSR. 
-  SSR_pred_moments <- predict_independent_GPs(theta_vals_scaled, emulator_info_list$gp_fits, emulator_info_list$settings$gp_lib, 
-                                              denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats, return_df = TRUE,
-                                              output_variables = NULL)$df
-  
+  if(is.null(gp_pred_list)) {
+    gp_pred_list <- predict_independent_GPs(X_pred = theta_vals_scaled, 
+                                            gp_obj_list = emulator_info_list$gp_fits,  
+                                            gp_lib = emulator_info_list$settings$gp_lib, 
+                                            denormalize_predictions = TRUE, 
+                                            output_stats = emulator_info_list$output_stats, 
+                                            return_df = TRUE)$df
+  }
+
   # Compute predictive variance of lpost approximation. 
   col_pattern <- ifelse(include_nugget, "var_comb_output", "var_output")
-  scaled_vars <- SSR_pred_moments[, grep(col_pattern, colnames(SSR_pred_moments))] * diag(1/sig2_eps^2)
-  lpost_pred_var <- 0.25 * rowSums(scaled_vars) + calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
+  scaled_vars <- gp_pred_list[, grep(col_pattern, colnames(gp_pred_list))] * diag(1/sig2_eps^2)
+  lpost_pred_var <- 0.25 * rowSums(scaled_vars)
   
   # Optionally include prior on likelihood variance parameters, in which case `lpost` refers to the point unnormalized 
-  # posterior pi(theta, Sigma), rather than the conditional posterior pi(theta|Sigma). 
+  # posterior pi(theta, Sigma), rather than the conditional posterior pi(theta|Sigma).
+  # Note: this is only used in the predictive mean, not variance. 
   if(include_sig_eps_prior) {
     stop("Inclusion of sig eps prior not yet implemented.") 
   }
@@ -2124,8 +2155,41 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   
 }
 
-samp_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list, computer_model_data, theta_prior_params, 
-                                sig2_eps, N_samples = 1, gp_pred_list = NULL) {
+
+sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list,  
+                                computer_model_data, theta_prior_params, sig2_eps, N_samples = 1, gp_pred_list = NULL, 
+                                include_sig_eps_prior = FALSE) {
+  # In the loss emulation setting, where the squared error maps (SSR) are modeled as GPs, these GPs induce a 
+  # random field approximation on the unnormalized log (conditional) posterior 
+  # log pi(theta|Sigma) := log p(Y|theta, Sigma) + log pi_0(theta). This random field approximation is also 
+  # a Gaussian process over the input space of calibration parameters `theta`. This function sampled from this 
+  # random field representation of the unnormalized log (conditional) posterior at a discrete set of input 
+  # locations `theta_vals_unscaled`; `N_samples` are drawn at each input location. Currently, the sampling does 
+  # not take into account the covariance structure of the random field; the samples are drawn independently at each
+  # input location. If `include_sig_eps_prior` is TRUE, then the samples are instead drawn from the joint unnormalized 
+  # log posterior density log pi(theta, Sigma) := log p(Y|theta, Sigma) + log pi_0(theta) + log pi_0(Sigma). 
+  #
+  # Args:
+  #    theta_vals_scaled: matrix of dimension M x D of input locations (scaled to lie in unit hypercube) at which to sample
+  #                       the log density values. Each row is a location. 
+  #    theta_vals_scaled: matrix, of dimension M x D; the same as `theta_vals_scaled` but the inputs are unscaled. Both the 
+  #                       scaled and unscaled inputs are required here, but only one of them need be passed, as the scaling 
+  #                       can be performed using the information in `emulator_info_list$input_bounds`. 
+  #    emulator_info_list: list, the emulator info list. 
+  #    computer_model_data: list, the computer model data list. 
+  #    theta_prior_params: data.frame containing the prior distribution information of the input 
+  #                        parameters, with each row corresponding to a parameter. See `calc_lprior_theta()`
+  #                        for the requirements of this data.frame. 
+  #    sig2_eps: numeric, vector of length P containing the observation variance parameters. 
+  #    N_samples: integer, the number of samples to draw at each input location. 
+  #    gp_pred_list: A list, as returned by `predict_independent_GPs()`. This allows the predictive means and 
+  #                  variances of the underlying GP emulators evaluated at the input locations at the to be passed 
+  #                  if they have already been computed. If NULL, they are computed here. 
+  #    include_sig_eps_prior: If TRUE, sample from the unnormalized log joint posterior, instead of the conditional; 
+  #                           see description above for clarification. 
+  #
+  # Returns:
+  #    matrix, of dimension `N_samples` x M. The ith row contains the sampled values at the M input locations. 
 
   if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
     stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
@@ -2147,7 +2211,7 @@ samp_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = 
                                             output_stats = emulator_info_list$output_stats)
   }
   
-  # Draw samples from random field approximation of log posterior. 
+  # Draw samples from random field approximation of (unnormalized) log posterior density at inputs `theta_vals_unscaled`. 
   lpost_samp <- matrix(NA, nrow = N_samples, ncol = length(gp_pred_list[[1]]$mean))
   
   for(t in seq_len(N_samples)) {
@@ -2161,6 +2225,12 @@ samp_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = 
                                                    na.rm = TRUE, 
                                                    lprior_vals = lprior_vals,
                                                    return_list = FALSE)
+  }
+  
+  # Optionally include prior on likelihood variance parameters, in which case `lpost` refers to the point unnormalized 
+  # posterior pi(theta, Sigma), rather than the conditional posterior pi(theta|Sigma). 
+  if(include_sig_eps_prior) {
+    stop("Inclusion of sig eps prior not yet implemented.") 
   }
   
   if(N_samples == 1) return(lpost_samp[1,])

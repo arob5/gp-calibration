@@ -183,6 +183,30 @@ emulator_info_list <- list(gp_fits = gp_fits,
 
 
 ```{r}
+# Validating lpost predictive variance computation via Monte Carlo. 
+
+# Closed-form computation. 
+lpost_pred_vars_analytic <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled, 
+                                                    theta_vals_unscaled = prior_grid_info$inputs, 
+                                                    emulator_info_list = emulator_info_list,
+                                                    sig2_eps = diag(computer_model_data$Sig_eps), 
+                                                    theta_prior_params = theta_prior_params)
+                                                    
+# Monte Carlo approximation. 
+lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = prior_grid_info$inputs_scaled, 
+                                    theta_vals_unscaled = prior_grid_info$inputs, 
+                                    emulator_info_list = emulator_info_list, 
+                                    computer_model_data = computer_model_data, 
+                                    theta_prior_params = theta_prior_params, 
+                                    sig2_eps = diag(computer_model_data$Sig_eps), 
+                                    N_samples = 10000)
+lpost_pred_vars_MC <- colMeans(lpost_samp^2) - colMeans(lpost_samp)^2 # TODO: these do not agree. 
+
+
+```
+
+
+```{r}
 # GP predictions at grid points. 
 gp_pred_grid <- predict_independent_GPs(X_pred = prior_grid_info$inputs_scaled, 
                                         gp_obj_list = emulator_info_list$gp_fits, 

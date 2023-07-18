@@ -267,7 +267,7 @@ acquisition_EI_MC <- function(theta_vals, emulator_info_list, computer_model_dat
   # `theta_vals` should be scaled. 
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
-  lpost_samp <- samp_GP_lpost_theta(theta_vals_scaled = theta_vals, 
+  lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = theta_vals, 
                                     emulator_info_list = emulator_info_list,
                                     computer_model_data = computer_model_data, 
                                     theta_prior_params = theta_prior_params, 
@@ -291,13 +291,13 @@ acquisition_PI_MC <- function(theta_vals, emulator_info_list, computer_model_dat
   # `theta_vals` should be scaled. 
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
-  lpost_samp <- samp_GP_lpost_theta(theta_vals_scaled = theta_vals, 
-                                    emulator_info_list = emulator_info_list,
-                                    computer_model_data = computer_model_data, 
-                                    theta_prior_params = theta_prior_params, 
-                                    sig2_eps = sig2_eps, 
-                                    N_samples = N_MC_samples, 
-                                    gp_pred_list = gp_pred_list)
+  lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = theta_vals, 
+                                      emulator_info_list = emulator_info_list,
+                                      computer_model_data = computer_model_data, 
+                                      theta_prior_params = theta_prior_params, 
+                                      sig2_eps = sig2_eps, 
+                                      N_samples = N_MC_samples, 
+                                      gp_pred_list = gp_pred_list)
   
   # Monte Carlo estimates of acquisition at each point. 
   alpha_EI_MC_estimates <- lpost_samp - design_objective_curr[design_best_idx]
