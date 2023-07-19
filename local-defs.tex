@@ -35,8 +35,8 @@
 
 % General inverse problems.
 
-\newcommand{\spar}{\theta} % Parameter (scalar, non-bold)
-\newcommand{\bpar}{\boldsymbol{\theta}} % Parameter vector (bold)
+\newcommand{\spar}{u} % Parameter (scalar, non-bold)
+\newcommand{\bpar}{\mathbf{u}} % Parameter vector (bold)
 \newcommand{\parSpace}{\Theta} % Parameter space
 \newcommand{\fwd}{G} % Forward model
 \newcommand{\Npar}{D} % Dimension of parameter space
@@ -46,6 +46,7 @@
 \newcommand{\postDens}{\pi} % Posterior density
 \newcommand{\objIdx}{p} % Primary index for indexing objective (i.e. data constraint or output variable) in multi-objective problems.
 \newcommand{\indexObj}[2][\objIdx]{{#2}^{(#1)}} % Adds objective index to a variable.
+\newcommand{\designMat}[1][\designIdx]{\mathbf{U}_{#1}} % Design matrix of input parameters (in rows) at which response is observed. 
 
 % Gaussian likelihood, Inverse Gamma prior model. 
 
@@ -55,9 +56,7 @@
 \newcommand{\CovObs}{\boldsymbol{\Sigma}} % Time-independent covariance matrix across all output variables/objectives
 \newcommand{\SSR}{\Phi} % Sum of squared error (SSR) function, as a function of the parameter. 
 
-\newcommand{\SSRPred}[1]{\SSR_{#1}} % Random variable, SSR conditioned on data 
-\newcommand{\SSRPredOut}[2]{\SSR_{#1}^{(#2)}} % Random variable; SSR conditioned on data for specific output
-\newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}}
+\newcommand{\SSRVecPredOut}[2]{\boldsymbol{\SSR}_{#1}^{(#2)}} % TODO: change this 
 
 
 % --------------------------------------------------------------------------------------------------
@@ -67,18 +66,18 @@
 % Generic GP commands. 
 \newcommand{\GP}{\mathcal{GP}} % GP distribution.
 \newcommand{\f}{f} % Generic univariate target function on which GP prior is placed. 
-\newcommand{\fObs}[1][\designidx]{\mathbf{\f}_{#1}} % Vector of observed target function evaluations.  
+\newcommand{\fObs}[1][\designIdx]{\mathbf{\f}_{#1}} % Vector of observed target function evaluations.  
+\newcommand{\GPMean}{\mu} % Generic GP prior mean function
+\newcommand{\GPKer}{k} % Generic GP prior covariance function
+\newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
+\newcommand{\GPMeanPred}[1][\designIdx]{\GPMean_{#1}} % GP predictive mean (conditioned on data).
+\newcommand{\GPKerPred}[1][\designIdx]{\GPKer_{#1}} % GP predictive covariance function (conditioned on data). 
 
 \newcommand{\bbf}{\mathbf{f}} % Bold version of target function; e.g. to be used to denote a vector of function evaluations. 
-\newcommand{\GPMean}{\mu} % Generic GP prior mean function
 \newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 
-\newcommand{\GPMeanPred}[1]{\mu_{#1}} % GP mean, conditioned on data 
 \newcommand{\GPMeanPredOut}[2]{\mu_{#1}^{(#2)}} % Univariate GP mean, conditioned on data, for specific output variable
-\newcommand{\GPKer}{k} % Generic GP prior covariance function
-\newcommand{\GPKerOut}[1]{k^{(#1)}} % Univariate GP prior covariance function for specific output variable 
-\newcommand{\GPKerPred}[1]{k_{#1}} % GP covariance, conditioned on data 
+\newcommand{\GPKerOut}[1]{k^{(#1)}} % Univariate GP prior covariance function for specific output variable  
 \newcommand{\GPKerPredOut}[2]{k_{#1}^{(#2)}} % Univariate GP covariance, conditioned on data, for specific output variable
-\newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
 \newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points
 \newcommand{\KerMatOut}[2]{\mathbf{K}_{#1}^{(#2)}} % Kernel matrix for specific output 
 
@@ -97,7 +96,8 @@
 % Dynamical Models. 
 % --------------------------------------------------------------------------------------------------
 
-% ODEs/Dynamic models. 
+% ODEs
+
 \newcommand{\timeIdx}{t} % Primary index for time step
 \newcommand{\Ntime}{T} % Number of time steps
 \newcommand{\NTimeOut}[1]{T_{#1}} % Number of time steps \NTimeOut -> \indexObj{\Ntime}
@@ -117,8 +117,10 @@
 
 \newcommand{\Ninit}{N_0} % Initial number of design points/size of space-filling design 
 \newcommand{\Ndesign}{N} % Total number of design points  
-\newcommand{\designidx}{n} % Primary index for design points (sequential design)
-\newcommand{\batchidx}{b}  % Primary index for rounds in sequential batch design
+\newcommand{\designIdx}{n} % Primary index for design points (sequential design)
+\newcommand{\batchIdx}{b}  % Primary index for rounds in sequential batch design
+\newcommand{\indexDesign}[2][\designIdx]{{#2}_{#1}} % Adds design iteration index to a variable.
+\newcommand{\indexDesignObj}[3][\objIdx]{{#2}^{(#1)}_{#3}} % Adds design iteration index and objective/constraint index to a variable.
 \newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
 \newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
 \newcommand{\acq}[1]{\mathcal{A}_{#1}} % Acquisition function
