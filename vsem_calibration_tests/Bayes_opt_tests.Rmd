@@ -172,39 +172,12 @@ emulator_info_list <- list(gp_fits = gp_fits,
                            settings = emulator_settings)
 ```
 
-
-```{r}
-# Predictive log posterior random field mean.  
-```
-
-```{r}
-# Predictive log posterior random field variance.  
-```
-
-
-```{r}
-# Validating lpost predictive variance computation via Monte Carlo. 
-
-idx_sel <- sample(1:nrow(prior_grid_info$inputs), size = 100, replace = FALSE)
-
-# Closed-form computation. 
-lpost_pred_vars_analytic <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
-                                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
-                                                    emulator_info_list = emulator_info_list,
-                                                    sig2_eps = diag(computer_model_data$Sig_eps), 
-                                                    theta_prior_params = theta_prior_params)
-                                                    
-# Monte Carlo approximation. 
-lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
-                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
-                                    emulator_info_list = emulator_info_list, 
-                                    computer_model_data = computer_model_data, 
-                                    theta_prior_params = theta_prior_params, 
-                                    sig2_eps = diag(computer_model_data$Sig_eps), 
-                                    N_samples = 100000)
-lpost_pred_vars_MC <- apply(lpost_samp, 2, var)
-
-```
+Plan: 
+1.) Run approx MCMC based on initial space-filling design fit; provide in and out of sample fit metrics. 
+2.) Produce heat maps for (one point) prior-weighted EIVAR, approx-posterior weighted EIVAR, EI (should provide updated non-MC, exact computation)
+3.) Acquire q points using the acquisitions 
+4.) Re-fit emulator on new batches and re-compute metrics 
+5.) Create new Markdown for higher-dimensional example 
 
 
 ```{r}
@@ -407,6 +380,34 @@ plt <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_exact_theta,
                               
 plt
 ```
+
+
+# Validation. 
+
+```{r}
+# Validating lpost predictive variance computation via Monte Carlo. 
+
+idx_sel <- sample(1:nrow(prior_grid_info$inputs), size = 100, replace = FALSE)
+
+# Closed-form computation. 
+lpost_pred_vars_analytic <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
+                                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
+                                                    emulator_info_list = emulator_info_list,
+                                                    sig2_eps = diag(computer_model_data$Sig_eps), 
+                                                    theta_prior_params = theta_prior_params)
+                                                    
+# Monte Carlo approximation. 
+lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
+                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
+                                    emulator_info_list = emulator_info_list, 
+                                    computer_model_data = computer_model_data, 
+                                    theta_prior_params = theta_prior_params, 
+                                    sig2_eps = diag(computer_model_data$Sig_eps), 
+                                    N_samples = 100000)
+lpost_pred_vars_MC <- apply(lpost_samp, 2, var)
+
+```
+
 
 
 

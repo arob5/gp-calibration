@@ -281,10 +281,10 @@ The subscripts on $\GPMeanPred[\Ndesign](\cdot)$ and $\GPKerPred[\Ndesign](\cdot
 distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the conditioning data set. 
 The predictive moments are available in closed-form, and given by the well-known formulas 
 \begin{align}
-\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat{\Ndesign}^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns} \\
-\GPKerPred[\Ndesign](\designMat[M]) &= \GPKer(\designMat[M]) - \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat{\Ndesign}^{-1} \GPKer(\designMat[\Ndesign], \designMat[M]) 
+\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns} \\
+\GPKerPred[\Ndesign](\designMat[M]) &= \GPKer(\designMat[M]) - \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} \GPKer(\designMat[\Ndesign], \designMat[M]) 
 \end{align}
-where $\KerMat{\Ndesign} := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}. While, the equations \ref{kriging_eqns} provide the full multivariate normal predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs in which the equations 
+where $\KerMat[\Ndesign] := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}. While, the equations \ref{kriging_eqns} provide the full multivariate normal predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs in which the equations 
 \ref{kriging_eqns} are applied individually for each $\tilde{\bpar}_m$. 
 
 % Basis functions
@@ -345,8 +345,8 @@ $\SSR_{\designIdx} := \SSR(\bpar_{\designIdx})$. Conditioning the GPs on the obs
 \end{align}
 where 
 \begin{align}
-\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPMeanOut{\objIdx}(\bpar) + \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} (\SSRVecPredOut{\Ndesign}{\objIdx} - \GPMeanOut{\objIdx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
-\GPKerPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPKerOut{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat{\Ndesign}^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\bpar}} \label{GP_pred_var}
+\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPMeanOut{\objIdx}(\bpar) + \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat[\Ndesign]^{-1} (\SSRVecPredOut{\Ndesign}{\objIdx} - \GPMeanOut{\objIdx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
+\GPKerPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPKerOut{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat[\Ndesign]^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\bpar}} \label{GP_pred_var}
 \end{align}
 Here we have defined 
 \begin{align}
@@ -564,6 +564,12 @@ where $\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)$ does not depend
 \begin{align*}
 \E[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right]
 \end{align*}
+where 
+\begin{align*}
+\indexDesignObj{\GPMean}{\designIdx,\tilde{\bpar}}(\bpar) &= \indexObj{\GPMean}(\bpar) + 
+\indexObj{\GPKer}(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} (\indexDesignObj{\SSRObs}{\designIdx, \tilde{\bpar}} - \GPMean(\bpar)\oneVec{\designIdx+1})
+\end{align*}
+
 
 \bibliography{framework_calibrating_ecosystem_models} 
 \bibliographystyle{ieeetr}

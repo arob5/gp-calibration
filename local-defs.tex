@@ -72,13 +72,14 @@
 \newcommand{\designData}{\mathcal{D}} % Set of training/design inputs and responses  
 \newcommand{\GPMeanPred}[1][\designIdx]{\GPMean_{#1}} % GP predictive mean (conditioned on data).
 \newcommand{\GPKerPred}[1][\designIdx]{\GPKer_{#1}} % GP predictive covariance function (conditioned on data). 
+\newcommand{\KerMat}[1][\designIdx]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points.
 
 \newcommand{\bbf}{\mathbf{f}} % Bold version of target function; e.g. to be used to denote a vector of function evaluations. 
 \newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 
 \newcommand{\GPMeanPredOut}[2]{\mu_{#1}^{(#2)}} % Univariate GP mean, conditioned on data, for specific output variable
 \newcommand{\GPKerOut}[1]{k^{(#1)}} % Univariate GP prior covariance function for specific output variable  
 \newcommand{\GPKerPredOut}[2]{k_{#1}^{(#2)}} % Univariate GP covariance, conditioned on data, for specific output variable
-\newcommand{\KerMat}[1]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points
+
 \newcommand{\KerMatOut}[2]{\mathbf{K}_{#1}^{(#2)}} % Kernel matrix for specific output 
 
 % GP emulators for high-dimensional outputs using basis function approach (Higdon et al). 
@@ -91,6 +92,9 @@
 \newcommand{\basisWeightMat}{\mathbf{W}} % Matrix of weights, of dimension Ndesign x NbasisVec
 \newcommand{\centerVec}{\mathbf{m}} % Vector used to center the computer model outputs. 
 \newcommand{\scaleVec}{\mathbf{s}} %  Vector used to scale the computer model outputs. 
+
+% Loss emulation approach; emulating the L2 error functions. 
+\newcommand{\SSRObs}{\mathbf{\SSR}} % Vector of observed SSR responses. 
 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
