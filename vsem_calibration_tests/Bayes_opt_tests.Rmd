@@ -185,30 +185,24 @@ emulator_info_list <- list(gp_fits = gp_fits,
 ```{r}
 # Validating lpost predictive variance computation via Monte Carlo. 
 
+idx_sel <- sample(1:nrow(prior_grid_info$inputs), size = 100, replace = FALSE)
+
 # Closed-form computation. 
-test <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled[2,,drop=FALSE], 
-                                theta_vals_unscaled = prior_grid_info$inputs[2,,drop=FALSE], 
-                                emulator_info_list = emulator_info_list,
-                                sig2_eps = diag(computer_model_data$Sig_eps), 
-                                theta_prior_params = theta_prior_params)
-
-
-lpost_pred_vars_analytic <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled, 
-                                                    theta_vals_unscaled = prior_grid_info$inputs, 
+lpost_pred_vars_analytic <- predict_lpost_GP_approx(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
+                                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
                                                     emulator_info_list = emulator_info_list,
                                                     sig2_eps = diag(computer_model_data$Sig_eps), 
                                                     theta_prior_params = theta_prior_params)
                                                     
 # Monte Carlo approximation. 
-lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = prior_grid_info$inputs_scaled, 
-                                    theta_vals_unscaled = prior_grid_info$inputs, 
+lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = prior_grid_info$inputs_scaled[idx_sel,], 
+                                    theta_vals_unscaled = prior_grid_info$inputs[idx_sel,], 
                                     emulator_info_list = emulator_info_list, 
                                     computer_model_data = computer_model_data, 
                                     theta_prior_params = theta_prior_params, 
                                     sig2_eps = diag(computer_model_data$Sig_eps), 
-                                    N_samples = 10000)
-lpost_pred_vars_MC <- colMeans(lpost_samp^2) - colMeans(lpost_samp)^2 # TODO: these do not agree. 
-
+                                    N_samples = 100000)
+lpost_pred_vars_MC <- apply(lpost_samp, 2, var)
 
 ```
 

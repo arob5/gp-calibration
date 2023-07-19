@@ -266,9 +266,11 @@ is multivariate Gaussian distributed
 \fObs[M] \sim \mathcal{N}_{M}(\GPMean(\designMat[M]), \GPKer(\designMat[M], \designMat[M])),
 \end{align}
 where $\GPMean(\designMat[M])$ is an $M$-vector with entries $\GPMean(\designMat[M])_m = \GPMean(\bpar_m)$ and 
-$\GPKer(\designMat[M], \designMat[M]))$ an $M \times M$ matrix with entries $\GPKer(\designMat[M], \designMat[M])_{m,m^\prime} = \GPKer(\bpar_m, \bpar_{m^\prime})$.
+$\GPKer(\designMat[M], \designMat[M])$ an $M \times M$ matrix with entries $\GPKer(\designMat[M], \designMat[M])_{m,m^\prime} = \GPKer(\bpar_m, \bpar_{m^\prime})$.
+In general, we overload the covariance matrix function arguments so that $\GPKer(\designMat[M], \designMat[N])$ indicates the $M \times N$ matrix with entries 
+$\GPKer(\designMat[M], \designMat[N])_{m,n} = \GPKer(\bpar_n, \tilde{\bpar}_m)$. 
 When the inputs to each entry of the covariance function are the same, we compress notation by writing it as a function of a single argument; 
-e.g. $\GPKer(\designMat[M]) := \GPKer(\designMat[M], \designMat[M])$. 
+e.g. $\GPKer(\bpar) := \GPKer(\bpar, \bpar)$ and $\GPKer(\designMat[M]) := \GPKer(\designMat[M], \designMat[M])$. 
 
 Prediction at new points $\designMat[M]$ then proceeds by conditioning the GP on the observed data $\designData_{\Ndesign}$. This defines the 
 GP \textit{predictive distribution} (i.e. posterior distribution) over the unobserved target responses $\fObs[M]$, which is conveniently also Gaussian:
@@ -276,16 +278,14 @@ GP \textit{predictive distribution} (i.e. posterior distribution) over the unobs
 \fObs[M] | \designData_{\Ndesign} &\sim \GP(\GPMeanPred[\Ndesign](\designMat[M]), \GPKerPred[\Ndesign](\designMat[M]))
 \end{align}
 The subscripts on $\GPMeanPred[\Ndesign](\cdot)$ and $\GPKerPred[\Ndesign](\cdot, \cdot)$ serve to differentiate the mean and covariance functions of the predictive 
-distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the conditioning data. 
+distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the conditioning data set. 
 The predictive moments are available in closed-form, and given by the well-known formulas 
 \begin{align}
-\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat{\Ndesign}^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns_multivariate} \\
+\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat{\Ndesign}^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns} \\
 \GPKerPred[\Ndesign](\designMat[M]) &= \GPKer(\designMat[M]) - \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat{\Ndesign}^{-1} \GPKer(\designMat[\Ndesign], \designMat[M]) 
 \end{align}
-where $\KerMat{\Ndesign} := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}. While, the equations \ref{kriging_eqns_multivariate} provide the full multivariate normal predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs
- \begin{align}
-\GPMean_{\Ndesign}(\tilde{\bpar}_m) &= \GPMean(\tilde{\bpar}_{m}) - \GPKer(\tilde{\bpar}_{m}, \bpar_{1:N}) \KerMat{\Ndesign}^{-1} \GPKer(\bpar_{1:N}, \tilde{\bpar}_{m}) \\
-\end{align}
+where $\KerMat{\Ndesign} := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}. While, the equations \ref{kriging_eqns} provide the full multivariate normal predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs in which the equations 
+\ref{kriging_eqns} are applied individually for each $\tilde{\bpar}_m$. 
 
 % Basis functions
 \subsection{Approach 1: Basis Functions}
