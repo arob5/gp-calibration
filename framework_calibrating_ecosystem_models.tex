@@ -60,7 +60,7 @@ estimation for dynamical models taking the form of a system of ordinary differen
 
 \subsection{The Very Simple Ecosystem Model}
 The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
-a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al \cite{Hartig} and implemented 
+a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al and implemented 
 in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
 This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
 above-ground vegetation, below-ground vegetation, and soil organic matter. The carbon dynamics are forced by a single variable, the quantity of photosynthetically 
@@ -289,7 +289,7 @@ where $\KerMat{\Ndesign} := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel 
 
 % Basis functions
 \subsection{Approach 1: Basis Functions}
-A well-established method to deal with high-dimensional outputs, proposed in Higdon et al, is to emulate the coefficients scaling basis vectors in a basis 
+A well-established method to deal with high-dimensional outputs, proposed in \cite{Higdon}, is to emulate the coefficients scaling basis vectors in a basis 
 representation of the computer model output. For ease of notation, we introduce the method in the case $P = 1$; the multi-objective case will simply follow 
 as $P$ independent applications of the method described here. We thus consider representing the computer model $\fwd: \parSpace \to \R^{\Ntime}$ as a linear 
 combination of basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$,
@@ -420,8 +420,8 @@ Recall that in the case of an expensive forward model $\fwd$, MCMC is often impr
 Here we introduce acquisition functions that are tailored to solving Bayesian inverse problems. 
 
 \subsubsection{Expected Integrated Variance}
-We first consider an acquisition introduced in Sinsbeck and Nowak (2017) and independently 
-in Surer et al (2023). We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
+We first consider an acquisition introduced in \cite{SinsbeckNowak} and independently 
+in \cite{sürer2023sequential}. We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
 \begin{align}
 \acq{\designIdx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] \label{EIVAR}
 \end{align}
@@ -565,47 +565,8 @@ where $\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)$ does not depend
 \E[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right]
 \end{align*}
 
-
-
-\section{Meeting: 7/11/2023}
-
-\subsection{General Updates}
-\begin{enumerate}
-\item URBAN would allow me to take SPH EH 851: Advanced GIS for Public Health and Climate Research. 
-\item Have begun reviewing PEcAn code and planning updates. 
-\item Working on writing up a full exposition for the model/algorithms so far. 
-\item Spent most of last week reading up on batch Bayesian optimization and sequential design. 
-\end{enumerate}
-
-\subsection{Experimental Design}
-\begin{align*}
-\acq{\designIdx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
-\end{align*}
-
-\begin{enumerate}
-\item Sinsbeck and Nowak (2017) propose this criterion except targeting the likelihood approximation instead of the (unnormalized) posterior. They set $\rho = \priorDens$. 
-\item Surer, Plumlee, and Wild (2023) propose the same criterion (they target the posterior, as the acquisition function is defined above). They show that the 
-inner two integrals can be computed analytically in the PCA-GP setting. 
-\item To generalize this to the batch setting, Surer et al utilize a kriging believer approach. i.e. the batch of points is collected in a loop; when each point $\tilde{\bpar}$ is chosen, the GP is conditioned on $(\tilde{\bpar}, \mu(\tilde{\bpar}))$ where $\mu(\cdot)$ is the GP mean. This has the effect of updating the GP predictive variance without affecting 
-the GP mean. GP hyperparameters are updated only after a whole batch has been collected and the full model run at the points in the batch. Alternative batch Bayesian 
-optimization heuristics could also be used here; e.g. constant liar. 
-\item In our setting, if we target the unnormalized log posterior, then the variance is known in closed-form and does not depend on $\tilde{\postDens}$. We may also 
-be able to compute the two inner integrals when targeting the unnormalized posterior - I need to check. 
-\item Some questions I have: 
-	\begin{enumerate}
-	\item What is the effect of targeting the unnormalized posterior vs log posterior vs. (log) likelihood? 
-	\item Instead of weighting by $\rho = \priorDens$, what if we weight by an approximation to the true posterior by using MCMC samples to approximate the outer
-	integral? 
-	\end{enumerate}
-\end{enumerate}
-
-\subsection{Plan for Next Week}
-\begin{enumerate}
-\item Implement the above acquisition as well as other common Bayes Opt/sequential design acquisitions for comparison. 
-\item Continue planning updates to PEcAn code. 
-\item Continue working on writing exposition; will share the document once it is at a reasonable state of completion. 
-\end{enumerate}
-
+\bibliography{framework_calibrating_ecosystem_models} 
+\bibliographystyle{ieeetr}
 
 \end{document}
 
