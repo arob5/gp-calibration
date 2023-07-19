@@ -559,7 +559,7 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
 
   # Compute predictive variance of lpost approximation. 
   col_pattern <- ifelse(include_nugget, "var_comb_output", "var_output")
-  scaled_vars <- gp_pred_list[, grep(col_pattern, colnames(gp_pred_list))] * diag(1/sig2_eps^2)
+  scaled_vars <- as.matrix(gp_pred_list[, grep(col_pattern, colnames(gp_pred_list))]) %*% diag(1/sig2_eps^2)
   lpost_pred_var <- 0.25 * rowSums(scaled_vars)
   
   # Optionally include prior on likelihood variance parameters, in which case `lpost` refers to the point unnormalized 
