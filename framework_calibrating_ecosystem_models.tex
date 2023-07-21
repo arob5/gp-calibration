@@ -337,30 +337,23 @@ Our emulator of choice uses Gaussian processes (GP). In particular, we treat the
 
 where $\GPMeanOut{\objIdx}: \parSpace \to \R$ and $\GPKerOut{\objIdx}: \parSpace \times \parSpace \to \R_+$ are the mean and covariance function (i.e. kernel), respectively. 
 Suppose we have access to observed data 
-\[\designData_{\Ndesign} = \left\{(\bpar_1, \SSR(\bpar_1)), \dots, (\bpar_{\Ndesign}, \SSR(\bpar_{\Ndesign})) \right\}\]
-consisting of a set of $\Ndesign$ values for the calibration parameter and their associated values of $\SSR$ resulting from full forward model evaluations. For brevity, we will henceforth denote 
-$\SSR_{\designIdx} := \SSR(\bpar_{\designIdx})$. Conditioning the GPs on the observed data yields the GP predictive distributions
+\[\designData_{\Ndesign} = \{\designMat[\Ndesign], \indexDesign[\Ndesign]{\SSRObs}\} = \left\{(\bpar_1, \SSR(\bpar_1)), \dots, (\bpar_{\Ndesign}, \SSR(\bpar_{\Ndesign})) \right\}\]
+consisting of a set of $\Ndesign$ values for the calibration parameter and their associated values of $\SSR$ resulting from full forward model evaluations. 
+Conditioning the GPs on the observed data yields the GP predictive distributions
 \begin{align} 
-\indexDesignObj{\SSR}{\Ndesign}(\cdot) := \indexObj{\SSR}(\cdot)|\designData_{\Ndesign} \overset{\text{ind}}{\sim} \GP(\GPMeanPredOut{\Ndesign}{\objIdx}(\cdot), \GPKerPredOut{\Ndesign}{\objIdx}(\cdot, \cdot)), \text{ for } \objIdx = 1, \dots, \Nobj
+\indexDesignObj{\SSR}{\Ndesign}(\cdot) := \indexObj{\SSR}(\cdot)|\designData_{\Ndesign} \overset{\text{ind}}{\sim} \GP(\indexDesignObj{\GPMean}{\Ndesign}(\cdot), \indexDesignObj{\GPKer}{\Ndesign}(\cdot, \cdot)), \text{ for } \objIdx = 1, \dots, \Nobj
 \end{align}
-where 
+where the (pointwise) predictive moments are given by 
 \begin{align}
-\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPMeanOut{\objIdx}(\bpar) + \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat[\Ndesign]^{-1} (\SSRVecPredOut{\Ndesign}{\objIdx} - \GPMeanOut{\objIdx}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
-\GPKerPredOut{\Ndesign}{\objIdx}(\bpar) &= \GPKerOut{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{\bpar}}\right)^\top \KerMat[\Ndesign]^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\bpar}} \label{GP_pred_var}
+\indexDesignObj{\GPMean}{\Ndesign}(\bpar) &= \indexObj{\GPMean}(\bpar) + \indexObj{\GPKer}(\bpar, \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} (\indexDesignObj{\SSRObs}{\Ndesign} - \indexObj{\GPMean}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
+\indexDesignObj{\GPKer}{\Ndesign}(\bpar) &= \indexObj{\GPKer}(\bpar) - \indexObj{\GPKer}(\bpar, \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} \indexObj{\GPKer}(\designMat[\Ndesign], \bpar) \label{GP_pred_var}
 \end{align}
-Here we have defined 
-\begin{align}
-\boldsymbol{\GPKerOut{\objIdx}_{\bpar}} &:= \begin{pmatrix} \GPKerOut{\objIdx}(\bpar_1, \bpar), \dots, \GPKerOut{\objIdx}(\bpar_{\Ndesign}, \bpar)  \end{pmatrix}^\top \\ 
-\SSRVecPredOut{\Ndesign}{\objIdx} &:= \begin{pmatrix} \indexDesignObj{\SSR}{1}, \dots, \indexDesignObj{\SSR}{\Ndesign} \end{pmatrix}^{\top}
-\end{align}
-
-
 
 % Induced Posterior Density Approximation
 \subsection{Induced Posterior Density Approximation}
 Regardless of whether one directly approximates the forward model, the likelihood, or a sufficient statistic of the likelihood, ultimately the emulator induces an approximation to the posterior 
-density $\postDens(\bpar, \CovObs|\stateMat)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
-a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs|\stateMat)$. In the case of loss emulation, recall that $\indexDesign{\SSR}(\bpar)$ denotes the random 
+density $\postDens(\bpar, \CovObs)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
+a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs)$. In the case of loss emulation, recall that $\indexDesign{\SSR}(\bpar)$ denotes the random 
 variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\bpar$. We extend this notation, writing $\llik_{\designIdx}(\bpar, \CovObs)$ 
 to denote the random approximation to the log-likelihood induced by the emulator; that is, 
 \begin{align}
@@ -413,6 +406,26 @@ Recall that in the case of an expensive forward model $\fwd$, MCMC is often impr
 
 % Sequential Design 
 \section{Sequential Design}
+In sequential design and optimization, we often consider the effect of adding a candidate input $\tilde{\bpar}$ to the design. To evaluate the quality of this candidate, we 
+consider the predictive distribution
+\begin{align}
+\indexDesign[\designIdx, \tilde{\bpar}]{\f} := \indexDesign{\f} | (\tilde{\bpar}, \tilde{\f}) = \f | \indexDesign{\designData} \cup (\tilde{\bpar}, \tilde{\f})
+\end{align}
+where $\tilde{\f} := \f(\tilde{\bpar})$. Since we are considering running the full model at input $\tilde{\bpar}$, the corresponding response $\tilde{\f}$ is not 
+observed and hence a random variable. Therefore, $\indexDesign[\designIdx, \tilde{\bpar}]{\f}$ has an additional source of randomness stemming from conditioning on 
+this unknown response. We similarly utilize the notation $\indexDesign[\designIdx, \tilde{\bpar}]{\GPMean}, \indexDesign[\designIdx, \tilde{\bpar}]{\GPKer}$ to denote the 
+predictive mean and variance of $\indexDesign[\designIdx, \tilde{\bpar}]{\f}$, as functions of the random variable $\tilde{\f}$. 
+\begin{align}
+\indexDesign[\designIdx,\tilde{\bpar}]{\GPMean}(\bpar) &= \GPMean(\bpar) + 
+\GPKer(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} (\fObs[\designIdx, \tilde{\bpar}] - \GPMean(\bpar)\oneVec{\designIdx+1}) \label{pred_mean_augmented}\\
+\indexDesign[\designIdx,\tilde{\bpar}]{\GPKer}(\bpar) &= \GPKer(\bpar) - 
+\GPKer(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} \GPKer(\designMat[\designIdx, \tilde{\bpar}], \bpar) \label{pred_var_augmented}
+\end{align}
+where $(\designMat[\designIdx, \tilde{\bpar}], \fObs[\designIdx, \tilde{\bpar}])$ denotes the design 
+$(\designMat[\designIdx], \fObs[\designIdx])$ augmented with $(\tilde{\bpar}, \tilde{\f})$, by adding a new row to the input and response matrix, respectively. 
+Similarly, $\KerMat[\designIdx, \tilde{\bpar}]^{-1} := \GPKer(\designMat[\designIdx, \tilde{\bpar}])$ is the augmented kernel matrix. We note that the predictive mean 
+\ref{pred_mean_augmented} has dependence on the unknown response $\tilde{f}$, but conveniently the predictive variance \ref{pred_var_augmented} has no 
+such dependence. 
 
 \subsection{Basics of Sequential Design and Bayesian Optimization}
 
@@ -438,22 +451,10 @@ considers targeting the likelihood approximation in place of the posterior.
 \textbf{Loss Emulation.} The loss emulation setting yields a very convenient form of EIVAR, especially for the EIVAR version targeting the log posterior density. In this case,
 $\log \postDens_{\designIdx}(\bpar)$ is Gaussian distributed and $\Var\left[\log \postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right]$ is 
 available in closed-form (see \ref{loss_emulation_dist}). Moreover, this variance does not depend on $\tilde{\postDens}$ so the inner expectation $\E_{\tilde{\postDens}}$ vanishes. 
-Therefore, the EIVAR expression simplifies to  
-setting is 
+Therefore, the EIVAR expression simplifies to
 \begin{align}
 \acq{\designIdx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)\right]}{\sdObs_{\objIdx}^4} \label{EIVAR_llik_loss_emulation}
 \end{align}
-where 
-\begin{align*}
-\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar) &= \GPKerPredOut{\designIdx}{\objIdx}(\bpar) - \left(\boldsymbol{\GPKerOut{\objIdx}_{n,\tilde{\bpar}}}\right)^\top \left(\KerMatOut{\designIdx, \tilde{\bpar}}{\objIdx}\right)^{-1} \boldsymbol{\GPKerOut{\objIdx}_{\designIdx, \tilde{\bpar}}}
-\end{align*}
-and 
-\begin{align*}
-\boldsymbol{\GPKerOut{\objIdx}_{\designIdx, \tilde{\bpar}}} &= \begin{pmatrix} \GPKerOut{\objIdx}(\bpar_1, \bpar), \dots, 
-														       \GPKerOut{\objIdx}(\bpar_{\designIdx}, \bpar), 
-														       \GPKerOut{\objIdx}(\tilde{\bpar}, \bpar)  \end{pmatrix}^\top 
-\end{align*}
-and similarly $\KerMatOut{\designIdx, \tilde{\bpar}}{\objIdx}$ is the kernel matrix constructed from the extended design $\designData_{\designIdx} \cup \{\tilde{\bpar}\}$.
 
 \subsection{Unknown $\CovObs$}
 The above algorithms have treated $\CovObs$ as fixed; here we return to the general setting where $\CovObs$ is unknown. To deal with this, we consider inserting an 

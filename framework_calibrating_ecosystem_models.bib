@@ -340,6 +340,21 @@ abstract = { We present a sequential design strategy for efficient sampling of m
       primaryClass={stat.ME}
 }
 
+% Proposes an EIVAR-like acquisition but uses KL-divergence instead of prior-weighted L2 
+@inproceedings{10.5555/2832747.2832752,
+author = {Kandasamy, Kirthevasan and Schneider, Jeff and P\'{o}czos, Barnab\'{a}s},
+title = {Bayesian Active Learning for Posterior Estimation},
+year = {2015},
+isbn = {9781577357384},
+publisher = {AAAI Press},
+abstract = {This paper studies active posterior estimation in a Bayesian setting when the likelihood is expensive to evaluate. Existing techniques for posterior estimation are based on generating samples representative of the posterior. Such methods do not consider efficiency in terms of likelihood evaluations. In order to be query efficient we treat posterior estimation in an active regression framework. We propose two myopic query strategies to choose where to evaluate the likelihood and implement them using Gaussian processes. Via experiments on a series of synthetic and real examples we demonstrate that our approach is significantly more query efficient than existing techniques and other heuristics for posterior estimation.},
+booktitle = {Proceedings of the 24th International Conference on Artificial Intelligence},
+pages = {3605–3611},
+numpages = {7},
+location = {Buenos Aires, Argentina},
+series = {IJCAI'15}
+}
+
 % Classic paper on batch BayesOpt; Kriging believer and constant liar heuristics for approximating multi-points EI. 
 @Inbook{Ginsbourger2010,
 author="Ginsbourger, David
@@ -433,20 +448,6 @@ keywords = {Design of experiments, Non-stationary Gaussian Processes, Expected I
 abstract = {Inferring arbitrary quantities of interest (QoI) using limited computational or, in realistic scenarios, financial budgets, is a challenging problem that requires sophisticated strategies for the optimal allocation of the available resources. Bayesian optimal experimental design identifies the optimal set of design locations for the purpose of solving a parameter inference problem and the optimality criterion is typically associated with maximizing the worth of information in the experimental measurements. Sequential design strategies further identify the optimal design in a sequential manner, starting from a initial budget and iteratively selecting new optimal points until either an accuracy threshold is reached, or a cost limit is exceeded. In this paper, we present a generic sequential Bayesian experimental design framework that relies on maximizing an information theoretic design criterion, namely the Expected Information Gain, in order to infer QoIs formed as nonlinear operators acting on black-box functions. Our framework relies on modeling the underlying response function using non-stationary Gaussian Processes, thus enabling efficient sampling from the QoI in order to provide Monte Carlo estimators for the design criterion. We demonstrate the performance of our method on an engineering problem of steel wire manufacturing and compare it with two classic approaches: uncertainty sampling and expected improvement.}
 }
 
-% TODO: need to read 
-@inproceedings{10.5555/2832747.2832752,
-author = {Kandasamy, Kirthevasan and Schneider, Jeff and P\'{o}czos, Barnab\'{a}s},
-title = {Bayesian Active Learning for Posterior Estimation},
-year = {2015},
-isbn = {9781577357384},
-publisher = {AAAI Press},
-abstract = {This paper studies active posterior estimation in a Bayesian setting when the likelihood is expensive to evaluate. Existing techniques for posterior estimation are based on generating samples representative of the posterior. Such methods do not consider efficiency in terms of likelihood evaluations. In order to be query efficient we treat posterior estimation in an active regression framework. We propose two myopic query strategies to choose where to evaluate the likelihood and implement them using Gaussian processes. Via experiments on a series of synthetic and real examples we demonstrate that our approach is significantly more query efficient than existing techniques and other heuristics for posterior estimation.},
-booktitle = {Proceedings of the 24th International Conference on Artificial Intelligence},
-pages = {3605–3611},
-numpages = {7},
-location = {Buenos Aires, Argentina},
-series = {IJCAI'15}
-}
 
 % TODO: need to read
 @article{article,
