@@ -76,28 +76,28 @@ grid.arrange(arrangeGrob(grobs = plts, nrow = 1))
 N_mcmc_exact <- 50000
 
 time_start <- proc.time()
-samp_mcmc_exact <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+mcmc_exact_list <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
                                               theta_prior_params = theta_prior_params, 
                                               learn_sig_eps = TRUE,
                                               sig_eps_prior_params = sig_eps_prior_params,
                                               N_mcmc = N_mcmc_exact)
 mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
-
-samp_exact_df <- as.data.frame(samp_mcmc_exact$samp)
-colnames(samp_exact_df) <- paste("exact", colnames(samp_exact_df), sep = "_")
-
 print(paste0("Exact MCMC runtime: ", mcmc_exact_runtime, " seconds."))
+
+# Format MCMC samples. 
+mcmc_samp_dt <- format_mcmc_output(samp_list = mcmc_exact_list[c("theta", "sig_eps")], test_label = "exact")
+
 ```
 
 ```{r}
-burn_in_exact <- c(exact = 10000)
+burn_ins <- c(exact = 10000)
 
-mcmc_exact_trace_plts <- get_trace_plots(samp_exact_df, burn_in_start = burn_in_exact, param_types = "theta")
+mcmc_exact_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")
 grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
 ```
 
 ```{r}
-mcmc_exact_trace_plts_sig_eps <- get_trace_plots(samp_exact_df, burn_in_start = burn_in_exact, param_types = "sig_eps")
+mcmc_exact_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "sig_eps")
 grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
 ```
 
@@ -107,7 +107,7 @@ colnames(samp_exact_theta) <- c("LAR", "KEXT")
 ```
 
 
-# Fit GP on initial space-filling design. 
+# Round 1: Fit GP on initial space-filling design. 
 
 ```{r, echo = FALSE}
 # Emulator settings
@@ -128,6 +128,24 @@ design_info <- get_input_output_design(N_points = 20,
                                        computer_model_data = computer_model_data, 
                                        theta_prior_params = theta_prior_params, 
                                        transformation_method = emulator_settings$transformation_method)
+
+# Current best estimate for calibration parameter and estimate of covariance matrix to seed MCMC sampling of 
+# approximate posterior. Essentially doing a mini coordinate ascent over the discrete set of calibration parameter
+# values in the design. 
+theta_curr_SSR_min_idx <- which.min(rowSums(design_info$outputs))
+theta_curr_SSR_min <- design_info$inputs[theta_curr_SSR_min_idx,,drop=FALSE]
+sig2_eps_estimates <- optimize_sig_eps_cond_post(design_info$outputs[theta_curr_SSR_min_idx,], sig_eps_prior_params, computer_model_data$n_obs)
+lpost_design <- calc_lpost_theta_product_lik(theta_vals = design_info$inputs, 
+                                             computer_model_data = computer_model_data, 
+                                             SSR = design_info$outputs, 
+                                             vars_obs = sig2_eps_estimates, 
+                                             na.rm = TRUE, 
+                                             return_list = FALSE,
+                                             theta_prior_params = theta_prior_params)
+theta_lpost_max_idx <- which.max(lpost_design)
+theta_lpost_max <- design_info$inputs[theta_lpost_max_idx,,drop=FALSE]
+lpost_max <- lpost_design[theta_lpost_max_idx]
+
 
 # Grid based on prior bounds for producing heatmaps. Ensure same scaling as design points. 
 prior_grid_info <- get_input_output_design(N_points = 51^2,
@@ -172,6 +190,122 @@ emulator_info_list <- list(gp_fits = gp_fits,
                            settings = emulator_settings)
 ```
 
+
+## Sample approximate posterior. 
+```{r}
+N_mcmc_approx <- 50000
+
+time_start <- proc.time()
+mcmc_approx_round1 <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                                 theta_prior_params = theta_prior_params,
+                                                 theta_init = theta_lpost_max[1,], 
+                                                 sig_eps_init = sig2_eps_estimates, 
+                                                 learn_sig_eps = TRUE, 
+                                                 sig_eps_prior_params = sig_eps_prior_params, 
+                                                 N_mcmc = N_mcmc_approx)
+mcmc_approx_round1_runtime <- (proc.time() - time_start)[["elapsed"]]
+
+samp_approx_round1_df <- as.data.frame(mcmc_approx_round1$samp)
+colnames(samp_approx_round1_df) <- paste("round1", colnames(samp_approx_round1_df), sep = "_")
+mcmc_samp_df <- cbind(mcmc_samp_df, samp_approx_round1_df)
+
+print(paste0("MCMC approx round 1 runtime: ", mcmc_approx_round1_runtime, " seconds."))
+```
+
+```{r}
+burn_ins <- c(burn_ins, c(round1 = 10000))
+
+mcmc_round1_trace_plts <- get_trace_plots(mcmc_samp_df, burn_in_start = burn_ins, param_types = "theta", test_labels = "round1")
+grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts, nrow = 1))
+```
+
+```{r}
+mcmc_round1_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_df, burn_in_start = burn_in_exact, param_types = "sig_eps", test_labels = "round1")
+grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts_sig_eps, nrow = 1))
+```
+
+## Heat maps of sequential one-point acquisitions. 
+
+```{r}
+# GP predictions at dense grid for plotting heatmaps. 
+gp_pred_grid <- predict_independent_GPs(X_pred = prior_grid_info$inputs_scaled, 
+                                        gp_obj_list = emulator_info_list$gp_fits, 
+                                        gp_lib = emulator_info_list$settings$gp_lib, 
+                                        denormalize_predictions = TRUE, 
+                                        output_stats = emulator_info_list$output_stats, 
+                                        transformation_method = emulator_info_list$settings$transformation_method, 
+                                        output_variables = computer_model_data$output_vars)
+```
+
+```{r}
+# Evaluate acquisitions over grid of points. 
+acq_grid_EI_lpost_MC <- acquisition_EI_lpost_MC(theta_vals = prior_grid_info$inputs_scaled, 
+                                                emulator_info_list = emulator_info_list, 
+                                                computer_model_data = computer_model_data, 
+                                                theta_prior_params = theta_prior_params, 
+                                                sig2_eps = sig2_eps_estimates, 
+                                                threshold_lpost = lpost_max, 
+                                                N_MC_samples = 1000, 
+                                                gp_pred_list = gp_pred_grid)
+
+acq_grid_VAR_lpost <- acquisition_VAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
+                                            emulator_info_list = emulator_info_list, 
+                                            theta_prior_params = theta_prior_params, 
+                                            sig2_eps = sig2_eps_estimates)
+
+acq_grid_EIVAR_prior_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
+                                                      emulator_info_list = emulator_info_list, 
+                                                      theta_prior_params = theta_prior_params, 
+                                                      sig2_eps = sig2_eps_estimates, 
+                                                      theta_grid_integrate = prior_grid_info$inputs_scaled)
+
+acq_grid_EIVAR_approxpost_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
+                                                           emulator_info_list = emulator_info_list, 
+                                                           theta_prior_params = theta_prior_params, 
+                                                           sig2_eps = sig2_eps_estimates, 
+                                                           theta_grid_integrate = scale_input_data(select_mcmc_samp(mcmc_samp_df = mcmc_samp_df, 
+                                                                                                                    burn_in_start = burn_ins, 
+                                                                                                                    param_types = "theta", 
+                                                                                                                    test_labels = "round1"), 
+                                                                                                   input_bounds = design_info$input_bounds))
+
+```
+
+```{r}
+# Plot heatmaps.
+
+acq_EI_lpost_MC_plt <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                           y = acq_grid_EI_lpost_MC, 
+                                           param_names = computer_model_data$pars_cal_names, 
+                                           samples_kde = samp_exact_theta, 
+                                           samples_points = design_info$inputs,  
+                                           raster = TRUE, 
+                                           point_coords = computer_model_data$theta_true, 
+                                           main_title = "Expected Improvement lpost (Monte Carlo approximation)", 
+                                           bigger_is_better = TRUE, 
+                                           legend_label = "EI")
+
+acq_VAR_lpost_plt <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                         y = acq_grid_VAR_lpost, 
+                                         param_names = computer_model_data$pars_cal_names, 
+                                         samples_kde = samp_exact_theta, 
+                                         samples_points = design_info$inputs,  
+                                         raster = TRUE, 
+                                         point_coords = computer_model_data$theta_true, 
+                                         main_title = "VAR lpost", 
+                                         bigger_is_better = TRUE, 
+                                         legend_label = "VAR")
+
+plot(acq_EI_lpost_MC_plt)
+plot(acq_VAR_lpost_plt)
+```
+
+
+
+
+
+
+
 Plan: 
 1.) Run approx MCMC based on initial space-filling design fit; provide in and out of sample fit metrics. 
 2.) Produce heat maps for (one point) prior-weighted EIVAR, approx-posterior weighted EIVAR, EI (should provide updated non-MC, exact computation)
@@ -187,16 +321,7 @@ connections to support points/Stein points. Good resource: Gramacy's locally-ind
 approximate GP (or locally-induced GP) that targets the posterior mode (or modes). 
 
 
-```{r}
-# GP predictions at grid points. 
-gp_pred_grid <- predict_independent_GPs(X_pred = prior_grid_info$inputs_scaled, 
-                                        gp_obj_list = emulator_info_list$gp_fits, 
-                                        gp_lib = emulator_info_list$settings$gp_lib, 
-                                        denormalize_predictions = TRUE, 
-                                        output_stats = emulator_info_list$output_stats, 
-                                        transformation_method = emulator_info_list$settings$transformation_method, 
-                                        output_variables = computer_model_data$output_vars)
-```
+
 
 
 ```{r}

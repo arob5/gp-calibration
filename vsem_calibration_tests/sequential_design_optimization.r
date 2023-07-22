@@ -258,13 +258,32 @@ optim.EI <- function(f, ninit, end)
 #    - For both optimization and design. 
 #    - All acquisition functions assume that arguments related to the input/ 
 #      calibration space (e.g. `theta_vals`, `theta_grid_integrate`) are scaled.
+#    - All acquisition functions are designed to be maximized. 
 # ---------------------------------------------------------------------------------
 
-acquisition_EI_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
-                              theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
-                              design_best_idx, N_MC_samples = 1000, gp_pred_list = NULL) {
-  # Note that lpost_min should be the maximum posterior over both theta and Sigma, not over the conditional posterior. 
-  # `theta_vals` should be scaled. 
+acquisition_EI_lpost_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
+                                    theta_prior_params, sig2_eps, threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL) {
+  # A Monte Carlo (MC) approximation to the expected improvement (EI) criterion targeting the approximation 
+  # to the unnormalized log posterior density. This is the MC analog of `acquisition_EI_lpost()`; the latter assumes 
+  # that the predictive distributions of the GPs targeting the SSR functions are Gaussian, while this function allows 
+  # for approximate computation in the case of non-Gaussian predictive distributions. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    emulator_info_list: list, the emulator information list. 
+  #    computer_model_data: list, the computer model information list. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
+  #    threshold_lpost: the threshold objective value to use in the EI calculation, typically the current observed maximum.
+  #    N_MC_samples: integer, the number of samples to draw from the log posterior density approximation at each input in order 
+  #                  to approximate PI. 
+  #    gp_pred_list: A list, as returned by `predict_independent_GPs()`. This allows the predictive means and 
+  #                  variances of the underlying GP emulators evaluated at the input locations at the to be passed 
+  #                  if they have already been computed. If NULL, they are computed here. 
+  #    
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`.
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
   lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = theta_vals, 
@@ -276,19 +295,37 @@ acquisition_EI_MC <- function(theta_vals, emulator_info_list, computer_model_dat
                                     gp_pred_list = gp_pred_list)
                                     
   # Monte Carlo estimates of acquisition at each point. 
-  alpha_EI_MC_estimates <- lpost_samp - design_objective_curr[design_best_idx]
-  alpha_EI_MC_estimates[alpha_EI_MC_estimates < 0] <- 0
+  acq_EI_MC_estimates <- lpost_samp - threshold_lpost
+  acq_EI_MC_estimates[acq_EI_MC_estimates < 0] <- 0
   
-  return(colMeans(alpha_EI_MC_estimates))
+  return(colMeans(acq_EI_MC_estimates))
   
 }
 
 
-acquisition_PI_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
-                              theta_prior_params, sig2_eps, design_input_curr, design_objective_curr,
-                              design_best_idx, N_MC_samples = 1000, gp_pred_list = NULL) {
-  # Note that lpost_min should be the maximum posterior over both theta and Sigma, not over the conditional posterior. 
-  # `theta_vals` should be scaled. 
+acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps, 
+                                    threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL) {
+  # A Monte Carlo (MC) approximation to the probability of improvement (PI) criterion targeting the approximation 
+  # to the unnormalized log posterior density. This is the MC analog of `acquisition_PI_lpost()`; the latter assumes 
+  # that the predictive distributions of the GPs targeting the SSR functions are Gaussian, while this function allows 
+  # for approximate computation in the case of non-Gaussian predictive distributions. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    emulator_info_list: list, the emulator information list. 
+  #    computer_model_data: list, the computer model information list. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
+  #    threshold_lpost: the threshold objective value to use in the PI calculation, typically the current observed maximum.
+  #    N_MC_samples: integer, the number of samples to draw from the log posterior density approximation at each input in order 
+  #                  to approximate PI. 
+  #    gp_pred_list: A list, as returned by `predict_independent_GPs()`. This allows the predictive means and 
+  #                  variances of the underlying GP emulators evaluated at the input locations at the to be passed 
+  #                  if they have already been computed. If NULL, they are computed here. 
+  #    
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`.
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
   lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = theta_vals, 
@@ -300,22 +337,32 @@ acquisition_PI_MC <- function(theta_vals, emulator_info_list, computer_model_dat
                                       gp_pred_list = gp_pred_list)
   
   # Monte Carlo estimates of acquisition at each point. 
-  alpha_EI_MC_estimates <- lpost_samp - design_objective_curr[design_best_idx]
-  alpha_EI_MC_estimates <- colMeans(alpha_EI_MC_estimates > 0)
+  acq_EI_MC_estimates <- lpost_samp - threshold_lpost
+  acq_EI_MC_estimates <- colMeans(acq_EI_MC_estimates > 0)
 
-  return(alpha_EI_MC_estimates)
+  return(acq_EI_MC_estimates)
   
 }
 
 
-# TODO: I think it makes more sense to scale inputs prior to passing to acq functions, so all acq functions assume they are already 
-#       scaled. Look into updating this and where the inputs should be scaled. 
 acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_params, sig2_eps, theta_grid_integrate = theta_vals) {
   # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
   # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
   # space is approximated by a finite sum over grid points `theta_grid_integrate`. By default, the grid values used are the same 
   # values at which the acquisition function is to be evaluated; in the case that the acquisition is only being evaluated at one 
   # or a handful of values, then this default for `theta_grid_integrate` should certainly be overwritten. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    emulator_info_list: list, the emulator information list. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
+  #    theta_grid_integrate: matrix, of dimension M_integrate x D. The set of inputs used to approximate the integral over the 
+  #                          input space required in evaluating the EIVAR criterion. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
   
   # Handle case of single input. 
   if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
@@ -331,7 +378,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
                                                   
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_grid_integrate, emulator_info_list = emulator_info_list, 
-                                                   sig2_eps = sig2_eps, include_nugget = TRUE, include_sig_eps_prior = FALSE)
+                                                   sig2_eps = sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE)
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
     EIVAR_est[i] <- mean(lpost_pred_var_grid)
@@ -343,6 +390,30 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
 }
 
 
+acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_params, sig2_eps) {
+  # Implements the acquisition which is simply defined as the variance of the log posterior approximation in the loss emulation 
+  # setting. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    emulator_info_list: list, the emulator information list. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
+  lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_vals, emulator_info_list = emulator_info_list, 
+                                                 sig2_eps = sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE)
+  
+  return(lpost_pred_var_grid)
+  
+}
 
 
 

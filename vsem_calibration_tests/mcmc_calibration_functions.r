@@ -842,9 +842,9 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
+  colnames(sig_eps_samp) <- computer_model_data$output_vars
 
   # Set initial conditions.
   if(is.null(theta_init)) {
@@ -920,7 +920,7 @@ mcmc_calibrate_product_lik <- function(computer_model_data, theta_prior_params,
     
   }
   
-  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -2006,6 +2006,99 @@ gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, 
 
 
 # ------------------------------------------------------------------------------
+# MCMC Formatting Functions. 
+# ------------------------------------------------------------------------------
+
+format_mcmc_output <- function(samp_list, test_label) {
+  # This function re-formats the output returned by a single MCMC run. This MCMC run is identified with 
+  # the label `test_label`. The function combines matrices containing MCMC samples of different parameter 
+  # types (see `samp_list` description below) into a single data.table. The returned data.table is in a 
+  # long format in that it has columns "test_label", "param_type", "param_name", "itr", and "sample". 
+  #
+  # Args:
+  #    samp_list: named list, each element must have name set to the relevant parameter type (e.g. "theta" or "sig_eps"). 
+  #               Each element is a matrix where rows contain MCMC samples of that parameter type. The column names of 
+  #               these matrices must be set to the parameter names. Given that the samples are all from the same MCMC run, 
+  #               the matrices will all typically have the same number of rows. However, this is not required. 
+  #    test_label: character, a string providing a label for the MCMC run. 
+  #
+  # Returns: 
+  #    data.table with column names "test_label", "param_type", "param_name", "itr", and "sample". The column "test_label" will be 
+  #    constant with value set to `test_label`. The values in column "param_type" are taken from the names of `samp_list`, 
+  #    while the values in column "param_name" are taken from the column names in the matrices within `samp_list`. The 
+  #    column `itr` contains the integer MCMC iteration. The column `sample` contains the MCMC numeric sample values. 
+  
+  for(j in seq_along(samp_list)) {
+    
+    # Format samples for current variable. 
+    samp_param_dt <- as.data.table(samp_list[[j]])
+    samp_param_dt[, param_type := names(samp_list)[j]]
+    samp_param_dt[, itr := 1:.N]
+    samp_param_dt <- melt.data.table(data = samp_param_dt, id.vars = c("param_type", "itr"), 
+                                     variable.name = "param_name", value.name = "sample", na.rm = TRUE, 
+                                     variable.factor = FALSE)
+    
+    # Append to samples for existing variables. 
+    if(j == 1) samp_dt <- copy(samp_param_dt)
+    else samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names = TRUE)  
+    
+  }
+  
+  # Add test label. 
+  samp_dt[, test_label := test_label]
+  
+  
+  return(samp_dt)
+  
+}
+
+
+select_mcmc_samp <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+  # Operates on the long data.table format, as returned by `format_mcmc_output()`. Selects rows corresponding to 
+  # valid combinations of `test_labels`, `param_types`, `param_names`. Also removes iterations specified as "burn-in". 
+  # See `burn_in_start` for details. 
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
+  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
+  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
+  #                   be a named vector with names set to valid test label values. This allows application of a different 
+  #                   burn-in start iteration for different test labels. 
+  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
+  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
+  #                                            value includes all values found in `samp_dt`. 
+  #
+  # Returns:
+  #    data.table, containing subset of rows from `samp_dt`. 
+  
+  samp_dt_subset <- copy(samp_dt)
+  
+  # If not provided, select all. 
+  if(is.null(test_labels)) test_labels <- samp_dt_subset[, unique(test_label)]
+  if(is.null(param_types)) param_types <- samp_dt_subset[, unique(param_type)]
+  if(is.null(param_names)) param_names <- samp_dt_subset[, unique(param_name)]
+  
+  # Select rows corresponding to label-type-name combinations. 
+  samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
+                            (param_type %in% param_types) & 
+                            (param_name %in% param_names)]
+  
+  # Remove burn-in iterations; burn-in can differ by test label. 
+  if(!is.null(burn_in_start)) {
+    if(length(burn_in_start) == 1) {
+      samp_dt_subset <- samp_dt_subset[itr >= burn_in_start]
+    } else {
+      test_labels <- samp_dt_subset[, unique(test_label)]
+      for(lbl in test_labels) samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= burn_in_start[lbl])]
+    }
+  }
+  
+  return(samp_dt_subset)
+  
+}
+
+
+# ------------------------------------------------------------------------------
 # MCMC Plotting Functions. 
 # ------------------------------------------------------------------------------
 
@@ -2499,9 +2592,40 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
   
 }
 
+
+get_trace_plots <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+  # Generates one plot per valid `param_name`-`param_type`-`test_label` combination. 
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                     param_types = param_types, param_names = param_names)
+  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
+  
+  
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    test_label_curr <- plt_id_vars[j, test_label]
+    param_type_curr <- plt_id_vars[j, param_type]
+    param_name_curr <- plt_id_vars[j, param_name]
+    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep = "_")
+    
+    plts[[plt_label]] <- ggplot(data = samp_dt_subset[(test_label == test_label_curr) & 
+                                                      (param_type == param_type_curr) & 
+                                                      (param_name == param_name_curr)], aes(x = itr, y = sample)) + 
+                          geom_line() + 
+                          ggtitle(paste0("Trace Plot: ", plt_label)) + 
+                          xlab("Iteration")
+  }
+  
+  return(plts)
+  
+}
+
                                   
-get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
-  # See `select_mcmc_samp_cols()` for details on how to specify columns which to plot. 
+get_trace_plots_wide <- function(samp_df, burn_in_start = 1, ...) {
+  # See `select_mcmc_samp_cols()` for details on how to specify columns which to plot. Operates on the 
+  # wide MCMC data.frame format. 
 
   # Select columns to plot.  
   n <- nrow(samp_df)
@@ -2535,6 +2659,22 @@ get_trace_plots <- function(samp_df, burn_in_start = 1, ...) {
 
 get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1, bins = 30, vertical_lines = NULL, ...) {
   # Generates one plot per parameter name. 
+  
+  samp_df_plot <- select_mcmc_samp(mcmc_samp_df = samp_df, param_names = param_names, burn_in_start = burn_in_start, ...)
+  
+  # Produce one plot per parameter name. 
+  plts <- vector(mode = "list", length = length(param_names))
+  for(j in seq_along(plts)) {
+    param_name <- param_names[j]
+    
+    plts[[j]] <- ggplot(data = samp_df_plot, aes(x = value, color = variable)) + 
+      geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+      xlab(param_names[j]) + 
+      ylab("Frequency") + 
+      ggtitle(paste0("Marginal Distribution: ", param_names[j]))
+    
+  }
+  
   
   # Select columns to plot.  
   n <- nrow(samp_df)
@@ -2589,6 +2729,45 @@ get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1,
 # get_2d_gp_heatmap_plot <- function() {
 #   
 # }
+
+select_mcmc_samp_wide <- function(mcmc_samp_df, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
+  # A convenience function to select the desired columns and rows of a data.frame of MCMC samples `mcmc_samp_df`. Column selection is 
+  # performed by `select_mcmc_samp_cols()` while burn-in exclusion is handled by `get_mcmc_burn_in_start_itrs()`. The data.frame 
+  # with selected columns and burn-in excluded is returned in long format with columns "variable" and "value" (the sample value). 
+  # Different variables are allowed to have different burn-in start iterations.
+  #
+  # Args:
+  #    mcmc_samp_df: data.frame of MCMC samples in wide format; see `select_mcmc_samp_cols` for column naming requirements. 
+  #    burn_in_start: named numeric vector containing burn-in start iterations. Names must be set to the test labels. See 
+  #                   `get_mcmc_burn_in_start_itrs()` for details. If NULL, all samples are retained. 
+  #    test_labels, param_types, param_names, col_names: all passed to `select_mcmc_samp_cols()` for column selection. 
+  #
+  # Returns:
+  #    data.frame, a modified version of `mcmc_samp_df` with a subset of column and rows selected, and converted to long format. 
+  #    The column names are "variable" and "value". 
+
+  # Select columns to plot.  
+  n <- nrow(mcmc_samp_df)
+  cols_sel <- select_mcmc_samp_cols(test_labels = test_labels, param_types = param_types, param_names = param_names, col_names = col_names)
+  mcmc_samp_df <- mcmc_samp_df %>% select(matches(cols_sel))
+  
+  # Burn-in. 
+  if(!is.null(burn_in_start)) {
+    # Get starting iteration number for each parameter. 
+    start_itrs <- get_mcmc_burn_in_start_itrs(burn_in_start, colnames(mcmc_samp_df))
+    
+    # Set burn-in iterations to NA. 
+    for(j in 1:ncol(mcmc_samp_df)) {
+      mcmc_samp_df[1:start_itrs[j], j] <- NA_real_
+    }
+  }
+  
+  # Convert data.frame to long format. 
+  mcmc_samp_df <- melt(as.data.table(mcmc_samp_df), measure.vars = colnames(mcmc_samp_df), na.rm = TRUE)
+  
+  return(mcmc_samp_df)
+  
+}
 
 
 select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
