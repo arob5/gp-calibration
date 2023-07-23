@@ -948,9 +948,9 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   
   # Objects to store samples.
   theta_samp <- matrix(nrow = N_mcmc, ncol = d)
-  colnames(theta_samp) <- paste("theta", computer_model_data$pars_cal_names, sep = "_")
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
   sig_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
-  colnames(sig_eps_samp) <- paste("sig_eps", computer_model_data$output_vars, sep = "_")
+  colnames(sig_eps_samp) <- computer_model_data$output_vars
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -1054,7 +1054,7 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     
   }
   
-  return(list(samp = cbind(theta_samp, sig_eps_samp), Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(theta = theta_samp, sig_eps = sig_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
   
 }
 
@@ -2594,13 +2594,26 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
 
 
 get_trace_plots <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
-  # Generates one plot per valid `param_name`-`param_type`-`test_label` combination. 
+  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
+  # MCMC trace plot per valid `param_name`-`param_type`-`test_label` combination. 
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
+  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
+  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
+  #                   be a named vector with names set to valid test label values. This allows application of a different 
+  #                   burn-in start iteration for different test labels. 
+  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
+  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
+  #                                            value includes all values found in `samp_dt`. 
+  #
+  # Returns:
+  #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
   
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
                                      param_types = param_types, param_names = param_names)
   plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
-  
   
   # Generate plots. 
   plts <- list()

@@ -102,8 +102,9 @@ grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
 ```
 
 ```{r}
-samp_exact_theta <- as.matrix(samp_exact_df[burn_in_exact:N_mcmc_exact, c("exact_theta_LAR", "exact_theta_KEXT")])
-colnames(samp_exact_theta) <- c("LAR", "KEXT")
+# Store matrix of calibration parameter samples from exact MCMC for plotting purposes. 
+samp_exact_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")[, .(param_name, sample)]
+samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
 ```
 
 
@@ -145,7 +146,6 @@ lpost_design <- calc_lpost_theta_product_lik(theta_vals = design_info$inputs,
 theta_lpost_max_idx <- which.max(lpost_design)
 theta_lpost_max <- design_info$inputs[theta_lpost_max_idx,,drop=FALSE]
 lpost_max <- lpost_design[theta_lpost_max_idx]
-
 
 # Grid based on prior bounds for producing heatmaps. Ensure same scaling as design points. 
 prior_grid_info <- get_input_output_design(N_points = 51^2,
@@ -196,33 +196,40 @@ emulator_info_list <- list(gp_fits = gp_fits,
 N_mcmc_approx <- 50000
 
 time_start <- proc.time()
-mcmc_approx_round1 <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
-                                                 theta_prior_params = theta_prior_params,
-                                                 theta_init = theta_lpost_max[1,], 
-                                                 sig_eps_init = sig2_eps_estimates, 
-                                                 learn_sig_eps = TRUE, 
-                                                 sig_eps_prior_params = sig_eps_prior_params, 
-                                                 N_mcmc = N_mcmc_approx)
+mcmc_approx_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params, 
+                                            emulator_info = emulator_info_list,
+                                            theta_init = theta_lpost_max[1,], 
+                                            sig_eps_init = sig2_eps_estimates, 
+                                            learn_sig_eps = TRUE, 
+                                            sig_eps_prior_params = sig_eps_prior_params, 
+                                            N_mcmc = N_mcmc_approx)
 mcmc_approx_round1_runtime <- (proc.time() - time_start)[["elapsed"]]
-
-samp_approx_round1_df <- as.data.frame(mcmc_approx_round1$samp)
-colnames(samp_approx_round1_df) <- paste("round1", colnames(samp_approx_round1_df), sep = "_")
-mcmc_samp_df <- cbind(mcmc_samp_df, samp_approx_round1_df)
-
 print(paste0("MCMC approx round 1 runtime: ", mcmc_approx_round1_runtime, " seconds."))
+
+# Format MCMC samples. 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_round1[c("theta", "sig_eps")], test_label = "round1")), use.names = TRUE)
 ```
+
 
 ```{r}
 burn_ins <- c(burn_ins, c(round1 = 10000))
 
-mcmc_round1_trace_plts <- get_trace_plots(mcmc_samp_df, burn_in_start = burn_ins, param_types = "theta", test_labels = "round1")
+mcmc_round1_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")
 grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts, nrow = 1))
 ```
 
 ```{r}
-mcmc_round1_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_df, burn_in_start = burn_in_exact, param_types = "sig_eps", test_labels = "round1")
+mcmc_round1_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "sig_eps")
 grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts_sig_eps, nrow = 1))
 ```
+
+```{r}
+# Store matrix of calibration parameter samples from round 1 approx MCMC. 
+samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
+samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+```
+
 
 ## Heat maps of sequential one-point acquisitions. 
 
