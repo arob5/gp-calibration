@@ -124,7 +124,7 @@ print(emulator_settings)
 set.seed(100)
 
 # Initial space-filling design.
-design_info <- get_input_output_design(N_points = 20, 
+design_info <- get_input_output_design(N_points = 10, 
                                        design_method = "LHS", 
                                        computer_model_data = computer_model_data, 
                                        theta_prior_params = theta_prior_params, 
@@ -191,6 +191,12 @@ emulator_info_list <- list(gp_fits = gp_fits,
 ```
 
 
+## Evaluate round 1 GP fit. 
+
+
+
+
+
 ## Sample approximate posterior. 
 ```{r}
 N_mcmc_approx <- 50000
@@ -226,8 +232,21 @@ grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts_sig_eps, nrow = 1))
 
 ```{r}
 # Store matrix of calibration parameter samples from round 1 approx MCMC. 
-samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
+samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
+                                      test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
 samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+```
+
+```{r}
+# Compare approximate round 1 samples and exact samples. 
+
+post_comparison_plts_round1 <- get_overlaid_2d_density_contour_plot(samp_baseline=samp_exact_theta, samp_overlay=samp_round1_theta, 
+                                                                    main_title = "Round 1 posterior sample comparison: overlay approx")
+post_comparison_plts_round1_2 <- get_overlaid_2d_density_contour_plot(samp_baseline=samp_round1_theta, samp_overlay=samp_exact_theta, 
+                                                                      main_title = "Round 1 posterior sample comparison: overlay true")
+
+plot(post_comparison_plts_round1)
+plot(post_comparison_plts_round1_2)
 ```
 
 
@@ -266,45 +285,91 @@ acq_grid_EIVAR_prior_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_in
                                                       sig2_eps = sig2_eps_estimates, 
                                                       theta_grid_integrate = prior_grid_info$inputs_scaled)
 
+
+# Randomly sub-sampling approx MCMC output; this could be an opportunity to apply something like support points/Stein points instead. 
+round1_subsample_sel <- sample(1:nrow(samp_round1_theta), size = nrow(prior_grid_info$inputs_scaled), replace = FALSE)
 acq_grid_EIVAR_approxpost_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
                                                            emulator_info_list = emulator_info_list, 
                                                            theta_prior_params = theta_prior_params, 
                                                            sig2_eps = sig2_eps_estimates, 
-                                                           theta_grid_integrate = scale_input_data(select_mcmc_samp(mcmc_samp_df = mcmc_samp_df, 
-                                                                                                                    burn_in_start = burn_ins, 
-                                                                                                                    param_types = "theta", 
-                                                                                                                    test_labels = "round1"), 
+                                                           theta_grid_integrate = scale_input_data(samp_round1_theta[round1_subsample_sel,,drop=FALSE], 
                                                                                                    input_bounds = design_info$input_bounds))
-
 ```
+
+
+```{r}
+# Evaluate acquisitions over approx posterior points. 
+
+# Candidate points. 
+N_candidate_points <- 10000
+round1_candidate_sel <- sample(1:nrow(samp_round1_theta), size = N_candidate_points, replace = FALSE)
+round1_candidate_samp <- samp_round1_theta[round1_candidate_sel,,drop=FALSE]
+                                                                                                   
+# Integration points. 
+N_integrate_points <- 3000
+round1_integrate_sel <- sample(1:nrow(samp_round1_theta), size = N_integrate_points, replace = FALSE)
+round1_integrate_samp <- samp_round1_theta[round1_integrate_sel,,drop=FALSE]
+
+acq_grid_EI_lpost_MC <- acquisition_EI_lpost_MC(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
+                                                emulator_info_list = emulator_info_list, 
+                                                computer_model_data = computer_model_data, 
+                                                theta_prior_params = theta_prior_params, 
+                                                sig2_eps = sig2_eps_estimates, 
+                                                threshold_lpost = lpost_max, 
+                                                N_MC_samples = 1000)
+                                              
+acq_grid_VAR_lpost <- acquisition_VAR_lpost(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
+                                            emulator_info_list = emulator_info_list, 
+                                            theta_prior_params = theta_prior_params, 
+                                            sig2_eps = sig2_eps_estimates)
+
+acq_grid_EIVAR_approxpost_lpost <- acquisition_EIVAR_lpost(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
+                                                           emulator_info_list = emulator_info_list, 
+                                                           theta_prior_params = theta_prior_params, 
+                                                           sig2_eps = sig2_eps_estimates, 
+                                                           theta_grid_integrate = scale_input_data(round1_integrate_samp, input_bounds = design_info$input_bounds))
+```
+
 
 ```{r}
 # Plot heatmaps.
 
-acq_EI_lpost_MC_plt <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+acq_EI_lpost_MC_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
                                            y = acq_grid_EI_lpost_MC, 
                                            param_names = computer_model_data$pars_cal_names, 
                                            samples_kde = samp_exact_theta, 
                                            samples_points = design_info$inputs,  
-                                           raster = TRUE, 
+                                           raster = FALSE, 
                                            point_coords = computer_model_data$theta_true, 
                                            main_title = "Expected Improvement lpost (Monte Carlo approximation)", 
                                            bigger_is_better = TRUE, 
                                            legend_label = "EI")
 
-acq_VAR_lpost_plt <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+acq_VAR_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
                                          y = acq_grid_VAR_lpost, 
                                          param_names = computer_model_data$pars_cal_names, 
                                          samples_kde = samp_exact_theta, 
                                          samples_points = design_info$inputs,  
-                                         raster = TRUE, 
+                                         raster = FALSE, 
                                          point_coords = computer_model_data$theta_true, 
                                          main_title = "VAR lpost", 
                                          bigger_is_better = TRUE, 
                                          legend_label = "VAR")
 
+acq_EIVAR_approxpost_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
+                                                      y = acq_grid_EIVAR_approxpost_lpost, 
+                                                      param_names = computer_model_data$pars_cal_names, 
+                                                      samples_kde = samp_exact_theta, 
+                                                      samples_points = design_info$inputs,  
+                                                      raster = FALSE, 
+                                                      point_coords = computer_model_data$theta_true, 
+                                                      main_title = "EIVAR-approx-post lpost", 
+                                                      bigger_is_better = TRUE, 
+                                                      legend_label = "EIVAR (weighted by approx posterior)")
+
 plot(acq_EI_lpost_MC_plt)
 plot(acq_VAR_lpost_plt)
+plot(acq_EIVAR_approxpost_lpost_plt)
 ```
 
 

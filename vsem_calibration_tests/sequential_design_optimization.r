@@ -370,18 +370,21 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
   # Vector to store EIVAR estimates at inputs `theta_vals`. 
   EIVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
   
+  # Current GP predictive distribution. 
+  gp_fits_curr <- emulator_info_list$gp_fits
+  
   for(i in 1:nrow(theta_vals)) {
     
-    # Update variance by conditioning on theta evaluation value.
-    gp_fits_conditioned <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib, 
-                                                  X_new = theta_vals[i,,drop=FALSE], Y_new = NULL, update_hyperparamters = FALSE)
+    # Update variance by conditioning on theta evaluation value. Should not affect `emulator_info_list` outside of local function scope. 
+    emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = gp_fits_curr, gp_lib = emulator_info_list$settings$gp_lib, 
+                                                         X_new = theta_vals[i,,drop=FALSE], Y_new = NULL, update_hyperparamters = FALSE)
                                                   
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_grid_integrate, emulator_info_list = emulator_info_list, 
                                                    sig2_eps = sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE)
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
-    EIVAR_est[i] <- mean(lpost_pred_var_grid)
+    EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)
     
   }
   

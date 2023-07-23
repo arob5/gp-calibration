@@ -2179,10 +2179,49 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
                   geom_density_2d_filled() + 
                   xlab(xlab) + 
                   ylab(ylab) + 
-                  ggtitle(main_titles[[j]])
+                  ggtitle(main_titles[j])
   }
   
   return(plts)
+  
+}
+
+
+get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, col_sel = c(1,2), main_title = NULL) {
+  # Plots the contours of 2D kernel density estimates for samples from two different distributions over 2D input spaces 
+  # so that they may compared. The samples `samp_baseline` will be plotted with a "filled" KDE heatmap, while the
+  # the contours for `samp_overlay` will be overlaid on top and not filled. The vector `col_sel`
+  # determines which 2 columns of both matrices will be used for the 2D KDE plot. 
+  #
+  # Args:
+  #    samp_baseline: matrix, of dimension (num samples, 2). 
+  #    samp_overlay: matrix, of dimension (num samples, 2).
+  #    col_sel: integer or character. If integer, the two column indices to select from each matrix. i.e. this selects two particular parameters, whose
+  #             samples will be used to compute the KDE. If character, the column names to select. The column names of teh selected columns 
+  #             from the two matrices must align. 
+  #    main_title: plot title. 
+  #
+  # Returns:
+  #    ggplot object.  
+  
+  # Select columns. 
+  df_baseline <- data.frame(samp_baseline[, col_sel])
+  df_overlay <- data.frame(samp_overlay[, col_sel])
+  if(!all(colnames(df_baseline) == colnames(df_overlay))) stop("Column names of selected cols in `samp_baseline` and `samp_overlay` do not match.")
+  colnames(df_baseline) <- colnames(df_overlay) <-  c("theta1", "theta2")
+  
+  # Plot title. 
+  if(is.null(main_title)) main_title <- "2D KDE Countours"
+
+  # Generate plot.                      
+  plt <- ggplot(df_baseline, mapping = aes(x = theta1, y = theta2)) + 
+          geom_density_2d_filled() + 
+          geom_density_2d(df_overlay, mapping = aes(x = theta1, y = theta2), color = "white") + 
+          xlab(colnames(df_baseline)[1]) + 
+          ylab(colnames(df_baseline)[2]) + 
+          ggtitle(main_title)
+
+  return(plt)
   
 }
 
@@ -2326,12 +2365,11 @@ get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde = NULL, samples_
 
 
 get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param_names, samples_kde = NULL, init_design_points = NULL,  
-                              sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
-                              main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
-                              legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
-                              lpost_vals = NULL) {
+                                          sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
+                                          main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
+                                          legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
+                                          lpost_vals = NULL) {
   # TODO: currently main title and legend label arguments do nothing. 
-  
   
   # Log Posterior response surface plot. 
   plt <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals, 
