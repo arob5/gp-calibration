@@ -276,7 +276,6 @@ acq_grid_EI_lpost_MC <- acquisition_EI_lpost_MC(theta_vals = prior_grid_info$inp
 
 acq_grid_VAR_lpost <- acquisition_VAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
                                             emulator_info_list = emulator_info_list, 
-                                            theta_prior_params = theta_prior_params, 
                                             sig2_eps = sig2_eps_estimates)
 
 acq_grid_EIVAR_prior_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
@@ -284,7 +283,6 @@ acq_grid_EIVAR_prior_lpost <- acquisition_EIVAR_lpost(theta_vals = prior_grid_in
                                                       theta_prior_params = theta_prior_params, 
                                                       sig2_eps = sig2_eps_estimates, 
                                                       theta_grid_integrate = prior_grid_info$inputs_scaled)
-
 
 # Randomly sub-sampling approx MCMC output; this could be an opportunity to apply something like support points/Stein points instead. 
 round1_subsample_sel <- sample(1:nrow(samp_round1_theta), size = nrow(prior_grid_info$inputs_scaled), replace = FALSE)
@@ -320,8 +318,13 @@ acq_grid_EI_lpost_MC <- acquisition_EI_lpost_MC(theta_vals = scale_input_data(ro
                                               
 acq_grid_VAR_lpost <- acquisition_VAR_lpost(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
                                             emulator_info_list = emulator_info_list, 
-                                            theta_prior_params = theta_prior_params, 
                                             sig2_eps = sig2_eps_estimates)
+
+acq_grid_VAR_post <- acquisition_VAR_post(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
+                                          emulator_info_list = emulator_info_list, 
+                                          computer_model_data = computer_model_data,
+                                          theta_prior_params = theta_prior_params, 
+                                          sig2_eps = sig2_eps_estimates)
 
 acq_grid_EIVAR_approxpost_lpost <- acquisition_EIVAR_lpost(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
                                                            emulator_info_list = emulator_info_list, 
@@ -352,9 +355,20 @@ acq_VAR_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp,
                                          samples_points = design_info$inputs,  
                                          raster = FALSE, 
                                          point_coords = computer_model_data$theta_true, 
-                                         main_title = "VAR lpost", 
+                                         main_title = "VAR-lpost", 
                                          bigger_is_better = TRUE, 
                                          legend_label = "VAR")
+
+acq_VAR_post_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
+                                        y = acq_grid_VAR_post, 
+                                        param_names = computer_model_data$pars_cal_names, 
+                                        samples_kde = samp_exact_theta, 
+                                        samples_points = design_info$inputs,  
+                                        raster = FALSE, 
+                                        point_coords = computer_model_data$theta_true, 
+                                        main_title = "VAR-post", 
+                                        bigger_is_better = TRUE, 
+                                        legend_label = "VAR")
 
 acq_EIVAR_approxpost_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
                                                       y = acq_grid_EIVAR_approxpost_lpost, 
@@ -369,6 +383,7 @@ acq_EIVAR_approxpost_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp,
 
 plot(acq_EI_lpost_MC_plt)
 plot(acq_VAR_lpost_plt)
+plot(acq_VAR_post_plt)
 plot(acq_EIVAR_approxpost_lpost_plt)
 ```
 

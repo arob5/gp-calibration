@@ -423,7 +423,7 @@ predictive mean and variance of $\indexDesign[\designIdx, \tilde{\bpar}]{\f}$, a
 \end{align}
 where $(\designMat[\designIdx, \tilde{\bpar}], \fObs[\designIdx, \tilde{\bpar}])$ denotes the design 
 $(\designMat[\designIdx], \fObs[\designIdx])$ augmented with $(\tilde{\bpar}, \tilde{\f})$, by adding a new row to the input and response matrix, respectively. 
-Similarly, $\KerMat[\designIdx, \tilde{\bpar}]^{-1} := \GPKer(\designMat[\designIdx, \tilde{\bpar}])$ is the augmented kernel matrix. We note that the predictive mean 
+Similarly, $\KerMat[\designIdx, \tilde{\bpar}] := \GPKer(\designMat[\designIdx, \tilde{\bpar}])$ is the augmented kernel matrix. We note that the predictive mean 
 \ref{pred_mean_augmented} has dependence on the unknown response $\tilde{f}$, but conveniently the predictive variance \ref{pred_var_augmented} has no 
 such dependence. 
 

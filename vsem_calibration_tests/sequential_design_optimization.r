@@ -393,15 +393,14 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
 }
 
 
-acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_params, sig2_eps) {
-  # Implements the acquisition which is simply defined as the variance of the log posterior approximation in the loss emulation 
-  # setting. 
+acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps) {
+  # Implements the acquisition which is simply defined as the variance of the unnormalized log posterior approximation in  
+  # the loss emulation setting. 
   #
   # Args:
   #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
   #                The inputs are assumed to already be properly scaled. 
   #    emulator_info_list: list, the emulator information list. 
-  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
   #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances. 
   # 
   # Returns:
@@ -412,13 +411,51 @@ acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_pa
   
   # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
   lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_vals, emulator_info_list = emulator_info_list, 
-                                                 sig2_eps = sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE)
+                                                 sig2_eps = sig2_eps, return_vals = "var", include_nugget = TRUE, include_sig_eps_prior = FALSE)
   
-  return(lpost_pred_var_grid)
+  return(lpost_pred_var_grid$var)
   
 }
 
 
+acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps) {
+  # Implements the acquisition which is simply defined as the variance of the unnormalized posterior density approximation 
+  # in the loss emulation setting. Due to the typical large dynamic range in predictive mean/variance values, the log of the 
+  # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    emulator_info_list: list, the emulator information list. 
+  #    computer_model_data: list, the computer model information list.
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
+  lpost_pred_list<- predict_lpost_GP_approx(theta_vals_scaled = theta_vals, 
+                                            emulator_info_list = emulator_info_list, 
+                                            sig2_eps = sig2_eps, 
+                                            theta_prior_params = theta_prior_params, 
+                                            N_obs = computer_model_data$n_obs,
+                                            include_nugget = TRUE, 
+                                            include_sig_eps_prior = FALSE)
+  
+  # # Alternative to deal with scale issue: shift by constant. 
+  # test <- lpost_pred_list$mean + 0.5 * lpost_pred_list$var
+  # scale_cst <- max(test) - 700
+  # test <- test - scale_cst
+  # return(exp(test))
+  
+  # Return log acquisition. 
+  return(lpost_pred_list$mean + 0.5 * lpost_pred_list$var)
+  
+}
 
 
 
