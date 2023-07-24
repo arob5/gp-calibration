@@ -421,7 +421,15 @@ acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps) {
 acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized posterior density approximation 
   # in the loss emulation setting. Due to the typical large dynamic range in predictive mean/variance values, the log of the 
-  # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). 
+  # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). Let 
+  # mu and sig2 denote the mean and variance of the predictive distribution of the log posterior approximation (lpost). Then 
+  # the log variance of the posterior approximation is log[exp(sig2) - 1] + 2*mu + sig2. Direct computation of the first term 
+  # is problematic when the range of sig2 values is very large. However, when sig2 is large (say, > 100) then 
+  # log[exp(sig2) - 1] ~ sig2 is a very good approximation. This approximation is applied at this cutoff for numerical stability.
+  # Thus, for large values of sig2, the returned value is 2(sig2 + mu). Note that this is similar to the upper confidence bound (UCB)
+  # acquisition for the random field approximation of the LOG posterior; however, the UCB uses the predictive standard deviation instead
+  # of the variance. The use of the variance in 2(sig2 + mu) often means that the predictive variance dominates this function in situations
+  # when the GP is fairly uncertain. 
   #
   # Args:
   #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
@@ -445,15 +453,20 @@ acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_
                                             N_obs = computer_model_data$n_obs,
                                             include_nugget = TRUE, 
                                             include_sig_eps_prior = FALSE)
+  mu <- lpost_pred_list$mean
+  sig2 <- lpost_pred_list$var
   
-  # # Alternative to deal with scale issue: shift by constant. 
-  # test <- lpost_pred_list$mean + 0.5 * lpost_pred_list$var
-  # scale_cst <- max(test) - 700
-  # test <- test - scale_cst
-  # return(exp(test))
+
+  # Numerically stable computation of the log variance. 
+  idx_approx_sel <- (sig2 >= 100)
+  term_1 <- vector(mode = "numeric", length = length(sig2))
+  term_1[!idx_approx_sel] <- log(exp(sig2[!idx_approx_sel]) - 1)
+  term_1[idx_approx_sel] <- sig2[idx_approx_sel] # Apply approximation. 
   
-  # Return log acquisition. 
-  return(lpost_pred_list$mean + 0.5 * lpost_pred_list$var)
+  log_pred_var_post <- term_1 + 2*mu + sig2
+
+  
+  return(log_pred_var_post)
   
 }
 
