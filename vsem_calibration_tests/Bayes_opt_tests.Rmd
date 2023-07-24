@@ -388,17 +388,18 @@ plot(acq_EIVAR_approxpost_lpost_plt)
 
 ```{r}
 # Optimizing acquisition. 
+acquisition_settings <- list(acquisition_type = "EIVAR_lpost",
+                             opt_method = "grid",
+                             theta_grid_candidate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
+                             theta_grid_integrate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
+                             N_subsample_candidate = 10000, 
+                             N_subsample_integrate = 3000)
 
-new_point <- optimize_acquisition_grid(acquisition_type = "EIVAR_lpost", 
-                                       theta_grid_candidate = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
-                                       emulator_info_list = emulator_info_list, 
-                                       computer_model_data = computer_model_data, 
-                                       sig2_eps = sig_eps_estimates, 
-                                       theta_grid_integrate =  scale_input_data(round1_integrate_samp, input_bounds = design_info$input_bounds)) 
-                         
+new_point_scaled <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, acquisition_settings = acquisition_settings, 
+                                             computer_model_data = computer_model_data, sig2_eps = sig_eps_estimates)
+new_point <- scale_input_data(new_point_scaled, input_bounds = design_info$input_bounds, inverse = TRUE)
 print(new_point)
-
-
+             
 ```
 
 

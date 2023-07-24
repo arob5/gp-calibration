@@ -126,35 +126,27 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
 }
                            
 
-batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, design_input_curr, design_objective_curr,
-                                           design_best_idx, computer_model_data, sig2_eps, theta_prior_params, theta_grid_integrate = NULL, 
-                                           theta_grid_candidate = NULL) {
-
-  # Deep copy of emulator. 
+batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, sig2_eps, theta_prior_params = NULL) {
+  
+  # Deep copy of emulator
   # TODO: should probably write function `copy_independent_GPs()` to ensure this is a deep copy. 
-  gp_fits <- emulator_info_list$gp_fits
-  
+  gp_fits_curr <- emulator_info_list$gp_fits
+
   # Object to store batch of inputs. 
-  inputs_new <- matrix(nrow = acquisition_settings$batch_size, ncol = ncol(design_input_curr))
-  
-  # Acquisition functions all assume that inputs are already scaled. Scale them here. 
-  if(!is.null(theta_grid_candidate)) theta_grid_candidate <- scale_input_data(theta_grid_candidate, input_bounds = emulator_info_list$input_bounds)
-  if(!is.null(theta_grid_integrate)) theta_grid_integrate <- scale_input_data(theta_grid_integrate, input_bounds = emulator_info_list$input_bounds)
+  inputs_new_scaled <- matrix(nrow = acquisition_settings$batch_size, ncol = length(computer_model_data$pars_cal_names))
   
   # Acquire batch of input points (without running forward model). 
   for(b in 1:acquisition_settings$batch_size) {
 
     # Optimize sequential acquisition function.  
-    theta_new <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
-                                          acquisition_settings = acquisition_settings, 
-                                          design_input_curr = design_input_curr, 
-                                          design_objective_curr = design_objective_curr, 
-                                          design_best_idx = design_best_idx, 
-                                          computer_model_data = computer_model_data, 
-                                          sig2_eps = sig2_eps, 
-                                          theta_prior_params = theta_prior_params, 
-                                          theta_grid_ref = theta_grid_ref)
-    inputs_new[b,] <- theta_new
+    theta_new_scaled <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+                                                 acquisition_settings = acquisition_settings, 
+                                                 computer_model_data = computer_model_data, 
+                                                 sig2_eps = sig2_eps, 
+                                                 max_objective_curr = max_objective_curr,
+                                                 theta_prior_params = theta_prior_params)
+    inputs_new_scaled[b,] <- theta_new_scaled
+    # TODO: left off here; also need to compute `max_objective_curr` above (or maybe pass it as argument).
     
     # Update GP (using e.g. kriging believer, constant liar, etc.) 
     # TODO: write this function
@@ -172,26 +164,40 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
 }
 
 
-acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, design_input_curr, design_objective_curr, design_best_idx,  
-                                     computer_model_data, sig2_eps = NULL, theta_prior_params = NULL, theta_grid_opt = NULL, theta_grid_integrate = NULL) {
-  # Note that this is all conditional on fixed likelihood parameters.                               
+acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, 
+                                     max_objective_curr = NULL, sig2_eps = NULL, theta_prior_params = NULL) {
+  # Performs a single one-point acquisition by optimizing the specified acquisition function. Returns 
+  # the newly acquired (scaled) design point. 
+  #
+  # Args:
+  #    emulator_info_list: list, the emulator information list. 
+  #    acquisition_settings: list, the acquisition settings list. 
+  #    computer_model_data: list, the computer model data list. 
+  #    max_objective_curr: the current observed maximum objective value. Passed to some acquisition functions 
+  #                        (e.g. expected improvement) as a threshold value. Could generalize this later to 
+  #                        allow the threshold setting to be specified in `acquisition_settings` and then 
+  #                        compute the threshold rather than assuming it is the maximum objective. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
+  #              Required by most of the acquisition functions. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. Required by some  
+  #                        acquisition functions. 
+  #
+  # Returns:
+  #    matrix of dimension 1xd, the (scaled) input returned by optimizing the acquisition. 
   
-
   # Select next point by optimizing acquisition function.
   if(acquisition_settings$opt_method == "grid") {
     theta_new <- optimize_acquisition_grid(acquisition_type = acquisition_settings$acquisition_type, 
-                                           emulator_info_list = emulator_info_list, 
-                                           computer_model_data = computer_model_data, 
+                                           theta_grid_candidate = acquisition_settings$theta_grid_candidate, 
+                                           emulator_info_list = emulator_info_list,
+                                           computer_model_data = computer_model_data,
                                            theta_prior_params = theta_prior_params, 
                                            sig2_eps = sig2_eps, 
-                                           design_input_curr = design_input_curr, 
-                                           design_objective_curr = design_objective_curr,
-                                           design_best_idx = design_best_idx,
-                                           theta_grid_candidate = acquisition_settings$theta_grid_candidate, 
+                                           N_MC_samples = N_MC_samples, 
                                            theta_grid_integrate = acquisition_settings$theta_grid_integrate, 
-                                           N_subsample_candidate = acquisition_settings$acquisition_settings, 
-                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate,
-                                           N_MC_samples = acquisition_settings$N_MC_samples)
+                                           N_subsample_candidate = acquisition_settings$N_subsample_candidate, 
+                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate, 
+                                           threshold_lpost = max_objective_curr)
   } else {
     stop("Invalid acquisition optimization method: ", opt_method)
   }
@@ -202,9 +208,9 @@ acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, d
 
 
 optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, emulator_info_list, computer_model_data, 
-                                      theta_prior_params = NULL, sig2_eps = NULL, design_best_idx, N_MC_samples = NULL, theta_grid_integrate = NULL, 
+                                      theta_prior_params = NULL, sig2_eps = NULL, N_MC_samples = NULL, theta_grid_integrate = NULL, 
                                       N_subsample_candidate = NULL, N_subsample_integrate = NULL, threshold_lpost = NULL) { 
-  # Returns (the index of) a new design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
+  # Returns a new (scaled) design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
   # All input points (candidate or integration points) are assumed to already be properly scaled. 
   #
   # Args:
@@ -217,7 +223,7 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, em
   #    All remaining arguments are fed to the acquisition function; the specific required arguments depend on the particular acquisition function. 
   #
   # Returns:
-  #    integer, the index of the point in `theta_grid_candidate` with the largest acquisition value. 
+  #    matrix of dimension 1xd, the (scaled) input in `theta_grid_candidate` with the largest acquisition value. 
   
   # Get acquisition function. 
   acquisition_func <- get(paste0("acquisition_", acquisition_type))
@@ -236,8 +242,8 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, em
                                             N_MC_samples = N_MC_samples, 
                                             theta_grid_integrate = theta_grid_integrate)
   
-  # Return index of input in reference grid that maximizes the acquisition. 
-  return(which.max(acquisition_vals_grid))
+  # Return scaled input in reference grid that maximizes the acquisition. 
+  return(theta_grid_candidate[which.max(acquisition_vals_grid),,drop = FALSE])
 
 }
 
