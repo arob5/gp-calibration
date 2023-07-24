@@ -14,6 +14,8 @@ run_sequential_design_optimization <- function(acquisition_settings, init_design
   # TODO: Need to clarify what `lpost_max` is tracking; I believe it should be conditional on the most recent 
   #       value of sig2_eps. 
   # TODO: track objective values, both in fixed sig_eps and optimized sig_eps setting. 
+  
+  # TODO: optimize sig2_eps
 
   # Create initial design and fit GP. 
   design_info <- get_input_output_design(N_points = init_design_settings$N_design, 
@@ -125,14 +127,19 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
                            
 
 batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, design_input_curr, design_objective_curr,
-                                           design_best_idx, computer_model_data, sig2_eps, theta_prior_params, theta_grid_ref = NULL) {
+                                           design_best_idx, computer_model_data, sig2_eps, theta_prior_params, theta_grid_integrate = NULL, 
+                                           theta_grid_candidate = NULL) {
 
   # Deep copy of emulator. 
-  # TODO: write this function. 
-  gp_fits <- copy_independent_GPs(emulator_info_list$gp_fits)
+  # TODO: should probably write function `copy_independent_GPs()` to ensure this is a deep copy. 
+  gp_fits <- emulator_info_list$gp_fits
   
   # Object to store batch of inputs. 
   inputs_new <- matrix(nrow = acquisition_settings$batch_size, ncol = ncol(design_input_curr))
+  
+  # Acquisition functions all assume that inputs are already scaled. Scale them here. 
+  if(!is.null(theta_grid_candidate)) theta_grid_candidate <- scale_input_data(theta_grid_candidate, input_bounds = emulator_info_list$input_bounds)
+  if(!is.null(theta_grid_integrate)) theta_grid_integrate <- scale_input_data(theta_grid_integrate, input_bounds = emulator_info_list$input_bounds)
   
   # Acquire batch of input points (without running forward model). 
   for(b in 1:acquisition_settings$batch_size) {
@@ -166,24 +173,25 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
 
 
 acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, design_input_curr, design_objective_curr, design_best_idx,  
-                                     computer_model_data, sig2_eps, theta_prior_params, theta_grid_opt = NULL, theta_grid_integrate = NULL) {
+                                     computer_model_data, sig2_eps = NULL, theta_prior_params = NULL, theta_grid_opt = NULL, theta_grid_integrate = NULL) {
   # Note that this is all conditional on fixed likelihood parameters.                               
   
 
   # Select next point by optimizing acquisition function.
   if(acquisition_settings$opt_method == "grid") {
-    theta_new <- optimize_acquisition(acquisition_type = acquisition_settings$acquisition_type, 
-                                      opt_method = acquisition_settings$opt_method, 
-                                      emulator_info_list = emulator_info_list, 
-                                      computer_model_data = computer_model_data, 
-                                      theta_prior_params = theta_prior_params, 
-                                      sig2_eps = sig2_eps, 
-                                      design_input_curr = design_input_curr, 
-                                      design_objective_curr = design_objective_curr,
-                                      design_best_idx = design_best_idx,
-                                      theta_grid_opt = theta_grid_opt, 
-                                      theta_grid_integrate = theta_grid_integrate, 
-                                      N_MC_samples = acquisition_settings$N_MC_samples)
+    theta_new <- optimize_acquisition_grid(acquisition_type = acquisition_settings$acquisition_type, 
+                                           emulator_info_list = emulator_info_list, 
+                                           computer_model_data = computer_model_data, 
+                                           theta_prior_params = theta_prior_params, 
+                                           sig2_eps = sig2_eps, 
+                                           design_input_curr = design_input_curr, 
+                                           design_objective_curr = design_objective_curr,
+                                           design_best_idx = design_best_idx,
+                                           theta_grid_candidate = acquisition_settings$theta_grid_candidate, 
+                                           theta_grid_integrate = acquisition_settings$theta_grid_integrate, 
+                                           N_subsample_candidate = acquisition_settings$acquisition_settings, 
+                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate,
+                                           N_MC_samples = acquisition_settings$N_MC_samples)
   } else {
     stop("Invalid acquisition optimization method: ", opt_method)
   }
@@ -193,63 +201,44 @@ acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, d
 }
 
 
-optimize_acquisition_grid <- function(acquisition_type, theta_grid_opt, emulator_info_list, computer_model_data, 
-                                      theta_prior_params, sig2_eps, design_input_curr, design_objective_curr, 
-                                      design_best_idx, N_MC_samples = NULL, theta_grid_integrate = NULL) {
-  
-  # Acquisition functions all assume that inputs are already scaled. Scale them here. 
-  theta_grid_opt <- scale_input_data(theta_grid_opt, input_bounds = emulator_info_list$input_bounds)
-  if(!is.null(theta_grid_integrate)) theta_grid_integrate <- scale_input_data(theta_grid_integrate, input_bounds = emulator_info_list$input_bounds) 
+optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, emulator_info_list, computer_model_data, 
+                                      theta_prior_params = NULL, sig2_eps = NULL, design_best_idx, N_MC_samples = NULL, theta_grid_integrate = NULL, 
+                                      N_subsample_candidate = NULL, N_subsample_integrate = NULL, threshold_lpost = NULL) { 
+  # Returns (the index of) a new design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
+  # All input points (candidate or integration points) are assumed to already be properly scaled. 
+  #
+  # Args:
+  #    acquisition_type: character, used to select the acquisition function. Acquisition function naming convention is 
+  #                      "acquisition_<acquisition_type>". 
+  #    theta_grid_candidate: matrix of shape (# candidate points, d=dimension of input space). The points should already be scaled. 
+  #                          The acquisition function will be evaluated at each candidate point and the arg max over the points returned. 
+  #    emulator_info_list: character(1), the emulator information list. 
+  #    computer_model_data: character(1), the computer model data list. 
+  #    All remaining arguments are fed to the acquisition function; the specific required arguments depend on the particular acquisition function. 
+  #
+  # Returns:
+  #    integer, the index of the point in `theta_grid_candidate` with the largest acquisition value. 
   
   # Get acquisition function. 
   acquisition_func <- get(paste0("acquisition_", acquisition_type))
   
+  # If specified, obtain sub-sample of candidate and/or integration points. 
+  if(!is.null(N_subsample_candidate)) theta_grid_candidate <- theta_grid_candidate[sample(1:nrow(theta_grid_candidate), size = N_subsample_candidate, replace = FALSE),, drop=FALSE]
+  if(!is.null(N_subsample_integrate)) theta_grid_integrate <- theta_grid_integrate[sample(1:nrow(theta_grid_integrate), size = N_subsample_integrate, replace = FALSE),, drop=FALSE]
+  
   # Evaluate acquisition function on grid of reference inputs. 
-  acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_opt, 
+  acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_candidate, 
                                             emulator_info_list = emulator_info_list,
                                             computer_model_data = computer_model_data, 
                                             theta_prior_params = theta_prior_params, 
                                             sig2_eps = sig2_eps, 
-                                            design_input_curr = design_input_curr,
-                                            design_objective_curr = design_objective_curr, 
-                                            design_best_idx = design_best_idx,
+                                            threshold_lpost = threshold_lpost, 
                                             N_MC_samples = N_MC_samples, 
                                             theta_grid_integrate = theta_grid_integrate)
   
-  # Select input in reference grid that maximizes the acquisition. 
-  max_idx <- which.max(acquisition_vals_grid)
+  # Return index of input in reference grid that maximizes the acquisition. 
+  return(which.max(acquisition_vals_grid))
 
-  return(theta_grid_ref[max_idx,])
-
-}
-
-
-optim.EI <- function(f, ninit, end)
-{
-  ## initialization
-  X <- randomLHS(ninit, 2)
-  y <- f(X)
-  gpi <- newGPsep(X, y, d=0.1, g=1e-6, dK=TRUE)
-  da <- darg(list(mle=TRUE, max=0.5), randomLHS(1000, 2))
-  mleGPsep(gpi, param="d", tmin=da$min, tmax=da$max, ab=da$ab)
-  
-  ## optimization loop of sequential acquisitions
-  maxei <- c()
-  for(i in (ninit+1):end) {
-    solns <- EI.search(X, y, gpi)
-    m <- which.max(solns$val)
-    maxei <- c(maxei, solns$val[m])
-    xnew <- as.matrix(solns[m,3:4])
-    ynew <- f(xnew)
-    updateGPsep(gpi, xnew, ynew)
-    mleGPsep(gpi, param="d", tmin=da$min, tmax=da$max, ab=da$ab)
-    X <- rbind(X, xnew)
-    y <- c(y, ynew)
-  }
-  
-  ## clean up and return
-  deleteGPsep(gpi)
-  return(list(X=X, y=y, maxei=maxei))
 }
 
 
@@ -259,10 +248,11 @@ optim.EI <- function(f, ninit, end)
 #    - All acquisition functions assume that arguments related to the input/ 
 #      calibration space (e.g. `theta_vals`, `theta_grid_integrate`) are scaled.
 #    - All acquisition functions are designed to be maximized. 
+#    - Acquisition function naming convention is "acquisition_<acquisition_type>"
 # ---------------------------------------------------------------------------------
 
 acquisition_EI_lpost_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
-                                    theta_prior_params, sig2_eps, threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL) {
+                                    theta_prior_params, sig2_eps, threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL, ...) {
   # A Monte Carlo (MC) approximation to the expected improvement (EI) criterion targeting the approximation 
   # to the unnormalized log posterior density. This is the MC analog of `acquisition_EI_lpost()`; the latter assumes 
   # that the predictive distributions of the GPs targeting the SSR functions are Gaussian, while this function allows 
@@ -287,12 +277,12 @@ acquisition_EI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
   
   # Have this return a matrix of dim N_MC_samples x nrow(theta_vals)
   lpost_samp <- sample_GP_lpost_theta(theta_vals_scaled = theta_vals, 
-                                    emulator_info_list = emulator_info_list,
-                                    computer_model_data = computer_model_data, 
-                                    theta_prior_params = theta_prior_params, 
-                                    sig2_eps = sig2_eps, 
-                                    N_samples = N_MC_samples, 
-                                    gp_pred_list = gp_pred_list)
+                                      emulator_info_list = emulator_info_list,
+                                      computer_model_data = computer_model_data, 
+                                      theta_prior_params = theta_prior_params, 
+                                      sig2_eps = sig2_eps, 
+                                      N_samples = N_MC_samples, 
+                                      gp_pred_list = gp_pred_list)
                                     
   # Monte Carlo estimates of acquisition at each point. 
   acq_EI_MC_estimates <- lpost_samp - threshold_lpost
@@ -304,7 +294,7 @@ acquisition_EI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
 
 
 acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps, 
-                                    threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL) {
+                                    threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL, ...) {
   # A Monte Carlo (MC) approximation to the probability of improvement (PI) criterion targeting the approximation 
   # to the unnormalized log posterior density. This is the MC analog of `acquisition_PI_lpost()`; the latter assumes 
   # that the predictive distributions of the GPs targeting the SSR functions are Gaussian, while this function allows 
@@ -345,12 +335,10 @@ acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
 }
 
 
-acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_params, sig2_eps, theta_grid_integrate = theta_vals) {
+acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, theta_grid_integrate, ...) {
   # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
   # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
-  # space is approximated by a finite sum over grid points `theta_grid_integrate`. By default, the grid values used are the same 
-  # values at which the acquisition function is to be evaluated; in the case that the acquisition is only being evaluated at one 
-  # or a handful of values, then this default for `theta_grid_integrate` should certainly be overwritten. 
+  # space is approximated by a finite sum over grid points `theta_grid_integrate`.
   #
   # Args:
   #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
@@ -363,6 +351,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
   # 
   # Returns:
   #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  #    Technically returns the negative of EIVAR to align with the acquisition convention that bigger is better. 
   
   # Handle case of single input. 
   if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
@@ -381,7 +370,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
                                                   
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_grid_integrate, emulator_info_list = emulator_info_list, 
-                                                   sig2_eps = sig2_eps, theta_prior_params, include_nugget = TRUE, include_sig_eps_prior = FALSE)
+                                                   sig2_eps = sig2_eps, include_nugget = TRUE, return_vals = "var")$var
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
     EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)
@@ -393,7 +382,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, theta_prior_
 }
 
 
-acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps) {
+acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, ...) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized log posterior approximation in  
   # the loss emulation setting. 
   #
@@ -418,7 +407,7 @@ acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps) {
 }
 
 
-acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps) {
+acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps, ...) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized posterior density approximation 
   # in the loss emulation setting. Due to the typical large dynamic range in predictive mean/variance values, the log of the 
   # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). Let 
