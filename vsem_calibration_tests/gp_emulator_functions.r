@@ -196,7 +196,7 @@ fit_independent_GPs <- function(X_train, Y_train, gp_lib, gp_kernel) {
 }
 
 
-update_GP <- function(gp_obj, gp_lib, X_new, y_new = NULL, update_hyperparamters = FALSE) {
+update_GP <- function(gp_obj, gp_lib, X_new, y_new = NULL, update_hyperparameters = FALSE) {
   # Updates a GP fit by conditioning on new data (X_new, y_new). Currently this is only 
   # supported for `gp_lib == "hetGP"`. Currently, this updates GP hyperparameter fit and 
   # then adds (X_new, y_new) to the design set, so that future predictive mean/variance 
@@ -226,7 +226,7 @@ update_GP <- function(gp_obj, gp_lib, X_new, y_new = NULL, update_hyperparamters
   if(gp_lib == "hetGP") {
     if(is.null(y_new)) y_new <- rep(NA, nrow(X_new))
     
-    if(update_hyperparamters) gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new)
+    if(update_hyperparameters) gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new)
     else gp_obj <- update(object = gp_obj, Xnew = X_new, Znew = y_new, maxit = 0)
     
   } else {
@@ -238,7 +238,7 @@ update_GP <- function(gp_obj, gp_lib, X_new, y_new = NULL, update_hyperparamters
 }
 
 
-update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new = NULL, update_hyperparamters = FALSE, input_bounds = NULL, output_stats = NULL) {
+update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new = NULL, update_hyperparameters = FALSE, input_bounds = NULL, output_stats = NULL) {
   # A wrapper around `update_GP()` which udpates a set of independent GPs given new design 
   # data `(X_new, Y_new)`. See `update_GP()` for more details. This function allows the option 
   # to pre-process the data (i.e. scale inputs and normalize outputs). 
@@ -277,7 +277,7 @@ update_independent_GPs <- function(gp_fits, gp_lib, X_new, Y_new = NULL, update_
   }
   
   for(j in seq_along(gp_fits)) {
-    gp_fits[[j]] <- update_GP(gp_fits[[j]], gp_lib, X_new, Y_new[,j], update_hyperparamters = update_hyperparamters)
+    gp_fits[[j]] <- update_GP(gp_fits[[j]], gp_lib, X_new, Y_new[,j], update_hyperparameters = update_hyperparameters)
   }
   
   return(gp_fits)

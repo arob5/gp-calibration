@@ -126,18 +126,32 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
 }
                            
 
-batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, sig2_eps, theta_prior_params = NULL) {
+batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, 
+                                           sig2_eps, theta_prior_params = NULL, max_objective_curr = NULL) {
+  # Acquires a batch of new input points via a greedy, heuristic approach. Currently only supports the kriging 
+  # believer heuristic, but should be generalized to other heuristics as well (e.g. constant liar). Returns the 
+  # batch of (scaled) input points, but does not run the forward model at these new inputs or update the GPs. 
+  #
+  # Args:
+  #    emulator_info_list: list, the emulator information list. 
+  #    acquisition_settings: list, the acquisition settings list. 
+  #    computer_model_data: list, the computer model data list. 
+  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
+  #              This batch acquisition step is conditional on this fixed value of the variances. 
+  #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. Required by some  
+  #                        acquisition functions. 
+  #    max_objective_curr: numeric, currently observed maximum value of log posterior. Required by some acquisition functions
+  #                        (e.g. expected improvement). 
+  #
+  # Returns:
+  #    matrix of dimension (batch size, parameter dimension) containing the batch of scaled input points. 
   
-  # Deep copy of emulator
-  # TODO: should probably write function `copy_independent_GPs()` to ensure this is a deep copy. 
-  gp_fits_curr <- emulator_info_list$gp_fits
-
   # Object to store batch of inputs. 
   inputs_new_scaled <- matrix(nrow = acquisition_settings$batch_size, ncol = length(computer_model_data$pars_cal_names))
+  colnames(inputs_new_scaled) <- computer_model_data$pars_cal_names
   
   # Acquire batch of input points (without running forward model). 
   for(b in 1:acquisition_settings$batch_size) {
-
     # Optimize sequential acquisition function.  
     theta_new_scaled <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
                                                  acquisition_settings = acquisition_settings, 
@@ -146,20 +160,20 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
                                                  max_objective_curr = max_objective_curr,
                                                  theta_prior_params = theta_prior_params)
     inputs_new_scaled[b,] <- theta_new_scaled
-    # TODO: left off here; also need to compute `max_objective_curr` above (or maybe pass it as argument).
     
-    # Update GP (using e.g. kriging believer, constant liar, etc.) 
-    # TODO: write this function
-    emulator_info_list$gp_fits <- pseudo_update_independent_GPs(gp_fits = emulator_info_list$gp_fits, 
-                                                                gp_lib = emulator_settings$gp_lib, 
-                                                                X_new = theta_new, 
-                                                                pseudo_update_method = acquisition_settings$batch_heuristic, 
-                                                                input_bounds = emulator_info_list$input_bounds, 
-                                                                output_stats = emulator_info_list$output_stats)
-    
+    # Update GP using kriging believer approach. 
+    # TODO: generalize to allow other approaches, e.g. constant liar. 
+    if(!is.null(max_objective_curr)) {
+      lpost_kriging_believer <- predict_lpost_GP_approx(theta_vals_scaled = theta_new_scaled, emulator_info_list = emulator_info_list, sig2_eps = sig2_eps, 
+                                                        theta_prior_params = theta_prior_params, N_obs = computer_model_data$n_obs, include_nugget = TRUE, 
+                                                        return_vals = "mean")$mean
+      max_objective_curr <- max(max_objective_curr, lpost_kriging_believer)
+    }
+    emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib, 
+                                                         X_new = theta_new_scaled, Y_new = NULL, update_hyperparameters = FALSE)
   }
   
-  return(inputs_new)
+  return(inputs_new_scaled)
   
 }
 
@@ -256,6 +270,26 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, em
 #    - All acquisition functions are designed to be maximized. 
 #    - Acquisition function naming convention is "acquisition_<acquisition_type>"
 # ---------------------------------------------------------------------------------
+
+acquisition_EI_lpost <- function(theta_vals, emulator_info_list, computer_model_data, 
+                                 theta_prior_params, sig2_eps, threshold_lpost, gp_pred_list = NULL, ...) {
+  
+  # Predictive mean and variance of log posterior approximation evaluated at inputs `theta_vals`. 
+  lpost_pred_list <- predict_lpost_GP_approx(theta_vals_scaled = theta_vals, emulator_info_list = emulator_info_list,
+                                             sig2_eps = sig2_eps, theta_prior_params = theta_prior_params, 
+                                             N_obs = computer_model_data$n_obs, include_nugget = TRUE, 
+                                             gp_pred_list = gp_pred_list, return_vals = c("mean", "var"))
+  
+  mu <- lpost_pred_list$mean
+  sig <- sqrt(lpost_pred_list$var)
+  
+  improvement <- mu - threshold_lpost
+  EI <- improvement * pnorm(improvement / sig) + sig * dnorm(improvement / sig)
+                                            
+  return(EI)
+  
+}
+
 
 acquisition_EI_lpost_MC <- function(theta_vals, emulator_info_list, computer_model_data, 
                                     theta_prior_params, sig2_eps, threshold_lpost, N_MC_samples = 1000, gp_pred_list = NULL, ...) {
@@ -372,7 +406,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, th
     
     # Update variance by conditioning on theta evaluation value. Should not affect `emulator_info_list` outside of local function scope. 
     emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = gp_fits_curr, gp_lib = emulator_info_list$settings$gp_lib, 
-                                                         X_new = theta_vals[i,,drop=FALSE], Y_new = NULL, update_hyperparamters = FALSE)
+                                                         X_new = theta_vals[i,,drop=FALSE], Y_new = NULL, update_hyperparameters = FALSE)
                                                   
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_GP_approx(theta_vals_scaled = theta_grid_integrate, emulator_info_list = emulator_info_list, 

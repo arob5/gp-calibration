@@ -315,7 +315,14 @@ acq_grid_EI_lpost_MC <- acquisition_EI_lpost_MC(theta_vals = scale_input_data(ro
                                                 sig2_eps = sig2_eps_estimates, 
                                                 threshold_lpost = lpost_max, 
                                                 N_MC_samples = 1000)
-                                              
+
+acq_grid_EI_lpost <- acquisition_EI_lpost_MC(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
+                                             emulator_info_list = emulator_info_list, 
+                                             computer_model_data = computer_model_data, 
+                                             theta_prior_params = theta_prior_params, 
+                                             sig2_eps = sig2_eps_estimates, 
+                                             threshold_lpost = lpost_max)
+                                                                                           
 acq_grid_VAR_lpost <- acquisition_VAR_lpost(theta_vals = scale_input_data(round1_candidate_samp, input_bounds = design_info$input_bounds), 
                                             emulator_info_list = emulator_info_list, 
                                             sig2_eps = sig2_eps_estimates)
@@ -390,22 +397,77 @@ plot(acq_EIVAR_approxpost_lpost_plt)
 # Optimizing acquisition. 
 acquisition_settings <- list(acquisition_type = "EIVAR_lpost",
                              opt_method = "grid",
+                             batch_size = 10, 
+                             batch_method = "kriging_believer",
                              theta_grid_candidate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
                              theta_grid_integrate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
                              N_subsample_candidate = 10000, 
                              N_subsample_integrate = 3000)
 
-new_point_scaled <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, acquisition_settings = acquisition_settings, 
-                                             computer_model_data = computer_model_data, sig2_eps = sig_eps_estimates)
-new_point <- scale_input_data(new_point_scaled, input_bounds = design_info$input_bounds, inverse = TRUE)
-print(new_point)
+new_batch_scaled <- batch_acquisition_opt_one_step(emulator_info_list = emulator_info_list, acquisition_settings = acquisition_settings, 
+                                                   computer_model_data = computer_model_data, sig2_eps = sig_eps_estimates,
+                                                   theta_prior_params = theta_prior_params, max_objective_curr = lpost_max)
+
              
 ```
+
+```{r}
+# Plot batch points acquired. 
+batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round1_theta, computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                            samples_kde = samp_exact_theta, init_design_points = design_info$inputs, 
+                                            sequential_design_points = scale_input_data(new_batch_scaled, design_info$input_bounds, inverse = TRUE),
+                                            raster = FALSE, point_coords = computer_model_data$theta_true, main_title = "Batch acquisition: EIVAR-lpost, KB", 
+                                            bigger_is_better = TRUE, log_scale = FALSE)
+                                            
+plot(batch_plot)
+
+```
+
+```{r}
+# Optimizing EI acquisition. 
+acquisition_settings <- list(acquisition_type = "EI_lpost",
+                             opt_method = "grid",
+                             batch_size = 10, 
+                             batch_method = "kriging_believer",
+                             theta_grid_candidate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
+                             theta_grid_integrate = scale_input_data(samp_round1_theta, input_bounds = design_info$input_bounds), 
+                             N_subsample_candidate = 10000, 
+                             N_subsample_integrate = 3000)
+
+new_batch_scaled_EI <- batch_acquisition_opt_one_step(emulator_info_list = emulator_info_list, acquisition_settings = acquisition_settings, 
+                                                      computer_model_data = computer_model_data, sig2_eps = sig_eps_estimates,
+                                                      theta_prior_params = theta_prior_params, max_objective_curr = lpost_max)
+
+# TODO: issue seems to be that updating GP with Z = NULL adds an NA to the observed response vector which results in NA mean predictions. 
+#       Thus, should manually add the GP mean as the response value. First verify this is indeed true of hetGP. 
+
+             
+```
+
+```{r}
+# Plot batch points acquired. 
+batch_plot_EI <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round1_theta, computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                               samples_kde = samp_exact_theta, init_design_points = design_info$inputs, 
+                                               sequential_design_points = scale_input_data(new_batch_scaled_EI, design_info$input_bounds, inverse = TRUE),
+                                               raster = FALSE, point_coords = computer_model_data$theta_true, main_title = "Batch acquisition: EI-lpost, KB", 
+                                               bigger_is_better = TRUE, log_scale = FALSE)
+                                            
+plot(batch_plot_EI)
+
+```
+
+
+
+
+
+
+
 
 Ideas for comparing distributions (for out of sample tests):
 - Summary: 
     (i.) Error measures based on log post approx: easiest thing to start with will be to compute posterior-averaged CRPS and NLPD.
-    (ii.) Metrics on prob dists, computed from samples: keep researching; MMD seems a good option, among others 
+    (ii.) Metrics on prob dists, computed from samples: start with relative error in mean and covariance; 
+          From there, keep researching; MMD seems a good option, among others 
 
 - MMD (with MCMC thinning?)
 - KS statistic
@@ -420,9 +482,15 @@ Ideas for comparing distributions (for out of sample tests):
 To add to things to talk about in the meeting: 
 - How to compute metrics based on correlated samples. 
 - Another option to using MCMC approx sampling in between rounds: Laplace approximation
-
-
-
+- For baseline comparisons:
+    (i.) randomly sub-sampling approx MCMC output 
+    (ii.) some sort of space-filling design over approx MCMC output (e.g. stochastic exchange algorithm)
+- Multi-site generalization to this work. 
+    (i.) Everything is essentially just implemented in parallel for each site correct? 
+    (ii.) Investigate why the same design points had to be chosen at all sites. 
+- Mark Macleod thesis ideas: online switching between acquisition functions, as well as his proposal for more efficiently generating support points 
+to sample the minimum of a GP 
+- Integrating over sig_eps instead of optimizing 
 
 Plan: 
 1.) Run approx MCMC based on initial space-filling design fit; provide in and out of sample fit metrics. 
