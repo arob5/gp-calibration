@@ -402,6 +402,25 @@ print(new_point)
              
 ```
 
+Ideas for comparing distributions (for out of sample tests):
+- Summary: 
+    (i.) Error measures based on log post approx: easiest thing to start with will be to compute posterior-averaged CRPS and NLPD.
+    (ii.) Metrics on prob dists, computed from samples: keep researching; MMD seems a good option, among others 
+
+- MMD (with MCMC thinning?)
+- KS statistic
+- Gelman-Rubin statistic
+- TV Distance 
+- Fischer Information Distance
+- Negative log likelihood on held out test set, averaged over MCMC samples
+- 1-Wasserstein 
+- Kernel Stein discrepancy 
+- Relative mean and covariance error (this would be an easy one to implement)
+
+To add to things to talk about in the meeting: 
+- How to compute metrics based on correlated samples. 
+- Another option to using MCMC approx sampling in between rounds: Laplace approximation
+
 
 
 
