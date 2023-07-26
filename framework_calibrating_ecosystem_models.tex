@@ -581,7 +581,7 @@ where
 \item Other ideas for sequential design. 
 \end{enumerate}
 
-\subsection{Sequential Design Strategies:}
+\subsection{Literature Review: (Batch) Sequential Design and Optimization}
 
 \subsubsection{Review: Bayesian Optimization and Batch Optimization}
 Arguably the most common acquisition function in Bayesian optimization is the expected improvement (EI) criterion. Let 
@@ -651,7 +651,95 @@ They moreover show that for the common PCA-GP emulation approach of \cite{Higdon
 be computed in closed-form, leaving only the integration over the parameter space $\E_{\priorDens}$ to be performed numerically. They also briefly discuss extensions to 
 the case of unknown likelihood parameters and to the batch sequential setting. 
 
-\subsubsection{Batch Sequential Design}
+\section{Acquisition Functions in Our Setting}
+Just for the purposes of illustration, consider the approach of selecting design points which maximize the variance of $\indexDesign{\postDens}$ versus 
+$\log \indexDesign{\postDens}$. The predictive distribution of the latter is Gaussian, with moments given by 
+\begin{align*}
+\mu := \E\left[\log \indexDesign{\postDens}(\bpar|\CovObs)\right] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right] + \log \priorDens(\bpar) \\
+s^2 := \Var\left[\log \indexDesign{\postDens}(\bpar|\CovObs)\right]  &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}.
+\end{align*}
+Therefore, the distribution of $\indexDesign{\postDens}$ is log-normal with predictive variance 
+\begin{align*}
+\Var\left[\indexDesign{\postDens}(\bpar|\CovObs)\right] &= \left[\exp(s^2) - 1 \right]\exp(2\mu + s^2).
+\end{align*}
+So maximizing the predictive variance of $\log \indexDesign{\postDens}$ does not even take into account the predictive means of the underlying SSR GPs, only the 
+predictive variances. On the other hand, targeting $\indexDesign{\postDens}$ instead takes into account both the predictive means and variances. In initial tests, I have 
+found the each produce very similar results in early design rounds where GP predictive variance is large and hence dominates $\mu$. 
+
+
+\section{Plans for Simulation Study}
+
+\subsection{Design Strategies}
+\begin{itemize}
+\item \textbf{Acquisition functions}: EIVAR, VAR, EI
+\item \textbf{Acquisition target}: unnormalized log-posterior density, unnormalized posterior density, likelihood 
+\item \textbf{Batch method}: KB, CL variations, joint optimization 
+\item \textbf{Candidates}: uniform sub-sample from previous round MCMC output (or other thinning method), space-filling sample based on prior. 
+\item \textbf{Integration points}: uniform sub-sample from previous round MCMC output, space-filling sample based on prior.
+\end{itemize}
+
+\subsection{Simulation study plans}
+
+\subsubsection{General Test Framework}
+\begin{enumerate}
+\item Run tests on many different initial LHS designs and report distribution of error measures over the random designs. 
+\item Initially focus on single batch step; i.e. given initial LHS design and samples from approximate posterior based on initial design, 
+choose next batch of points and evaluate improvement after running forward model on new batch. 
+\item Starting with 2-dimensional input space to be able to visualize and better understand acquisition functions
+\item Next will run tests on all VSEM parameters (I think about 6-dimensional) 
+\item Currently fixing $\CovObs$ to its MLE estimate conditional on the value of $\bpar$ from the previous round that yielded the 
+highest observed posterior evaluation. Alternative is to average over $\CovObs$ samples from approximate MCMC. 
+\end{enumerate}
+
+\subsubsection{Baselines for Comparison}
+\begin{enumerate}
+	\item Current PEcAn approach: sub-sample MCMC output from previous round instead of optimizing an acquisition
+	\item Some sort of sequential space-filling scheme; i.e. instead of uniformly sub-sampling MCMC output, 
+	        take into account existing points from previous rounds.  
+	\item For all tests, run single-point sequential design analogs to be able to separate evaluation of the acquisition function performance
+	         from the evaluation of the batch method performance. 
+\end{enumerate}
+
+\subsubsection{Evaluation measures}
+\begin{enumerate}
+\item GP emulator metrics.
+	\begin{enumerate}
+	\item Can target underlying SSR GPs or induced log-posterior GP. 
+	\item Metrics: CRPS, NLPS, RMSE, Mahalanobis distance 
+	\item Practical tests: LOO-CV
+	\item Tests only for simulation study: Metrics averaged over true posterior samples. 
+	\end{enumerate}
+\item Metrics on probability distributions. 
+	\begin{enumerate}
+	\item Compare samples from approximate posterior to samples from exact posterior; only for tests, not available in practice. 
+	\item Metrics: MMD, relative mean error, relative covariance error; Question: for computing MMD on MCMC samples, is it typical to just simply thin the samples first? 
+	\end{enumerate}
+\end{enumerate}
+
+
+\section{Current Issues and Future Options}
+
+\subsection{Current Issues}
+\begin{enumerate}
+\item Currently for KB/CL heuristics, we want to condition $\indexDesign{\postDens}$ on $(\tilde{\bpar}, L)$. Currently all GP code operates on the 
+underlying SSR GPs, so need to write code to manually condition the log-posterior GP. 
+\item Extend to multi-site setting. 
+\end{enumerate}
+
+\subsection{Future Ideas}
+\begin{enumerate}
+\item Online switching between acquisition functions. Within batch allotment, potentially make use of different acquisition functions as needed. 
+\item Alternative to using previous round samples as candidates and/or integration points: sample from mixture between approximate posterior and prior or 
+down-weight likelihood. This would be based on ones level of confidence in the current approximate posterior, so would depend on having confidence 
+in evaluation metrics. 
+\item Smarter sub-sampling of points from previous round approximate MCMC; e.g. support points, Stein points
+\item Compare our loss emulation approach to PCA-GP approach \cite{Higdon}. 
+\item Consider ``hierarchical'' acquisitions; e.g. as in \ref{chen2023hierarchical}. These consider integrating over GP hyperparameters to reduce dependence 
+on MLE fit in sequential design/optimization. 
+\item Based on performance of heuristic batch approaches, consider defining a multi-point generalization of EIVAR and think about joint optimization approaches. 
+\end{enumerate}
+
+
 
 
 \end{enumerate}

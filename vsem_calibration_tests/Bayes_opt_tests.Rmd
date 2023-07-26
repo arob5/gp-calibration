@@ -499,14 +499,14 @@ Plan:
 4.) Re-fit emulator on new batches and re-compute metrics 
 5.) Create new Markdown for higher-dimensional example 
 6.) Also add in EV utility function (where variance in posterior approx is highest)
-7.) Start assembling literature on distance-based design measures; could be interesting to consider tailoring some of these for the task of 
+
+Other ideas:
+1.) Start assembling literature on distance-based design measures; could be interesting to consider tailoring some of these for the task of 
 posterior approximation. Some literature: Gramacy distance-distributed design, Mak and Roshan sequential design using energy criterion, 
 batch design for computer experiments paper has a nice summary of literature on distance-based design. 
-8.) Some sort of adaptive inducing point scheme, where inducing points are placed to target the true posterior; this seems like it would have close 
+2.) Some sort of adaptive inducing point scheme, where inducing points are placed to target the true posterior; this seems like it would have close 
 connections to support points/Stein points. Good resource: Gramacy's locally-induced GP paper. Alternatively, could be interesting to consider a local 
 approximate GP (or locally-induced GP) that targets the posterior mode (or modes). 
-
-
 
 
 
