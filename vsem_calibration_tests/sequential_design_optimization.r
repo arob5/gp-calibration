@@ -169,6 +169,7 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
                                                         return_vals = "mean")$mean
       max_objective_curr <- max(max_objective_curr, lpost_kriging_believer)
     }
+    
     emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib, 
                                                          X_new = theta_new_scaled, Y_new = NULL, update_hyperparameters = FALSE)
   }

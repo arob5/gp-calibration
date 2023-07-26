@@ -434,9 +434,9 @@ Here we introduce acquisition functions that are tailored to solving Bayesian in
 
 \subsubsection{Expected Integrated Variance}
 We first consider an acquisition introduced in \cite{SinsbeckNowak} and independently 
-in \cite{sürer2023sequential}. We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
+in \cite{Surer2023sequential}. We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
 \begin{align}
-\acq{\designIdx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] \label{EIVAR}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] \label{EIVAR}
 \end{align}
 The inner term is the predictive variance of the posterior approximation conditioned on $\designData_{\designIdx} \cup (\tilde{\bpar}, \tilde{\postDens})$, where 
 $\tilde{\postDens} := \postDens(\tilde{\bpar})$ is the hypothetical posterior density evaluation at input $\tilde{\bpar}$. Since the forward model has not yet been evaluated at 
@@ -453,7 +453,7 @@ $\log \postDens_{\designIdx}(\bpar)$ is Gaussian distributed and $\Var\left[\log
 available in closed-form (see \ref{loss_emulation_dist}). Moreover, this variance does not depend on $\tilde{\postDens}$ so the inner expectation $\E_{\tilde{\postDens}}$ vanishes. 
 Therefore, the EIVAR expression simplifies to
 \begin{align}
-\acq{\designIdx}(\tilde{\bpar}) &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)\right]}{\sdObs_{\objIdx}^4} \label{EIVAR_llik_loss_emulation}
+\acq[\designIdx](\tilde{\bpar}) &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)\right]}{\sdObs_{\objIdx}^4} \label{EIVAR_llik_loss_emulation}
 \end{align}
 
 \subsection{Unknown $\CovObs$}
@@ -519,7 +519,7 @@ Setting the derivative equal to zero and solving for $\sdObs^2_{\objIdx}$ yields
 \subsubsection{EIVAR Acquisition Computations}
 In this section we provide computations related to the EIVAR criterion \ref{EIVAR} in the various emulation settings. Recall that EIVAR is generally defined as 
 \begin{align*}
-\acq{\designIdx}(\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
 \end{align*}
 where $\tilde{\postDens}$ be also be replaced by its logarithm. 
 
@@ -536,7 +536,7 @@ Conditioning on $(\tilde{\bpar}, \tilde{\llik}_{\designIdx})$ thus yields
 \end{align*}
 which does not depend on the unknown response $\tilde{\llik}_{\designIdx}$. Therefore the expectation $\E_{\tilde{\llik}}$ drops out and we are left with 
 \begin{align*}
-\acq{\designIdx}(\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
+\acq[\designIdx](\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
 \end{align*}
 which is equal to \ref{EIVAR_llik_loss_emulation}.
 
@@ -571,9 +571,95 @@ where
 \indexObj{\GPKer}(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} (\indexDesignObj{\SSRObs}{\designIdx, \tilde{\bpar}} - \GPMean(\bpar)\oneVec{\designIdx+1})
 \end{align*}
 
+\section{Meeting: 7/26}
+
+\subsection{Agenda:}
+\begin{enumerate}
+\item Review sequential design acquisition functions and batch strategies. 
+\item Initial numerical tests. 
+\item Plans for sequential design simulation study. 
+\item Other ideas for sequential design. 
+\end{enumerate}
+
+\subsection{Sequential Design Strategies:}
+
+\subsubsection{Review: Bayesian Optimization and Batch Optimization}
+Arguably the most common acquisition function in Bayesian optimization is the expected improvement (EI) criterion. Let 
+$\postDens_{\designIdx}^{\text{max}}$ be the maximum observed value of the unnormalized posterior density 
+$\postDens(\cdot)$ over the current design set $\indexDesign{\designData}$. We define the \textit{improvement} to be the random 
+variable $\indexDesign{I}(\tilde{\bpar}) = \indexDesign{\postDens}(\tilde{\bpar}) - \postDens_{\designIdx}^{\text{max}}$. Taking the expectation 
+of $\indexDesign{I}(\tilde{\bpar})_+ := \max\left\{\indexDesign{I}(\tilde{\bpar}), 0\right\}$ yields the expected improvement acquisition 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E\left[\indexDesign{I}(\tilde{\bpar})_+ \right] = \E\left[\left( \indexDesign{\postDens}(\tilde{\bpar}) - \postDens_{\designIdx}^{\text{max}}\right)_+ \right] 
+\end{align}
+This can be computed in closed-form when $\indexDesign{\postDens}(\tilde{\bpar})$ is a GP. In our case, $\log \indexDesign{\postDens}(\tilde{\bpar})$ is a GP, so we can 
+simply apply the above to the log-posterior instead. For batch optimization, a popular generalization is the multi-point EI 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}_1, \dots, \tilde{\bpar}_q) &= \E\left[\max\left\{\indexDesign{I}(\tilde{\bpar}_1)_+, \dots, \indexDesign{I}(\tilde{\bpar}_q)_+\right\} \right] \\
+&= \E\left[\left(\max\left\{\indexDesign{\postDens}(\tilde{\bpar}_1), \dots, \indexDesign{\postDens}(\tilde{\bpar}_q) \right\} - \postDens_{\designIdx}^{\text{max}} \right)_+ \right]
+\end{align}
+Multi-point EI has been traditionally optimized using greedy heuristic methods \cite{Ginsbourger2010}, in which the batch points are acquired one at a time. Once 
+one point $\tilde{\bpar}$ has been selected, the GP is conditioned on a pseudo-observation $(\tilde{\bpar}, L)$ where $L$ is sometimes called a \textit{lie}. In the 
+\textit{kriging believer} (KB) heuristic $L := \E[\indexDesign{\postDens}(\tilde{\bpar})]$. This has the effect of simply updating the GP predictive variance without changing the predictive 
+mean. The \textit{constant liar} (CL) heuristic instead fixes the value $L$ throughout the entire batch acquisition process. Common choices of $L$ are based on the currently observed
+response values $\boldsymbol{\postDens}_{\designIdx} := \{\postDens(\bpar_1), \dots, \postDens(\bpar_{\designIdx})\}$. We define, respectively, 
+CL-optimist, Cl-pessimist, and CL-mean to correspond to the choices $L := \max \boldsymbol{\postDens}_{\designIdx}$, 
+$L := \min \boldsymbol{\postDens}_{\designIdx}$, and $L := \text{average}\left(\boldsymbol{\postDens}_{\designIdx}\right)$. Since considering maximization of the 
+objective, smaller values of $L$ are pessimistic choices and result in more exploration via the repulsive effect of the pseudo-observations being set to poor 
+objective values. The gentle repulsion of the CL-optimist heuristic has been noted to have empirical success \cite{Ginsbourger2010}. 
+
+More recently, \cite{Chevalier2013} derive a closed-form formula for multi-point EI when $\indexDesign{\postDens}$ is a GP, though this formula still 
+presents computational challenges. The paper \cite{Marmin2015} provides a gradient calculation for the closed-form multi-point EI to aid in optimization. 
+Both the closed form multi-point EI and its gradient are available in the R package \textit{DiceKriging}.
+
+\subsubsection{Review: Acquisition functions targeting posterior}
+I have found three papers that specifically tailor sequential design (i.e. active learning) to the goal of posterior estimation using GPs 
+\cite{SinsbeckNowak, Surer2023sequential, Kandasamy_active_learning}. 
+There is other literature that 
+has addressed this problem using different surrogate methods; for example \cite{Huan2013} considers optimal Bayesian experimental design using polynomial surrogates and \cite{Cleary2021} considers ensemble Kalman methods. 
+\begin{enumerate}
+\item To my knowledge, the first criterion of this sort is proposed in \cite{KandasamyActiveLearning2015}. The idea is to choose the next design point $\tilde{\bpar}$ to minimize
+some divergence $D(\postDens, \indexDesign[\designIdx, \tilde{\bpar}]{\postDens})$ measuring the error between the random field posterior approximation 
+$\indexDesign[\designIdx, \tilde{\bpar}]{\postDens} := \indexDesign{\postDens} | (\tilde{\bpar}, \postDens(\tilde{\bpar}))$ and the true posterior $\postDens$. The true posterior is 
+of course unknown, so $\postDens$ must also be replaced with an approximation. The authors opt to replace $\postDens$ with the sampled density 
+$\hat{\postDens} \sim \indexDesign[\designIdx, \tilde{\bpar}]{\postDens}$ (without re-estimating hyperparameters) (it is a bit odd to be that they base this approximation 
+on $\tilde{\bpar}$ as well as the existing design set). They thus define the \textit{negative expected divergence}
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= -\E_{\tilde{\postDens}} \E_{\hat{\postDens} \sim \indexDesign[\designIdx, \tilde{\bpar}]{\postDens}} D(\hat{\postDens}, \indexDesign[\designIdx, \tilde{\bpar}]{\postDens})
+\end{align}
+I have not completely wrapped my head around this general formulation; there are tricky details here regarding normalizing constants and re-fitting GP hyperparameters 
+that I am not completely clear on. However, the general idea is minimization of expected divergence via a one-step lookahead. They also propose a much simpler 
+criterion: choosing the point that maximizes the predictive variance of $\indexDesign{\postDens}$. 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \Var\left[\indexDesign[\designIdx, \tilde{\bpar}]{\postDens} \right]
+\end{align}
+
+\item Sinsbeck and Nowak \cite{SinsbeckNowak} start from a similar Bayesian decision theoretic viewpoint, but 1.) target the likelihood approximation to not 
+have to worry about normalizing constants, and 2.) focus on the particular case where $D(\cdot, \cdot)$ is prior-weighted $L^2$ loss, and 
+3.) choose the reference approximation to $e^{\llik(\bpar)}$ to be $\E\left[e^{\indexDesign[\designIdx]{\llik}(\bpar)} \right]$. Under these assumptions, the 
+expected divergence becomes a standard integrated variance criterion
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\priorDens} \E_{\tilde{\llik}} \Var\left[\exp\left(\indexDesign[\designIdx, \tilde{\bpar}]{\llik}(\bpar)\right) | (\tilde{\bpar}, \tilde{\llik}) \right]
+\end{align}
+
+\item Surer et al \cite{Surer2023sequential} propose essentially the same acquisition function as \cite{SinsbeckNowak}, except targeting the 
+unnormalized posterior instead of the likelihood.
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\priorDens} \E_{\tilde{\postDens}} \Var\left[\indexDesign[\designIdx, \tilde{\bpar}]{\postDens}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right]
+\end{align}
+They moreover show that for the common PCA-GP emulation approach of \cite{Higdon}, that the inner integral $\E_{\tilde{\postDens}}$ vanishes and the variance term can 
+be computed in closed-form, leaving only the integration over the parameter space $\E_{\priorDens}$ to be performed numerically. They also briefly discuss extensions to 
+the case of unknown likelihood parameters and to the batch sequential setting. 
+
+\subsubsection{Batch Sequential Design}
+
+
+\end{enumerate}
+
 
 \bibliography{framework_calibrating_ecosystem_models} 
 \bibliographystyle{ieeetr}
+
 
 \end{document}
 

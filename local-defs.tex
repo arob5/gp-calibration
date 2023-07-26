@@ -37,7 +37,7 @@
 
 \newcommand{\spar}{u} % Parameter (scalar, non-bold)
 \newcommand{\bpar}{\mathbf{u}} % Parameter vector (bold)
-\newcommand{\parSpace}{\Theta} % Parameter space
+\newcommand{\parSpace}{\mathcal{U}} % Parameter space
 \newcommand{\fwd}{G} % Forward model
 \newcommand{\Npar}{D} % Dimension of parameter space
 \newcommand{\Nobj}{P} % Number of output variables/data constraints/objectives
@@ -127,7 +127,7 @@
 \newcommand{\indexDesignObj}[3][\objIdx]{{#2}^{(#1)}_{#3}} % Adds design iteration index and objective/constraint index to a variable.
 \newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
 \newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
-\newcommand{\acq}[1]{\mathcal{A}_{#1}} % Acquisition function
+\newcommand{\acq}[1][]{\mathcal{A}_{#1}} % Acquisition function
 
 % --------------------------------------------------------------------------------------------------
 % Markov Chain Monte Carlo. 
