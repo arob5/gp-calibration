@@ -2255,11 +2255,174 @@ sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled 
 }
                     
 
+# ------------------------------------------------------------------------------
+# lpost emulator functions. 
+#    - These functions directly work with the random field approximation to the 
+#      unnormalized log posterior density (which we refer to as `lpost`). 
+#    - This lpost emulator is induced by the underlying GP emulators (e.g. the 
+#      GPs approximating the loss functions). 
+# ------------------------------------------------------------------------------
+
+get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params) {
+  # Returns a list that represents a fit emulator object, namely the random field approximation to 
+  # the unnormalized log posterior density induced by the underlying GPs. The observed input locations 
+  # are thus the same as the underlying GPs, while the observed response vector are the unnormalized  
+  # log posterior density evaluations computed by `calc_lpost_theta_product_lik()`. Note that the lpost 
+  # emulator is also a function of the variance parameters `sig2_eps`. This the lpost emulator object is 
+  # primarily used for sequential design purposes, especially batch sequential design heuristics such as 
+  # kriging believer and constant liar. For these heuristics, we often want to condition the lpost emulator 
+  # on new data, which is different from conditioning the underlying GPs on new data. 
+  #
+  # Args:
+  #    emulator_info_list: list, the emulator information list for the underlying GPs. 
+  #    design_info_list: list, the design information list for the underlying GPs. 
+  #    computer_model_data: list, the computer model data list. 
+  #    sig2_eps: numeric vector of the observation variance parameters. 
+  #    theta_prior_params: data.frame, containing prior distributions for the calibration parameters. 
+  #
+  # Returns:
+  #    list, the lpost emulator object. The list has named elements "emulator_info_list" (pertaining to 
+  #    the underlying GP emulators), "design_info_list" (also pertaining to the underlying GP emulators), 
+  #    "outputs_lpost" (the observed response vector for the lpost emulator). The data in 
+  #    `lpost_emulator_obj$design_info_list` and `lpost_emulator_obj$inputs_lpost` are allowed to differ, 
+  #    as the former pertains to the underlying GPs, while the latter is for the lpost emulator, which 
+  #    may be conditioned on new data. 
+  
+  # Create lpost emulator object and store information relating to underlying GPs. 
+  lpost_emulator_obj <- list()
+  lpost_emulator_obj$emulator_info_list <- emulator_info_list
+  lpost_emulator_obj$design_info_list <- design_info_list
+  
+  # Store lpost emulator design. 
+  lpost_emulator_obj$inputs_lpost <- design_info_list[c("inputs", "inputs_scaled")]
+  
+  # Compute lpost response vector. 
+  lpost_emulator_obj$outputs_lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                                   vars_obs = sig2_eps, na.rm = TRUE, 
+                                                                   theta_vals = design_info_list$inputs, 
+                                                                   theta_prior_params = theta_prior_params, 
+                                                                   return_list = FALSE)
+  
+  # Compute lpost inverse kernel matrix. 
+  lpost_emulator_obj$K_inv <- calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, sig2_eps=sig2_eps)
+  
+  return(lpost_emulator_obj)
+  
+}
 
 
+calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, sig2_eps) {
+  # Computes the kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`) for the unnormalized log posterior density emulator,  
+  # based on the kernel function induced on lpost by the underlying GPs. If `inputs_scaled_2` is NULL, computes 
+  # k(`inputs_scaled_1`, `inputs_scaled_1`). 
+  # TODO: this function should be generalized to work with other packages other than "hetGP". 
+  #
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    inputs_scaled_1: matrix, of dimension M1 x D where M1 is the number of new inputs and D the dimension of the 
+  #                     input parameter space. These inputs should already be properly scaled - no scaling is done 
+  #                     in this function.
+  #    inputs_scaled_2: matrix, of dimension M2 x D, the second set of scaled inputs. Default is NULL. 
+  #    sig2_eps: numeric vector of length P = the number of output variables. The observation variances. 
+  #    
+  # Returns:
+  #    The M1 x M2 kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`). i.e. the covariance matrix (or cross covariance 
+  #    matrix) of the lpost emulator between the two sets of inputs. 
+  
+  inputs_scaled <- lpost_emulator_obj$design_info_list$inputs_scaled
+  
+  if(lpost_emulator_obj$emulator_info_list$emulator_target == "SSR") {
+    gp_fits <- lpost_emulator_obj$emulator_info_list$gp_fits
+    N_GPs <- length(gp_fits)
+    
+    K <- 0.25 * Reduce("+", lapply(1:N_GPs, function(j) hetGP::cov_gen(X1 = inputs_scaled_1, X2 = inputs_scaled_2,
+                                                                       theta = gp_fits[[j]]$theta, 
+                                                                       type = gp_fits[[j]]$covtype) / sig2_eps[j]^2))
+  } else {
+    stop("Other emulator targets not yet implemented.")
+  }
+  
+  return(K)
+  
+}
 
 
+update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpost_new = NULL) {
+  # Updates the random field approximation to the unnormalized log posterior density induced 
+  # by the underlying GPs by conditioning on newly observed data {`input_new`, `output_lpost_new`}. 
+  # In the primary use case of this function, `output_lpost_new` is "pseudo-data" used for heuristic 
+  # batch sequential design updates such as kriging believer and constant liar. If `output_lpost_new` 
+  # is NULL, then it will be set to the predictive mean of the lpost emulator at inputs `input_new`.
+  # This has the effect of updating the lpost emulator predictive variance without affecting the
+  # predictive mean. No hyperparameter re-estimation is performed here, only conditioning on data. 
+  # Also, no updating of the underlying GPs is performed here. This is because this function is 
+  # mainly used for conditioning on pseudo-data for batch heuristic strategies, rather than 
+  # actually updating the emulator on true observed data. The updates on `lpost_emulator` include 
+  # appending new data to `lpost_emulator$inputs_lpost` and `lpost_emulator`$outputs_lpost` as 
+  # well as updating the inverse kernel matrix via partitioned matrix inverse equations. 
+  # 
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    input_new_scaled: matrix, of dimension M x D where M is the number of new inputs and D the dimension of  
+  #               the input parameter space. These inputs should already be properly scaled - no scaling is done 
+  #               in this function. 
+  #    output_lpost_new: numeric, the vector of length M of lpost response values associated with the inputs 
+  #                      `input_new`. If NULL, this is set to the expected value of the lpost emulator at 
+  #                      as inputs `input_new`. 
+  #
+  # Returns:
+  #    The updated lpost emulator object. 
+  
+  # If no new responses are provided, set to GP expectation. 
+  if(is.null(output_lpost_new)) output_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator)
+  
+  # Update design data. 
+  lpost_emulator$inputs_lpost$inputs_scaled <- rbind(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled)
+  lpost_emulator$inputs_lpost$inputs <- rbind(lpost_emulator$inputs_lpost$inputs, 
+                                              scale_input_data(inputs_new_scaled, 
+                                                               input_bounds = lpost_emulator$emulator_info_list$input_bounds, 
+                                                               inverse = TRUE))
+  lpost_emulator$outputs_lpost <- c(lpost_emulator$outputs_lpost, outputs_lpost_new)
+  
+  # Update inverse kernel matrix. 
+  lpost_emulator$K_inv <- update_lpost_inverse_kernel_matrix(lpost_emulator, inputs_new_scaled, emulator_info_list)
+  
+  
+}
 
+
+predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator) {
+  # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
+  # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
+  # other hand, this function predicts based on the `lpost_emulator` object, which may have been conditioned on new 
+  # data without affecting the underlying GPs. The reason for this discrepancy is to facilitate conditioning the lpost 
+  # emulator on pseudo data, as is required in batch sequential design heuristics such as kriging believer and constant 
+  # liar. 
+   
+}
+
+
+update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled) {
+  # Uses partitioned matrix inverse equations to perform a fast update of the inverse kernel matrix for the lpost 
+  # emulator given a new set of input point, `input_new_scaled`. Currently only considers the addition of a single input 
+  # point as this is the primary use case. Inverse kernel matrix update corresponding to conditioning on multiple inputs 
+  # can be performed by calling this function one point at a time. Credit to `hetGP` function `update_Ki()` for 
+  # providing a guide for this implementation.
+  #
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    input_new_scaled: matrix, of dimension 1 x D where  D the dimension of the input parameter space. 
+  #                      This input should already be properly scaled - no scaling is done in this function.
+  #                      Alternatively, a numeric vector of length D, which will be converted to a 1 x D matrix. 
+  #
+  # Returns: 
+  #    The updated inverse kernel matrix. 
+  
+  if(!is.matrix(input_new_scaled)) input_new_scaled <- matrix(input_new_scaled, nrow = 1)
+  
+  
+  
+}
 
 
 

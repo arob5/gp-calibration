@@ -115,6 +115,7 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
                                 transformation_method = c("truncated"),
+                                emulator_target = "SSR",
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
 print(emulator_settings)
