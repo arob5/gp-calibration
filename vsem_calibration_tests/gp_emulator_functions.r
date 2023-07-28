@@ -2263,7 +2263,7 @@ sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled 
 #      GPs approximating the loss functions). 
 # ------------------------------------------------------------------------------
 
-get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params) {
+get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params, include_nugget = TRUE) {
   # Returns a list that represents a fit emulator object, namely the random field approximation to 
   # the unnormalized log posterior density induced by the underlying GPs. The observed input locations 
   # are thus the same as the underlying GPs, while the observed response vector are the unnormalized  
@@ -2279,6 +2279,7 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   #    computer_model_data: list, the computer model data list. 
   #    sig2_eps: numeric vector of the observation variance parameters. 
   #    theta_prior_params: data.frame, containing prior distributions for the calibration parameters. 
+  #    include_nugget: If TRUE, includes nugget variances from underlying GPs when computing lpost inverse kernel matrix. 
   #
   # Returns:
   #    list, the lpost emulator object. The list has named elements "emulator_info_list" (pertaining to 
@@ -2303,15 +2304,20 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
                                                                    theta_prior_params = theta_prior_params, 
                                                                    return_list = FALSE)
   
+  # Store observation variances, since the lpost emulator is a function of the likelihood parameters. 
+  lpost_emulator_obj$sig2_eps <- sig2_eps
+  
   # Compute lpost inverse kernel matrix. 
-  lpost_emulator_obj$K_inv <- calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, sig2_eps=sig2_eps)
+  lpost_emulator_obj$K_inv <- calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, 
+                                                sig2_eps = sig2_eps, include_nugget = include_nugget)
   
   return(lpost_emulator_obj)
   
 }
 
 
-calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, sig2_eps) {
+# TODO: I believe I need to multiply the result by the marginal variance; check hetGP code. Also ensure that nugget is included.  
+calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, sig2_eps, include_nugget = TRUE) {
   # Computes the kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`) for the unnormalized log posterior density emulator,  
   # based on the kernel function induced on lpost by the underlying GPs. If `inputs_scaled_2` is NULL, computes 
   # k(`inputs_scaled_1`, `inputs_scaled_1`). 
@@ -2324,6 +2330,8 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
   #                     in this function.
   #    inputs_scaled_2: matrix, of dimension M2 x D, the second set of scaled inputs. Default is NULL. 
   #    sig2_eps: numeric vector of length P = the number of output variables. The observation variances. 
+  #    include_nugget: If TRUE and `inputs_scaled_2` is NULL, includes nugget variances on the diagonal of the underlying 
+  #                    GP kernel matrices used to compute the lpost kernel. 
   #    
   # Returns:
   #    The M1 x M2 kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`). i.e. the covariance matrix (or cross covariance 
@@ -2335,14 +2343,25 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
     gp_fits <- lpost_emulator_obj$emulator_info_list$gp_fits
     N_GPs <- length(gp_fits)
     
-    K <- 0.25 * Reduce("+", lapply(1:N_GPs, function(j) hetGP::cov_gen(X1 = inputs_scaled_1, X2 = inputs_scaled_2,
-                                                                       theta = gp_fits[[j]]$theta, 
-                                                                       type = gp_fits[[j]]$covtype) / sig2_eps[j]^2))
+    GP_scaled_ker_mats <- vector(mode = "list", length = N_GPs)
+    for(j in 1:N_GPs) {
+      C <- hetGP::cov_gen(X1 = inputs_scaled_1, X2 = inputs_scaled_2, theta = gp_fits[[j]]$theta, type = gp_fits[[j]]$covtype)
+      
+      if(is.null(inputs_scaled_2)) {
+        nug <- rep(gp_fits[[j]]$eps, nrow(C))
+        if(include_nugget) nug <- nug + gp_fits[[j]]$g
+        C <- C + hetGP:::add_diag(C, nug)
+      }
+      
+      GP_scaled_ker_mats[[j]] <- gp_fits[[j]]$nu_hat * C / sig2_eps[j]^2                               
+    }
+    
+    K_lpost <- 0.25 * Reduce("+", GP_scaled_ker_mats)
   } else {
     stop("Other emulator targets not yet implemented.")
   }
   
-  return(K)
+  return(K_lpost)
   
 }
 
@@ -2399,10 +2418,12 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator) {
   # emulator on pseudo data, as is required in batch sequential design heuristics such as kriging believer and constant 
   # liar. 
    
+  
+  
 }
 
 
-update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled) {
+update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled, include_nugget = TRUE) {
   # Uses partitioned matrix inverse equations to perform a fast update of the inverse kernel matrix for the lpost 
   # emulator given a new set of input point, `input_new_scaled`. Currently only considers the addition of a single input 
   # point as this is the primary use case. Inverse kernel matrix update corresponding to conditioning on multiple inputs 
@@ -2414,21 +2435,28 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
   #    input_new_scaled: matrix, of dimension 1 x D where  D the dimension of the input parameter space. 
   #                      This input should already be properly scaled - no scaling is done in this function.
   #                      Alternatively, a numeric vector of length D, which will be converted to a 1 x D matrix. 
+  #    include_nugget: If TRUE, includes nugget variances on underlying GP kernel computations used to compute 
+  #                    the lpost kernel.
   #
   # Returns: 
   #    The updated inverse kernel matrix. 
   
+  # Convert to matrix, if necessary. 
   if(!is.matrix(input_new_scaled)) input_new_scaled <- matrix(input_new_scaled, nrow = 1)
   
+  # Construct matrix inverse via partitioned inverse equations. 
+  k_new_old <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, 
+                                 inputs_scaled_2=lpost_emulator$inputs_lpost$inputs_scaled, sig2_eps = lpost_emulator$sig2_eps)
+  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, sig2_eps = lpost_emulator$sig2_eps, include_nugget = include_nugget)
   
+  K_inv_k_new_old <- tcrossprod(lpost_emulator$K_inv, k_new_old)
+  nu <- drop(k_new - k_new_old %*% K_inv_k_new_old)
+  z <- -nu * K_inv_k_new_old
+  K_inv_top_left <- lpost_emulator$K_inv + nu * tcrossprod(z)
   
+  return(rbind(cbind(K_inv_top_left, z), c(z, 1/nu)))
+
 }
-
-
-
-
-
-
 
 
 
