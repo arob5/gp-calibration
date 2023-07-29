@@ -2308,16 +2308,16 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   lpost_emulator_obj$sig2_eps <- sig2_eps
   
   # Compute lpost inverse kernel matrix. 
-  lpost_emulator_obj$K_inv <- calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, 
-                                                sig2_eps = sig2_eps, include_nugget = include_nugget)
-  
+  lpost_emulator_obj$K_inv <- chol2inv(chol(calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, 
+                                                              include_nugget = include_nugget)))
+   
   return(lpost_emulator_obj)
   
 }
 
 
 # TODO: I believe I need to multiply the result by the marginal variance; check hetGP code. Also ensure that nugget is included.  
-calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, sig2_eps, include_nugget = TRUE) {
+calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, include_nugget = TRUE) {
   # Computes the kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`) for the unnormalized log posterior density emulator,  
   # based on the kernel function induced on lpost by the underlying GPs. If `inputs_scaled_2` is NULL, computes 
   # k(`inputs_scaled_1`, `inputs_scaled_1`). 
@@ -2353,7 +2353,7 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
         C <- C + hetGP:::add_diag(C, nug)
       }
       
-      GP_scaled_ker_mats[[j]] <- gp_fits[[j]]$nu_hat * C / sig2_eps[j]^2                               
+      GP_scaled_ker_mats[[j]] <- gp_fits[[j]]$nu_hat * C / lpost_emulator_obj$sig2_eps[j]^2                               
     }
     
     K_lpost <- 0.25 * Reduce("+", GP_scaled_ker_mats)
@@ -2405,6 +2405,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpos
   
   # Update inverse kernel matrix. 
   lpost_emulator$K_inv <- update_lpost_inverse_kernel_matrix(lpost_emulator, inputs_new_scaled, emulator_info_list)
+  
+  return(lpost_emulator)
   
   
 }
