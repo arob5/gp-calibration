@@ -2306,9 +2306,12 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
                                                                    theta_prior_params = theta_prior_params, 
                                                                    return_list = FALSE)
   
-  # Store observation variances, since the lpost emulator is a function of the likelihood parameters. 
+  # lpost emulator is a function of the likelihood parameters (observation variances), prior on the calibration 
+  # parameters, and the number of observations (n_obs). 
   lpost_emulator_obj$sig2_eps <- sig2_eps
-  
+  lpost_emulator_obj$theta_prior_params <- theta_prior_params
+  lpost_emulator_obj$n_obs <- computer_model_data$n_obs
+
   # Compute lpost inverse kernel matrix. 
   lpost_emulator_obj$K_inv <- chol2inv(chol(calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, 
                                                               include_nugget = include_nugget)))
@@ -2318,7 +2321,6 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
 }
 
 
-# TODO: I believe I need to multiply the result by the marginal variance; check hetGP code. Also ensure that nugget is included.  
 calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled_2 = NULL, include_nugget = TRUE) {
   # Computes the kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`) for the unnormalized log posterior density emulator,  
   # based on the kernel function induced on lpost by the underlying GPs. If `inputs_scaled_2` is NULL, computes 
@@ -2364,6 +2366,42 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
   }
   
   return(K_lpost)
+  
+}
+
+
+calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscaled = NULL) {
+  # Computes the prior mean function for the unnormalized log posterior density emulator,  
+  # based on the mean functions induced on lpost by the underlying GPs.
+  # TODO: this function should be generalized to work with other packages other than "hetGP". 
+  # TODO: generalize to allow non-constant mean function. 
+  #
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    inputs_scaled: matrix, of dimension M x D where M1 is the number of new inputs and D the dimension of the 
+  #                   input parameter space. These inputs should already be properly scaled - no scaling is done 
+  #                   in this function. Currently, this argument has no impact on the function as the prior mean 
+  #                   is constant, but it could play a role if more general mean functions are specified. 
+  #   
+  # Returns:
+  #    The M1 x M2 kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`). i.e. the covariance matrix (or cross covariance 
+  #    matrix) of the lpost emulator between the two sets of inputs. 
+  
+  # Requires scaled and unscaled inputs. 
+  if(is.null(inputs_scaled) && is.null(inputs_unscaled)) {
+    stop("Either scaled or unscaled inputs must be provided.")
+  } else if(is.null(inputs_scaled)) {
+    inputs_scaled <- scale_input_data(inputs_unscaled, input_bounds = lpost_emulator$design_info_list$input_bounds)
+  } else if(is.null(inputs_unscaled)) {
+    inputs_unscaled <- scale_input_data(inputs_scaled, input_bounds = lpost_emulator$design_info_list$input_bounds, inverse = TRUE)
+  }
+  
+  scaled_GP_means <- sapply(lpost_emulator$emulator_info_list$gp_fits, function(gp) gp$beta0) / lpost_emulator$sig2_eps
+  lprior <- sum(calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params))
+    
+  means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(scaled_means)) + lprior
+
+  return(means)
   
 }
 
@@ -2414,7 +2452,7 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpos
 }
 
 
-predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE) {
+predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, inputs_new_unscaled = NULL) {
   # Compute predictive mean and variance equations for the `lpost_emulator`. 
   # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
   # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
@@ -2435,6 +2473,9 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   #                    nugget variance. 
   #    return_vals: character, either "mean", "var", or c("mean", "var") depending on whether the predictive mean
   #                 or variance is desired, or both.
+  #    inputs_new_unscaled: Optionally provide unscaled version of `input_new_scaled` as well, which is required to compute  
+  #                         predictive means (as the predictive mean depends on the prior distribution on the calibration 
+  #                         parameters). 
   #
   # Returns:
   #    list, with names "mean" and "var", containing respectively the predictive mean and variance values computed 
@@ -2448,17 +2489,27 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
                           
   # Predictive mean. 
   if("mean" %in% return_vals) {
-    return_list$mean <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled) + kn %*% lpost_emulator$K_inv %*%
-                        (lpost_emulator$outputs_lpost - calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled))
+    mu_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, inputs_unscaled = inputs_new_unscaled)
+    mu_n <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, inputs_unscaled = lpost_emulator$inputs_lpost$inputs)
+    
+    return_list$mean <- drop(mu_new + kn %*% lpost_emulator$K_inv %*%  (lpost_emulator$outputs_lpost - mu_n))
+                            
   }
   
   # Predictive variance. 
   if("var" %in% return_vals) {
     pred_vars <- vector(mode = "numeric", length = nrow(inputs_new_scaled))
     for(i in seq_along(pred_vars)) {
-      pred_vars[i] <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
-                        kn %*% tcrossprod(lpost_emulator$K_inv, kn)
+      pred_vars[i] <- drop(calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
+                        kn[i,,drop=FALSE] %*% tcrossprod(lpost_emulator$K_inv, kn[i,,drop=FALSE]))
     }
+    
+    neg_var_sel <- (pred_vars < 0)
+    if(any(neg_var_sel)) {
+      message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
+      pred_vars[neg_var_sel] <- 0
+    }
+    
     return_list$var <- pred_vars
   }
   
