@@ -533,6 +533,8 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
   #                  if they have already been computed. If NULL, they are computed here. 
   #    include_sig_eps_prior: If TRUE, sample from the unnormalized log joint posterior, instead of the conditional; 
   #                           see description above for clarification. 
+  #    return_vals: character, either "mean", "var", or c("mean", "var") depending on whether the predictive mean
+  #                 or variance is desired, or both. 
   #
   # Returns:
   #    numeric, vector of length M containing the predictive variance evaluations at the M inputs. 
@@ -2350,7 +2352,7 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
       if(is.null(inputs_scaled_2)) {
         nug <- rep(gp_fits[[j]]$eps, nrow(C))
         if(include_nugget) nug <- nug + gp_fits[[j]]$g
-        C <- C + hetGP:::add_diag(C, nug)
+        C <- hetGP:::add_diag(C, nug)
       }
       
       GP_scaled_ker_mats[[j]] <- gp_fits[[j]]$nu_hat * C / lpost_emulator_obj$sig2_eps[j]^2                               
@@ -2412,15 +2414,55 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpos
 }
 
 
-predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator) {
+predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE) {
+  # Compute predictive mean and variance equations for the `lpost_emulator`. 
   # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
   # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
   # other hand, this function predicts based on the `lpost_emulator` object, which may have been conditioned on new 
   # data without affecting the underlying GPs. The reason for this discrepancy is to facilitate conditioning the lpost 
   # emulator on pseudo data, as is required in batch sequential design heuristics such as kriging believer and constant 
   # liar. 
-   
+  #
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    input_new_scaled: matrix, of dimension M x D where M is the number of inputs at which to predict and 
+  #                      D the dimension of the input parameter space. These inputs should already be properly scaled -  
+  #                      no scaling is done in this function.
+  #                      Alternatively, a numeric vector of length D, which will be converted to a 1 x D matrix. 
+  #    include_nugget: If TRUE, includes nugget variances on underlying GP kernel computations used to compute 
+  #                    the lpost kernel. This implies the returned predictive variance is the variance of the 
+  #                    latent function plus the nugget variance. Otherwise, the returned variance excludes the  
+  #                    nugget variance. 
+  #    return_vals: character, either "mean", "var", or c("mean", "var") depending on whether the predictive mean
+  #                 or variance is desired, or both.
+  #
+  # Returns:
+  #    list, with names "mean" and "var", containing respectively the predictive mean and variance values computed 
+  #    at the test inputs `inputs_new_scaled`. The associated value with be NULL if it is not included in 
+  #    `return_vals`. 
   
+  return_list <- list(mean = NULL, var = NULL)
+  
+  # Cross covariances. 
+  kn <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1 = inputs_new_scaled, inputs_scaled_2 = lpost_emulator$inputs_lpost$inputs_scaled)
+                          
+  # Predictive mean. 
+  if("mean" %in% return_vals) {
+    return_list$mean <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled) + kn %*% lpost_emulator$K_inv %*%
+                        (lpost_emulator$outputs_lpost - calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled))
+  }
+  
+  # Predictive variance. 
+  if("var" %in% return_vals) {
+    pred_vars <- vector(mode = "numeric", length = nrow(inputs_new_scaled))
+    for(i in seq_along(pred_vars)) {
+      pred_vars[i] <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
+                        kn %*% tcrossprod(lpost_emulator$K_inv, kn)
+    }
+    return_list$var <- pred_vars
+  }
+  
+  return(return_list)
   
 }
 
@@ -2447,9 +2489,8 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled,
   if(!is.matrix(input_new_scaled)) input_new_scaled <- matrix(input_new_scaled, nrow = 1)
   
   # Construct matrix inverse via partitioned inverse equations. 
-  k_new_old <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, 
-                                 inputs_scaled_2=lpost_emulator$inputs_lpost$inputs_scaled, sig2_eps = lpost_emulator$sig2_eps)
-  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, sig2_eps = lpost_emulator$sig2_eps, include_nugget = include_nugget)
+  k_new_old <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, inputs_scaled_2=lpost_emulator$inputs_lpost$inputs_scaled)
+  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, include_nugget = include_nugget)
   
   K_inv_k_new_old <- tcrossprod(lpost_emulator$K_inv, k_new_old)
   nu <- drop(k_new - k_new_old %*% K_inv_k_new_old)
