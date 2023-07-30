@@ -2399,9 +2399,9 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
   scaled_GP_means <- sapply(lpost_emulator$emulator_info_list$gp_fits, function(gp) gp$beta0) / lpost_emulator$sig2_eps
   lprior <- sum(calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params))
     
-  means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(scaled_means)) + lprior
+  cst_mean <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(scaled_means)) + lprior
 
-  return(means)
+  return(matrix(rep(cst_mean, nrow(inputs_scaled)), ncol = 1))
   
 }
 
@@ -2486,18 +2486,28 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   
   # Cross covariances. 
   kn <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1 = inputs_new_scaled, inputs_scaled_2 = lpost_emulator$inputs_lpost$inputs_scaled)
-                          
+           
+  browser()
+                 
   # Predictive mean. 
   if("mean" %in% return_vals) {
+    # Prior mean function evaluations. 
     mu_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, inputs_unscaled = inputs_new_unscaled)
     mu_n <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, inputs_unscaled = lpost_emulator$inputs_lpost$inputs)
     
+    # Denormalize GP mean evaluations. 
+    mu_new <- normalize_output_data(mu_new, output_stats = lpost_emulator$design_info_list$output_stats, inverse = TRUE)
+    mu_n <- normalize_output_data(mu_n, output_stats = lpost_emulator$design_info_list$output_stats, inverse = TRUE)
+
     return_list$mean <- drop(mu_new + kn %*% lpost_emulator$K_inv %*%  (lpost_emulator$outputs_lpost - mu_n))
-                            
   }
   
   # Predictive variance. 
   if("var" %in% return_vals) {
+    
+    # pred_list[["var"]] <- output_stats["var_Y",1] * pred_list[["var"]]
+    # pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
+    
     pred_vars <- vector(mode = "numeric", length = nrow(inputs_new_scaled))
     for(i in seq_along(pred_vars)) {
       pred_vars[i] <- drop(calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
