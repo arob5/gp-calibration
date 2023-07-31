@@ -2410,7 +2410,7 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
 }
 
 
-update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpost_new = NULL) {
+update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, inputs_new_unscaled = NULL) {
   # Updates the random field approximation to the unnormalized log posterior density induced 
   # by the underlying GPs by conditioning on newly observed data {`input_new`, `output_lpost_new`}. 
   # In the primary use case of this function, `output_lpost_new` is "pseudo-data" used for heuristic 
@@ -2432,26 +2432,36 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, output_lpos
   #    output_lpost_new: numeric, the vector of length M of lpost response values associated with the inputs 
   #                      `input_new`. If NULL, this is set to the expected value of the lpost emulator at 
   #                      as inputs `input_new`. 
+  #    inputs_new_unscaled: Optionally provide unscaled version of `inputs_new_scaled` as well, which is required to compute  
+  #                         predictive means (as the predictive mean depends on the prior distribution on the calibration 
+  #                         parameters). 
   #
   # Returns:
   #    The updated lpost emulator object. 
   
+  if(is.null(inputs_new_unscaled)) {
+    inputs_new_unscaled <- scale_input_data(inputs_new_scaled, input_bounds = lpost_emulator$emulator_info_list$input_bounds, inverse = TRUE)
+  }
+  
   # If no new responses are provided, set to GP expectation. 
-  if(is.null(output_lpost_new)) output_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator)
-  
-  # Update design data. 
-  lpost_emulator$inputs_lpost$inputs_scaled <- rbind(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled)
-  lpost_emulator$inputs_lpost$inputs <- rbind(lpost_emulator$inputs_lpost$inputs, 
-                                              scale_input_data(inputs_new_scaled, 
-                                                               input_bounds = lpost_emulator$emulator_info_list$input_bounds, 
-                                                               inverse = TRUE))
-  lpost_emulator$outputs_lpost <- c(lpost_emulator$outputs_lpost, outputs_lpost_new)
-  
-  # Update inverse kernel matrix. 
-  lpost_emulator$K_inv <- update_lpost_inverse_kernel_matrix(lpost_emulator, inputs_new_scaled, emulator_info_list)
+  if(is.null(outputs_lpost_new)) {
+    outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, 
+                                                return_vals = "mean", inputs_new_unscaled = inputs_new_unscaled)$mean
+  }
+                                                                           
+  # Update inverse kernel matrix and design data. 
+  for(i in 1:nrow(inputs_new_scaled)) {
+    
+    # Inverse kernel matrix. 
+    lpost_emulator$K_inv <- update_lpost_inverse_kernel_matrix(lpost_emulator, input_new_scaled=inputs_new_scaled[i,,drop=FALSE])
+    
+    # Design data. 
+    lpost_emulator$inputs_lpost$inputs_scaled <- rbind(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled[i,,drop=FALSE])
+    lpost_emulator$inputs_lpost$inputs <- rbind(lpost_emulator$inputs_lpost$inputs, inputs_new_unscaled[i,,drop=FALSE])
+    lpost_emulator$outputs_lpost <- c(lpost_emulator$outputs_lpost, outputs_lpost_new[i])
+  }
   
   return(lpost_emulator)
-  
   
 }
 
@@ -2530,7 +2540,7 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
 }
 
 
-update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled, include_nugget = TRUE) {
+update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled) {
   # Uses partitioned matrix inverse equations to perform a fast update of the inverse kernel matrix for the lpost 
   # emulator given a new set of input point, `input_new_scaled`. Currently only considers the addition of a single input 
   # point as this is the primary use case. Inverse kernel matrix update corresponding to conditioning on multiple inputs 
@@ -2542,8 +2552,6 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled,
   #    input_new_scaled: matrix, of dimension 1 x D where  D the dimension of the input parameter space. 
   #                      This input should already be properly scaled - no scaling is done in this function.
   #                      Alternatively, a numeric vector of length D, which will be converted to a 1 x D matrix. 
-  #    include_nugget: If TRUE, includes nugget variances on underlying GP kernel computations used to compute 
-  #                    the lpost kernel.
   #
   # Returns: 
   #    The updated inverse kernel matrix. 
@@ -2553,7 +2561,7 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled,
   
   # Construct matrix inverse via partitioned inverse equations. 
   k_new_old <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, inputs_scaled_2=lpost_emulator$inputs_lpost$inputs_scaled)
-  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, include_nugget = include_nugget)
+  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, include_nugget = TRUE)
   
   K_inv_k_new_old <- tcrossprod(lpost_emulator$K_inv, k_new_old)
   nu_inv <- 1 / drop(k_new - k_new_old %*% K_inv_k_new_old)
