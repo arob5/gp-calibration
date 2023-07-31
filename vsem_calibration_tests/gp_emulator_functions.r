@@ -2556,11 +2556,11 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled,
   k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, include_nugget = include_nugget)
   
   K_inv_k_new_old <- tcrossprod(lpost_emulator$K_inv, k_new_old)
-  nu <- drop(k_new - k_new_old %*% K_inv_k_new_old)
-  z <- -nu * K_inv_k_new_old
-  K_inv_top_left <- lpost_emulator$K_inv + nu * tcrossprod(z)
+  nu_inv <- 1 / drop(k_new - k_new_old %*% K_inv_k_new_old)
+  z <- -nu_inv * K_inv_k_new_old
+  K_inv_top_left <- lpost_emulator$K_inv + (1/nu_inv) * tcrossprod(z)
   
-  return(rbind(cbind(K_inv_top_left, z), c(z, 1/nu)))
+  return(rbind(cbind(K_inv_top_left, z), c(z, nu_inv)))
 
 }
 
