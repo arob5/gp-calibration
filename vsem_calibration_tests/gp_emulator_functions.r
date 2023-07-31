@@ -540,9 +540,6 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
   #    numeric, vector of length M containing the predictive variance evaluations at the M inputs. 
   #
   
-  # TODO: include mean calculation; if mean is not required, only `theta_vals_scaled` is needed so don't unnecesarily 
-  #       perform inverse scaling. Thus should also make `theta_prior_params` optional argument. 
-  
   if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
     stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
   } else if(is.null(theta_vals_scaled)) {
@@ -568,7 +565,7 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
     
     scaled_means <- as.matrix(gp_pred_list[, grep("mean_output", colnames(gp_pred_list))]) %*% diag(1/sig2_eps)
     llik_pred_mean <- -0.5 * sum(N_obs * log(2*pi*sig2_eps)) - 0.5 * rowSums(scaled_means)
-    return_list$mean <- llik_pred_mean + sum(calc_lprior_theta(theta_vals_unscaled, theta_prior_params))
+    return_list$mean <- llik_pred_mean + calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
   }
   
   # Compute predictive variance of lpost approximation. 
@@ -2313,8 +2310,8 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   lpost_emulator_obj$n_obs <- computer_model_data$n_obs
 
   # Compute lpost inverse kernel matrix. 
-  lpost_emulator_obj$K_inv <- chol2inv(chol(calc_lpost_kernel(lpost_emulator_obj, design_info_list$inputs_scaled, 
-                                                              include_nugget = include_nugget)))
+  lpost_emulator_obj$K_inv <- chol2inv(chol(calc_lpost_kernel(lpost_emulator_obj, inputs_scaled_1 = design_info_list$inputs_scaled, include_nugget = TRUE)))
+                                                              
    
   return(lpost_emulator_obj)
   
@@ -2341,8 +2338,6 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
   #    The M1 x M2 kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`). i.e. the covariance matrix (or cross covariance 
   #    matrix) of the lpost emulator between the two sets of inputs. 
   
-  inputs_scaled <- lpost_emulator_obj$design_info_list$inputs_scaled
-  
   if(lpost_emulator_obj$emulator_info_list$emulator_target == "SSR") {
     gp_fits <- lpost_emulator_obj$emulator_info_list$gp_fits
     N_GPs <- length(gp_fits)
@@ -2357,7 +2352,9 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
         C <- hetGP:::add_diag(C, nug)
       }
       
-      GP_scaled_ker_mats[[j]] <- gp_fits[[j]]$nu_hat * C / lpost_emulator_obj$sig2_eps[j]^2                               
+      # Map back to original unnormalized scale and scale by observation variances. 
+      output_stats <- lpost_emulator_obj$design_info_list$output_stats
+      GP_scaled_ker_mats[[j]] <- output_stats["var_Y", j] * gp_fits[[j]]$nu_hat * C / lpost_emulator_obj$sig2_eps[j]^2                               
     }
     
     K_lpost <- 0.25 * Reduce("+", GP_scaled_ker_mats)
@@ -2396,12 +2393,19 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
     inputs_unscaled <- scale_input_data(inputs_scaled, input_bounds = lpost_emulator$design_info_list$input_bounds, inverse = TRUE)
   }
   
-  scaled_GP_means <- sapply(lpost_emulator$emulator_info_list$gp_fits, function(gp) gp$beta0) / lpost_emulator$sig2_eps
-  lprior <- sum(calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params))
-    
-  cst_mean <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(scaled_means)) + lprior
+  # Underlying GP means, de-normalize to return to original scale. 
+  GP_means <- sapply(lpost_emulator$emulator_info_list$gp_fits, function(gp) gp$beta0)
+  output_stats <- lpost_emulator$design_info_list$output_stats
+  GP_means <- drop(normalize_output_data(matrix(GP_means, nrow=1), output_stats, inverse = TRUE))
+  
+  # Prior on calibration parameters. 
+  lprior_vals <- calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params)
 
-  return(matrix(rep(cst_mean, nrow(inputs_scaled)), ncol = 1))
+  # Prior mean function induced on lpost emulator. Note that since the underlying GPs are (for now) assumed to have constant prior 
+  # mean functions, that the only potential variation in the lpost prior mean function comes from the log prior evaluations. 
+  means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(GP_means / lpost_emulator$sig2_eps)) + lprior_vals
+
+  return(matrix(means, ncol = 1))
   
 }
 
@@ -2459,7 +2463,11 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   # other hand, this function predicts based on the `lpost_emulator` object, which may have been conditioned on new 
   # data without affecting the underlying GPs. The reason for this discrepancy is to facilitate conditioning the lpost 
   # emulator on pseudo data, as is required in batch sequential design heuristics such as kriging believer and constant 
-  # liar. 
+  # liar. Even with the same GP hyperparameters, this function will produce different predictions than `predict_lpost_GP_approx()`. 
+  # This is due to the fact that this function directly operates on the lpost prior induced by the underlying GPs, and then 
+  # conditions on the observed log posterior values. On the other hand, `predict_lpost_GP_approx()` conditions each GP 
+  # individually on the observed SSR values and then plugs the resulting predictive GP distributions in the log posterior 
+  # expression. 
   #
   # Args:
   #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
@@ -2487,27 +2495,17 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   # Cross covariances. 
   kn <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1 = inputs_new_scaled, inputs_scaled_2 = lpost_emulator$inputs_lpost$inputs_scaled)
            
-  browser()
-                 
   # Predictive mean. 
   if("mean" %in% return_vals) {
     # Prior mean function evaluations. 
     mu_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, inputs_unscaled = inputs_new_unscaled)
     mu_n <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, inputs_unscaled = lpost_emulator$inputs_lpost$inputs)
     
-    # Denormalize GP mean evaluations. 
-    mu_new <- normalize_output_data(mu_new, output_stats = lpost_emulator$design_info_list$output_stats, inverse = TRUE)
-    mu_n <- normalize_output_data(mu_n, output_stats = lpost_emulator$design_info_list$output_stats, inverse = TRUE)
-
-    return_list$mean <- drop(mu_new + kn %*% lpost_emulator$K_inv %*%  (lpost_emulator$outputs_lpost - mu_n))
+    return_list$mean <- drop(mu_new + kn %*% (lpost_emulator$K_inv %*% (matrix(lpost_emulator$outputs_lpost, ncol=1) - mu_n)))
   }
   
   # Predictive variance. 
   if("var" %in% return_vals) {
-    
-    # pred_list[["var"]] <- output_stats["var_Y",1] * pred_list[["var"]]
-    # pred_list[["cov"]] <- output_stats["var_Y",1] * pred_list[["cov"]]
-    
     pred_vars <- vector(mode = "numeric", length = nrow(inputs_new_scaled))
     for(i in seq_along(pred_vars)) {
       pred_vars[i] <- drop(calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
