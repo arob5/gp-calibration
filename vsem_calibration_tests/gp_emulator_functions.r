@@ -2506,21 +2506,25 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   
   # Predictive variance. 
   if("var" %in% return_vals) {
-    pred_vars <- vector(mode = "numeric", length = nrow(inputs_new_scaled))
-    for(i in seq_along(pred_vars)) {
-      pred_vars[i] <- drop(calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget) - 
-                        kn[i,,drop=FALSE] %*% tcrossprod(lpost_emulator$K_inv, kn[i,,drop=FALSE]))
-    }
-    
-    neg_var_sel <- (pred_vars < 0)
-    if(any(neg_var_sel)) {
-      message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
-      pred_vars[neg_var_sel] <- 0
-    }
-    
+    prior_vars <- sapply(1:nrow(inputs_new_scaled), function(i) 
+                        calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget))
+    pred_vars <- as.vector(matrix(prior_vars, ncol=1) - hetGP:::fast_diag(kn, tcrossprod(lpost_emulator$K_inv, kn)))
+                           
     return_list$var <- pred_vars
   }
-  
+    
+  # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging. 
+  if(lpost_emulator$emulator_info_list$gp_fits[[1]]$trendtype == "OK") {
+    pred_vars <- pred_vars + (1 - tcrossprod(rowSums(lpost_emulator$K_inv), kn))^2/sum(lpost_emulator$K_inv)
+  }
+    
+  # Set negative variances due to numerical rounding errors to 0. 
+  neg_var_sel <- (pred_vars < 0)
+  if(any(neg_var_sel)) {
+    message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
+    pred_vars[neg_var_sel] <- 0
+  }
+    
   return(return_list)
   
 }
