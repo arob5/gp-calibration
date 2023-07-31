@@ -2262,7 +2262,7 @@ sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled 
 #      GPs approximating the loss functions). 
 # ------------------------------------------------------------------------------
 
-get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params, include_nugget = TRUE) {
+get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params) {
   # Returns a list that represents a fit emulator object, namely the random field approximation to 
   # the unnormalized log posterior density induced by the underlying GPs. The observed input locations 
   # are thus the same as the underlying GPs, while the observed response vector are the unnormalized  

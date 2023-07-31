@@ -150,16 +150,19 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
   inputs_new_scaled <- matrix(nrow = acquisition_settings$batch_size, ncol = length(computer_model_data$pars_cal_names))
   colnames(inputs_new_scaled) <- computer_model_data$pars_cal_names
   
+  # TODO: add design info list as argument to this function. 
+  # Initialize lpost emulator object. 
+  lpost_emulator <- get_lpost_emulator_obj(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params)
+  
   # Acquire batch of input points (without running forward model). 
   for(b in 1:acquisition_settings$batch_size) {
     # Optimize sequential acquisition function.  
-    theta_new_scaled <- acquisition_opt_one_step(emulator_info_list = emulator_info_list, 
+    theta_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, 
                                                  acquisition_settings = acquisition_settings, 
-                                                 computer_model_data = computer_model_data, 
-                                                 sig2_eps = sig2_eps, 
-                                                 max_objective_curr = max_objective_curr,
-                                                 theta_prior_params = theta_prior_params)
+                                                 max_objective_curr = max_objective_curr)
     inputs_new_scaled[b,] <- theta_new_scaled
+    
+    # TODO: left off here. 
     
     # Update GP using kriging believer approach. 
     # TODO: generalize to allow other approaches, e.g. constant liar. 
@@ -179,8 +182,42 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
 }
 
 
-acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, 
-                                     max_objective_curr = NULL, sig2_eps = NULL, theta_prior_params = NULL) {
+acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings, max_objective_curr = NULL) {
+  # Performs a single one-point acquisition by optimizing the specified acquisition function. Returns 
+  # the newly acquired (scaled) design point. 
+  #
+  # Args:
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.  
+  #    acquisition_settings: list, the acquisition settings list. 
+  #    max_objective_curr: the current observed maximum objective value. Passed to some acquisition functions 
+  #                        (e.g. expected improvement) as a threshold value. Could generalize this later to 
+  #                        allow the threshold setting to be specified in `acquisition_settings` and then 
+  #                        compute the threshold rather than assuming it is the maximum objective. 
+  #
+  # Returns:
+  #    matrix of dimension 1xd, the (scaled) input returned by optimizing the acquisition. 
+  
+  # Select next point by optimizing acquisition function.
+  if(acquisition_settings$opt_method == "grid") {
+    theta_new <- optimize_acquisition_grid(acquisition_type = acquisition_settings$acquisition_type, 
+                                           theta_grid_candidate = acquisition_settings$theta_grid_candidate, 
+                                           lpost_emulator = lpost_emulator,
+                                           N_MC_samples = N_MC_samples, 
+                                           theta_grid_integrate = acquisition_settings$theta_grid_integrate, 
+                                           N_subsample_candidate = acquisition_settings$N_subsample_candidate, 
+                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate, 
+                                           threshold_lpost = max_objective_curr)
+  } else {
+    stop("Invalid acquisition optimization method: ", opt_method)
+  }
+  
+  return(theta_new)
+  
+}
+
+
+acquisition_opt_one_step_old <- function(emulator_info_list, acquisition_settings, computer_model_data, 
+                                         max_objective_curr = NULL, sig2_eps = NULL, theta_prior_params = NULL) {
   # Performs a single one-point acquisition by optimizing the specified acquisition function. Returns 
   # the newly acquired (scaled) design point. 
   #
@@ -222,9 +259,45 @@ acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, c
 }
 
 
-optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, emulator_info_list, computer_model_data, 
-                                      theta_prior_params = NULL, sig2_eps = NULL, N_MC_samples = NULL, theta_grid_integrate = NULL, 
+optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, lpost_emulator, N_MC_samples = NULL, theta_grid_integrate = NULL,
                                       N_subsample_candidate = NULL, N_subsample_integrate = NULL, threshold_lpost = NULL) { 
+  # Returns a new (scaled) design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
+  # All input points (candidate or integration points) are assumed to already be properly scaled. 
+  #
+  # Args:
+  #    acquisition_type: character, used to select the acquisition function. Acquisition function naming convention is 
+  #                      "acquisition_<acquisition_type>". 
+  #    theta_grid_candidate: matrix of shape (# candidate points, d=dimension of input space). The points should already be scaled. 
+  #                          The acquisition function will be evaluated at each candidate point and the arg max over the points returned. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.
+  #    All remaining arguments are fed to the acquisition function; the specific required arguments depend on the particular acquisition function. 
+  #
+  # Returns:
+  #    matrix of dimension 1xd, the (scaled) input in `theta_grid_candidate` with the largest acquisition value. 
+  
+  # Get acquisition function. 
+  acquisition_func <- get(paste0("acquisition_", acquisition_type))
+  
+  # If specified, obtain sub-sample of candidate and/or integration points. 
+  if(!is.null(N_subsample_candidate)) theta_grid_candidate <- theta_grid_candidate[sample(1:nrow(theta_grid_candidate), size = N_subsample_candidate, replace = FALSE),, drop=FALSE]
+  if(!is.null(N_subsample_integrate)) theta_grid_integrate <- theta_grid_integrate[sample(1:nrow(theta_grid_integrate), size = N_subsample_integrate, replace = FALSE),, drop=FALSE]
+  
+  # Evaluate acquisition function on grid of reference inputs. 
+  acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_candidate, 
+                                            lpost_emulator = lpost_emulator,
+                                            threshold_lpost = threshold_lpost, 
+                                            N_MC_samples = N_MC_samples, 
+                                            theta_grid_integrate = theta_grid_integrate)
+  
+  # Return scaled input in reference grid that maximizes the acquisition. 
+  return(theta_grid_candidate[which.max(acquisition_vals_grid),,drop = FALSE])
+  
+}
+
+
+optimize_acquisition_grid_old <- function(acquisition_type, theta_grid_candidate, emulator_info_list, computer_model_data, 
+                                          theta_prior_params = NULL, sig2_eps = NULL, N_MC_samples = NULL, theta_grid_integrate = NULL, 
+                                          N_subsample_candidate = NULL, N_subsample_integrate = NULL, threshold_lpost = NULL) { 
   # Returns a new (scaled) design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
   # All input points (candidate or integration points) are assumed to already be properly scaled. 
   #
@@ -272,8 +345,35 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, em
 #    - Acquisition function naming convention is "acquisition_<acquisition_type>"
 # ---------------------------------------------------------------------------------
 
-acquisition_EI_lpost <- function(theta_vals, emulator_info_list, computer_model_data, 
-                                 theta_prior_params, sig2_eps, threshold_lpost, gp_pred_list = NULL, ...) {
+acquisition_EI_lpost <- function(theta_vals, lpost_emulator, threshold_lpost, ...) {
+  # Closed-form implementation of the expected improvement (EI) acquisition function applied to an lpost emulator 
+  # which is a Gaussian Process. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    threshold_lpost: the threshold objective value to use in the EI calculation, typically the current observed maximum of the 
+  #                     unnormalized log posterior. 
+  #
+  # Returns:
+  #    numeric, vector of length equal to length of `theta_vals`; the EI acquisition function evaluations at inputs `theta_vals`. 
+  
+  # Predictive mean and variance of lpost emulator evaluated at inputs `theta_vals`. 
+  lpost_pred_list <- predict_lpost_emulator(inputs_new_scaled = theta_vals, lpost_emulator = lpost_emulator, include_nugget = TRUE)
+  mu <- lpost_pred_list$mean
+  sig <- sqrt(lpost_pred_list$var)
+  
+  improvement <- mu - threshold_lpost
+  EI <- improvement * pnorm(improvement / sig) + sig * dnorm(improvement / sig)
+  
+  return(EI)
+  
+}
+
+
+acquisition_EI_lpost_old <- function(theta_vals, emulator_info_list, computer_model_data, 
+                                     theta_prior_params, sig2_eps, threshold_lpost, gp_pred_list = NULL, ...) {
   
   # Predictive mean and variance of log posterior approximation evaluated at inputs `theta_vals`. 
   lpost_pred_list <- predict_lpost_GP_approx(theta_vals_scaled = theta_vals, emulator_info_list = emulator_info_list,
