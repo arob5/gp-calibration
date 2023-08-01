@@ -126,8 +126,7 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
 }
                            
 
-batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_settings, computer_model_data, 
-                                           sig2_eps, theta_prior_params = NULL, max_objective_curr = NULL) {
+batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
   # Acquires a batch of new input points via a greedy, heuristic approach. Currently only supports the kriging 
   # believer heuristic, but should be generalized to other heuristics as well (e.g. constant liar). Returns the 
   # batch of (scaled) input points, but does not run the forward model at these new inputs or update the GPs. 
@@ -136,48 +135,29 @@ batch_acquisition_opt_one_step <- function(emulator_info_list, acquisition_setti
   #    emulator_info_list: list, the emulator information list. 
   #    acquisition_settings: list, the acquisition settings list. 
   #    computer_model_data: list, the computer model data list. 
-  #    sig2_eps: numeric, vector of length P = number of output variables, containing the likelihood observation variances.
-  #              This batch acquisition step is conditional on this fixed value of the variances. 
   #    theta_prior_params: data.frame, defining prior distributions on the calibration parameters. Required by some  
   #                        acquisition functions. 
-  #    max_objective_curr: numeric, currently observed maximum value of log posterior. Required by some acquisition functions
-  #                        (e.g. expected improvement). 
   #
   # Returns:
   #    matrix of dimension (batch size, parameter dimension) containing the batch of scaled input points. 
   
-  # Object to store batch of inputs. 
-  inputs_new_scaled <- matrix(nrow = acquisition_settings$batch_size, ncol = length(computer_model_data$pars_cal_names))
-  colnames(inputs_new_scaled) <- computer_model_data$pars_cal_names
-  
-  # TODO: add design info list as argument to this function. 
-  # Initialize lpost emulator object. 
-  lpost_emulator <- get_lpost_emulator_obj(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params)
+  # Set constant liar value to use as responses in pseudo-updates, if relevant. 
+  if(grepl("constant_liar", acquisition_settings$batch_method)) {
+    lpost_emulator$constant_liar_value <- get_constant_liar_value(lpost_emulator, acquisition_settings$batch_method)
+  }
   
   # Acquire batch of input points (without running forward model). 
   for(b in 1:acquisition_settings$batch_size) {
+    
     # Optimize sequential acquisition function.  
-    theta_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, 
-                                                 acquisition_settings = acquisition_settings, 
-                                                 max_objective_curr = max_objective_curr)
-    inputs_new_scaled[b,] <- theta_new_scaled
-    
-    # TODO: left off here. 
-    
-    # Update GP using kriging believer approach. 
-    # TODO: generalize to allow other approaches, e.g. constant liar. 
-    if(!is.null(max_objective_curr)) {
-      lpost_kriging_believer <- predict_lpost_GP_approx(theta_vals_scaled = theta_new_scaled, emulator_info_list = emulator_info_list, sig2_eps = sig2_eps, 
-                                                        theta_prior_params = theta_prior_params, N_obs = computer_model_data$n_obs, include_nugget = TRUE, 
-                                                        return_vals = "mean")$mean
-      max_objective_curr <- max(max_objective_curr, lpost_kriging_believer)
-    }
-    
-    emulator_info_list$gp_fits <- update_independent_GPs(gp_fits = emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib, 
-                                                         X_new = theta_new_scaled, Y_new = NULL, update_hyperparameters = FALSE)
+    input_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, acquisition_settings = acquisition_settings)
+
+    # Update lpost emulator using batch heuristic method. Does not affect underlying GPs, including their hyperparameters. 
+    lpost_emulator <- pseudo_update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_new_scaled,
+                                                   pseudo_update_method = acquisition_settings$batch_method)
   }
   
-  return(inputs_new_scaled)
+  return(lpost_emulator)
   
 }
 
@@ -335,6 +315,40 @@ optimize_acquisition_grid_old <- function(acquisition_type, theta_grid_candidate
 
 }
 
+
+pseudo_update_lpost_emulator <- function(lpost_emulator, input_new_scaled, pseudo_update_method, input_new_unscaled = NULL) {
+  
+  # Determine response value to use in pseudo-update. 
+  if(pseudo_update_method == "kriging_believer") {
+    output_lpost_new <- NULL
+  } else if(grepl("constant_liar", pseudo_update_method)) {
+    if(is.null(lpost_emulator$constant_liar_value)) stop("`constant_liar_value` missing for pseudo-update.")
+    output_lpost_new <- lpost_emulator$constant_liar_value
+  } else {
+    stop("Invalid value for `pseudo_update_method`: ", pseudo_update_method)
+  } 
+  
+  lpost_emulator <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_new_scaled, outputs_lpost_new = output_lpost_new)
+  
+  return(lpost_emulator)
+  
+}
+
+
+get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
+  
+  if(pseudo_update_method == "constant_liar_pessimist") {
+    return(min(lpost_emulator$outputs_lpost))
+  } else if(pseudo_update_method == "constant_liar_optimist") {
+    return(max(lpost_emulator$outputs_lpost))
+  } else if(pseudo_upodate_method == "constant_liar_mean") {
+    return(mean(lpost_emulator$outputs_lpost))
+  } else {
+    stop("Invalid constant liar method: ", constant_liar_method)
+  }
+  
+}
+                             
 
 # ---------------------------------------------------------------------------------
 # Acquisition Functions:
