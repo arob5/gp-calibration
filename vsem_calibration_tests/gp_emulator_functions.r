@@ -2338,7 +2338,7 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
   #    The M1 x M2 kernel matrix k(`inputs_scaled_1`, `inputs_scaled_2`). i.e. the covariance matrix (or cross covariance 
   #    matrix) of the lpost emulator between the two sets of inputs. 
   
-  if(lpost_emulator_obj$emulator_info_list$emulator_target == "SSR") {
+  if(lpost_emulator_obj$emulator_info_list$settings$emulator_target == "SSR") {
     gp_fits <- lpost_emulator_obj$emulator_info_list$gp_fits
     N_GPs <- length(gp_fits)
     
@@ -2521,19 +2521,21 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
     pred_vars <- as.vector(matrix(prior_vars, ncol=1) - hetGP:::fast_diag(kn, tcrossprod(lpost_emulator$K_inv, kn)))
                            
     return_list$var <- pred_vars
+    
+    # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging. 
+    if(lpost_emulator$emulator_info_list$gp_fits[[1]]$trendtype == "OK") {
+      pred_vars <- pred_vars + (1 - tcrossprod(rowSums(lpost_emulator$K_inv), kn))^2/sum(lpost_emulator$K_inv)
+    }
+    
+    # Set negative variances due to numerical rounding errors to 0. 
+    neg_var_sel <- (pred_vars < 0)
+    if(any(neg_var_sel)) {
+      message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
+      pred_vars[neg_var_sel] <- 0
+    }
   }
     
-  # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging. 
-  if(lpost_emulator$emulator_info_list$gp_fits[[1]]$trendtype == "OK") {
-    pred_vars <- pred_vars + (1 - tcrossprod(rowSums(lpost_emulator$K_inv), kn))^2/sum(lpost_emulator$K_inv)
-  }
-    
-  # Set negative variances due to numerical rounding errors to 0. 
-  neg_var_sel <- (pred_vars < 0)
-  if(any(neg_var_sel)) {
-    message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
-    pred_vars[neg_var_sel] <- 0
-  }
+
     
   return(return_list)
   

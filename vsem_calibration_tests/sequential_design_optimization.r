@@ -162,17 +162,13 @@ batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings)
 }
 
 
-acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings, max_objective_curr = NULL) {
+acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
   # Performs a single one-point acquisition by optimizing the specified acquisition function. Returns 
   # the newly acquired (scaled) design point. 
   #
   # Args:
   #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.  
   #    acquisition_settings: list, the acquisition settings list. 
-  #    max_objective_curr: the current observed maximum objective value. Passed to some acquisition functions 
-  #                        (e.g. expected improvement) as a threshold value. Could generalize this later to 
-  #                        allow the threshold setting to be specified in `acquisition_settings` and then 
-  #                        compute the threshold rather than assuming it is the maximum objective. 
   #
   # Returns:
   #    matrix of dimension 1xd, the (scaled) input returned by optimizing the acquisition. 
@@ -185,8 +181,8 @@ acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings, max_o
                                            N_MC_samples = N_MC_samples, 
                                            theta_grid_integrate = acquisition_settings$theta_grid_integrate, 
                                            N_subsample_candidate = acquisition_settings$N_subsample_candidate, 
-                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate, 
-                                           threshold_lpost = max_objective_curr)
+                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate)
+                                           
   } else {
     stop("Invalid acquisition optimization method: ", opt_method)
   }
@@ -240,7 +236,7 @@ acquisition_opt_one_step_old <- function(emulator_info_list, acquisition_setting
 
 
 optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, lpost_emulator, N_MC_samples = NULL, theta_grid_integrate = NULL,
-                                      N_subsample_candidate = NULL, N_subsample_integrate = NULL, threshold_lpost = NULL) { 
+                                      N_subsample_candidate = NULL, N_subsample_integrate = NULL) { 
   # Returns a new (scaled) design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
   # All input points (candidate or integration points) are assumed to already be properly scaled. 
   #
@@ -265,7 +261,6 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, lp
   # Evaluate acquisition function on grid of reference inputs. 
   acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_candidate, 
                                             lpost_emulator = lpost_emulator,
-                                            threshold_lpost = threshold_lpost, 
                                             N_MC_samples = N_MC_samples, 
                                             theta_grid_integrate = theta_grid_integrate)
   
@@ -359,7 +354,7 @@ get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
 #    - Acquisition function naming convention is "acquisition_<acquisition_type>"
 # ---------------------------------------------------------------------------------
 
-acquisition_EI_lpost <- function(theta_vals, lpost_emulator, threshold_lpost, ...) {
+acquisition_EI_lpost <- function(theta_vals, lpost_emulator, threshold_lpost = NULL, ...) {
   # Closed-form implementation of the expected improvement (EI) acquisition function applied to an lpost emulator 
   # which is a Gaussian Process. 
   #
@@ -368,10 +363,14 @@ acquisition_EI_lpost <- function(theta_vals, lpost_emulator, threshold_lpost, ..
   #                The inputs are assumed to already be properly scaled. 
   #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
   #    threshold_lpost: the threshold objective value to use in the EI calculation, typically the current observed maximum of the 
-  #                     unnormalized log posterior. 
+  #                     unnormalized log posterior. If NULL, set to maximum observed value of the unnormalized log posterior, as 
+  #                     stored in `lpost_emulator`. 
   #
   # Returns:
   #    numeric, vector of length equal to length of `theta_vals`; the EI acquisition function evaluations at inputs `theta_vals`. 
+  
+  # Threshold to use in EI calculation. 
+  if(is.null(threshold_lpost)) threshold_lpost <- max(lpost_emulator$outputs_lpost)
   
   # Predictive mean and variance of lpost emulator evaluated at inputs `theta_vals`. 
   lpost_pred_list <- predict_lpost_emulator(inputs_new_scaled = theta_vals, lpost_emulator = lpost_emulator, include_nugget = TRUE)
@@ -490,7 +489,48 @@ acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
 }
 
 
-acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, theta_grid_integrate, ...) {
+acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integrate, ...) {
+  # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
+  # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
+  # space is approximated by a finite sum over grid points `theta_grid_integrate`.
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.
+  #    theta_grid_integrate: matrix, of dimension M_integrate x D. The set of inputs used to approximate the integral over the 
+  #                          input space required in evaluating the EIVAR criterion. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  #    Technically returns the negative of EIVAR to align with the acquisition convention that bigger is better. 
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Vector to store EIVAR estimates at inputs `theta_vals`. 
+  EIVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  for(i in 1:nrow(theta_vals)) {
+    
+    # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+    lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
+    
+    # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
+    lpost_pred_var_grid <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "var", 
+                                                  include_nugget = TRUE)$var
+    
+    # Estimate EIVAR via discrete sum over theta grid locations. 
+    EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)
+    
+  }
+  
+  return(EIVAR_est)
+  
+}
+
+
+acquisition_EIVAR_lpost_old <- function(theta_vals, emulator_info_list, sig2_eps, theta_grid_integrate, ...) {
   # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
   # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
   # space is approximated by a finite sum over grid points `theta_grid_integrate`.
@@ -537,7 +577,31 @@ acquisition_EIVAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, th
 }
 
 
-acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, ...) {
+acquisition_VAR_lpost <- function(theta_vals, lpost_emulator, ...) {
+  # Implements the acquisition which is simply defined as the variance of the unnormalized log posterior approximation in  
+  # the loss emulation setting. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Compute unnormalized log posterior approximation predictive variance at each theta grid location.
+  lpost_pred_var_grid <- predict_lpost_emulator(inputs_new_scaled = theta_vals, lpost_emulator = lpost_emulator, return_vals = "var", 
+                                                include_nugget = TRUE)
+  
+  return(lpost_pred_var_grid$var)
+  
+}
+
+
+acquisition_VAR_lpost_old <- function(theta_vals, emulator_info_list, sig2_eps, ...) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized log posterior approximation in  
   # the loss emulation setting. 
   #
@@ -562,7 +626,49 @@ acquisition_VAR_lpost <- function(theta_vals, emulator_info_list, sig2_eps, ...)
 }
 
 
-acquisition_VAR_post <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps, ...) {
+acquisition_VAR_post <- function(theta_vals, lpost_emulator, ...) {
+  # Implements the acquisition which is simply defined as the variance of the unnormalized posterior density approximation 
+  # in the loss emulation setting. Due to the typical large dynamic range in predictive mean/variance values, the log of the 
+  # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). Let 
+  # mu and sig2 denote the mean and variance of the predictive distribution of the log posterior approximation (lpost). Then 
+  # the log variance of the posterior approximation is log[exp(sig2) - 1] + 2*mu + sig2. Direct computation of the first term 
+  # is problematic when the range of sig2 values is very large. However, when sig2 is large (say, > 100) then 
+  # log[exp(sig2) - 1] ~ sig2 is a very good approximation. This approximation is applied at this cutoff for numerical stability.
+  # Thus, for large values of sig2, the returned value is 2(sig2 + mu). Note that this is similar to the upper confidence bound (UCB)
+  # acquisition for the random field approximation of the LOG posterior; however, the UCB uses the predictive standard deviation instead
+  # of the variance. The use of the variance in 2(sig2 + mu) often means that the predictive variance dominates this function in situations
+  # when the GP is fairly uncertain. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Compute unnormalized log posterior approximation predictive variance at each theta grid location.
+  lpost_pred_list <- predict_lpost_emulator(inputs_new_scaled = theta_vals, lpost_emulator = lpost_emulator, include_nugget = TRUE)
+  mu <- lpost_pred_list$mean
+  sig2 <- lpost_pred_list$var
+  
+  # Numerically stable computation of the log predictive variance. 
+  idx_approx_sel <- (sig2 >= 100)
+  term_1 <- vector(mode = "numeric", length = length(sig2))
+  term_1[!idx_approx_sel] <- log(exp(sig2[!idx_approx_sel]) - 1)
+  term_1[idx_approx_sel] <- sig2[idx_approx_sel] # Apply approximation. 
+  
+  log_pred_var_post <- term_1 + 2*mu + sig2
+  
+  return(log_pred_var_post)
+  
+}
+
+
+acquisition_VAR_post_old <- function(theta_vals, emulator_info_list, computer_model_data, theta_prior_params, sig2_eps, ...) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized posterior density approximation 
   # in the loss emulation setting. Due to the typical large dynamic range in predictive mean/variance values, the log of the 
   # acquisition is returned (i.e. the log predictive variance of the unnormalized posterior density approximation). Let 
