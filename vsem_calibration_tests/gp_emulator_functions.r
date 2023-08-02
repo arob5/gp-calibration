@@ -2315,10 +2315,17 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   # Store log prior density evaluations at design points. 
   lpost_emulator_obj$lprior_design <- calc_lprior_theta(lpost_emulator_obj$inputs_lpost$inputs, theta_prior_params)
   
-  # Store prior mean function evaluated at design points. 
-  lpost_emulator_obj$mu0_design <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, 
+  # Store prior mean function evaluations at design points. 
+  lpost_emulator_obj$mu0_design <- calc_lpost_mean(lpost_emulator_obj, inputs_scaled = lpost_emulator_obj$inputs_lpost$inputs_scaled, 
                                                    lprior_vals = lpost_emulator_obj$lprior_design)
-                                                              
+  
+  # Store the prior variance. Currently, it is assumed that the prior variance is constant so only a scalar is stored here. This is 
+  # in contrast to `mu0_design` above, which is a vector due to the fact that the prior mean function can vary across inputs.
+  # `var_prior` excludes nuggets of underlying GPs while `var_comb_prior` includes the nuggets. 
+  # TODO: this assumes both the loss emulation approach and hetGP package; should generalize later. 
+  lpost_emulator_obj$var_prior <- drop(calc_lpost_kernel(lpost_emulator_obj, inputs_scaled_1=design_info_list$inputs_scaled[1,,drop=FALSE], include_nugget = FALSE))
+  lpost_emulator_obj$var_comb_prior <- drop(calc_lpost_kernel(lpost_emulator_obj, inputs_scaled_1=design_info_list$inputs_scaled[1,,drop=FALSE], include_nugget = TRUE))
+  
   return(lpost_emulator_obj)
   
 }
@@ -2485,7 +2492,8 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   # This is due to the fact that this function directly operates on the lpost prior induced by the underlying GPs, and then 
   # conditions on the observed log posterior values. On the other hand, `predict_lpost_GP_approx()` conditions each GP 
   # individually on the observed SSR values and then plugs the resulting predictive GP distributions in the log posterior 
-  # expression. 
+  # expression. Note that `predict_lpost_emulator()` assumes the prior GP distribution is covariance stationary; in particular, 
+  # the prior variance is constant. 
   #
   # Args:
   #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
@@ -2523,27 +2531,26 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   
   # Predictive variance. 
   if("var" %in% return_vals) {
-    prior_vars <- sapply(1:nrow(inputs_new_scaled), function(i) 
-                        calc_lpost_kernel(lpost_emulator, inputs_scaled_1=inputs_new_scaled[i,,drop=FALSE], include_nugget = include_nugget))
-    pred_vars <- as.vector(matrix(prior_vars, ncol=1) - hetGP:::fast_diag(kn, tcrossprod(lpost_emulator$K_inv, kn)))
-                           
-    return_list$var <- pred_vars
-    
-    # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging. 
+    prior_var <- ifelse(include_nugget, lpost_emulator$var_comb_prior, lpost_emulator$var_prior)
+    pred_vars <- as.vector(prior_var - hetGP:::fast_diag(kn, tcrossprod(lpost_emulator$K_inv, kn)))
+
+    # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging.
     if(lpost_emulator$emulator_info_list$gp_fits[[1]]$trendtype == "OK") {
       pred_vars <- pred_vars + (1 - tcrossprod(rowSums(lpost_emulator$K_inv), kn))^2/sum(lpost_emulator$K_inv)
     }
-    
-    # Set negative variances due to numerical rounding errors to 0. 
+
+    # Set negative variances due to numerical rounding errors to 0.
     neg_var_sel <- (pred_vars < 0)
     if(any(neg_var_sel)) {
       message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
       pred_vars[neg_var_sel] <- 0
     }
+    
+    return_list$var <- pred_vars
+    
   }
     
 
-    
   return(return_list)
   
 }
