@@ -78,6 +78,74 @@ print(all.equal(lpost_emulator$inputs_lpost, lpost_emulator_update$inputs_lpost)
 print(all.equal(lpost_emulator$outputs_lpost, lpost_emulator_update$outputs_lpost))
 print(paste0("Max absolute error: ", max(abs(lpost_emulator_update$K_inv - lpost_emulator$K_inv))))
 
+# -------------------------------------------------------------------
+# Code speed tests.    
+# -------------------------------------------------------------------
+
+t0 <- proc.time()
+test <- acquisition_EIVAR_lpost(theta_vals = round1_candidate_samp_scaled[1:10,,drop=FALSE], lpost_emulator = lpost_emulator, 
+                                theta_grid_integrate = round1_integrate_samp_scaled)
+time_elapsed <- (proc.time() - t0)[["elapsed"]]
+print(paste0("Time: ", time_elapsed))
+
+print(paste0("Extrapolated time for 10000 evaluations: ", time_elapsed * (10000/10)))
+
+
+## My update. 
+t0_lpost <- proc.time()
+for(i in 1:100) {
+  # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+  lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = round1_candidate_samp_scaled[i,,drop=FALSE], outputs_lpost_new = 0)
+}
+t1_lpost <- proc.time()
+time_elapsed_lpost <- (t1_lpost - t0_lpost)[["elapsed"]]
+print(time_elapsed_lpost)
+
+
+## hetGP update. 
+hetgp_obj <- emulator_info_list$gp_fits[[1]]
+
+t0_hetGP <- proc.time()
+for(i in 1:100) {
+  # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+  hetgp_obj_temp <- update(object = hetgp_obj, Xnew = round1_candidate_samp_scaled[i,,drop=FALSE], Znew = NULL, maxit = 0)
+}
+t1_hetGP <- proc.time()
+time_elapsed_hetGP <- (t1_hetGP - t0_hetGP)[["elapsed"]]
+print(time_elapsed_hetGP)
+
+
+## My predict 
+mu_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = round1_candidate_samp_scaled[1:100,,drop=FALSE])
+
+t0_lpost <- proc.time()
+for(i in 1:100) {
+  test <- predict_lpost_emulator(inputs_new_scaled = round1_candidate_samp_scaled[1:100,,drop=FALSE],  
+                                 lpost_emulator = lpost_emulator, include_nugget = TRUE,
+                                 prior_mean_vals_new = mu_new)
+}
+t1_lpost <- proc.time()
+time_elapsed_lpost <- (t1_lpost - t0_lpost)[["elapsed"]]
+print(time_elapsed_lpost)
+
+## hetGP predict.  
+t0_hetGP <- proc.time()
+for(i in 1:100) {
+  test <- predict(hetgp_obj, round1_candidate_samp_scaled[1:100,,drop=FALSE])
+}
+t1_hetGP <- proc.time()
+time_elapsed_hetGP <- (t1_hetGP - t0_hetGP)[["elapsed"]]
+print(time_elapsed_hetGP)
+
+
+
+
+
+
+
+
+
+
 
 
 

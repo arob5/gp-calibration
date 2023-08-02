@@ -2311,8 +2311,14 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
 
   # Compute lpost inverse kernel matrix. 
   lpost_emulator_obj$K_inv <- chol2inv(chol(calc_lpost_kernel(lpost_emulator_obj, inputs_scaled_1 = design_info_list$inputs_scaled, include_nugget = TRUE)))
+  
+  # Store log prior density evaluations at design points. 
+  lpost_emulator_obj$lprior_design <- calc_lprior_theta(lpost_emulator_obj$inputs_lpost$inputs, theta_prior_params)
+  
+  # Store prior mean function evaluated at design points. 
+  lpost_emulator_obj$mu0_design <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, 
+                                                   lprior_vals = lpost_emulator_obj$lprior_design)
                                                               
-   
   return(lpost_emulator_obj)
   
 }
@@ -2367,7 +2373,7 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
 }
 
 
-calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscaled = NULL) {
+calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscaled = NULL, lprior_vals = NULL) {
   # Computes the prior mean function for the unnormalized log posterior density emulator,  
   # based on the mean functions induced on lpost by the underlying GPs.
   # TODO: this function should be generalized to work with other packages other than "hetGP". 
@@ -2389,9 +2395,7 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
     stop("Either scaled or unscaled inputs must be provided.")
   } else if(is.null(inputs_scaled)) {
     inputs_scaled <- scale_input_data(inputs_unscaled, input_bounds = lpost_emulator$design_info_list$input_bounds)
-  } else if(is.null(inputs_unscaled)) {
-    inputs_unscaled <- scale_input_data(inputs_scaled, input_bounds = lpost_emulator$design_info_list$input_bounds, inverse = TRUE)
-  }
+  } 
   
   # Underlying GP means, de-normalize to return to original scale. 
   GP_means <- sapply(lpost_emulator$emulator_info_list$gp_fits, function(gp) gp$beta0)
@@ -2399,8 +2403,11 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
   GP_means <- drop(normalize_output_data(matrix(GP_means, nrow=1), output_stats, inverse = TRUE))
   
   # Prior on calibration parameters. 
-  lprior_vals <- calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params)
-
+  if(is.null(lprior_vals)) {
+    if(is.null(inputs_unscaled)) inputs_unscaled <- scale_input_data(inputs_scaled, input_bounds = lpost_emulator$design_info_list$input_bounds, inverse = TRUE)
+    lprior_vals <- calc_lprior_theta(theta_vals = inputs_unscaled, theta_prior_params = lpost_emulator$theta_prior_params)
+  }
+    
   # Prior mean function induced on lpost emulator. Note that since the underlying GPs are (for now) assumed to have constant prior 
   # mean functions, that the only potential variation in the lpost prior mean function comes from the log prior evaluations. 
   means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(GP_means / lpost_emulator$sig2_eps)) + lprior_vals
@@ -2466,7 +2473,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
 }
 
 
-predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, inputs_new_unscaled = NULL) {
+predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, 
+                                   inputs_new_unscaled = NULL, prior_mean_vals_new = NULL) {
   # Compute predictive mean and variance equations for the `lpost_emulator`. 
   # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
   # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
@@ -2507,11 +2515,10 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
            
   # Predictive mean. 
   if("mean" %in% return_vals) {
-    # Prior mean function evaluations. 
-    mu_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, inputs_unscaled = inputs_new_unscaled)
-    mu_n <- calc_lpost_mean(lpost_emulator, inputs_scaled = lpost_emulator$inputs_lpost$inputs_scaled, inputs_unscaled = lpost_emulator$inputs_lpost$inputs)
-    
-    return_list$mean <- drop(mu_new + kn %*% (lpost_emulator$K_inv %*% (matrix(lpost_emulator$outputs_lpost, ncol=1) - mu_n)))
+    # Prior mean function evaluations at new points. 
+    if(is.null(prior_mean_vals_new)) prior_mean_vals_new <- calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, inputs_unscaled = inputs_new_unscaled)
+
+    return_list$mean <- drop(prior_mean_vals_new + kn %*% (lpost_emulator$K_inv %*% (matrix(lpost_emulator$outputs_lpost, ncol=1) - lpost_emulator$mu0_design)))
   }
   
   # Predictive variance. 

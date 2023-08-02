@@ -319,8 +319,20 @@ acq_VAR_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp,
                                         bigger_is_better = TRUE, 
                                         legend_label = "VAR")
 
+acq_EIVAR_lpost_plt <- get_2d_heatmap_plot(X = round1_candidate_samp, 
+                                           y = acq_grid_EIVAR_lpost, 
+                                           param_names = computer_model_data$pars_cal_names, 
+                                           samples_kde = samp_exact_theta, 
+                                           samples_points = design_info$inputs,  
+                                           raster = FALSE, 
+                                           point_coords = computer_model_data$theta_true, 
+                                           main_title = "EIVAR lpost", 
+                                           bigger_is_better = TRUE, 
+                                           legend_label = "EIVAR")
+
 plot(acq_EI_lpost_plt)
 plot(acq_VAR_lpost_plt)
+plot(acq_EIVAR_lpost_plt)
 ```
 
 ```{r}
