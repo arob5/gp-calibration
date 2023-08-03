@@ -108,6 +108,20 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 ```
 
 
+```{r}
+# Samples from true posterior to estimate validation metrics. These are used to evaluate all rounds. These are used to compute
+# both sample-based metrics and used to estimate weighted integrals for emulator-based metrics. 
+
+# TODO: create two different sets of samples (one for sample-based metrics and one for emulator-based metrics). Use MCMC thinning to do 
+#       so and thin using different sequences to reduce correlation between the two. The set 
+
+# TODO: add relative RMSE metric. 
+
+
+
+```
+
+
 # Round 0: Fit GP on initial space-filling design. 
 
 ```{r, echo = FALSE}
@@ -157,10 +171,9 @@ emulators_list <- fit_emulator_design_list(emulator_settings[1,], design_list_ro
 
 # Induced log joint density (i.e. log unnormalized posterior density) emulator. 
 lpost_emulators <- lapply(seq_along(emulators_list), function(j) get_lpost_emulator_obj(emulators_list[[j]], design_list_round0[[j]], computer_model_data, 
-                                                                                        sig2_eps_round0, theta_prior_params))
+                                                                                        design_list_round0[[j]]$init_estimates$best_sig2_eps, theta_prior_params))
+names(lpost_emulators) <- names(emulators_list)
   
-  
-  get_lpost_emulator_obj(em)
 ```
 
 ```{r}
