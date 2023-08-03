@@ -108,7 +108,7 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 ```
 
 
-# Round 1: Fit GP on initial space-filling design. 
+# Round 0: Fit GP on initial space-filling design. 
 
 ```{r, echo = FALSE}
 # Emulator settings
@@ -120,6 +120,72 @@ emulator_settings <- data.frame(gp_lib = c("hetGP"),
                                 normalize_y = TRUE)
 print(emulator_settings)
 ```
+
+```{r}
+# Initial designs (round 0). 
+
+design_seed <- 500
+N_init_design <- 15
+N_init_design_reps <- 2
+init_design_method <- "LHS"
+
+init_design_settings <- data.frame(N_design = N_init_design, 
+                                   design_method = "LHS", 
+                                   scale_inputs = TRUE, 
+                                   normalize_response = TRUE)
+
+design_list_round0 <- get_design_list(design_settings = init_design_settings, 
+                                      computer_model_data = computer_model_data, 
+                                      theta_prior_params = theta_prior_params,
+                                      reps = N_init_design_reps)
+
+```
+
+
+```{r}
+# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
+for(j in seq_along(design_list_round0)) {
+  init_estimates <- get_init_param_estimates(design_list_round0[[j]], computer_model_data, sig_eps_prior_params, verbose = FALSE)
+  design_list_round0[[j]]$init_estimates <- init_estimates
+}
+```
+
+
+```{r}
+# Fit emulators on round 0 designs. 
+emulators_list <- fit_emulator_design_list(emulator_settings[1,], design_list_round0)
+
+# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
+lpost_emulators <- lapply(seq_along(emulators_list), function(j) get_lpost_emulator_obj(emulators_list[[j]], design_list_round0[[j]], computer_model_data, 
+                                                                                        sig2_eps_round0, theta_prior_params))
+  
+  
+  get_lpost_emulator_obj(em)
+```
+
+```{r}
+# Compute emulator-based and sample-based metrics for round 0. 
+
+# Emulator metrics. 
+suppressWarnings(emulator_metrics <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list, 
+                                                                                     X_test_list = lapply(validation_list, function(l) l$inputs),
+                                                                                     Y_test_list = lapply(validation_list, function(l) l$outputs),
+                                                                                     metrics = c("rmse", "srmse", "nlpd_pointwise", "crps"), 
+                                                                                     scale_inputs = TRUE, 
+                                                                                     output_variables = computer_model_data$output_vars, 
+                                                                                     include_nug = TRUE))
+
+
+
+```
+
+
+
+
+
+
+
+
 
 ```{r, echo = FALSE}
 set.seed(100)

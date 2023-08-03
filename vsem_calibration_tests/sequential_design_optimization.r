@@ -124,8 +124,63 @@ optimize_sig_eps_cond_post <- function(SSR_theta, sig_eps_prior_params, n_obs) {
   (0.5 * SSR_theta + sig_eps_prior_params$IG_scale) / (0.5 * n_obs + sig_eps_prior_params$IG_shape + 1)
   
 }
-                           
 
+
+get_init_param_estimates <- function(design_info, computer_model_data, sig_eps_prior_params, verbose = TRUE) {
+  # Produces estimates for calibration and likelihood parameters given a set of design data and priors on 
+  # each set of parameters. The returned estimate for the calibration parameter is selected from the finite 
+  # set of design points, so the forward model is not run in this function at all.
+  # This function essentially performs a mini coordinate ascent over the discrete set of calibration parameter
+  # values in the design, alternating between calibration parameter and likelihood parameter updates. 
+  # This function, among other uses, provides a cheap way to set the initial values for MCMC sampling. 
+  #
+  # Args:
+  #    design_info: list, design info list containing input design points and corresponding observed outputs. 
+  #    computer_model_data: list, computer model data list. 
+  #    sig_eps_prior_params: list, containing prior information on likelihood parameters. 
+  #    verbose: logical, whether or not to print results after each iteration. 
+  #
+  # Returns:
+  #    list, containing elements "best_input_idx", "best_input", "best_sig2_eps", and "lpost_max". 
+  
+  # Start by fixing calibration parameter at value within design that minimizes sum of squared errors across all 
+  # output variables. 
+  best_input_idx_prev <- which.min(rowSums(design_info$outputs))
+  # theta_curr_SSR_min <- design_info$inputs[theta_curr_SSR_min_idx,,drop=FALSE]
+  if(verbose) print(paste0("Init idx: ", best_input_idx_prev))
+  
+  for(i in 1:100) {
+    
+    # Likelihood parameter update: Closed form MLE estimate of likelihood parameters given calibration parameters. 
+    sig2_eps_estimate <- optimize_sig_eps_cond_post(design_info$outputs[best_input_idx_prev,], sig_eps_prior_params, computer_model_data$n_obs)
+    
+    # Calibration parameter update: Compute log joint posterior density over design inputs with MLE estimate of likelihood 
+    # parameters and set calibration parameters to the maximizing value. 
+    lpost_design <- calc_lpost_theta_product_lik(theta_vals = design_info$inputs, 
+                                                 computer_model_data = computer_model_data, 
+                                                 SSR = design_info$outputs, 
+                                                 vars_obs = sig2_eps_estimate, 
+                                                 na.rm = TRUE, 
+                                                 return_list = FALSE,
+                                                 theta_prior_params = theta_prior_params)
+    best_input_idx_curr <- which.max(lpost_design)
+    
+    if(verbose) print(paste0("Curr idx: ", best_input_idx_curr, " --- sig2: ", paste0(sig2_eps_estimate, collapse = ",")))
+    
+    if(best_input_idx_curr == best_input_idx_prev) break
+    best_input_idx_prev <- best_input_idx_curr
+    
+  }
+  
+  best_input <- design_info$inputs[best_input_idx_curr,,drop=FALSE]
+  lpost_max <- lpost_design[best_input_idx_curr]
+  
+  
+  return(list(best_input_idx = best_input_idx_curr, best_input = best_input, best_sig2_eps = sig2_eps_estimate, lpost_max = lpost_max))
+  
+}
+
+                           
 batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
   # Acquires a batch of new input points via a greedy, heuristic approach. Currently only supports the kriging 
   # believer heuristic, but should be generalized to other heuristics as well (e.g. constant liar). Returns the 
