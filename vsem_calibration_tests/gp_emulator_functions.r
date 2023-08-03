@@ -2462,13 +2462,21 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
     outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, 
                                                 return_vals = "mean", inputs_new_unscaled = inputs_new_unscaled)$mean
   }
-                                                                           
+   
+  # Add log prior density evaluations at new points. 
+  lprior_vals_new <- calc_lprior_theta(inputs_new_unscaled, lpost_emulator$theta_prior_params)
+  lpost_emulator$lprior_design <- c(lpost_emulator$lprior_design, lprior_vals_new)
+
+  # Add prior mean function evaluations at new points. Note that prior variance of lpost emulator is assumed constant 
+  # so no update is needed for `lpost_emulator$var_prior` and `lpost_emulator$var_comb_prior`. 
+  lpost_emulator$mu0_design <- rbind(lpost_emulator$mu0_design, calc_lpost_mean(lpost_emulator, inputs_scaled = inputs_new_scaled, lprior_vals = lprior_vals_new))
+                                                                                
   # Update inverse kernel matrix and design data. 
   for(i in 1:nrow(inputs_new_scaled)) {
     
     # Inverse kernel matrix. 
     lpost_emulator$K_inv <- update_lpost_inverse_kernel_matrix(lpost_emulator, input_new_scaled=inputs_new_scaled[i,,drop=FALSE])
-    
+                                                               
     # Design data. 
     lpost_emulator$inputs_lpost$inputs_scaled <- rbind(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled[i,,drop=FALSE])
     lpost_emulator$inputs_lpost$inputs <- rbind(lpost_emulator$inputs_lpost$inputs, inputs_new_unscaled[i,,drop=FALSE])
@@ -2581,7 +2589,7 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
   
   # Construct matrix inverse via partitioned inverse equations. 
   k_new_old <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, inputs_scaled_2=lpost_emulator$inputs_lpost$inputs_scaled)
-  k_new <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1=input_new_scaled, include_nugget = TRUE)
+  k_new <- lpost_emulator$var_comb_prior # Since prior lpost variance is assumed stationary. 
   
   K_inv_k_new_old <- tcrossprod(lpost_emulator$K_inv, k_new_old)
   nu_inv <- 1 / drop(k_new - k_new_old %*% K_inv_k_new_old)

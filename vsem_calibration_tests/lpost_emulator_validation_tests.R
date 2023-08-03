@@ -77,13 +77,16 @@ lpost_emulator_update <- update_lpost_emulator(lpost_emulator_nm1, inputs_new_sc
 
 print(all.equal(lpost_emulator$inputs_lpost, lpost_emulator_update$inputs_lpost))
 print(all.equal(lpost_emulator$outputs_lpost, lpost_emulator_update$outputs_lpost))
+print(all.equal(lpost_emulator$lprior_design, lpost_emulator_update$lprior_design))
+print(all.equal(lpost_emulator$mu0_design, lpost_emulator_update$mu0_design))
+print(all.equal(lpost_emulator$var_prior, lpost_emulator_update$var_prior))
 print(paste0("Max absolute error: ", max(abs(lpost_emulator_update$K_inv - lpost_emulator$K_inv))))
 
 # -------------------------------------------------------------------
 # Code speed tests.    
 # -------------------------------------------------------------------
 
-inputs_test <- get_input_design(N_points = 100, theta_prior_params = theta_prior_params, design_method = "LHS", scale_inputs = TRUE, 
+inputs_test <- get_input_design(N_points = 10000, theta_prior_params = theta_prior_params, design_method = "LHS", scale_inputs = TRUE, 
                                 param_ranges = design_info$input_bounds)$inputs_scaled
 inputs_integrate_test <- get_input_design(N_points = 1000, theta_prior_params = theta_prior_params, design_method = "LHS", scale_inputs = TRUE, 
                                           param_ranges = design_info$input_bounds)$inputs_scaled
@@ -95,6 +98,14 @@ time_elapsed <- (proc.time() - t0)[["elapsed"]]
 print(paste0("Time: ", time_elapsed))
 
 print(paste0("Extrapolated time for 10000 evaluations: ", time_elapsed * (10000/10)))
+
+
+# EIVAR acquisition. 
+t0_EIVAR <- proc.time()
+test <- acquisition_EIVAR_lpost(theta_vals = inputs_test, lpost_emulator = lpost_emulator, theta_grid_integrate = inputs_integrate_test)
+time_elapsed_EIVAR <- (proc.time() - t0)[["elapsed"]]
+print(paste0("Time: ", time_elapsed_EIVAR))
+
 
 
 ## My update. 
