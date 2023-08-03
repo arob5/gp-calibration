@@ -489,6 +489,8 @@ acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
 }
 
 
+# TODO: speed up by pre-compoting k(X_integrate, X_design). This matrix can then easily be modified when conditioning on an additional 
+#       candidate point. 
 acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integrate, ...) {
   # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
   # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 

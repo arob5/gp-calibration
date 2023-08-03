@@ -2510,6 +2510,10 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   #    inputs_new_unscaled: Optionally provide unscaled version of `input_new_scaled` as well, which is required to compute  
   #                         predictive means (as the predictive mean depends on the prior distribution on the calibration 
   #                         parameters). 
+  #    prior_mean_vals_new: numeric, vector of evaluations of the lpost prior mean function at inputs `inputs_new_scaled`. 
+  #                         If predicting at the same set of points repeatedly, pre-computing these mean function 
+  #                         evaluations can result in very large speedups. Default is NULL, in which case the mean function 
+  #                         evaluations are computed in the function. 
   #
   # Returns:
   #    list, with names "mean" and "var", containing respectively the predictive mean and variance values computed 
