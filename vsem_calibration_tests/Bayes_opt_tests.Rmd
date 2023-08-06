@@ -109,14 +109,16 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 
 
 ```{r}
-# Samples from true posterior to estimate validation metrics. These are used to evaluate all rounds. These are used to compute
-# both sample-based metrics and used to estimate weighted integrals for emulator-based metrics. 
+# Store exact samples that will be used to compute error metrics. 
+# Samples for sample-based metrics that require approximately independent samples. 
+# TODO: need to monitor estimated auto-correlation here. 
+samp_exact_theta_thinned <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 5),]
 
-# TODO: create two different sets of samples (one for sample-based metrics and one for emulator-based metrics). Use MCMC thinning to do 
-#       so and thin using different sequences to reduce correlation between the two. The set 
+# Samples for computing emulator-based metrics. This requires computing GP predictions at every sample, so must reduce 
+# the number of samples for computational feasibility. 
+samp_exact_theta_metrics <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 10),]
 
-# TODO: add relative RMSE metric. 
-
+# TODO: need to deal with the fact that the scaling is different for each design. 
 
 
 ```
@@ -176,10 +178,40 @@ names(lpost_emulators) <- names(emulators_list)
   
 ```
 
+
 ```{r}
 # Compute emulator-based and sample-based metrics for round 0. 
 
+get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
+                                     validation_inputs_list = list(samp_exact_theta_thinned, samp_exact_theta_metrics), 
+                                     metrics = c("crps", "rmse"))
+                                     
+
+
+
+
+predict_lpost_emulator(inputs_new_scaled)
+test <- compute_gp_metrics(gp_mean_pred, output_true, metrics, gp_var_pred = NULL, transformation_method = NA_character_, 
+                           gp_cov_pred = NULL, gp_L_pred = NULL)
+
+
+
+
+
+
+
+
+
+
+
+
 # Emulator metrics. 
+test <- compute_lpost_emulator_metrics(lpost_mean_pred, lpost_true, metrics, lpost_var_pred = NULL, transformation_method = NA_character_, 
+                                       lpost_cov_pred = NULL, lpost_L_pred = NULL)
+
+
+
+
 suppressWarnings(emulator_metrics <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list, 
                                                                                      X_test_list = lapply(validation_list, function(l) l$inputs),
                                                                                      Y_test_list = lapply(validation_list, function(l) l$outputs),
@@ -199,6 +231,10 @@ suppressWarnings(emulator_metrics <- get_emulator_comparison_metrics_validation_
 
 
 
+
+#
+# Old
+#
 
 ```{r, echo = FALSE}
 set.seed(100)
@@ -264,6 +300,7 @@ gp_fits <- fit_independent_GPs(X_train = design_info$inputs_scaled,
                                gp_lib = emulator_settings$gp_lib, 
                                gp_kernel = emulator_settings$kernel)$fits
     
+
 emulator_info_list <- list(gp_fits = gp_fits, 
                            input_bounds = design_info$input_bounds, 
                            output_stats = design_info$output_stats, 

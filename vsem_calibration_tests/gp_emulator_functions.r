@@ -312,6 +312,7 @@ fit_emulator_design_list <- function(emulator_setting, design_list) {
                                    Y_train = design_list[[j]][[outputs_normalized_sel]], 
                                    gp_lib = emulator_setting$gp_lib, 
                                    gp_kernel = emulator_setting$kernel)$fits
+    names(gp_fits) <- colnames(design_list[[j]]$outputs_normalized)
     
     emulator_info_list[[label]] <- list(gp_fits = gp_fits, 
                                         input_bounds = design_list[[j]]$input_bounds, 
@@ -784,7 +785,7 @@ get_gp_crps <- function(gp_mean, gp_var, y_true, transformation_method = NA_char
   # Computes the continuous ranked probability score (CRPS) of a GP forecast based on 
   # on the observed data `y_true`. `gp_mean` and `gp_var` are assumed to be vectors of 
   # GP predictive means and variances at the test locations for the underlying/untransformed 
-  # GP. The predictive distribution can be tranformed into something non-Gaussian by specifying 
+  # GP. The predictive distribution can be transformed into something non-Gaussian by specifying 
   # `transformation_method`. The current allowed transformations "LNP" (log-normal process)
   # "truncated" (zero-truncated Gaussian) and "rectified" (zero censored/rectified Gaussian)
   # all admit closed-form expressions for the CRPS. The CRPS is computed at each test location 
@@ -989,6 +990,51 @@ get_emulator_comparison_metrics <- function(emulator_info_list, X_test, Y_test, 
   }
   
   return(list(pred = emulator_pred_df, metrics = metrics_df))
+  
+}
+
+
+compute_gp_metrics <- function(gp_mean_pred, output_true, metrics, gp_var_pred = NULL, transformation_method = NA_character_, 
+                               gp_cov_pred = NULL, gp_L_pred = NULL) {
+  # A convenience function to compute a set of (univariate) GP metrics, given GP predictions and the true baseline output values. 
+  # The names of the metric functions are standardized as "get_gp_<metric>".
+  #
+  # Args:
+  #    gp_mean_pred: numeric vector of length M. The GP mean predictions at the M test locations. 
+  #    output_true: numeric vector of length M, the true response/output values at the M test locations. 
+  #    metrics: character, vector of metric names; used to call function "get_gp_<metric>". 
+  #    gp_var_pred: numeric vector of length M. The GP variance predictions at the M test locations. Not required for 
+  #                 the computation of all metrics, so the default is NULL. 
+  #    transformation_method: character(1), string specifying a transformation method; currently supports
+  #                           "LNP", "rectified" and "truncated". The default, `NA_character_` will apply 
+  #                           no transformation. This argument is only required by some metrics, such as 
+  #                           "nlpd_pointwise" and "nlpd". 
+  #    gp_cov_pred: matrix of dimension M x M, the GP predictive covariance matrix evaluated  
+  #                 at the M test points. Only required  for some metrics, e.g. "mah". 
+  #    gp_L_pred: matrix of dimension M x M, lower triangular matrix, the lower Cholesky factor
+  #               of `gp_cov_pred`. Either `gp_cov_pred` or `gp_L_pred` must be provided for
+  #               metrics that utilize GP predictive covariance. 
+  #
+  # Returns: 
+  #    numeric, vector of length `length(metrics)`. The vector of computed metrics; the names attribute of the vector is 
+  #    set to `metrics`. 
+  
+  apply_func <- function(metric) {
+    
+    metric_func <- get(paste0("get_gp_", metric))
+    
+    metric_func(gp_mean = gp_mean_pred, 
+                gp_var = gp_var_pred, 
+                y_true = output_true, 
+                transformation_method = transformation_method, 
+                gp_cov = gp_cov_pred, 
+                gp_L = gp_L_pred)
+  }
+  
+  metric_results <- sapply(metrics, apply_func)
+  names(metric_results) <- metrics
+  
+  return(metric_results)
   
 }
 
@@ -2601,7 +2647,48 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
 }
 
 
+get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_validation_inputs, lpost_validation_outputs, metrics) {
+  # Computes emulator metrics for a list of different lpost emulators on a single validation set. Note that importantly, 
+  # `lpost_validation_inputs` must be unscaled, due to the fact that different emulators in `lpost_emulator_list` may have 
+  # different scaling transformations. Thus, the validation input data will potentially be scaled differently for each emulator. 
+  #
+  # Args:
+  #    lpost_emulator_list: list, of lpost emulator objects, as returned by `get_lpost_emulator_obj()`. 
+  #    lpost_validation_inputs: matrix, of dimension M x D, where M is the number of validation inputs and D the dimension of the 
+  #                             input space. The set of unscaled validation points. 
+  #    lpost_validation_outputs: numeric vector of length M, the true lpost values associated with the inputs `lpost_validation_inputs`. 
+  #    metrics: character, vector of metric names; used to call function "get_gp_<metric>". 
+  #
+  # Returns:
+  #    data.frame, with column names "emulator_name", "metric_name", and "metric_value". The emulator names are taken from the 
+  #    names attribute of the list `lpost_emulator_list`, is non-NULL. 
+  
+  # Labels for each emulator. 
+  emulator_names <- names(lpost_emulator_list)
+  if(is.null(emulator_names)) emulator_names <- paste0("emulator", 1:length(lpost_emulator_list))
+  
+  # data.frame to store computed metrics. 
+  metrics_out <- data.frame(emulator_name = character(), metric_name = character(), metric_value = numeric())
+  
+  for(j in seq_along(lpost_emulator_list)) {
+    
+    # Compute validation metrics. 
+    metrics_results <- get_lpost_emulator_metrics(lpost_emulator = lpost_emulator_list[[j]], lpost_validation_inputs_unscaled = lpost_validation_inputs, 
+                                                  lpost_validation_outputs = lpost_validation_ouputs, metrics = metrics)
+    
+    # Append to data.frame. 
+    metrics_out <- rbind(metrics_out, data.frame(emulator_name = emulator_names[j], metric_name = names(metrics_results), metric_value = metrics_results))
+    
+  }
+  
+  return(metrics_out)
 
+}
+                                                   
+
+get_lpost_emulator_metrics <- function() {
+  
+}
 
 
 
