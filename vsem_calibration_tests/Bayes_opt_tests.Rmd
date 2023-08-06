@@ -180,19 +180,24 @@ names(lpost_emulators) <- names(emulators_list)
 
 
 ```{r}
+
+SSR_outputs <- get_computer_model_SSR(computer_model_data, theta_vals = samp_exact_theta_metrics, na.rm = TRUE)
+
 # Compute emulator-based and sample-based metrics for round 0. 
-
-get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
-                                     validation_inputs_list = list(samp_exact_theta_thinned, samp_exact_theta_metrics), 
-                                     metrics = c("crps", "rmse"))
-                                     
-
-
-
+test <- get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
+                                             lpost_validation_inputs = samp_exact_theta_metrics, 
+                                             metrics = c("crps", "rmse"), 
+                                             SSR_outputs = SSR_outputs)
 
 predict_lpost_emulator(inputs_new_scaled)
 test <- compute_gp_metrics(gp_mean_pred, output_true, metrics, gp_var_pred = NULL, transformation_method = NA_character_, 
                            gp_cov_pred = NULL, gp_L_pred = NULL)
+
+
+# TODO: issue - making computer_model_data arg optional in lpost function is causing an issue cause currently the function grabs `n_obs` from 
+#       computer model data. Need to decide how to handle this. 
+
+
 
 
 

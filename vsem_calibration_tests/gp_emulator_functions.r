@@ -2647,7 +2647,8 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
 }
 
 
-get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_validation_inputs, lpost_validation_outputs, metrics) {
+get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_validation_inputs, metrics, lpost_validation_outputs = NULL, 
+                                                 SSR_outputs = NULL, include_nugget = TRUE) {
   # Computes emulator metrics for a list of different lpost emulators on a single validation set. Note that importantly, 
   # `lpost_validation_inputs` must be unscaled, due to the fact that different emulators in `lpost_emulator_list` may have 
   # different scaling transformations. Thus, the validation input data will potentially be scaled differently for each emulator. 
@@ -2656,8 +2657,11 @@ get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_vali
   #    lpost_emulator_list: list, of lpost emulator objects, as returned by `get_lpost_emulator_obj()`. 
   #    lpost_validation_inputs: matrix, of dimension M x D, where M is the number of validation inputs and D the dimension of the 
   #                             input space. The set of unscaled validation points. 
-  #    lpost_validation_outputs: numeric vector of length M, the true lpost values associated with the inputs `lpost_validation_inputs`. 
   #    metrics: character, vector of metric names; used to call function "get_gp_<metric>". 
+  #    lpost_validation_outputs: numeric vector of length M, the true lpost values associated with the inputs `lpost_validation_inputs`. 
+  #                              If NULL, runs the full forward model to compute them using `SSR_outputs`. 
+  #    SSR_outputs: Matrix of dimension M x P, the matrix of observed L2 errors evaluated at inputs `lpost_validation_inputs`. Only required 
+  #                 if `lpost_validation_outputs` is NULL. 
   #
   # Returns:
   #    data.frame, with column names "emulator_name", "metric_name", and "metric_value". The emulator names are taken from the 
@@ -2674,7 +2678,8 @@ get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_vali
     
     # Compute validation metrics. 
     metrics_results <- get_lpost_emulator_metrics(lpost_emulator = lpost_emulator_list[[j]], lpost_validation_inputs_unscaled = lpost_validation_inputs, 
-                                                  lpost_validation_outputs = lpost_validation_ouputs, metrics = metrics)
+                                                  metrics = metrics, lpost_validation_outputs = lpost_validation_outputs, 
+                                                  SSR_outputs = SSR_outputs, include_nugget = include_nugget)
     
     # Append to data.frame. 
     metrics_out <- rbind(metrics_out, data.frame(emulator_name = emulator_names[j], metric_name = names(metrics_results), metric_value = metrics_results))
@@ -2686,7 +2691,29 @@ get_lpost_emulator_metric_comparison <- function(lpost_emulator_list, lpost_vali
 }
                                                    
 
-get_lpost_emulator_metrics <- function() {
+get_lpost_emulator_metrics <- function(lpost_emulator, lpost_validation_inputs_unscaled, metrics, lpost_validation_outputs = NULL, 
+                                       SSR_outputs = NULL, include_nugget = TRUE) {
+  # TODO: generalize this to allow computing metrics that require predictive covariance matrix. 
+  
+  # Scale input data. 
+  lpost_validation_inputs_scaled <- scale_input_data(lpost_validation_inputs_unscaled, lpost_emulator$emulator_info_list$input_bounds)
+  
+  
+  if(is.null(lpost_validation_outputs)) {
+    lpost_validation_outputs <- calc_lpost_theta_product_lik(SSR = SSR_outputs,  
+                                                             vars_obs = lpost_emulator$sig2_eps, na.rm = TRUE, 
+                                                             theta_vals = lpost_validation_inputs_unscaled, 
+                                                             theta_prior_params = lpost_emulator$theta_prior_params, 
+                                                             return_list = FALSE)
+  }
+  
+  # Produce lpost emulator predictions at validation inputs. 
+  pred <- predict_lpost_emulator(lpost_validation_inputs_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = include_nugget, 
+                                 inputs_new_unscaled = lpost_validation_inputs_unscaled)
+  
+  metrics_results <- compute_gp_metrics(gp_mean_pred = pred$mean, gp_var_pred = pred$var, output_true = lpost_validation_outputs, metrics = metrics)
+  
+  return(metrics_results)
   
 }
 

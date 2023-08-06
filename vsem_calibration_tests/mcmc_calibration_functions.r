@@ -485,7 +485,7 @@ calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_boun
 }
 
 
-calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
+calc_lpost_theta_product_lik <- function(computer_model_data = NULL, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
                                          SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
   # Evaluates the exact log-posterior theta conditional density, up to the normalizing constant. Note that this is the theta density, conditional 
