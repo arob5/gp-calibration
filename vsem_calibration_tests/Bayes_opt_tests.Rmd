@@ -13,6 +13,7 @@ library(hetGP)
 library(mlegp)
 library(ggplot2)
 library(viridis)
+library(parallel)
 library(gridExtra)
 library(data.table)
 library(BayesianTools)
@@ -110,16 +111,15 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 
 ```{r}
 # Store exact samples that will be used to compute error metrics. 
+
+
 # Samples for sample-based metrics that require approximately independent samples. 
-# TODO: need to monitor estimated auto-correlation here. 
+# TODO: should monitor estimated auto-correlation here. 
 samp_exact_theta_thinned <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 5),]
 
 # Samples for computing emulator-based metrics. This requires computing GP predictions at every sample, so must reduce 
 # the number of samples for computational feasibility. 
-samp_exact_theta_metrics <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 10),]
-
-# TODO: need to deal with the fact that the scaling is different for each design. 
-
+samp_exact_theta_emulator_metrics <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 10),]
 
 ```
 
@@ -180,55 +180,97 @@ names(lpost_emulators) <- names(emulators_list)
 
 
 ```{r}
+#
+# Compute round 0 emulator-based metrics.  
+#
 
-SSR_outputs <- get_computer_model_SSR(computer_model_data, theta_vals = samp_exact_theta_metrics, na.rm = TRUE)
+# Validation data for evaluated emulator-based metrics. 
+validation_list_lpost_emulator_metrics <- format_lpost_emulator_validation_data(lpost_emulators, inputs_unscaled = samp_exact_theta_metrics, 
+                                                                                computer_model_data = computer_model_data)
 
-# Compute emulator-based and sample-based metrics for round 0. 
-test <- get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
-                                             lpost_validation_inputs = samp_exact_theta_metrics, 
-                                             metrics = c("crps", "rmse"), 
-                                             SSR_outputs = SSR_outputs)
+# Compute metrics. 
+lpost_emulator_metrics <- get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
+                                                               lpost_emulator_validation_list = validation_list_lpost_emulator_metrics, 
+                                                               metrics = c("crps", "rmse"), include_nugget = TRUE)
+lpost_emulator_metrics$round <- 0
+```
 
-predict_lpost_emulator(inputs_new_scaled)
-test <- compute_gp_metrics(gp_mean_pred, output_true, metrics, gp_var_pred = NULL, transformation_method = NA_character_, 
-                           gp_cov_pred = NULL, gp_L_pred = NULL)
+## Sample approximate posterior. 
+```{r}
+#
+# Round 0 approximate posterior sampling. 
+#
 
+N_mcmc_approx <- 50000
 
-# TODO: issue - making computer_model_data arg optional in lpost function is causing an issue cause currently the function grabs `n_obs` from 
-#       computer model data. Need to decide how to handle this. 
+run_approx_mcmc <- function(j) {
+  mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                        theta_prior_params = theta_prior_params, 
+                        emulator_info = lpost_emulators[[j]]$emulator_info_list,
+                        theta_init = design_list_round0[[j]]$init_estimates$best_input[1,], 
+                        sig_eps_init = design_list_round0[[j]]$init_estimates$best_sig2_eps, 
+                        learn_sig_eps = TRUE, 
+                        sig_eps_prior_params = sig_eps_prior_params, 
+                        N_mcmc = N_mcmc_approx)
+}
 
+# Parallelize over list of emulators. 
+mcmc_approx_round0_list <- mclapply(seq_along(lpost_emulators), run_approx_mcmc)
+names(mcmc_approx_round0_list) <- names(lpost_emulators)
 
-
-
-
-
-
-
-
-
-
-
-
-
-# Emulator metrics. 
-test <- compute_lpost_emulator_metrics(lpost_mean_pred, lpost_true, metrics, lpost_var_pred = NULL, transformation_method = NA_character_, 
-                                       lpost_cov_pred = NULL, lpost_L_pred = NULL)
-
-
-
-
-suppressWarnings(emulator_metrics <- get_emulator_comparison_metrics_validation_list(emulator_info_list = emulator_info_list, 
-                                                                                     X_test_list = lapply(validation_list, function(l) l$inputs),
-                                                                                     Y_test_list = lapply(validation_list, function(l) l$outputs),
-                                                                                     metrics = c("rmse", "srmse", "nlpd_pointwise", "crps"), 
-                                                                                     scale_inputs = TRUE, 
-                                                                                     output_variables = computer_model_data$output_vars, 
-                                                                                     include_nug = TRUE))
-
-
+# Format MCMC samples. 
 
 ```
 
+```{r}
+
+# Combine samples from each emulator into single data.table.  
+round0_labels <- paste0("round0_", names(mcmc_approx_round0_list))
+mcmc_samp_dt_round0 <- rbindlist(lapply(seq_along(mcmc_approx_round0_list), 
+                                        function(j) format_mcmc_output(samp_list = mcmc_approx_round0_list[[j]][c("theta", "sig_eps")], 
+                                                                       test_label = round0_labels[j])), use.names = TRUE) 
+                                                               
+# Combine with existing data.table of MCMC output. 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_round0), use.names = TRUE)
+
+```
+
+### Round 0 MCMC sampling diagnostics. 
+```{r}
+
+burn_ins <- c(burn_ins, setNames(rep(10000, length(round0_labels)), round0_labels))
+
+mcmc_round0_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = round0_labels, param_types = "theta")
+grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 2))
+```
+
+```{r}
+mcmc_round0_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = round0_labels, param_types = "sig_eps")
+grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 2))
+```
+
+```{r}
+
+test <- compute_mcmc_comparison_metric(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
+                                       test_labels_1 = "exact", test_labels_2 = round0_labels[1], 
+                                       param_types = c("theta", "sig_eps"), 
+                                       metrics = c("mean", "cov"))
+
+
+
+samp_dt_subset <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = c("exact", round0_labels[1]), 
+                                   param_types = "theta", param_names = param_names)
+means <- samp_dt_subset[, .(samp_mean = mean(sample)), by = .(test_label, param_type, param_name)]
+
+
+# If there is only one param_name within param_type_aggregate value then no aggregation can be done and only non-aggregated 
+# metrics are computed. 
+
+# Store matrix of calibration parameter samples from round 1 approx MCMC. 
+samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
+                                      test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
+samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+```
 
 
 

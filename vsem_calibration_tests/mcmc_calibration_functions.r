@@ -485,7 +485,7 @@ calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_boun
 }
 
 
-calc_lpost_theta_product_lik <- function(computer_model_data = NULL, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
+calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
                                          SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
                                          theta_prior_params = NULL, return_list = TRUE) {
   # Evaluates the exact log-posterior theta conditional density, up to the normalizing constant. Note that this is the theta density, conditional 
@@ -2094,6 +2094,42 @@ select_mcmc_samp <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
   }
   
   return(samp_dt_subset)
+  
+}
+
+
+compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+                                     
+  # Select rows and columns `samp_dt` required for computing metrics. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                     param_types = param_types, param_names = param_names)
+  
+  
+  # Compute statistics. 
+  mcmc_param_stats <- samp_dt_subset[, .(samp_mean = mean(sample), samp_var = var(sample)), by = .(test_label, param_type, param_name)]
+  
+  return(mcmc_param_stats)
+  
+}
+
+
+compute_mcmc_comparison_metrics <- function(samp_dt, test_labels_1, test_labels_2, metrics, burn_in_start = NULL,
+                                           param_types = NULL, param_names = NULL) {
+                                           
+  # Select rows and columns `samp_dt` required for computing metrics. 
+  test_labels <- c(test_label_1, test_label_2)
+  mcmc_param_stats <- compute_mcmc_params_stats(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                                param_types = param_types, param_names = param_names)
+  
+
+  # Compare sample means. 
+  if("mean" %in% metrics) {
+    means <- dcast(mcmc_param_stats, param_type+param_name ~ test_label, value.var = "samp_mean")
+    means$mean_diff <- abs(means[[test_label_1]] - means[[test_label_2]])
+    means$mean_diff_rel <- means$mean_diff / abs(means[[test_label_1]])
+  }
+  
+  return(means)
   
 }
 
