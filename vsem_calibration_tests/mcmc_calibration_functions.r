@@ -2100,6 +2100,16 @@ select_mcmc_samp <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
 
 compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
                                      param_types = NULL, param_names = NULL, subset_samp = TRUE) {
+  # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
+  #
+  # Args:
+  #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`
+  #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to subset `samp_dt` to determine which
+  #                                            parameters and samples will be included in the metric computations.
+  #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired form so do not call `select_mcmc_samp()`. 
+  #
+  # Returns:
+  #    data.table, with columns "samp_mean", "samp_var". 
                                      
   # Select rows and columns `samp_dt` required for computing metrics. 
   if(subset_samp) {
@@ -2117,7 +2127,25 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels 
 
 compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2, metrics, burn_in_start = NULL,
                                             param_types = NULL, param_names = NULL) {
-                                       
+  # Computes metrics that quantify the difference between two distributions, given samples from the two distributions. 
+  # The samples from the distributions are assumed to both be stored in `samp_dt`, with the column "test_label" 
+  # identifying the two distributions. The distribution associated with the label `test_label_1` is assumed to be 
+  # the "reference" distribution, so relative metrics are computed with respect to this distribution. This function 
+  # computes both 1.) "individual metrics", which compare samples associated with each parameter one at a time, and 
+  # 2.) "aggregate metrics", which take into account information across different parameters; e.g. computing a 
+  # covariance matrix across a set of parameters. 
+  #
+  # Args:
+  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
+  #    test_label_1: character(1), the label identifying the reference distribution. 
+  #    test_label_2: character(1), the label identifying the second distribution. 
+  #    metrics: character, vector of metrics. Currently only supports "mean" and "cov". 
+  #    burn_in_start, param_types, param_names: passed to `select_mcmc_samp` to subset `samp_dt` to determine which
+  #                                             parameters and samples will be included in the metric computations. 
+  #
+  # Returns: 
+  #    list, with names "metrics_individual" and "metrics_agg". Each element is a data.table storing the metrics. 
+  
   # Select rows and columns `samp_dt` required for computing metrics. 
   test_labels <- c(test_label_1, test_label_2)
   samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
