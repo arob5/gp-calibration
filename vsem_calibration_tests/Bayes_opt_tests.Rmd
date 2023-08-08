@@ -251,8 +251,8 @@ grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 2))
 
 ```{r}
 
-test <- compute_mcmc_comparison_metric(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
-                                       test_labels_1 = "exact", test_labels_2 = round0_labels[1], 
+test <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
+                                       test_label_1 = "exact", test_label_2 = round0_labels[1], 
                                        param_types = c("theta", "sig_eps"), 
                                        metrics = c("mean", "cov"))
 

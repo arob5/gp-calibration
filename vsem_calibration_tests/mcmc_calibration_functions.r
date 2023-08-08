@@ -2113,12 +2113,12 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels 
 }
 
 
-compute_mcmc_comparison_metrics <- function(samp_dt, test_labels_1, test_labels_2, metrics, burn_in_start = NULL,
+compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2, metrics, burn_in_start = NULL,
                                            param_types = NULL, param_names = NULL) {
                                            
   # Select rows and columns `samp_dt` required for computing metrics. 
   test_labels <- c(test_label_1, test_label_2)
-  mcmc_param_stats <- compute_mcmc_params_stats(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+  mcmc_param_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
                                                 param_types = param_types, param_names = param_names)
   
 
