@@ -1,0 +1,822 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Local custom commands. 
+\include{local-defs}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{A Framework for Scalable Ecosystem Model Calibration}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+\section{Background}
+\subsection{Bayesian Inverse Problems and Computer Model Calibration}
+\subsection{Gaussian Process Emulation}
+\subsection{Sequential Design}
+
+\section{Induced Posterior Density Approximation}
+Focus is on methods that produce GP approximation to the log joint posterior density. 
+
+\subsection{Loss Emulation}
+\subsection{Basis Functions}
+Surer et al approach. 
+
+\section{Acquisition Targets}
+\subsection{Log-Posterior}
+\subsection{Posterior}
+\subsection{Underlying Emulators}
+
+\section{Acquisition Functions}
+\subsection{Variance-based}
+\subsubsection{VAR}
+\subsubsection{EIVAR}
+\subsection{Information-based}
+\subsection{Optimization-focused}
+\subsection{Others}
+e.g. energy-based designs 
+
+\section{Acquisition Optimization Methods}
+\subsection{Batch Sequential Greedy Heuristics}
+\subsubsection{Kriging Believer}
+\subsubsection{Constant Liar}
+\subsection{Stochastic Optimization}
+\subsection{Sample-Average Approximation}
+I believe this terminology comes from paper ``Asymptotic analysis of stochastic programs''. 
+\subsection{Discrete Optimization}
+\subsubsection{Space-Filling Candidates}
+\subsubsection{Approximate Posterior Candidates}
+
+\section{Likelihood Parameters}
+\subsection{Optimization}
+\subsection{Marginalization}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% Calibration of Expensive Computer Models
+\section{Calibration of Expensive Computer Models}
+We consider the problem of calibrating expensive ecosystem models in a Bayesian statistical framework, leveraging 
+Gaussian process (GP) surrogate models. More generally, the framework presented here is applicable to the problem of parameter 
+estimation for dynamical models taking the form of a system of ordinary differential equations (ODEs). 
+
+% Ecosystem Models 
+\section{Ecosystem Models}
+
+\subsection{The Very Simple Ecosystem Model}
+The goal of this paper is to discuss the unique challenges of calibrating complex process-based ecosystem models. To motivate this problem, we introduce 
+a simplified vegetation model of carbon dynamics; namely, the \textit{Very Simple Vegetation Model} (VSEM) introduced by Hartig et al and implemented 
+in the \href{https://github.com/florianhartig/BayesianTools}{\textit{BayesianTools}} R package. 
+This simple model consists of a system of ordinary differential equations (ODEs) describing the fluxes of carbon between three different pools (states): 
+above-ground vegetation, below-ground vegetation, and soil organic matter. The carbon dynamics are forced by a single variable, the quantity of photosynthetically 
+active radiation (PAR), which represents the portion of the light spectrum usable by plants for photosynthesis. 
+Let $\state_v(\timeIdx)$ (\textbf{v}egetation, above ground), $\state_r(\timeIdx)$ (\textbf{r}oots), and $\state_s(\timeIdx)$ (\textbf{s}oil) denote the quantity of carbon (kg $C/m^2$) in each of the three respective pools at time $\timeIdx$. 
+The dynamics describing the carbon fluxes between these pools depend on $\text{NPP}(\timeIdx)$, the Net Primary Productivity (NPP) ($\text{kg } C/m^2/\text{day}$) at time $\timeIdx$, 
+which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration, where GPP quantifies the amount of carbon 
+fixed by vegetation during photosynthesis. Given NPP, the VSEM model calculates Net Ecosystem Exchange (NEE), which is (aside from a sign change) 
+NPP minus heterotrophic 
+respiration. Thus, in the VSEM model this means 
+\begin{align}
+-\text{NEE} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
+\end{align}
+The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
+The state equations describing the carbon dynamics are then given by
+\begin{align}
+\dot{\state}_v(\timeIdx) &= \alpha_v \times \text{NPP}(\timeIdx) - \frac{\state_v(\timeIdx)}{\tau_v} \label{VSEM_ODE_system} \\
+\dot{\state}_r(\timeIdx) &= (1.0 - \alpha_v) \times \text{NPP}(\timeIdx) - \frac{\state_r(\timeIdx)}{\tau_r} \nonumber \\
+\dot{\state}_s(\timeIdx) &= \frac{\state_r(\timeIdx)}{\tau_r} + \frac{\state_v(\timeIdx)}{\tau_v} - \frac{\state_s(\timeIdx)}{\tau_s} \nonumber 
+\end{align}
+where the parameters $\tau_v$, $\tau_r$, and $\tau_s$ are residence times or longevity parameters for above-ground vegetation, below-ground vegetation, and soil organic matter, 
+respectively. In particular, $\tau_v$ and $\tau_r$ represent the longevity of above and below ground biomass, respectively, while $\tau_s$ is the residence time of organic matter 
+in the soil. Carbon is thus assumed to be lost from the plant pools to the soil pool at fixed turnover rates, and similarly from the soil pool to the atmosphere. VSEM also makes the simplifying assumption that a fixed proportion of NPP is allocated to above and below ground vegetation, where $\alpha_v$ is the fraction
+allocated to the former. 
+
+The dynamics [\ref{VSEM_ODE_system}] are driven by the forcing effect of PAR, which drives the values of NPP and GPP over time. VSEM assumes a simple calculation, 
+where GPP is given by a product of three factors:
+\begin{enumerate}
+\item The amount of light available for photosynthesis (PAR) (MJ/$m^2$/day).
+\item Light-use efficiency (LUE), a measure of the efficiency at which vegetation can use light for photosynthesis. 
+\item The rate at which the available light decays as it passes downwards through a canopy of leaves. 
+\end{enumerate}
+The rate described in the third item above is modeled by the Beer-Lambert law, which yields an exponential decay rate $e^{-k*\text{LAI}}$, 
+where LAI is the \textit{leaf-area index}, defined as the ratio of one-sided leaf area per unit of ground area. LAI at time $\timeIdx$ is assumed to be given by the product of a fixed 
+leaf-area ratio (LAR) and $\state_v(\timeIdx)$. The constant $k$ is a fixed extinction rate controlling the rate of exponential decay. The full calculations for NPP are given below. 
+\begin{align}
+\text{LAI}(\timeIdx, \state_v) &= \text{LAR} \times \state_v(\timeIdx) \\
+\text{GPP}(\timeIdx) &= \text{PAR}(\timeIdx) \times \text{LUE} \times \left(1 -  \exp\left(-k \times \text{LAI}(\timeIdx, \state_v) \right) \right) \nonumber \\
+\text{NPP}(\timeIdx) &= (1 - \gamma) \times \text{GPP}(\timeIdx) \nonumber
+\end{align}
+As seen above, NPP is assumed to be a fixed fraction $1 - \gamma$ of GPP.
+
+Potential calibration parameters $\theta$ of this model include $\alpha_v$, $\tau_v$, $\tau_r$, $\tau_s$, $\text{LAR}$, $k$, and $\gamma$, but it is common to fix some of the parameters at their 
+nominal values and calibrate the remaining subset. 
+Once the parameters $\bpar$ and a specified number of time steps (days) $n$ are fixed, the ODE system can be solved, yielding daily time series of $n$
+observations for NEE, $\state_v$, $\state_r$, and $\state_s$. The forward model $\fwd$ in this setting is given by an execution of the ODE solve, and represents
+the mapping from the inputs to these four resulting time series. A more detailed discussion of the forward model is given in the following section. 
+
+\subsection{Generic Dynamical Models}
+I believe this work nicely complements a series of papers on so-called \textit{dynamic} or \textit{time-series valued} emulation. The necessity of such emulators typically arise from forward models 
+defined as a the solution of an autonomous system of ODEs. I will denote the state vector of such a system by 
+\[\bx(t) = \left(x_1(t), \dots, x_P(t) \right)^{\top} \]
+If we consider discretizing at constant time steps $\Delta t$ then since the system is autonomous the \textit{one-step map} or \textit{flow map} $g: \R^P \times \R^Q \to \R^P$ is time-invariant: 
+ \[\bx(t + \Delta t) = g(\bx(t); \bw_{t + \Delta t})\]
+ where $\bw_{t + \Delta t}$ is a \textit{forcing input}. The forcing inputs are assumed known, and vary across time. 
+ Note that this could also be generalized to variable step sizes $\Delta t$ by considering the flow map to also be a function of the step size; i.e., $g = g(\bx(t), \Delta t)$. We can also view the 
+ vector-valued $g$ as a collection of $P$ univariate flow maps
+ \[g(\bx(t); \bw_{t + \Delta t}) = \left[g_1(\bx(t); \bw_{t + \Delta t}), \dots, g_P(\bx(t); \bw_{t + \Delta t}) \right]^{\top}\]
+ so that $g_k: \R^P \to \R$ maps $\bx(t)$ to $\bx_p(t + \Delta t)$, the value of the $p^{\text{th}}$ state at the subsequent time step. Of course, $g$ and hence the states $\bx(t)$ depend on 
+ the parameters $\bpar$. I will reflect this dependence by writing $g_{\bpar}$ and $\bx_{\bpar}(t)$. The forward model $G: \R^{\Npar} \to \R^{\Ntime \times \Nobj}$ defined previously can thus be characterized 
+ as 
+ \[
+ G(\bpar; \bx_0, \bw) = \begin{pmatrix} \bx_0^{\top} \\ \bx_\theta(\Delta t)^{\top} \\  \bx_\theta(2\Delta t)^{\top} \\ \vdots \\ \bx_\theta\left([T-1]\Delta t\right)^{\top} \end{pmatrix} = 
+ \begin{pmatrix} \bx_0^{\top} \\ g_\theta(\bx_0; \bw_1)^{\top} \\  g_\theta\left(g_\theta(\bx_0; \bw_1); \bw_2 \right)^{\top} \\ \vdots \\ g_\theta^{(T-1)}(\bx_0; \bw)^{\top} \end{pmatrix}
+ \]
+ where I now explicitly write $G$ as a function of an initial condition $\bx_0 = \bx(0)$, which is independent of $\bpar$, and I use the shorthand $g_\theta^{(k)}$ to denote 
+ the composition consisting of $k$ applications of the map $g_\theta$. I also let $\bw := \{\bw_t\}_{\timeIdx = 1}^{T}$ denote the sequence of forcing inputs. 
+ I have also assumed that the initial time is $0$, but some other time $t_0$ could of course be considered. 
+
+% Bayesian Calibration 
+\section{Bayesian Calibration}
+
+\subsection{Problem Setup}
+In this section we provide a brief overview of the Bayesian approach to computer model calibration, which has been recently favored by researchers due to its ability to quantify 
+uncertainties in the calibration process. We begin by defining a likelihood function $p(\stateMat|\bpar)$ that relates the observed field data $\stateMat$ to the forward model prediction 
+$\fwd(\bpar)$. Throughout most of this article, we assume the following Gaussian likelihood 
+
+\begin{align}
+\stateOut{\objIdx}, \CovObs | \bpar \overset{\text{ind}}{\sim} \mathcal{N}_{\indexObj{\Ntime}}(\indexObj{\fwd}(\bpar), \sdObs_{\objIdx}^2 I) \label{likelihood}
+\end{align}
+For notational convenience, we have collected the 
+variance parameters in the matrix $\CovObs := \text{diag}\left(\sdObs_1^2, \dots, \sdObs_{\Nobj}^2 \right)$. 
+This likelihood assumes the errors are independent across time and output variable. 
+We will typically work with the log of the likelihood, denoted by 
+$\llik(\bpar, \CovObs) := \log p(\stateMat|\bpar, \CovObs)$. Note that $\llik(\bpar, \CovObs)$ depends on the data $\stateMat$, 
+but $\stateMat$ is constant throughout the analysis so we drop it from the notation.
+Under the likelihood \ref{likelihood}, $\llik(\bpar, \CovObs)$ takes the form 
+\begin{align*}
+\llik(\bpar, \CovObs) &= \sum_{\objIdx = 1}^{\Nobj} \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \log \mathcal{N}\left(\stateTimeOut{\timeIdx}{\objIdx} | \indexObj{\indexTime{\fwd}}(\bpar), \sdObs_{\objIdx}^2 \right)
+\end{align*}
+Missing observations are simply ignored. For future purposes, it will be useful to expand this sum of Gaussian densities and introduce some notation. To this end, the log likelihood can be written as 
+\begin{align}
+\llik(\bpar, \CovObs) &= \sum_{\objIdx = 1}^{\Nobj} \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \log \mathcal{N}\left(\state_{\timeIdx \objIdx}| \fwd_{\timeIdx \objIdx}(\bpar), \sdObs_{\objIdx}^2 \right) \nonumber \\
+	         &= \sum_{\objIdx = 1}^{\Nobj}  \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \left[-\frac{1}{2} \log(2\postDens \sdObs_{\objIdx}^2) - \frac{1}{2\sdObs_{\objIdx}^2} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2\right] \nonumber \\
+	         &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{1}{\sdObs_{\objIdx}^2}\sum_{\timeIdx = 1}^{\indexObj{\Ntime}} \left(\state_{\timeIdx \objIdx} - 
+	                \fwd_{\timeIdx \objIdx}(\bpar)\right)^2  \right] \nonumber \\
+	         &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2} \right] \label{llik}
+\end{align}
+where 
+\begin{align}
+\indexObj{\SSR}(\bpar) := \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2
+\end{align}
+is the squared Euclidean error between the observations $\stateOut{\objIdx}$ and computer model predictions $\indexObj{\fwd}(\bpar)$ for the $\objIdx^{\text{th}}$ data constraint. 
+
+With the likelihood established, we now define a prior distribution jointly over the calibration parameters $\bpar$ and likelihood variance parameters $\CovObs$. 
+We denote the prior density for this distribution as $\priorDens(\bpar, \CovObs) = \priorDens(\bpar)\priorDens(\CovObs)$, assuming prior independence between $\bpar$ and $\CovObs$.  
+The variances $\sdObs_{\objIdx}^2$ are assigned inverse gamma priors $\sdObs_{\objIdx}^2 \overset{ind}{\sim} \mathcal{IG}(\indexObj{\IGShape}, \indexObj{\IGScale})$ so that 
+\begin{align}
+\priorDens(\CovObs) = \prod_{\objIdx = 1}^{\Nobj} \mathcal{IG}(\sdObs_{\objIdx}^2|\indexObj{\IGShape}, \indexObj{\IGScale}). \label{inv_gamma_prior}
+\end{align}
+Combining these priors with the likelihood yields the posterior 
+\begin{align}
+\postDens(\bpar, \CovObs) := p(\bpar, \sdObs_{1}^2, \dots, \sdObs_{\Nobj}^2|\stateMat) \propto \exp\left(\llik(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs). \label{posterior_density}
+\end{align}
+Our main focus is on calibrating $\bpar$, while $\CovObs$ primarily act as nuisance parameters. Therefore, the primary object of interest is the marginal posterior
+\begin{align*}
+\postDens(\bpar|\stateMat) &= \int \postDens(\bpar, \CovObs|\stateMat) d\CovObs 
+\end{align*}
+The above marginalization over $\CovObs$ can be performed by drawing samples from the joint posterior and then extracting the $\bpar$ component of the samples. A 
+Markov Chain Monte Carlo (MCMC) algorithm for drawing such samples is detailed below.  
+
+\subsection{Posterior Sampling}
+The likelihood and prior assumptions specified above yield a convenient form of the posterior density which can be sampled using a Metropolis-within-Gibbs procedure, which samples in an 
+alternating fashion from the conditional posteriors $\postDens(\bpar|\stateMat, \CovObs)$ and $\postDens(\CovObs|\stateMat, \bpar)$. While the former conditional requires a Metropolis 
+accept-reject step, the latter is conditionally conjugate and hence can easily be sampled from. These (log) conditional posterior densities are provided below, with derivations detailed in 
+the appendix. When dealing with log densities, we use the proportionality sign ``$\propto$'' to indicate that additive constants have been dropped. 
+
+\bigskip
+\noindent
+\textbf{$\bpar$ conditional.} 
+The log posterior of $\bpar$ given $\CovObs$ is given by 
+\begin{align*}
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\end{align*}
+
+\bigskip
+\noindent
+\textbf{$\CovObs$ conditional.}
+The log posterior of $\CovObs$ given $\bpar$ is given by 
+\begin{align*}
+\log \postDens(\CovObs|\bpar, \stateMat) &\propto -\sum_{\objIdx = 1}^{\Nobj} \left[\left(\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1 \right)\log(\sdObs_{\objIdx}^2) + \frac{\indexObj{\IGScale} + 
+								  \indexObj{\SSR}(\bpar)/2}{2} \right] \\
+				      			       &\propto \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
+\end{align*}
+That is, 
+\begin{align}
+\sdObs_{\objIdx}^2|\bpar, \stateMat &\overset{\text{ind}}{\sim} \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right) \label{cond_post_Cov}
+\end{align}
+
+The Metropolis-within-Gibbs procedure is outlined below. 
+
+ \begin{algorithm}[H]
+	\SetAlgoLined
+	
+	\textbf{Require}: Initial parameter values $\bpar^{(0)}, \CovObs^{(0)}$ \\
+	\textbf{Require}: Number iterations $\NMCMC$ \\
+	\textbf{Require}: Proposal Covariance $\CovProp$
+		
+	\bigskip
+	
+	\For{$t = 1, \dots, \NMCMC$} {
+	\textit{MH step, sample $\bpar$}: \\[.2cm]
+	Sample $\bpar^\prime \sim \mathcal{N}_{\Npar}(\bpar^{(t - 1)}, \CovProp)$ \\
+	$\accProbMH(\bpar^{(t - 1)}, \bpar^\prime) := \min\left\{1, \frac{\postDens(\bpar^\prime|\stateMat, \CovObs^{(t-1)})}{\postDens(\bpar^{(t-1)}|\stateMat, \CovObs^{(t-1)})} \right\}$ \\
+
+	 Sample $U \sim \mathcal{U}[0, 1]$ \\
+	 \If{$U < \accProbMH(\bpar^{(t - 1)}, \bpar^\prime)$} {
+	 	$\bpar^{(t)} := \bpar^\prime$ \\
+	 } \Else {
+		$\bpar^{(t)} := \bpar^{(t - 1)}$ \\
+	 }
+	
+	\bigskip
+	
+	\textit{Gibbs step, sample $\CovObs$}: \\[.2cm]
+	Sample $\CovObs^{(t)} \sim  \postDens(\CovObs | \stateMat, \bpar^{(t)})$
+}
+\caption{MCMC algorithm: approximately sample $\postDens(\bpar, \CovObs|\stateMat)$}
+\end{algorithm}
+We note that in practice the proposal covariance $\CovProp$ is typically adaptively tuned; see Haario et al (1999, 2001).  
+
+% Emulator-Based Calibration for Dynamic Models
+\section{Emulator-Based Calibration for Dynamic Models}
+
+% Gaussian Process Emulators
+\subsection{Gaussian Process Emulators}
+In the below sections, we will consider the problem of interpolating some univariate target function $\f: \parSpace \to \R$. The specific target will vary based on the 
+emulation strategy, so we introduce the generic GP background and notation here for the generic target $\f$. We suppose we have access to training data 
+$\designData_{\Ndesign} := \left\{(\bpar_{\designIdx}, \f(\bpar_{\designIdx}))\right\}_{\designIdx = 1}^{\Ndesign}$ consisting of the observed outputs of the target 
+$\fObs[\Ndesign] :=  \begin{pmatrix} \f(\bpar_1), \dots, \f(\bpar_\Ndesign) \end{pmatrix}^\top$ at a set of $N$ 
+\textit{design points} $\designMat[\Ndesign] := \begin{pmatrix} \bpar_1, \dots, \bpar_N \end{pmatrix}^\top$. 
+
+The task is then to predict the output $\f(\bpar)$ at unobserved input $\bpar$. GPs provide a probabilistic solution to this problem, 
+whereby uncertainty about $\f(\bpar)$ is represented via the prior distribution 
+\begin{align}
+\f(\cdot) \sim \GP(\GPMean(\cdot), \GPKer(\cdot, \cdot)). \label{GP_prior_generic}
+\end{align}
+where $\GPMean: \parSpace \to \R$ and $\GPKer: \parSpace \times \parSpace \to \R$ are, respectively, the mean function and covariance function (i.e. kernel)
+of the GP. Formally, \ref{GP_prior_generic} means that at any finite set of inputs 
+$\designMat[M] := \begin{pmatrix} \tilde{\bpar}_1, \dots, \tilde{\bpar}_{M} \end{pmatrix}^\top$ the vector of function values $\fObs[M]$ evaluated at those inputs 
+is multivariate Gaussian distributed
+\begin{align}
+\fObs[M] \sim \mathcal{N}_{M}(\GPMean(\designMat[M]), \GPKer(\designMat[M], \designMat[M])),
+\end{align}
+where $\GPMean(\designMat[M])$ is an $M$-vector with entries $\GPMean(\designMat[M])_m = \GPMean(\bpar_m)$ and 
+$\GPKer(\designMat[M], \designMat[M])$ an $M \times M$ matrix with entries $\GPKer(\designMat[M], \designMat[M])_{m,m^\prime} = \GPKer(\bpar_m, \bpar_{m^\prime})$.
+In general, we overload the covariance matrix function arguments so that $\GPKer(\designMat[M], \designMat[N])$ indicates the $M \times N$ matrix with entries 
+$\GPKer(\designMat[M], \designMat[N])_{m,n} = \GPKer(\bpar_n, \tilde{\bpar}_m)$. 
+When the inputs to each entry of the covariance function are the same, we compress notation by writing it as a function of a single argument; 
+e.g. $\GPKer(\bpar) := \GPKer(\bpar, \bpar)$ and $\GPKer(\designMat[M]) := \GPKer(\designMat[M], \designMat[M])$. 
+
+Prediction at new points $\designMat[M]$ then proceeds by conditioning the GP on the observed data $\designData_{\Ndesign}$. This defines the 
+GP \textit{predictive distribution} (i.e. posterior distribution) over the unobserved target responses $\fObs[M]$, which is conveniently also Gaussian:
+\begin{align}
+\fObs[M] | \designData_{\Ndesign} &\sim \GP(\GPMeanPred[\Ndesign](\designMat[M]), \GPKerPred[\Ndesign](\designMat[M]))
+\end{align}
+The subscripts on $\GPMeanPred[\Ndesign](\cdot)$ and $\GPKerPred[\Ndesign](\cdot, \cdot)$ serve to differentiate the mean and covariance functions of the predictive 
+distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the conditioning data set. 
+The predictive moments are available in closed-form, and given by the well-known formulas 
+\begin{align}
+\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns} \\
+\GPKerPred[\Ndesign](\designMat[M]) &= \GPKer(\designMat[M]) - \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} \GPKer(\designMat[\Ndesign], \designMat[M]) 
+\end{align}
+where $\KerMat[\Ndesign] := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}. While, the equations \ref{kriging_eqns} provide the full multivariate normal predictive distribution, accounting for correlations between the response values across input locations, we will often make use of the pointwise univariate analogs in which the equations 
+\ref{kriging_eqns} are applied individually for each $\tilde{\bpar}_m$. 
+
+% Basis functions
+\subsection{Approach 1: Basis Functions}
+A well-established method to deal with high-dimensional outputs, proposed in \cite{Higdon}, is to emulate the coefficients scaling basis vectors in a basis 
+representation of the computer model output. For ease of notation, we introduce the method in the case $P = 1$; the multi-objective case will simply follow 
+as $P$ independent applications of the method described here. We thus consider representing the computer model $\fwd: \parSpace \to \R^{\Ntime}$ as a linear 
+combination of basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$,
+\begin{align}
+\fwd(\bpar) &= \sum_{\basisVecIdx = 1}^{\NbasisVec} \basisVecWeight_{\basisVecIdx}(\bpar) \basisOutputVec _{\basisVecIdx} + \epsilon \label{basis_representation}
+\end{align}
+If the above basis representation is accurate (i.e., error $\epsilon$ is small) then the problem has been reduced from fitting a multi-output emulator for
+$\fwd: \parSpace \to \R^{\Ntime}$ to fitting $\NbasisVec$ independent univariate emulators for the weights $\basisVecWeight_{\basisVecIdx}: \bpar \to \R$. 
+
+While the basis vectors $\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$ can be constructed via many different methods, we follow Higton et al and 
+consider the specific case where principal components analysis (PCA) is applied. Assuming the forward model has been run at design inputs $\bpar_1, \dots, \bpar_N$, we 
+stack the corresponding normalized outputs $(\fwd(\bpar_1) - \centerVec)/\scaleVec, \dots, (\fwd(\bpar_N) - \centerVec)/\scaleVec$ as the columns of a 
+$\Ntime \times \Ndesign$ matrix $\fwdOutputMat$. The expression $(\fwd(\bpar_{\designIdx}) - \centerVec)/\scaleVec$ indicates component-wise operations, 
+where $\centerVec$ and $\scaleVec$ are centering and scaling vectors used to normalize model outputs. We then obtain the basis matrix $\basisMat$, with columns 
+$\basisOutputVec_1, \dots, \basisOutputVec_{\NbasisVec}$, via the singular value decomposition (SVD) of $\fwdOutputMat^\top$ truncated at $\NbasisVec$ basis vectors, 
+\begin{align}
+\fwdOutputMat^\top &\approx \mathbf{U} \mathbf{D} \basisMat^\top. 
+\end{align}
+The weights corresponding to these basis vectors are then given by $\basisWeightMat = \fwdOutputMat^\top \basisMat$, with entries 
+$\basisWeightMat_{\designIdx \basisVecIdx} = \basisVecWeight_{\basisVecIdx}(\bpar_{\designIdx})$. Thus, for the $r^{\text{th}}$ emulator we have training data 
+$\{(\bpar_{\designIdx},  \basisVecWeight_{\basisVecIdx}(\bpar_{\designIdx}))\}_{\designIdx = 1}^{\Ndesign}$. 
+
+% Likelihood and loss emulation
+\subsection{Approach 2: Likelihood and Loss Emulation}
+\textbf{TODO: better to introduce all the GP notation in the $P = 1$ case to avoid all the superscripts. Then generalize later.}
+
+In this section we describe the emulator used to approximate the true log likelihood $\llik(\bpar)$. Recall from \ref{llik} that the log likelihood can be written as 
+\begin{align*}
+\llik(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2} \right] 
+\end{align*}
+where 
+\[\indexObj{\SSR}(\bpar) := \sum_{\timeIdx = 1}^{\indexObj{\Ntime}} (\state_{\timeIdx \objIdx} - \fwd_{\timeIdx \objIdx}(\bpar))^2.\]
+The key observation 
+is that the model evaluations $\fwd(\bpar)$ only appear in the likelihood through the $\indexObj{\SSR}(\bpar)$, which means that replacing $\indexObj{\SSR}(\bpar)$ with a
+computationally cheaper approximation will induce a cheap approximation of the likelihood. The independence assumptions 
+that yield the product form of the likelihood make it so that $\SSR(\bpar)$ is a sufficient statistic, and not a function of the variance parameters $\CovObs$. 
+This means that $\SSR(\bpar)$ can be emulated independently of the value of $\CovObs$, unlike in the likelihood emulation setting. 
+The choice to emulate the mappings $\indexObj{\SSR}: \parSpace \to \R$ also reduces the problem to 
+approximating $\Nobj$ univariate functions, instead of approximating $\fwd(\bpar)$, which has output dimension $\Ntime \times \Nobj$. On a notational note, we collect the $\indexObj{\SSR}(\bpar)$ values into a $\Nobj$-dimensional 
+vector $\SSR(\bpar) := \begin{pmatrix} \indexObj[1]{\SSR}(\bpar), \dots, \indexObj[\Nobj]{\SSR}(\bpar) \end{pmatrix}^\top$.  
+
+Our emulator of choice uses Gaussian processes (GP). In particular, we treat the $\indexObj{\SSR}$ as unknown and assign them independent GP priors
+
+\[\indexObj{\SSR}(\cdot) \overset{\text{ind}}{\sim} \GP(\GPMeanOut{\objIdx}(\cdot), \GPKerOut{\objIdx}(\cdot, \cdot))\] 
+
+where $\GPMeanOut{\objIdx}: \parSpace \to \R$ and $\GPKerOut{\objIdx}: \parSpace \times \parSpace \to \R_+$ are the mean and covariance function (i.e. kernel), respectively. 
+Suppose we have access to observed data 
+\[\designData_{\Ndesign} = \{\designMat[\Ndesign], \indexDesign[\Ndesign]{\SSRObs}\} = \left\{(\bpar_1, \SSR(\bpar_1)), \dots, (\bpar_{\Ndesign}, \SSR(\bpar_{\Ndesign})) \right\}\]
+consisting of a set of $\Ndesign$ values for the calibration parameter and their associated values of $\SSR$ resulting from full forward model evaluations. 
+Conditioning the GPs on the observed data yields the GP predictive distributions
+\begin{align} 
+\indexDesignObj{\SSR}{\Ndesign}(\cdot) := \indexObj{\SSR}(\cdot)|\designData_{\Ndesign} \overset{\text{ind}}{\sim} \GP(\indexDesignObj{\GPMean}{\Ndesign}(\cdot), \indexDesignObj{\GPKer}{\Ndesign}(\cdot, \cdot)), \text{ for } \objIdx = 1, \dots, \Nobj
+\end{align}
+where the (pointwise) predictive moments are given by 
+\begin{align}
+\indexDesignObj{\GPMean}{\Ndesign}(\bpar) &= \indexObj{\GPMean}(\bpar) + \indexObj{\GPKer}(\bpar, \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} (\indexDesignObj{\SSRObs}{\Ndesign} - \indexObj{\GPMean}(\bpar) \oneVec{\Ndesign}) \label{GP_pred_mean} \\ 
+\indexDesignObj{\GPKer}{\Ndesign}(\bpar) &= \indexObj{\GPKer}(\bpar) - \indexObj{\GPKer}(\bpar, \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} \indexObj{\GPKer}(\designMat[\Ndesign], \bpar) \label{GP_pred_var}
+\end{align}
+
+% Induced Posterior Density Approximation
+\subsection{Induced Posterior Density Approximation}
+Regardless of whether one directly approximates the forward model, the likelihood, or a sufficient statistic of the likelihood, ultimately the emulator induces an approximation to the posterior 
+density $\postDens(\bpar, \CovObs)$. In the case of Gaussian process emulators, this is a \textit{stochastic} approximation, since the GP distribution of the emulator induces 
+a (potentially non-Gaussian) probability distribution over $\postDens(\bpar, \CovObs)$. In the case of loss emulation, recall that $\indexDesign{\SSR}(\bpar)$ denotes the random 
+variable with distribution given by the GP conditioned on the first $n$ design points and evaluated at input $\bpar$. We extend this notation, writing $\llik_{\designIdx}(\bpar, \CovObs)$ 
+to denote the random approximation to the log-likelihood induced by the emulator; that is, 
+\begin{align}
+\llik_{\designIdx}(\bpar, \CovObs) := -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexDesignObj{\SSR}{\designIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right].
+\end{align}
+Similarly, we define 
+\begin{align*}
+\postDens_{\designIdx}(\bpar, \CovObs) := \exp\left(\llik_{\designIdx}(\bpar, \CovObs)\right) \priorDens(\bpar, \CovObs),
+\end{align*}
+the induced approximation to the unnormalized posterior density at input $\bpar$. We emphasize here that while the notation $\postDens(\bpar, \CovObs)$ refers to the 
+properly normalized posterior density, $\postDens_{\designIdx}(\bpar, \CovObs)$ only approximates the \textit{unnormalized} posterior density. 
+
+The distribution of 
+these induced approximations will be important when considering sequential design criteria in the next section. We therefore characterize the induced distributions for the various emulation 
+targets below. 
+
+\subsubsection{Loss Emulation}
+We begin by considering the case where GP emulators are fit to the squared loss $\SSR(\bpar)$.
+Plugging the emulator $\SSR_n(\bpar)$ in place of $\SSR(\bpar)$ in the log-likelihood
+\ref{llik} yields the approximation 
+\begin{align*}
+\llik_{\designIdx}(\bpar, \CovObs) &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\indexDesignObj{\SSR}{\designIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right].
+\end{align*}
+Given that the above sum represents a linear combination of independent Gaussians 
+$\indexDesignObj{\SSR}{\designIdx}(\bpar) \overset{\text{ind}}{\sim} \mathcal{N}(\GPMeanPredOut{\designIdx}{\objIdx}(\bpar), \GPKerPredOut{\designIdx}{\objIdx}(\bpar, \bpar))$ then it follows that 
+$\llik_{\designIdx}(\bpar, \CovObs)$ is Gaussian, with moments 
+
+\begin{align}
+\E[\llik_{\designIdx}(\bpar, \CovObs)] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right] \label{llik_approx_mean} \\
+\Var[\llik_{\designIdx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4} \label{llik_approx_var}
+\end{align}
+The distribution of $\log \postDens_{\designIdx}(\bpar, \CovObs)$ is identical except that $\log \priorDens(\bpar, \CovObs)$ is added to the mean. 
+
+Since the logarithm of the likelihood and unnormalized posterior random approximations are Gaussian, it follows that their non-log analogs are log-normally distributed.
+In particular, $\postDens_{\designIdx}(\bpar, \CovObs)$ is log-normally distributed with 
+\begin{align}
+\E\left[\postDens_{\designIdx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designIdx}(\bpar, \CovObs)] + \log\left(\priorDens(\bpar, \CovObs)\right) \right\} \\
+\Var\left[\postDens_{\designIdx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designIdx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designIdx}(\bpar, \CovObs)] \right\} \label{post_approx_var}
+\end{align}
+
+% Surrogate-Assisted MCMC
+\subsection{Surrogate-Assisted MCMC}
+Recall that in the case of an expensive forward model $\fwd$, MCMC is often impractical due to the fact that each log-likelihood evaluation $\llik(\bpar, \CovObs)$ requires a forward model 
+ run. In order to make MCMC feasible, we replace the expensive log-likelihood with the cheaper approximation $\llik_{\Ndesign}(\bpar, \CovObs)$. This implies that we will no longer be 
+ sampling from the exact posterior \ref{posterior_density}, but rather the approximation
+ \begin{align}
+ \postDens_{\Ndesign}(\bpar, \CovObs) = \exp\left(\llik_{\Ndesign}(\bpar, \CovObs)\right)\priorDens(\bpar, \CovObs) \label{approx_posterior_density}
+ \end{align}
+ However, it is not immediately clear how to run MCMC on the approximate posterior given that, for each $\bpar$,  $\postDens_{\Ndesign}(\bpar, \CovObs)$ is a random variable. 
+
+% Sequential Design 
+\section{Sequential Design}
+In sequential design and optimization, we often consider the effect of adding a candidate input $\tilde{\bpar}$ to the design. To evaluate the quality of this candidate, we 
+consider the predictive distribution
+\begin{align}
+\indexDesign[\designIdx, \tilde{\bpar}]{\f} := \indexDesign{\f} | (\tilde{\bpar}, \tilde{\f}) = \f | \indexDesign{\designData} \cup (\tilde{\bpar}, \tilde{\f})
+\end{align}
+where $\tilde{\f} := \f(\tilde{\bpar})$. Since we are considering running the full model at input $\tilde{\bpar}$, the corresponding response $\tilde{\f}$ is not 
+observed and hence a random variable. Therefore, $\indexDesign[\designIdx, \tilde{\bpar}]{\f}$ has an additional source of randomness stemming from conditioning on 
+this unknown response. We similarly utilize the notation $\indexDesign[\designIdx, \tilde{\bpar}]{\GPMean}, \indexDesign[\designIdx, \tilde{\bpar}]{\GPKer}$ to denote the 
+predictive mean and variance of $\indexDesign[\designIdx, \tilde{\bpar}]{\f}$, as functions of the random variable $\tilde{\f}$. 
+\begin{align}
+\indexDesign[\designIdx,\tilde{\bpar}]{\GPMean}(\bpar) &= \GPMean(\bpar) + 
+\GPKer(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} (\fObs[\designIdx, \tilde{\bpar}] - \GPMean(\bpar)\oneVec{\designIdx+1}) \label{pred_mean_augmented}\\
+\indexDesign[\designIdx,\tilde{\bpar}]{\GPKer}(\bpar) &= \GPKer(\bpar) - 
+\GPKer(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} \GPKer(\designMat[\designIdx, \tilde{\bpar}], \bpar) \label{pred_var_augmented}
+\end{align}
+where $(\designMat[\designIdx, \tilde{\bpar}], \fObs[\designIdx, \tilde{\bpar}])$ denotes the design 
+$(\designMat[\designIdx], \fObs[\designIdx])$ augmented with $(\tilde{\bpar}, \tilde{\f})$, by adding a new row to the input and response matrix, respectively. 
+Similarly, $\KerMat[\designIdx, \tilde{\bpar}] := \GPKer(\designMat[\designIdx, \tilde{\bpar}])$ is the augmented kernel matrix. We note that the predictive mean 
+\ref{pred_mean_augmented} has dependence on the unknown response $\tilde{f}$, but conveniently the predictive variance \ref{pred_var_augmented} has no 
+such dependence. 
+
+\subsection{Basics of Sequential Design and Bayesian Optimization}
+
+\subsection{Acquisition Functions}
+Here we introduce acquisition functions that are tailored to solving Bayesian inverse problems. 
+
+\subsubsection{Expected Integrated Variance}
+We first consider an acquisition introduced in \cite{SinsbeckNowak} and independently 
+in \cite{Surer2023sequential}. We adopt the latter paper's convention of referring to this as an expected integrated variance (EIVAR) criterion. 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] \label{EIVAR}
+\end{align}
+The inner term is the predictive variance of the posterior approximation conditioned on $\designData_{\designIdx} \cup (\tilde{\bpar}, \tilde{\postDens})$, where 
+$\tilde{\postDens} := \postDens(\tilde{\bpar})$ is the hypothetical posterior density evaluation at input $\tilde{\bpar}$. Since the forward model has not yet been evaluated at 
+this input, $\tilde{\postDens}$ is unknown, and hence the inner expectation $\E_{\tilde{\postDens}}$ integrates over this uncertainty. The outer expectation $\E_{\bpar \sim \rho}$
+averages this expected predictive variance across the input space $\parSpace$, weighted by a density $\rho$. Both of the above mentioned papers take $\rho = \priorDens$, but we 
+also consider choosing $\rho$ to be an approximation to $\postDens$. We also note that we can alternatively consider $\postDens_{\designIdx}(\bpar)$ to be either the 
+approximate posterior or log posterior density, but we present the generic EIVAR expression without the log for brevity. The criterion proposed in Sinsbeck and Nowak (2017) actually 
+considers targeting the likelihood approximation in place of the posterior. 
+
+\bigskip
+\noindent
+\textbf{Loss Emulation.} The loss emulation setting yields a very convenient form of EIVAR, especially for the EIVAR version targeting the log posterior density. In this case,
+$\log \postDens_{\designIdx}(\bpar)$ is Gaussian distributed and $\Var\left[\log \postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right]$ is 
+available in closed-form (see \ref{loss_emulation_dist}). Moreover, this variance does not depend on $\tilde{\postDens}$ so the inner expectation $\E_{\tilde{\postDens}}$ vanishes. 
+Therefore, the EIVAR expression simplifies to
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\E_{\bpar \sim \rho}\left[\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)\right]}{\sdObs_{\objIdx}^4} \label{EIVAR_llik_loss_emulation}
+\end{align}
+
+\subsection{Unknown $\CovObs$}
+The above algorithms have treated $\CovObs$ as fixed; here we return to the general setting where $\CovObs$ is unknown. To deal with this, we consider inserting an 
+optimization step into algorithm \textbf{TODO: need to add algorithm above} after each batch $\bpar$ run:
+\begin{align}
+\CovObs_{\designIdx} &:= \argmax_{\CovObs} \postDens(\CovObs|\stateMat, \currParMax{\designIdx}) \label{Cov_optimization}
+\end{align}
+Recalling from \ref{cond_post_Cov} that $\postDens(\CovObs|\stateMat, \currParMax{\designIdx})$ is a product of inverse gamma densities, the optimum $\CovObs_{\designIdx}$ can 
+be computed in closed form (see appendix). The optimal variances occupying the diagonal of $\CovObs_{\designIdx}$ are given by 
+\begin{align}
+\sdObs_{\objIdx}^2 &= \frac{\indexObj{\SSR}(\currParMax{\designIdx})/2 + \indexObj{\IGScale}}{\indexObj{\Ntime}{\objIdx}/2 + \indexObj{\IGShape} + 1}
+\end{align}
+
+\subsection{Batch Sequential Design}
+
+
+% Appendix 
+\section{Appendix}
+
+\subsection{Posterior Computations}
+
+\subsubsection{Gaussian-Inverse Gamma Model}
+Here we calculate the conditional posterior distributions $\postDens(\bpar|\stateMat, \CovObs)$, $\postDens(\CovObs|\stateMat, \bpar)$ under the independent Gaussian 
+likelihood \ref{likelihood} and inverse Gamma prior \ref{inv_gamma_prior}. We allow for an arbitrary prior $\priorDens(\bpar)$ on the calibration parameters.
+Under this model, the joint log posterior over $\bpar$, $\CovObs$ has the form 
+\begin{align*}
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto -\sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\Ntime}}{2} \log\left(2\pi \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{2\sdObs_{\objIdx}^2}  - (\indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^{-2}) + \frac{\indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] + \log\left[\priorDens(\bpar)\right] 
+\end{align*}
+where in the first line we recall the derivation \ref{llik} for the log-likelihood. For the $\bpar$ conditional we drop terms without $\bpar$ dependence, yielding
+\begin{align*}
+\log\left[\postDens(\bpar|\stateMat, \CovObs)\right] &\propto -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\SSR}(\bpar)}{\sdObs_{\objIdx}^2}\right]  + \log\left[\priorDens(\bpar)\right] 
+\end{align*}
+We proceed similarly to derive the $\CovObs$ conditional \ref{cond_post_Cov}
+\begin{align*}
+\log\left[\postDens(\bpar, \CovObs|\stateMat)\right] &\propto - \sum_{\objIdx = 1}^{\Nobj} \left[\frac{\indexObj{\Ntime}}{2} \log\left(2\pi \sdObs_{\objIdx}^2 \right) + \frac{\indexObj{\SSR}(\bpar)}{2\sdObs_{\objIdx}^2}  + (\indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^{2}) + \frac{\indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] \\
+&\propto - \sum_{\objIdx = 1}^{\Nobj} \left[(\indexObj{\Ntime}/2 + \indexObj{\IGShape} + 1)\log(\sdObs_{\objIdx}^2) + \frac{\indexObj{\SSR}(\bpar)/2 + \indexObj{\IGScale}}{\sdObs_{\objIdx}^2} \right] \\
+&\propto \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
+\end{align*}
+
+
+\subsection{Sequential Design}
+\subsubsection{Optimizing $\postDens(\CovObs|\stateMat, \bpar)$}
+Here we derive the solution to the optimization problem \ref{Cov_optimization}. We recall from \ref{cond_post_Cov} that 
+\begin{align*}
+\log \postDens(\CovObs|\stateMat, \bpar) &= \sum_{\objIdx = 1}^{\Nobj} \log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)
+\end{align*}
+Thus, each term can be optimized independently. We have, 
+\begin{align*}
+\log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right) &\propto -[\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1]\log(\sdObs^2_{\objIdx})
+																									       - \frac{1}{\sdObs^2_{\objIdx}} [\indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2]
+\end{align*}
+so 
+\begin{align*}
+\frac{d}{d\sdObs_{\objIdx}^2}\left[\log \mathcal{IG}\left(\sdObs_{\objIdx}^2|\indexObj{\IGShape} + \indexObj{\Ntime}/2, \indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2 \right)\right] &= -\frac{1}{\sdObs_{\objIdx}^2}[\indexObj{\IGShape} + \indexObj{\Ntime}/2 + 1] + \frac{1}{\sdObs_{\objIdx}^4} [\indexObj{\IGScale} + \indexObj{\SSR}(\bpar)/2]
+\end{align*}
+Setting the derivative equal to zero and solving for $\sdObs^2_{\objIdx}$ yields
+\begin{align*}
+\sdObs_{\objIdx}^2 &= \frac{\indexObj{\SSR}(\bpar)/2 + \indexObj{\IGScale}}{\indexObj{\Ntime}{\objIdx}/2 + \indexObj{\IGShape} + 1}
+\end{align*}
+
+
+\subsubsection{EIVAR Acquisition Computations}
+In this section we provide computations related to the EIVAR criterion \ref{EIVAR} in the various emulation settings. Recall that EIVAR is generally defined as 
+\begin{align*}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\bpar \sim \rho} \E_{\tilde{\postDens}} \Var\left[\postDens_{\designIdx}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right] 
+\end{align*}
+where $\tilde{\postDens}$ be also be replaced by its logarithm. 
+
+\bigskip
+\noindent
+\textbf{Loss Emulation (log).} 
+We begin by deriving the EIVAR criterion in the loss emulation setting. Recall from \ref{llik_approx_var} that 
+\begin{align*}
+\Var[\llik_{\designIdx}(\bpar, \CovObs)] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
+\end{align*}
+Conditioning on $(\tilde{\bpar}, \tilde{\llik}_{\designIdx})$ thus yields 
+\begin{align*}
+\Var[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\llik}_{\designIdx})] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
+\end{align*}
+which does not depend on the unknown response $\tilde{\llik}_{\designIdx}$. Therefore the expectation $\E_{\tilde{\llik}}$ drops out and we are left with 
+\begin{align*}
+\acq[\designIdx](\tilde{\bpar}) &= \frac{1}{4} \E_{\bpar \sim \rho} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
+\end{align*}
+which is equal to \ref{EIVAR_llik_loss_emulation}.
+
+\bigskip
+\noindent
+\textbf{Loss Emulation.}
+ We next consider directly targeting $\postDens_{\designIdx}$ instead of its logarithm. We recall that the unnormalized posterior approximation is given 
+ by 
+ \begin{align*}
+ \postDens_{\designIdx}(\bpar, \CovObs) &= \exp\left(\llik_{\designIdx}(\bpar, \CovObs) \right)\priorDens(\bpar, \CovObs)
+ \end{align*}
+ Also recall from \ref{post_approx_var} that 
+ \begin{align*}
+ \Var\left[\postDens_{\designIdx}(\bpar, \CovObs)\right] &= \exp\left\{\E[\llik_{\designIdx}(\bpar, \CovObs)] + \frac{1}{2}\Var[\llik_{\designIdx}(\bpar, \CovObs)] \right\}
+\end{align*}
+Therefore, 
+ \begin{align*}
+ \Var\left[\postDens_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})\right] &= \exp\left\{\E[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})]\right\} \exp\left\{\frac{1}{2}\Var[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] \right\}
+\end{align*}
+
+The second exponential term is independent of $\tilde{\SSR}$. Indeed, from \ref{llik_approx_var} we find that
+\begin{align*}
+\Var[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}
+\end{align*}
+where $\GPKerPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)$ does not depend on $\tilde{\SSR}$; see \ref{GP_pred_var}. The first term does have $\tilde{\SSR}$-dependence; from \ref{llik_approx_mean},
+\begin{align*}
+\E[\llik_{\designIdx}(\bpar, \CovObs) | (\tilde{\bpar}, \tilde{\SSR})] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx, \tilde{\bpar}}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right]
+\end{align*}
+where 
+\begin{align*}
+\indexDesignObj{\GPMean}{\designIdx,\tilde{\bpar}}(\bpar) &= \indexObj{\GPMean}(\bpar) + 
+\indexObj{\GPKer}(\bpar, \designMat[\designIdx, \tilde{\bpar}]) \KerMat[\designIdx, \tilde{\bpar}]^{-1} (\indexDesignObj{\SSRObs}{\designIdx, \tilde{\bpar}} - \GPMean(\bpar)\oneVec{\designIdx+1})
+\end{align*}
+
+\section{Meeting: 7/26}
+
+\subsection{Agenda:}
+\begin{enumerate}
+\item Review sequential design acquisition functions and batch strategies. 
+\item Initial numerical tests. 
+\item Plans for sequential design simulation study. 
+\item Other ideas for sequential design. 
+\end{enumerate}
+
+\subsection{Literature Review: (Batch) Sequential Design and Optimization}
+
+\subsubsection{Review: Bayesian Optimization and Batch Optimization}
+Arguably the most common acquisition function in Bayesian optimization is the expected improvement (EI) criterion. Let 
+$\postDens_{\designIdx}^{\text{max}}$ be the maximum observed value of the unnormalized posterior density 
+$\postDens(\cdot)$ over the current design set $\indexDesign{\designData}$. We define the \textit{improvement} to be the random 
+variable $\indexDesign{I}(\tilde{\bpar}) = \indexDesign{\postDens}(\tilde{\bpar}) - \postDens_{\designIdx}^{\text{max}}$. Taking the expectation 
+of $\indexDesign{I}(\tilde{\bpar})_+ := \max\left\{\indexDesign{I}(\tilde{\bpar}), 0\right\}$ yields the expected improvement acquisition 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E\left[\indexDesign{I}(\tilde{\bpar})_+ \right] = \E\left[\left( \indexDesign{\postDens}(\tilde{\bpar}) - \postDens_{\designIdx}^{\text{max}}\right)_+ \right] 
+\end{align}
+This can be computed in closed-form when $\indexDesign{\postDens}(\tilde{\bpar})$ is a GP. In our case, $\log \indexDesign{\postDens}(\tilde{\bpar})$ is a GP, so we can 
+simply apply the above to the log-posterior instead. For batch optimization, a popular generalization is the multi-point EI 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}_1, \dots, \tilde{\bpar}_q) &= \E\left[\max\left\{\indexDesign{I}(\tilde{\bpar}_1)_+, \dots, \indexDesign{I}(\tilde{\bpar}_q)_+\right\} \right] \\
+&= \E\left[\left(\max\left\{\indexDesign{\postDens}(\tilde{\bpar}_1), \dots, \indexDesign{\postDens}(\tilde{\bpar}_q) \right\} - \postDens_{\designIdx}^{\text{max}} \right)_+ \right]
+\end{align}
+Multi-point EI has been traditionally optimized using greedy heuristic methods \cite{Ginsbourger2010}, in which the batch points are acquired one at a time. Once 
+one point $\tilde{\bpar}$ has been selected, the GP is conditioned on a pseudo-observation $(\tilde{\bpar}, L)$ where $L$ is sometimes called a \textit{lie}. In the 
+\textit{kriging believer} (KB) heuristic $L := \E[\indexDesign{\postDens}(\tilde{\bpar})]$. This has the effect of simply updating the GP predictive variance without changing the predictive 
+mean. The \textit{constant liar} (CL) heuristic instead fixes the value $L$ throughout the entire batch acquisition process. Common choices of $L$ are based on the currently observed
+response values $\boldsymbol{\postDens}_{\designIdx} := \{\postDens(\bpar_1), \dots, \postDens(\bpar_{\designIdx})\}$. We define, respectively, 
+CL-optimist, Cl-pessimist, and CL-mean to correspond to the choices $L := \max \boldsymbol{\postDens}_{\designIdx}$, 
+$L := \min \boldsymbol{\postDens}_{\designIdx}$, and $L := \text{average}\left(\boldsymbol{\postDens}_{\designIdx}\right)$. Since considering maximization of the 
+objective, smaller values of $L$ are pessimistic choices and result in more exploration via the repulsive effect of the pseudo-observations being set to poor 
+objective values. The gentle repulsion of the CL-optimist heuristic has been noted to have empirical success \cite{Ginsbourger2010}. 
+
+More recently, \cite{Chevalier2013} derive a closed-form formula for multi-point EI when $\indexDesign{\postDens}$ is a GP, though this formula still 
+presents computational challenges. The paper \cite{Marmin2015} provides a gradient calculation for the closed-form multi-point EI to aid in optimization. 
+Both the closed form multi-point EI and its gradient are available in the R package \textit{DiceKriging}.
+
+\subsubsection{Review: Acquisition functions targeting posterior}
+I have found three papers that specifically tailor sequential design (i.e. active learning) to the goal of posterior estimation using GPs 
+\cite{SinsbeckNowak, Surer2023sequential, Kandasamy_active_learning}. 
+There is other literature that 
+has addressed this problem using different surrogate methods; for example \cite{Huan2013} considers optimal Bayesian experimental design using polynomial surrogates and \cite{Cleary2021} considers ensemble Kalman methods. 
+\begin{enumerate}
+\item To my knowledge, the first criterion of this sort is proposed in \cite{KandasamyActiveLearning2015}. The idea is to choose the next design point $\tilde{\bpar}$ to minimize
+some divergence $D(\postDens, \indexDesign[\designIdx, \tilde{\bpar}]{\postDens})$ measuring the error between the random field posterior approximation 
+$\indexDesign[\designIdx, \tilde{\bpar}]{\postDens} := \indexDesign{\postDens} | (\tilde{\bpar}, \postDens(\tilde{\bpar}))$ and the true posterior $\postDens$. The true posterior is 
+of course unknown, so $\postDens$ must also be replaced with an approximation. The authors opt to replace $\postDens$ with the sampled density 
+$\hat{\postDens} \sim \indexDesign[\designIdx, \tilde{\bpar}]{\postDens}$ (without re-estimating hyperparameters) (it is a bit odd to be that they base this approximation 
+on $\tilde{\bpar}$ as well as the existing design set). They thus define the \textit{negative expected divergence}
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= -\E_{\tilde{\postDens}} \E_{\hat{\postDens} \sim \indexDesign[\designIdx, \tilde{\bpar}]{\postDens}} D(\hat{\postDens}, \indexDesign[\designIdx, \tilde{\bpar}]{\postDens})
+\end{align}
+I have not completely wrapped my head around this general formulation; there are tricky details here regarding normalizing constants and re-fitting GP hyperparameters 
+that I am not completely clear on. However, the general idea is minimization of expected divergence via a one-step lookahead. They also propose a much simpler 
+criterion: choosing the point that maximizes the predictive variance of $\indexDesign{\postDens}$. 
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \Var\left[\indexDesign[\designIdx, \tilde{\bpar}]{\postDens} \right]
+\end{align}
+
+\item Sinsbeck and Nowak \cite{SinsbeckNowak} start from a similar Bayesian decision theoretic viewpoint, but 1.) target the likelihood approximation to not 
+have to worry about normalizing constants, and 2.) focus on the particular case where $D(\cdot, \cdot)$ is prior-weighted $L^2$ loss, and 
+3.) choose the reference approximation to $e^{\llik(\bpar)}$ to be $\E\left[e^{\indexDesign[\designIdx]{\llik}(\bpar)} \right]$. Under these assumptions, the 
+expected divergence becomes a standard integrated variance criterion
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\priorDens} \E_{\tilde{\llik}} \Var\left[\exp\left(\indexDesign[\designIdx, \tilde{\bpar}]{\llik}(\bpar)\right) | (\tilde{\bpar}, \tilde{\llik}) \right]
+\end{align}
+
+\item Surer et al \cite{Surer2023sequential} propose essentially the same acquisition function as \cite{SinsbeckNowak}, except targeting the 
+unnormalized posterior instead of the likelihood.
+\begin{align}
+\acq[\designIdx](\tilde{\bpar}) &= \E_{\priorDens} \E_{\tilde{\postDens}} \Var\left[\indexDesign[\designIdx, \tilde{\bpar}]{\postDens}(\bpar) | (\tilde{\bpar}, \tilde{\postDens}) \right]
+\end{align}
+They moreover show that for the common PCA-GP emulation approach of \cite{Higdon}, that the inner integral $\E_{\tilde{\postDens}}$ vanishes and the variance term can 
+be computed in closed-form, leaving only the integration over the parameter space $\E_{\priorDens}$ to be performed numerically. They also briefly discuss extensions to 
+the case of unknown likelihood parameters and to the batch sequential setting. 
+
+\section{Acquisition Functions in Our Setting}
+Just for the purposes of illustration, consider the approach of selecting design points which maximize the variance of $\indexDesign{\postDens}$ versus 
+$\log \indexDesign{\postDens}$. The predictive distribution of the latter is Gaussian, with moments given by 
+\begin{align*}
+\mu := \E\left[\log \indexDesign{\postDens}(\bpar|\CovObs)\right] &= -\frac{1}{2} \sum_{\objIdx = 1}^{\Nobj} \left[\indexObj{\Ntime} \log\left(2\postDens \sdObs_{\objIdx}^2 \right) + \frac{\GPMeanPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2} \right] + \log \priorDens(\bpar) \\
+s^2 := \Var\left[\log \indexDesign{\postDens}(\bpar|\CovObs)\right]  &= \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}.
+\end{align*}
+Therefore, the distribution of $\indexDesign{\postDens}$ is log-normal with predictive variance 
+\begin{align*}
+\Var\left[\indexDesign{\postDens}(\bpar|\CovObs)\right] &= \left[\exp(s^2) - 1 \right]\exp(2\mu + s^2).
+\end{align*}
+So maximizing the predictive variance of $\log \indexDesign{\postDens}$ does not even take into account the predictive means of the underlying SSR GPs, only the 
+predictive variances. On the other hand, targeting $\indexDesign{\postDens}$ instead takes into account both the predictive means and variances. In initial tests, I have 
+found the each produce very similar results in early design rounds where GP predictive variance is large and hence dominates $\mu$. 
+
+
+\section{Plans for Simulation Study}
+
+\subsection{Design Strategies}
+\begin{itemize}
+\item \textbf{Acquisition functions}: EIVAR, VAR, EI
+\item \textbf{Acquisition target}: unnormalized log-posterior density, unnormalized posterior density, likelihood 
+\item \textbf{Batch method}: KB, CL variations, joint optimization 
+\item \textbf{Candidates}: uniform sub-sample from previous round MCMC output (or other thinning method), space-filling sample based on prior. 
+\item \textbf{Integration points}: uniform sub-sample from previous round MCMC output, space-filling sample based on prior.
+\end{itemize}
+
+\subsection{Simulation study plans}
+
+\subsubsection{General Test Framework}
+\begin{enumerate}
+\item Run tests on many different initial LHS designs and report distribution of error measures over the random designs. 
+\item Initially focus on single batch step; i.e. given initial LHS design and samples from approximate posterior based on initial design, 
+choose next batch of points and evaluate improvement after running forward model on new batch. 
+\item Starting with 2-dimensional input space to be able to visualize and better understand acquisition functions
+\item Next will run tests on all VSEM parameters (I think about 6-dimensional) 
+\item Currently fixing $\CovObs$ to its MLE estimate conditional on the value of $\bpar$ from the previous round that yielded the 
+highest observed posterior evaluation. Alternative is to average over $\CovObs$ samples from approximate MCMC. 
+\end{enumerate}
+
+\subsubsection{Baselines for Comparison}
+\begin{enumerate}
+	\item Current PEcAn approach: sub-sample MCMC output from previous round instead of optimizing an acquisition
+	\item Some sort of sequential space-filling scheme; i.e. instead of uniformly sub-sampling MCMC output, 
+	        take into account existing points from previous rounds.  
+	\item For all tests, run single-point sequential design analogs to be able to separate evaluation of the acquisition function performance
+	         from the evaluation of the batch method performance. 
+\end{enumerate}
+
+\subsubsection{Evaluation measures}
+\begin{enumerate}
+\item GP emulator metrics.
+	\begin{enumerate}
+	\item Can target underlying SSR GPs or induced log-posterior GP. 
+	\item Metrics: CRPS, NLPS, RMSE, Mahalanobis distance 
+	\item Practical tests: LOO-CV
+	\item Tests only for simulation study: Metrics averaged over true posterior samples. 
+	\end{enumerate}
+\item Metrics on probability distributions. 
+	\begin{enumerate}
+	\item Compare samples from approximate posterior to samples from exact posterior; only for tests, not available in practice. 
+	\item Metrics: MMD, relative mean error, relative covariance error; Question: for computing MMD on MCMC samples, is it typical to just simply thin the samples first? 
+	\end{enumerate}
+\end{enumerate}
+
+
+\section{Current Issues and Future Options}
+
+\subsection{Current Issues}
+\begin{enumerate}
+\item Currently for KB/CL heuristics, we want to condition $\indexDesign{\postDens}$ on $(\tilde{\bpar}, L)$. Currently all GP code operates on the 
+underlying SSR GPs, so need to write code to manually condition the log-posterior GP. 
+\item Extend to multi-site setting. 
+\end{enumerate}
+
+\subsection{Future Ideas}
+\begin{enumerate}
+\item Online switching between acquisition functions. Within batch allotment, potentially make use of different acquisition functions as needed. 
+\item Alternative to using previous round samples as candidates and/or integration points: sample from mixture between approximate posterior and prior or 
+down-weight likelihood. This would be based on ones level of confidence in the current approximate posterior, so would depend on having confidence 
+in evaluation metrics. 
+\item Smarter sub-sampling of points from previous round approximate MCMC; e.g. support points, Stein points
+\item Compare our loss emulation approach to PCA-GP approach \cite{Higdon}. 
+\item Consider ``hierarchical'' acquisitions; e.g. as in \ref{chen2023hierarchical}. These consider integrating over GP hyperparameters to reduce dependence 
+on MLE fit in sequential design/optimization. 
+\item Based on performance of heuristic batch approaches, consider defining a multi-point generalization of EIVAR and think about joint optimization approaches. 
+\end{enumerate}
+
+
+
+
+\end{enumerate}
+
+
+\bibliography{framework_calibrating_ecosystem_models} 
+\bibliographystyle{ieeetr}
+
+
+\end{document}
+
+
+
+

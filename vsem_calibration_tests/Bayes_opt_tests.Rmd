@@ -249,26 +249,12 @@ grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 2))
 ```
 
 ```{r}
+# Compute "sample-based metrics"; that is, measures of error between the approximate and true posterior computed from the MCMC samples. 
 
-test <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
-                                       test_label_1 = "exact", test_label_2 = round0_labels[1], 
-                                       param_types = c("theta", "sig_eps"), 
-                                       metrics = c("mean", "cov"))
-
-
-
-samp_dt_subset <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = c("exact", round0_labels[1]), 
-                                   param_types = "theta", param_names = param_names)
-means <- samp_dt_subset[, .(samp_mean = mean(sample)), by = .(test_label, param_type, param_name)]
-
-
-# If there is only one param_name within param_type_aggregate value then no aggregation can be done and only non-aggregated 
-# metrics are computed. 
-
-# Store matrix of calibration parameter samples from round 1 approx MCMC. 
-samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
-                                      test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
-samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+round0_sample_metrics <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
+                                                         test_label_1 = "exact", test_label_2 = round0_labels[1], 
+                                                         param_types = c("theta", "sig_eps"), 
+                                                         metrics = c("mean", "cov"))
 ```
 
 
