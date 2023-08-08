@@ -218,7 +218,6 @@ run_approx_mcmc <- function(j) {
 mcmc_approx_round0_list <- mclapply(seq_along(lpost_emulators), run_approx_mcmc)
 names(mcmc_approx_round0_list) <- names(lpost_emulators)
 
-# Format MCMC samples. 
 
 ```
 

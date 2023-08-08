@@ -2137,6 +2137,8 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
                             diff_rel = character())
   setnames(metrics_agg, c("test_lab_1", "test_lab_2"), test_labels)
   
+  # L2 distance.
+  L2 <- function(x) sqrt(sum(x^2))
   
   if("mean" %in% metrics) {
     
@@ -2147,7 +2149,6 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
     means$metric <- "mean_abs_diff"
     
     # L2 distance between mean vectors (over all calibration parameters).
-    L2 <- function(x) sqrt(sum(x^2))
     mean_vec_diffs <- means[ , lapply(.SD, L2), .SDcols = c("diff", test_label_1, test_label_2), by = param_type]
     print(mean_vec_diffs)
     mean_vec_diffs[, diff_rel := diff / get(test_label_1)]
@@ -2157,17 +2158,26 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
   }
   
   
-  # if("cov" %in% metrics) {
-  #   for(param_type in samp_dt_subset[, unique(param_type)]) {
-  #     cov_norm
-  #     
-  #     for(test_label in samp_dt_subset[, unique(test_label)]) {
-  #       
-  #     }
-  #     
-  #   }
-  # 
-  # }
+  if("cov" %in% metrics) {
+
+    for(pt in samp_dt_subset[, unique(param_type)]) {
+      samp_wide_test_1 <- dcast(samp_dt_subset[(test_label == test_label_1) & (param_type == pt)], 
+                                formula = itr~param_name, value.var = "sample")[, .SD, .SDcols = !"itr"]
+      samp_wide_test_2 <- dcast(samp_dt_subset[(test_label == test_label_2) & (param_type == pt)], 
+                                formula = itr~param_name, value.var = "sample")[, .SD, .SDcols = !"itr"]
+      C1 <- cov(samp_wide_test_1)
+      C2 <- cov(samp_wide_test_2)
+      C1_frobenius <- L2(C1)
+      
+      cov_diffs <- data.table(param_type = pt, metric = "cov_frobenius")
+      cov_diffs[, (test_label_1) := C1_frobenius]
+      cov_diffs[, (test_label_2) := L2(C2)]
+      cov_diffs[, diff := L2(C1 - C2)]
+      cov_diffs[, diff_rel := diff / C1_frobenius]
+      metrics_agg <- rbindlist(list(metrics_agg, cov_diffs), use.names = TRUE)
+    }
+
+  }
   
   
   return(list(metrics_individual = means, metrics_agg = metrics_agg))
