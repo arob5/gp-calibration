@@ -2098,15 +2098,17 @@ select_mcmc_samp <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
 }
 
 
-compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
+                                     param_types = NULL, param_names = NULL, subset_samp = TRUE) {
                                      
   # Select rows and columns `samp_dt` required for computing metrics. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                     param_types = param_types, param_names = param_names)
-  
+  if(subset_samp) {
+    samp_dt <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                param_types = param_types, param_names = param_names)
+  }
   
   # Compute statistics. 
-  mcmc_param_stats <- samp_dt_subset[, .(samp_mean = mean(sample), samp_var = var(sample)), by = .(test_label, param_type, param_name)]
+  mcmc_param_stats <- samp_dt[, .(samp_mean = mean(sample), samp_var = var(sample)), by = .(test_label, param_type, param_name)]
   
   return(mcmc_param_stats)
   
@@ -2114,22 +2116,61 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels 
 
 
 compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2, metrics, burn_in_start = NULL,
-                                           param_types = NULL, param_names = NULL) {
-                                           
+                                            param_types = NULL, param_names = NULL) {
+                                       
   # Select rows and columns `samp_dt` required for computing metrics. 
   test_labels <- c(test_label_1, test_label_2)
-  mcmc_param_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                                param_types = param_types, param_names = param_names)
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                     param_types = param_types, param_names = param_names)
+      
+  # Compute univariate MCMC means and variance estimates.  
+  mcmc_param_stats <- compute_mcmc_param_stats(samp_dt_subset, burn_in_start = burn_in_start, test_labels = test_labels, 
+                                               param_types = param_types, param_names = param_names, subset_samp = FALSE)
   
-
-  # Compare sample means. 
+  
+  # Create data.table for storing aggregate metrics (i.e. metrics involving one or more parameters). 
+  metrics_agg <- data.table(param_type = character(), 
+                            metric = character(), 
+                            test_lab_1 = character(), 
+                            test_lab_2 = character(), 
+                            diff = character(), 
+                            diff_rel = character())
+  setnames(metrics_agg, c("test_lab_1", "test_lab_2"), test_labels)
+  
+  
   if("mean" %in% metrics) {
+    
+    # Compare sample means parameter-by-parameter.
     means <- dcast(mcmc_param_stats, param_type+param_name ~ test_label, value.var = "samp_mean")
-    means$mean_diff <- abs(means[[test_label_1]] - means[[test_label_2]])
-    means$mean_diff_rel <- means$mean_diff / abs(means[[test_label_1]])
+    means$diff <- abs(means[[test_label_1]] - means[[test_label_2]])
+    means$mean_diff_rel <- means$diff / abs(means[[test_label_1]])
+    means$metric <- "mean_abs_diff"
+    
+    # L2 distance between mean vectors (over all calibration parameters).
+    L2 <- function(x) sqrt(sum(x^2))
+    mean_vec_diffs <- means[ , lapply(.SD, L2), .SDcols = c("diff", test_label_1, test_label_2), by = param_type]
+    print(mean_vec_diffs)
+    mean_vec_diffs[, diff_rel := diff / get(test_label_1)]
+    mean_vec_diffs[, metric := "mean_L2"]
+    metrics_agg <- rbindlist(list(metrics_agg, mean_vec_diffs), use.names = TRUE)
+    
   }
   
-  return(means)
+  
+  # if("cov" %in% metrics) {
+  #   for(param_type in samp_dt_subset[, unique(param_type)]) {
+  #     cov_norm
+  #     
+  #     for(test_label in samp_dt_subset[, unique(test_label)]) {
+  #       
+  #     }
+  #     
+  #   }
+  # 
+  # }
+  
+  
+  return(list(metrics_individual = means, metrics_agg = metrics_agg))
   
 }
 
