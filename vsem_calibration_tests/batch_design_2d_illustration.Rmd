@@ -24,6 +24,9 @@ source("gp_emulator_functions.r")
 source("sequential_design_optimization.r")
 ```
 
+# TODOs
+- Explore effect of conditioning on lpost emulator vs conditioning underlying GPs. 
+
 
 # Computer Model and Data 
 
@@ -140,7 +143,8 @@ print(emulator_settings)
 ```{r}
 # Initial designs (round 0). I intentionally set a "bad design" here that completely misses the region of high posterior density. 
 # This design was not engineered; it was the result of a random LHS initial design sample that I saved for future use in exploring 
-# robustness to such bad designs. 
+# robustness to such bad designs. Actually, the first input in this design hits the true parameter value almost perfectly; however, 
+# GPs still struggle with this design. 
 
 bad_design_LAR <- c(1.50109273180366, 1.61540843766804, 1.4866612841934, 1.39175013386334, 1.69601865071803, 
                     1.41327501159161, 1.54226316135998, 1.57441896485165, 1.45254932799687, 1.66622050972655, 
@@ -164,39 +168,52 @@ init_design <- list(inputs = bad_design_inputs,
                     output_stats = output_data_list$output_stats)
 
 # Prior grid initial design for plotting purposes. 
-
+prior_grid_info <- get_input_output_design(N_points = 51^2,
+                                           design_method = "grid", 
+                                           scale_inputs = TRUE,
+                                           param_ranges = init_design$input_bounds,
+                                           computer_model_data = computer_model_data, 
+                                           theta_prior_params = theta_prior_params)
+lpost_true_grid <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                theta_vals = prior_grid_info$inputs, 
+                                                vars_obs = diag(computer_model_data$Sig_eps), 
+                                                na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                return_list = FALSE)
 
 ```
 
 ```{r}
-# Plot of initial design. 
+# Plot initial design. 
 
-get_2d_heatmap_plot(X = )
-
+plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = lpost_true_grid, param_names = computer_model_data$pars_cal_names, 
+                                       samples_kde = samp_exact_theta, samples_points = init_design$inputs, raster = TRUE, 
+                                       bigger_is_better = TRUE, main_title = "Initial Design over True Posterior", 
+                                       point_coords = computer_model_data$theta_true)
+plot(plt_init_design)
 
 
 ```
-
-
 
 ```{r}
 # Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
-for(j in seq_along(design_list_round0)) {
-  init_estimates <- get_init_param_estimates(design_list_round0[[j]], computer_model_data, sig_eps_prior_params, verbose = FALSE)
-  design_list_round0[[j]]$init_estimates <- init_estimates
-}
+init_estimates <- get_init_param_estimates(init_design, computer_model_data, sig_eps_prior_params)
+init_design$init_estimates <- init_estimates
+print("Initial Estimates:")
+print(init_estimates)
 ```
 
 
 ```{r}
-# Fit emulators on round 0 designs. 
-emulators_list <- fit_emulator_design_list(emulator_settings[1,], design_list_round0)
+# Fit emulators on initial design. 
+gp_fits <- fit_independent_GPs(X_train = init_design$inputs_scaled, Y_train = init_design$outputs_normalized, 
+                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
+emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design$input_bounds, 
+                           output_stats = init_design$output_stats, settings = emulator_settings)
 
 # Induced log joint density (i.e. log unnormalized posterior density) emulator. 
-lpost_emulators <- lapply(seq_along(emulators_list), function(j) get_lpost_emulator_obj(emulators_list[[j]], design_list_round0[[j]], computer_model_data, 
-                                                                                        design_list_round0[[j]]$init_estimates$best_sig2_eps, theta_prior_params))
-names(lpost_emulators) <- names(emulators_list)
-  
+lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design, 
+                                         computer_model_data = computer_model_data, sig2_eps = init_design$init_estimates$best_sig2_eps, 
+                                         theta_prior_params = theta_prior_params)
 ```
 
 
@@ -205,16 +222,28 @@ names(lpost_emulators) <- names(emulators_list)
 # Compute round 0 emulator-based metrics.  
 #
 
-# Validation data for evaluated emulator-based metrics. 
-validation_list_lpost_emulator_metrics <- format_lpost_emulator_validation_data(lpost_emulators, inputs_unscaled = samp_exact_theta_metrics, 
-                                                                                computer_model_data = computer_model_data)
+# Validation data for evaluating emulator-based metrics. 
+lpost_emulator_metrics <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                       theta_vals = samp_exact_theta_emulator_metrics, 
+                                                       vars_obs = diag(computer_model_data$Sig_eps), 
+                                                       na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                       return_list = FALSE)
+
+val_data_emulator_metrics <- list(inputs = samp_exact_theta_emulator_metrics, 
+                                  inputs_scaled = scale_input_data(samp_exact_theta_emulator_metrics, init_design$input_bounds), 
+                                  outputs = lpost_emulator_metrics)
 
 # Compute metrics. 
-lpost_emulator_metrics <- get_lpost_emulator_metric_comparison(lpost_emulator_list = lpost_emulators, 
-                                                               lpost_emulator_validation_list = validation_list_lpost_emulator_metrics, 
-                                                               metrics = c("crps", "rmse"), include_nugget = TRUE)
-lpost_emulator_metrics$round <- 0
+metrics_results <- get_lpost_emulator_metrics(lpost_emulator = lpost_emulator, 
+                                              lpost_validation_inputs = val_data_emulator_metrics$inputs, 
+                                              lpost_validation_inputs_scaled = val_data_emulator_metrics$inputs_scaled,
+                                              lpost_validation_outputs = val_data_emulator_metrics$outputs,
+                                              metrics = c("crps", "rmse"),  
+                                              include_nugget = TRUE)
+emulator_metrics_results <- data.frame(as.list(metrics_results))
+emulator_metrics_results$round <- 0
 ```
+
 
 ## Sample approximate posterior. 
 ```{r}
@@ -224,59 +253,49 @@ lpost_emulator_metrics$round <- 0
 
 N_mcmc_approx <- 50000
 
-run_approx_mcmc <- function(j) {
-  mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                        theta_prior_params = theta_prior_params, 
-                        emulator_info = lpost_emulators[[j]]$emulator_info_list,
-                        theta_init = design_list_round0[[j]]$init_estimates$best_input[1,], 
-                        sig_eps_init = design_list_round0[[j]]$init_estimates$best_sig2_eps, 
-                        learn_sig_eps = TRUE, 
-                        sig_eps_prior_params = sig_eps_prior_params, 
-                        N_mcmc = N_mcmc_approx)
-}
-
-# Parallelize over list of emulators. 
-mcmc_approx_round0_list <- mclapply(seq_along(lpost_emulators), run_approx_mcmc)
-names(mcmc_approx_round0_list) <- names(lpost_emulators)
-
-
+mcmc_approx_round0 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params, 
+                                            emulator_info = lpost_emulator$emulator_info_list,
+                                            theta_init = init_design$init_estimates$best_input[1,], 
+                                            sig_eps_init = init_design$init_estimates$best_sig2_eps, 
+                                            learn_sig_eps = TRUE, 
+                                            sig_eps_prior_params = sig_eps_prior_params, 
+                                            N_mcmc = N_mcmc_approx)
 ```
 
 ```{r}
-
-# Combine samples from each emulator into single data.table.  
-round0_labels <- paste0("round0_", names(mcmc_approx_round0_list))
-mcmc_samp_dt_round0 <- rbindlist(lapply(seq_along(mcmc_approx_round0_list), 
-                                        function(j) format_mcmc_output(samp_list = mcmc_approx_round0_list[[j]][c("theta", "sig_eps")], 
-                                                                       test_label = round0_labels[j])), use.names = TRUE) 
-                                                               
 # Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_round0), use.names = TRUE)
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_round0[c("theta", "sig_eps")], test_label = "round0")), 
+                          use.names = TRUE)
+                                                                       
 
 ```
 
 ### Round 0 MCMC sampling diagnostics. 
 ```{r}
 
-burn_ins <- c(burn_ins, setNames(rep(10000, length(round0_labels)), round0_labels))
+burn_ins <- c(burn_ins, round0 = 10000)
 
-mcmc_round0_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = round0_labels, param_types = "theta")
-grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 2))
+mcmc_round0_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")
+grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 1))
 ```
 
 ```{r}
-mcmc_round0_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = round0_labels, param_types = "sig_eps")
-grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 2))
+mcmc_round0_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "sig_eps")
+grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 1))
 ```
 
 ```{r}
 # Compute "sample-based metrics"; that is, measures of error between the approximate and true posterior computed from the MCMC samples. 
 
 round0_sample_metrics <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
-                                                         test_label_1 = "exact", test_label_2 = round0_labels[1], 
+                                                         test_label_1 = "exact", test_label_2 = "round0", 
                                                          param_types = c("theta", "sig_eps"), 
                                                          metrics = c("mean", "cov"))
+print(round0_sample_metrics$metrics_individual)
+print(round0_sample_metrics$metrics_agg)
 ```
+
 
 ```{r}
 #
@@ -284,40 +303,63 @@ round0_sample_metrics <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt,
 #
 
 # Candidate and integration points. 
-samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = round0_labels[1], param_types = "theta")[, .(param_name, sample)]
+samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")[, .(param_name, sample)]
 samp_round0_theta <- as.matrix(unstack(samp_round0_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
 
+SSR_round0 <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = samp_round0_theta, na.rm = TRUE)
+lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                     theta_vals = samp_round0_theta, 
+                                                     SSR = SSR_round0, 
+                                                     vars_obs = lpost_emulator$sig2_eps, 
+                                                     theta_prior_params = theta_prior_params)
 
-acquisition_settings <- list(acquisition_type = "EIVAR_lpost",
+
+                                   
+
+
+acquisition_settings <- list(acquisition_type = "",
                              opt_method = "grid",
                              batch_size = 10, 
-                             batch_method = "kriging_believer",
+                             batch_method = "",
                              theta_grid_candidate = scale_input_data(samp_round0_theta, input_bounds = design_list_round0[[1]]$input_bounds), 
                              theta_grid_integrate = scale_input_data(samp_round0_theta, input_bounds = design_list_round0[[1]]$input_bounds), 
                              N_subsample_candidate = 10000, 
                              N_subsample_integrate = 3000)
 
-lpost_emulator_new_batch <- batch_acquisition_opt_one_step(lpost_emulators[[1]], acquisition_settings)
+lpost_emulator_new_batch <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+# Index selector for the new batch inputs. 
+new_batch_sel <- c(rep(FALSE, nrow(init_design$inputs)), rep(TRUE, acquisition_settings$batch_size))
+
+```
+
+```{r}
+#
+# EI Acquisitions
+#
+
+acquisition_settings$acquisition_type <- "EI_lpost"
+
+# Kriging believer. 
+acquisition_settings$batch_method <- "kriging_believer"
+lpost_emulator_EI_KB<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+# Constant liar (optimist, "soft repulsion"). 
+acquisition_settings$batch_method <- "constant_liar_optimist"
+lpost_emulator_EI_CLO<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+# Constant liar (pessimist, "hard repulsion").
+acquisition_settings$batch_method <- "constant_liar_pessimist"
+lpost_emulator_EI_CLP<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
 
 ```
 
 
+
+
+
 ```{r}
 # Plot batch points acquired. 
-new_batch_sel <- c(rep(FALSE, nrow(lpost_emulator_new_batch$inputs_lpost$inputs) - acquisition_settings$batch_size), 
-                   rep(TRUE, acquisition_settings$batch_size))
-
-
-SSR_vals <- get_computer_model_SSR(computer_model_data = computer_model_data, 
-                                   theta_vals = samp_round0_theta, na.rm = TRUE)
-lprior_vals <- calc_lprior_theta(samp_round0_theta, theta_prior_params)
-
-lpost_vals_round0 <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                  theta_vals = samp_round0_theta, 
-                                                  SSR = SSR_vals, 
-                                                  vars_obs = lpost_emulator_new_batch$sig2_eps, 
-                                                  lprior_vals = lprior_vals,
-                                                  return_list = FALSE)
 
 batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_theta, 
                                             lpost_vals = lpost_vals_round0,
