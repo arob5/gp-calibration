@@ -302,7 +302,7 @@ lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = compu
                                                      theta_prior_params = theta_prior_params)
 samp_round0_info <- list(inputs = samp_round0_theta, 
                          inputs_scaled = scale_input_data(samp_round0_theta, init_design$input_bounds), 
-                         outputs = lpost_round0_outputs)
+                         outputs = lpost_round0_outputs$lpost)
 
 # lpost emulator predictions at sampled points. 
 lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emulator, 
@@ -331,25 +331,51 @@ print(round0_sample_metrics$metrics_agg)
 plt_mean <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$mean, param_names = computer_model_data$pars_cal_names, 
                                 samples_kde = samp_exact_theta, raster = FALSE, 
                                 samples_points = init_design$inputs, 
-                                point_coords = computer_model_data$theta_true, bigger_is_better = TRUE)
+                                point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                main_title = "lpost predictive mean")
 plt_var <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$var, param_names = computer_model_data$pars_cal_names, 
                                samples_kde = samp_exact_theta, raster = FALSE, 
                                samples_points = init_design$inputs, 
-                               point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, log_scale = TRUE)
+                               point_coords = computer_model_data$theta_true, bigger_is_better = FALSE, log_scale = TRUE, main_title = "lpost predictive var")
 
 plot(plt_mean)
 plot(plt_var)
 ```
 
-
 ```{r}
 # Underlying GP Predictions. 
-pred_GPs <- predict_independent_GPs(X_pred = scale_input_data(samp_round0_theta, input_bounds = lpost_emulators[[1]]$emulator_info_list$input_bounds), 
-                                    gp_obj_list = lpost_emulator_new_batch$emulator_info_list$gp_fits, 
-                                    gp_lib = lpost_emulator_new_batch$emulator_info_list$settings$gp_lib)
+pred_GPs <- predict_independent_GPs(X_pred = samp_round0_info$inputs_scaled, 
+                                    gp_obj_list = lpost_emulator$emulator_info_list$gp_fits, 
+                                    gp_lib = lpost_emulator$emulator_info_list$settings$gp_lib, 
+                                    denormalize_predictions = TRUE, output_stats = init_design$output_stats)
+```
+
+
+```{r}
+# Underlying GP plots. 
+
+for(j in seq_along(pred_GPs)) {
+  
+  plt_GP_mean <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = pred_GPs[[j]]$mean, param_names = computer_model_data$pars_cal_names, 
+                                     samples_kde = samp_exact_theta, raster = FALSE, 
+                                     samples_points = init_design$inputs, 
+                                     point_coords = computer_model_data$theta_true, bigger_is_better = FALSE, 
+                                     main_title = paste0("SSR GP pred mean: ", computer_model_data$output_vars[j]))
+  
+  plt_GP_var <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = pred_GPs[[j]]$var_comb, param_names = computer_model_data$pars_cal_names, 
+                                    samples_kde = samp_exact_theta, raster = FALSE, 
+                                    samples_points = init_design$inputs, 
+                                    point_coords = computer_model_data$theta_true, bigger_is_better = FALSE, 
+                                    main_title = paste0("SSR GP pred var: ", computer_model_data$output_vars[j]), log_scale = TRUE)
+  
+  plot(plt_GP_mean)
+  plot(plt_GP_var)
+  
+}
 
 
 ```
+
 
 
 ```{r}
@@ -357,16 +383,13 @@ pred_GPs <- predict_independent_GPs(X_pred = scale_input_data(samp_round0_theta,
 # Test batch acquisition.
 #
 
-# Candidate and integration points. 
-
-
 # Acquisition settings; acquisition type and batch method will be changed throughout the following tests.                                   
 acquisition_settings <- list(acquisition_type = "",
                              opt_method = "grid",
                              batch_size = 10, 
                              batch_method = "",
-                             theta_grid_candidate = scale_input_data(samp_round0_theta, input_bounds = design_list_round0[[1]]$input_bounds), 
-                             theta_grid_integrate = scale_input_data(samp_round0_theta, input_bounds = design_list_round0[[1]]$input_bounds), 
+                             theta_grid_candidate = samp_round0_info$inputs_scaled, 
+                             theta_grid_integrate = samp_round0_info$inputs_scaled, 
                              N_subsample_candidate = 10000, 
                              N_subsample_integrate = 3000)
 
@@ -385,39 +408,86 @@ acquisition_settings$acquisition_type <- "EI_lpost"
 
 # Kriging believer. 
 acquisition_settings$batch_method <- "kriging_believer"
-lpost_emulator_EI_KB<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+lpost_emulator_EI_KB <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
 
 # Constant liar (optimist, "soft repulsion"). 
 acquisition_settings$batch_method <- "constant_liar_optimist"
-lpost_emulator_EI_CLO<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+lpost_emulator_EI_CLO <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
 
 # Constant liar (pessimist, "hard repulsion").
 acquisition_settings$batch_method <- "constant_liar_pessimist"
-lpost_emulator_EI_CLP<- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+lpost_emulator_EI_CLP <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
 
 ```
-
-
-
 
 
 ```{r}
-# Plot batch points acquired. 
+#
+# Plot EI acquisitions results. 
+#
 
-batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_theta, 
-                                            lpost_vals = lpost_vals_round0,
-                                            computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
-                                            samples_kde = samp_exact_theta, 
-                                            init_design_points = lpost_emulator_new_batch$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                            sequential_design_points = lpost_emulator_new_batch$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
-                                            raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                            main_title = "Batch acquisition: EI-lpost, KB", 
-                                            bigger_is_better = TRUE, log_scale = FALSE)
-                                            
-plot(batch_plot)
+EI_results <- setNames(list(lpost_emulator_EI_KB, lpost_emulator_EI_CLO, lpost_emulator_EI_CLP), c("KB", "CLO", "CLP"))
+
+for(j in seq_along(EI_results)) {
+  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                              lpost_vals = samp_round0_info$outputs,
+                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                              samples_kde = samp_exact_theta, 
+                                              init_design_points = EI_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
+                                              sequential_design_points = EI_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
+                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
+                                              main_title = paste0("Batch acquisition: EI-lpost, ", names(EI_results)[j]), 
+                                              bigger_is_better = TRUE, log_scale = FALSE)
+                                              
+  plot(batch_plot)
+}
 
 ```
 
+```{r}
+#
+# Max Variance Acquisitions
+#
+
+acquisition_settings$acquisition_type <- "VAR_lpost"
+
+# Kriging believer. 
+acquisition_settings$batch_method <- "kriging_believer"
+lpost_emulator_VAR_KB <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+# Constant liar (optimist, "soft repulsion"). 
+acquisition_settings$batch_method <- "constant_liar_optimist"
+lpost_emulator_VAR_CLO <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+# Constant liar (pessimist, "hard repulsion").
+acquisition_settings$batch_method <- "constant_liar_pessimist"
+lpost_emulator_VAR_CLP <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
+
+```
+
+
+```{r}
+#
+# Plot Max Variance acquisitions results. 
+#
+
+VAR_results <- setNames(list(lpost_emulator_VAR_KB, lpost_emulator_VAR_CLO, lpost_emulator_VAR_CLP), c("KB", "CLO", "CLP"))
+
+for(j in seq_along(VAR_results)) {
+  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                              lpost_vals = samp_round0_info$outputs,
+                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                              samples_kde = samp_exact_theta, 
+                                              init_design_points = VAR_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
+                                              sequential_design_points = VAR_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
+                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
+                                              main_title = paste0("Batch acquisition: VAR-lpost, ", names(VAR_results)[j]), 
+                                              bigger_is_better = TRUE, log_scale = FALSE)
+                                              
+  plot(batch_plot)
+}
+
+```
 
 
 

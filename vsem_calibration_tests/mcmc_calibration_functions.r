@@ -2500,7 +2500,8 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
                                                 lprior_vals = lprior_vals, 
                                                 lpost_vals = lpost_vals, 
                                                 theta_prior_params = theta_prior_params, 
-                                                sig2_eps = sig2_eps)
+                                                sig2_eps = sig2_eps, 
+                                                main_title = main_title)
   
   # Add sequentially chosen design points. 
   if(!is.null(sequential_design_points)) {
@@ -2715,7 +2716,8 @@ get_2d_response_surface_plot_likelihood <- function(theta_vals, computer_model_d
 get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_data, param_names, output_variables, 
                                                    raster = FALSE, point_coords = NULL, samples_kde = NULL, 
                                                    samples_points = NULL, SSR_vals = NULL, llik_vals = NULL,  
-                                                   lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL, sig2_eps = NULL) {
+                                                   lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL, 
+                                                   sig2_eps = NULL, main_title = NULL) {
   
   # Log posterior evaluations. 
   if(is.null(lpost_vals)) {
@@ -2733,13 +2735,14 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
   }
   
   # Heatmap plot. 
+  if(is.null(main_title)) main_title <- "Log Posterior"
   plt <- get_2d_heatmap_plot(X = theta_vals, 
                              y = lpost_vals, 
                              param_names = param_names,
                              samples_kde = samples_kde, 
                              samples_points = samples_points, 
                              raster = raster, 
-                             main_title = "Log Posterior", 
+                             main_title = main_title, 
                              point_coords = point_coords,
                              bigger_is_better = TRUE, 
                              legend_label = "Log Posterior")
