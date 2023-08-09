@@ -2483,7 +2483,7 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
                                           sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
                                           main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
                                           legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
-                                          lpost_vals = NULL) {
+                                          lpost_vals = NULL, sig2_eps = NULL) {
   # TODO: currently main title and legend label arguments do nothing. 
   
   # Log Posterior response surface plot. 
@@ -2499,7 +2499,8 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
                                                 llik_vals = llik_vals,  
                                                 lprior_vals = lprior_vals, 
                                                 lpost_vals = lpost_vals, 
-                                                theta_prior_params = theta_prior_params)
+                                                theta_prior_params = theta_prior_params, 
+                                                sig2_eps = sig2_eps)
   
   # Add sequentially chosen design points. 
   if(!is.null(sequential_design_points)) {
@@ -2714,14 +2715,16 @@ get_2d_response_surface_plot_likelihood <- function(theta_vals, computer_model_d
 get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_data, param_names, output_variables, 
                                                    raster = FALSE, point_coords = NULL, samples_kde = NULL, 
                                                    samples_points = NULL, SSR_vals = NULL, llik_vals = NULL,  
-                                                   lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL) {
+                                                   lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL, sig2_eps = NULL) {
   
   # Log posterior evaluations. 
   if(is.null(lpost_vals)) {
+    if(is.null(sig2_eps)) sig2_eps <- diag(computer_model_data$Sig_eps)
+    
     lpost_vals <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
                                                theta_vals = theta_vals, 
                                                SSR = SSR_vals, 
-                                               vars_obs = diag(computer_model_data$Sig_eps), 
+                                               vars_obs = sig2_eps, 
                                                na.rm = TRUE, 
                                                theta_prior_params = theta_prior_params, 
                                                lprior_vals = lprior_vals,

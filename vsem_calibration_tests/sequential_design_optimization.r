@@ -208,7 +208,7 @@ batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings)
     input_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, acquisition_settings = acquisition_settings)
 
     # Update lpost emulator using batch heuristic method. Does not affect underlying GPs, including their hyperparameters. 
-    lpost_emulator <- pseudo_update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_new_scaled,
+    lpost_emulator <- pseudo_update_lpost_emulator(lpost_emulator, input_new_scaled = input_new_scaled,
                                                    pseudo_update_method = acquisition_settings$batch_method)
   }
   
@@ -387,11 +387,11 @@ pseudo_update_lpost_emulator <- function(lpost_emulator, input_new_scaled, pseud
 
 get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
   
-  if(pseudo_update_method == "constant_liar_pessimist") {
+  if(constant_liar_method == "constant_liar_pessimist") {
     return(min(lpost_emulator$outputs_lpost))
-  } else if(pseudo_update_method == "constant_liar_optimist") {
+  } else if(constant_liar_method == "constant_liar_optimist") {
     return(max(lpost_emulator$outputs_lpost))
-  } else if(pseudo_upodate_method == "constant_liar_mean") {
+  } else if(constant_liar_method == "constant_liar_mean") {
     return(mean(lpost_emulator$outputs_lpost))
   } else {
     stop("Invalid constant liar method: ", constant_liar_method)
