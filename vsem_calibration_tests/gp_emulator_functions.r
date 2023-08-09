@@ -2604,7 +2604,7 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
       pred_vars[neg_var_sel] <- 0
     }
     
-    return_list$var <- pred_vars
+    return_list$var <- drop(pred_vars)
     
   }
     

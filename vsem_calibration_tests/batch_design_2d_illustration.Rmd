@@ -286,6 +286,34 @@ grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 1))
 ```
 
 ```{r}
+#
+# Store round 0 MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
+# as well as for plotting purposes. 
+#
+
+samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")[, .(param_name, sample)]
+samp_round0_theta <- as.matrix(unstack(samp_round0_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+
+SSR_round0 <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = samp_round0_theta, na.rm = TRUE)
+lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                     theta_vals = samp_round0_theta, 
+                                                     SSR = SSR_round0, 
+                                                     vars_obs = lpost_emulator$sig2_eps, 
+                                                     theta_prior_params = theta_prior_params)
+samp_round0_info <- list(inputs = samp_round0_theta, 
+                         inputs_scaled = scale_input_data(samp_round0_theta, init_design$input_bounds), 
+                         outputs = lpost_round0_outputs)
+
+# lpost emulator predictions at sampled points. 
+lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emulator, 
+                                                     inputs_new_scaled = samp_round0_info$inputs_scaled, 
+                                                     inputs_new_unscaled = samp_round0_info$inputs, include_nugget = TRUE)
+```
+
+
+
+
+```{r}
 # Compute "sample-based metrics"; that is, measures of error between the approximate and true posterior computed from the MCMC samples. 
 
 round0_sample_metrics <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
@@ -298,25 +326,41 @@ print(round0_sample_metrics$metrics_agg)
 
 
 ```{r}
+# GP predictive mean and variance plots. 
+
+plt_mean <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$mean, param_names = computer_model_data$pars_cal_names, 
+                                samples_kde = samp_exact_theta, raster = FALSE, 
+                                samples_points = init_design$inputs, 
+                                point_coords = computer_model_data$theta_true, bigger_is_better = TRUE)
+plt_var <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$var, param_names = computer_model_data$pars_cal_names, 
+                               samples_kde = samp_exact_theta, raster = FALSE, 
+                               samples_points = init_design$inputs, 
+                               point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, log_scale = TRUE)
+
+plot(plt_mean)
+plot(plt_var)
+```
+
+
+```{r}
+# Underlying GP Predictions. 
+pred_GPs <- predict_independent_GPs(X_pred = scale_input_data(samp_round0_theta, input_bounds = lpost_emulators[[1]]$emulator_info_list$input_bounds), 
+                                    gp_obj_list = lpost_emulator_new_batch$emulator_info_list$gp_fits, 
+                                    gp_lib = lpost_emulator_new_batch$emulator_info_list$settings$gp_lib)
+
+
+```
+
+
+```{r}
 #
 # Test batch acquisition.
 #
 
 # Candidate and integration points. 
-samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")[, .(param_name, sample)]
-samp_round0_theta <- as.matrix(unstack(samp_round0_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-
-SSR_round0 <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = samp_round0_theta, na.rm = TRUE)
-lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                     theta_vals = samp_round0_theta, 
-                                                     SSR = SSR_round0, 
-                                                     vars_obs = lpost_emulator$sig2_eps, 
-                                                     theta_prior_params = theta_prior_params)
 
 
-                                   
-
-
+# Acquisition settings; acquisition type and batch method will be changed throughout the following tests.                                   
 acquisition_settings <- list(acquisition_type = "",
                              opt_method = "grid",
                              batch_size = 10, 
@@ -326,12 +370,11 @@ acquisition_settings <- list(acquisition_type = "",
                              N_subsample_candidate = 10000, 
                              N_subsample_integrate = 3000)
 
-lpost_emulator_new_batch <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
-
 # Index selector for the new batch inputs. 
 new_batch_sel <- c(rep(FALSE, nrow(init_design$inputs)), rep(TRUE, acquisition_settings$batch_size))
 
 ```
+
 
 ```{r}
 #
@@ -375,34 +418,7 @@ plot(batch_plot)
 
 ```
 
-```{r}
-# GP predictive mean and variance plots. 
-pred <- predict_lpost_emulator(lpost_emulator = lpost_emulators[[1]], 
-                               inputs_new_scaled = scale_input_data(samp_round0_theta, input_bounds = lpost_emulators[[1]]$emulator_info_list$input_bounds), 
-                               inputs_new_unscaled = samp_round0_theta, include_nugget = TRUE)
 
-plt_mean <- get_2d_heatmap_plot(X = samp_round0_theta, y = pred$mean, param_names = computer_model_data$pars_cal_names, 
-                                samples_kde = samp_exact_theta, raster = FALSE, 
-                                samples_points = lpost_emulator_new_batch$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                point_coords = computer_model_data$theta_true, bigger_is_better = TRUE)
-plt_var <- get_2d_heatmap_plot(X = samp_round0_theta, y = drop(pred$var), param_names = computer_model_data$pars_cal_names, 
-                               samples_kde = samp_exact_theta, raster = FALSE, 
-                               samples_points = lpost_emulator_new_batch$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                               point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, log_scale = TRUE)
-
-plot(plt_mean)
-plot(plt_var)
-```
-
-
-```{r}
-# Underlying GP Predictions. 
-pred_GPs <- predict_independent_GPs(X_pred = scale_input_data(samp_round0_theta, input_bounds = lpost_emulators[[1]]$emulator_info_list$input_bounds), 
-                                    gp_obj_list = lpost_emulator_new_batch$emulator_info_list$gp_fits, 
-                                    gp_lib = lpost_emulator_new_batch$emulator_info_list$settings$gp_lib)
-
-
-```
 
 
 
