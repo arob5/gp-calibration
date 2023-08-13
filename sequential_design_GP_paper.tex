@@ -99,16 +99,88 @@ $\BigO(10^4)$ or more iterations, each of which requires evaluating $\logUnPost(
 in turn entails computing a forward model evaluation $\fwd(\bpar)$.In the  case where the forward model takes the form of an expensive computer simulation, this 
 can render MCMC intractable. To address this issue, a variety of techniques have emerged which replace the expensive computations 
 $\logUnPost(\bpar, \CovObs)$ with a cheaper statistical approximation known as an \textit{emulator} or \textit{surrogate}. This paper focuses on Gaussian process 
-emulators, which are introduced below in the specific context of this problem. 
+emulators, which are briefly introduced below before returning to the question of model emulation. 
 
-\subsection{Gaussian Process Emulation}
+\subsection{Gaussian Process Regression}
+Consider the problem of interpolating a univariate target function $\f: \parSpace \to \R$. Suppose we have access to training data 
+$\designData_{\Ndesign} := \left\{(\bpar_{\designIdx}, \f(\bpar_{\designIdx}))\right\}_{\designIdx = 1}^{\Ndesign}$ consisting of the observed outputs of the target 
+$\fObs[\Ndesign] :=  \begin{pmatrix} \f(\bpar_1), \dots, \f(\bpar_\Ndesign) \end{pmatrix}^\top$ at a set of $N$ 
+\textit{design points} $\designMat[\Ndesign] := \begin{pmatrix} \bpar_1, \dots, \bpar_N \end{pmatrix}^\top$. 
+
+The task is then to predict the output $\f(\bpar)$ at unobserved inputs $\bpar$. GPs provide a probabilistic solution to this problem, 
+whereby uncertainty about $\f(\bpar)$ is represented via the prior distribution 
+\begin{align}
+\f(\cdot) \sim \GP(\GPMean(\cdot), \GPKer(\cdot, \cdot)). \label{GP_prior_generic}
+\end{align}
+where $\GPMean: \parSpace \to \R$ and $\GPKer: \parSpace \times \parSpace \to \R$ are, respectively, the mean function and covariance function (i.e. kernel)
+of the GP. Formally, \ref{GP_prior_generic} means that at any finite set of inputs 
+$\designMat[M] := \begin{pmatrix} \tilde{\bpar}_1, \dots, \tilde{\bpar}_{M} \end{pmatrix}^\top$ the vector of function values $\fObs[M]$ evaluated at those inputs 
+is multivariate Gaussian distributed
+\begin{align}
+\fObs[M] \sim \mathcal{N}_{M}(\GPMean(\designMat[M]), \GPKer(\designMat[M], \designMat[M])),
+\end{align}
+where $\GPMean(\designMat[M])$ is an $M$-vector with entries $\GPMean(\designMat[M])_m = \GPMean(\bpar_m)$ and 
+$\GPKer(\designMat[M], \designMat[M])$ an $M \times M$ matrix with entries $\GPKer(\designMat[M], \designMat[M])_{m,m^\prime} = \GPKer(\bpar_m, \bpar_{m^\prime})$.
+In general, we overload the covariance matrix function arguments so that $\GPKer(\designMat[M], \designMat[N])$ indicates the $M \times N$ matrix with entries 
+$\GPKer(\designMat[M], \designMat[N])_{m,n} = \GPKer(\tilde{\bpar}_m, \bpar_n)$. 
+When the inputs to each entry of the covariance function are the same, we compress notation by writing it as a function of a single argument; 
+e.g. $\GPKer(\bpar) := \GPKer(\bpar, \bpar)$ and $\GPKer(\designMat[M]) := \GPKer(\designMat[M], \designMat[M])$. 
+
+[TODO: add section on squared exponential kernel, and MLE for kernel hyperparameters]
+
+Prediction at new points $\designMat[M]$ then proceeds by conditioning the GP on the observed data $\designData_{\Ndesign}$. This defines the 
+GP \textit{predictive distribution} (i.e. posterior distribution) over the unobserved target responses $\fObs[M]$, which is conveniently also Gaussian:
+\begin{align}
+\fObs[M] | \designData_{\Ndesign} &\sim \GP(\GPMeanPred[\Ndesign](\designMat[M]), \GPKerPred[\Ndesign](\designMat[M]))
+\end{align}
+The subscripts on $\GPMeanPred[\Ndesign](\cdot)$ and $\GPKerPred[\Ndesign](\cdot, \cdot)$ serve to differentiate the mean and covariance functions of the predictive 
+distribution from $\GPMean(\cdot), \GPKer(\cdot, \cdot)$, those of the prior distribution. The subscript indicates the number of design points in the conditioning data set. 
+The predictive moments are available in closed-form, and given by the well-known formulas 
+\begin{align}
+\GPMeanPred[\Ndesign](\designMat[M]) &= \GPMean(\designMat[M]) + \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1}(\fObs[\Ndesign] - \GPMean(\designMat[\Ndesign])) \label{kriging_eqns} \\
+\GPKerPred[\Ndesign](\designMat[M]) &= \GPKer(\designMat[M]) - \GPKer(\designMat[M], \designMat[\Ndesign]) \KerMat[\Ndesign]^{-1} \GPKer(\designMat[\Ndesign], \designMat[M]) 
+\end{align}
+where $\KerMat[\Ndesign] := \GPKer(\designMat[\Ndesign])$ is the \textit{kernel matrix}.
+
+\subsection{Emulators and Gaussian Processes}
+[TODO: should start with the general idea of observing N points and fitting a model]
+A variety of regression models have been proposed for the purposes of model emulation, including neural networks [TODO: cite examples of all of these], 
+radial basis functions \cite{doi:10.1198/106186008X320681}, polynomial chaos expansions, and Gaussian processes (GPs). In addition to the choice of regression model, there is also freedom in 
+choosing an \textit{emulation target}, a term we introduce for the response variable that defines the mapping which is emulated. Perhaps the most obvious approach is 
+to emulate the forward model map $\bpar \mapsto \fwd(\bpar)$ directly, as in [TODO: cite]. However, this quickly becomes infeasible as the dimensionality 
+$\Ntime$ of the model output becomes large. Alternatively, observe that for the purposes of parameter calibration the forward model evaluation $\fwd(\bpar)$ 
+only appears as a function of the scalar-valued likelihood $\Exp{\llik(\bpar, \CovObs)}$. Therefore, another common approach is to reduce the problem to 
+emulation of the scalar map $\bpar \mapsto \llik(\bpar, \CovObs)$, where the log-likelihood is typically preferred to the likelihood as an emulation target due to 
+the fact that it results in a smoother mapping. This approach can be problematic due to the fact that the above map is also a function of the likelihood parameters 
+$\CovObs$. Fixing an estimate $\hat{\CovObs}$ in advance yields a function only of $\bpar$ but sacrifices uncertainty quantification for $\CovObs$. Alternatively, 
+one can extend the input space and instead emulate the map $(\bpar, \CovObs) \mapsto \llik(\bpar, \CovObs)$ 
+\cite{doi:10.1198/106186008X320681, LEBEL2019158}. Unfortunately, this results in a more challenging function approximation problem, especially when 
+the parameters $\CovObs$ have a large effect on the smoothness of log-likelihood. The emulation targets we propose in section \ref{emulation_targets} are 
+applicable in settings with high-dimensional forward model output and allow for a full Bayesian treatment of the likelihood parameters $\CovObs$ without 
+treating them as additional emulator inputs. 
+
+This paper considers the popular choice of GP emulators. A major benefit of this choice is that GPs provide a stochastic approximation of 
+$\logUnPost(\bpar, \CovObs)$, with the GP kernel providing an estimate of uncertainty in the approximation at any values $(\bpar, \CovObs)$. 
+We show that placing a GP prior on maps defined by certain emulation targets 
+(see section \ref{emulation_targets}) induces a GP prior on the unnormalized log posterior density, 
+\begin{align}
+\logUnPost \sim \GP(\GPMean, \GPKer), \label{logUnPost_prior}
+\end{align}
+where the specific form of the prior mean $\GPMean(\cdot)$ and kernel $\GPKer(\cdot, \cdot)$ functions depend on the chosen emulation target, 
+the form of the prior mean and kernel functions of the underlying GP, and the optimized hyperparameters of these functions. 
+When the underlying GP is conditioned on a design set of size $\designIdx$, we write the distribution induced by the predictive distribution 
+of the underlying conditioned GP as 
+\begin{align}
+\logUnPostPred \sim \GP(\indexDesign{\GPMean}, \indexDesign{\GPKer}).
+\end{align}
+Importantly, note that this is different from directly conditioning \ref{logUnPost_prior} on observations of the form $(\bpar, \logUnPost(\bpar))$, as, 
+in particular, the response $\logUnPost(\bpar)$ depends on a particular choice of $\CovObs$, while the underlying GP emulator is independent of 
+$\CovObs$. This distinction will be clarified in section \ref{emulation_targets}. 
 
 
 \subsection{Sequential Design}
 
-
-
-\section{Induced Posterior Density Approximation}
+\section{Emulation Targets and Induced Posterior Density Approximations} \label{emulation_targets}
 Focus is on methods that produce GP approximation to the log joint posterior density. 
 
 \subsection{Loss Emulation}
