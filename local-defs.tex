@@ -12,6 +12,8 @@
 \newcommand{\R}{\mathbb{R}}
 \newcommand*{\suchthat}{\,\mathrel{\big|}\,}
 \newcommand{\Exp}[1]{\exp\mathopen{}\left\{#1\right\}\mathclose{}}
+\newcommand{\Log}[1]{\log\mathopen{}\left\{#1\right\}\mathclose{}}
+\newcommand{\BigO}{\mathcal{O}}
 
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator*{\argmin}{argmin}
@@ -48,6 +50,7 @@
 \newcommand{\objIdx}{p} % Primary index for indexing objective (i.e. data constraint or output variable) in multi-objective problems.
 \newcommand{\indexObj}[2][\objIdx]{{#2}^{(#1)}} % Adds objective index to a variable.
 \newcommand{\designMat}[1][\designIdx]{\mathbf{U}_{#1}} % Design matrix of input parameters (in rows) at which response is observed. 
+\newcommand{\logUnPost}{\ell^{\postDens}} % Log unnormalized posterior density. 
 
 % Gaussian likelihood, Inverse Gamma prior model. 
 
