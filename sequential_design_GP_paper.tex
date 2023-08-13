@@ -50,6 +50,22 @@
 \newpage
 
 \section{Introduction}
+We consider the problem of calibrating the parameters of expensive forward models within the Bayesian inverse problem framework. Let 
+\begin{align*}
+\fwd: \R^{\Npar} \to \R^{\Ntime}
+\end{align*}
+denote the forward model which maps unknown calibration parameters $\bpar \in \parSpace \subseteq \R^{\Npar}$ to model predictions 
+$\fwd(\bpar) \in \R^{\Ntime}$. The task is to infer the value of the parameters $\bpar$ by comparing predictions $\fwd(\bpar)$ to noisy 
+observations $\bstate \in \R^{\Ntime}$ of the true system being modeled. A likelihood function 
+$\Exp{\llik(\bpar)} = \Exp{\llik(\bpar | \bstate)}$ quantifies discrepancy between the forward model predictions and observed data, with the 
+explicit dependence on $\bstate$ dropped from the notation as the data is assumed constant throughout the analysis. In the Bayesian framework, 
+a prior distribution $\priorDens(\bpar)$ encodes existing knowledge about the parameters. The Bayesian inverse problem is solved by obtaining the 
+posterior distribution
+\begin{align*}
+\postDens(\bpar) &\propto \Exp{\llik(\bpar)}\priorDens(\bpar),
+\end{align*}
+which is typically summarized via samples or expectations $\E_{\bpar \sim \postDens}[\phi(\bpar)]$ of interest. 
+
 
 \section{Background}
 \subsection{Bayesian Inverse Problems and Computer Model Calibration}

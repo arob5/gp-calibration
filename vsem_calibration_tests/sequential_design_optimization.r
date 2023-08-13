@@ -181,7 +181,7 @@ get_init_param_estimates <- function(design_info, computer_model_data, sig_eps_p
 }
 
                            
-batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
+batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings, verbose = TRUE) {
   # Acquires a batch of new input points via a greedy, heuristic approach. Currently only supports the kriging 
   # believer heuristic, but should be generalized to other heuristics as well (e.g. constant liar). Returns the 
   # batch of (scaled) input points, but does not run the forward model at these new inputs or update the GPs. 
@@ -205,7 +205,7 @@ batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings)
   for(b in 1:acquisition_settings$batch_size) {
     
     # Optimize sequential acquisition function.  
-    input_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, acquisition_settings = acquisition_settings)
+    input_new_scaled <- acquisition_opt_one_step(lpost_emulator = lpost_emulator, acquisition_settings = acquisition_settings, verbose = verbose)
 
     # Update lpost emulator using batch heuristic method. Does not affect underlying GPs, including their hyperparameters. 
     lpost_emulator <- pseudo_update_lpost_emulator(lpost_emulator, input_new_scaled = input_new_scaled,
@@ -217,7 +217,7 @@ batch_acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings)
 }
 
 
-acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
+acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings, verbose = TRUE) {
   # Performs a single one-point acquisition by optimizing the specified acquisition function. Returns 
   # the newly acquired (scaled) design point. 
   #
@@ -236,7 +236,8 @@ acquisition_opt_one_step <- function(lpost_emulator, acquisition_settings) {
                                            N_MC_samples = N_MC_samples, 
                                            theta_grid_integrate = acquisition_settings$theta_grid_integrate, 
                                            N_subsample_candidate = acquisition_settings$N_subsample_candidate, 
-                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate)
+                                           N_subsample_integrate = acquisition_settings$N_subsample_integrate, 
+                                           verbose = verbose)
                                            
   } else {
     stop("Invalid acquisition optimization method: ", opt_method)
@@ -291,7 +292,7 @@ acquisition_opt_one_step_old <- function(emulator_info_list, acquisition_setting
 
 
 optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, lpost_emulator, N_MC_samples = NULL, theta_grid_integrate = NULL,
-                                      N_subsample_candidate = NULL, N_subsample_integrate = NULL) { 
+                                      N_subsample_candidate = NULL, N_subsample_integrate = NULL, verbose = TRUE) { 
   # Returns a new (scaled) design point given by optimizing the acquisition function over a finite set of candidate (i.e. grid) points. 
   # All input points (candidate or integration points) are assumed to already be properly scaled. 
   #
@@ -317,7 +318,8 @@ optimize_acquisition_grid <- function(acquisition_type, theta_grid_candidate, lp
   acquisition_vals_grid <- acquisition_func(theta_vals = theta_grid_candidate, 
                                             lpost_emulator = lpost_emulator,
                                             N_MC_samples = N_MC_samples, 
-                                            theta_grid_integrate = theta_grid_integrate)
+                                            theta_grid_integrate = theta_grid_integrate, 
+                                            verbose = verbose)
   
   # Return scaled input in reference grid that maximizes the acquisition. 
   return(theta_grid_candidate[which.max(acquisition_vals_grid),,drop = FALSE])
@@ -546,7 +548,7 @@ acquisition_PI_lpost_MC <- function(theta_vals, emulator_info_list, computer_mod
 
 # TODO: speed up by pre-compoting k(X_integrate, X_design). This matrix can then easily be modified when conditioning on an additional 
 #       candidate point. 
-acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integrate, ...) {
+acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integrate, verbose = TRUE, ...) {
   # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
   # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
   # space is approximated by a finite sum over grid points `theta_grid_integrate`.
@@ -575,7 +577,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integ
     
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "var", 
-                                                  include_nugget = TRUE)$var
+                                                  include_nugget = TRUE, verbose = verbose)$var
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
     EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)

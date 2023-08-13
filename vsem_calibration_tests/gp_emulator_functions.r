@@ -2535,7 +2535,7 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
 
 
 predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, 
-                                   inputs_new_unscaled = NULL, prior_mean_vals_new = NULL) {
+                                   inputs_new_unscaled = NULL, prior_mean_vals_new = NULL, verbose = TRUE) {
   # Compute predictive mean and variance equations for the `lpost_emulator`. 
   # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
   # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
@@ -2600,7 +2600,7 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
     # Set negative variances due to numerical rounding errors to 0.
     neg_var_sel <- (pred_vars < 0)
     if(any(neg_var_sel)) {
-      message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
+      if(verbose) message("Warning: `predict_lpost_emulator()` setting negative variances to 0.")
       pred_vars[neg_var_sel] <- 0
     }
     
