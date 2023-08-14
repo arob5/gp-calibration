@@ -25,12 +25,14 @@
 \newcommand{\bx}{\mathbf{x}}
 \newcommand{\bw}{\mathbf{w}}
 \newcommand{\oneVec}[1]{\boldsymbol{1}_{#1}}
+\newcommand{\idMat}{\mathbf{I}}
 
 % Probability. 
 \newcommand{\E}{\mathbb{E}}
 \newcommand{\Var}{\mathrm{Var}}
 \newcommand{\Cov}{\mathrm{Cov}}
 \newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Gaussian}{\mathcal{N}}
 
 % --------------------------------------------------------------------------------------------------
 % Bayesian Inverse Problems. 
@@ -102,6 +104,15 @@
 
 % Induced approximation to unnormalized log posterior density and unnormalized posterior density. 
 \newcommand{\logUnPostPred}[1][\designIdx]{\ell^{\postDens}_{#1}}
+\newcommand{\logUnPostMean}{\mu}
+\newcommand{\logUnPostKer}{k}
+\newcommand{\logUnPostMeanPred}[1][\designIdx]{\mu_{#1}}
+\newcommand{\logUnPostKerPred}[1][\designIdx]{k_{#1}}
+\newcommand{\GPMeanTarget}{m} % Underlying GP mean
+\newcommand{\GPKerTarget}{C} % Underlying GP kernel
+\newcommand{\GPMeanTargetPred}[1][\designIdx]{m_{#1}} 
+\newcommand{\GPKerTargetPred}[1][\designIdx]{C_{#1}} 
+
 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
@@ -128,6 +139,7 @@
 
 \newcommand{\Ninit}{N_0} % Initial number of design points/size of space-filling design 
 \newcommand{\Ndesign}{N} % Total number of design points  
+\newcommand{\Nbatch}{B} % Total number of design points  
 \newcommand{\designIdx}{n} % Primary index for design points (sequential design)
 \newcommand{\batchIdx}{b}  % Primary index for rounds in sequential batch design
 \newcommand{\indexDesign}[2][\designIdx]{{#2}_{#1}} % Adds design iteration index to a variable.

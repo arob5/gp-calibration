@@ -76,16 +76,21 @@ $\fwd(\bpar) \in \R^{\Ntime}$. The task is to infer the value of the parameters 
 observations $\bstate \in \R^{\Ntime}$ of the true system being modeled. Let $\llik(\bpar, \CovObs) := \llik(\bpar |\CovObs, \bstate)$ denote 
 a log-likelihood function which quantifies discrepancy between the forward model predictions and observed data. The 
 explicit dependence on $\bstate$ dropped from the notation as the data is assumed constant throughout the analysis. We use $\CovObs$ to denote 
-\textit{likelihood parameters}; that is, any unknown parameters other than $\bpar$ used to define the likelihood (concrete examples are given below). 
-In the Bayesian framework, 
-a prior distribution $\priorDens(\bpar, \CovObs)$ encodes existing knowledge about both the calibration and likelihood parameters. 
+\textit{likelihood parameters}; that is, any unknown parameters other than $\bpar$ used to define the likelihood. This paper will focus on Gaussian likelihoods, 
+where the likelihood parameters take the form of an unknown positive-definite covariance matrix 
+\begin{align}
+\llik(\bpar, \CovObs) &= \log \Gaussian_{\Ntime}\left(\bstate | \fwd(\bpar), \CovObs \right) \nonumber \\
+			       &= -\frac{\Ntime}{2} \log(2\pi) - \frac{1}{2} \log \det(\CovObs) - \frac{1}{2} (\bstate - \fwd(\bpar))^\top \CovObs^{-1} (\bstate - \fwd(\bpar)) \label{llik}
+\end{align}
+In addition to the likelihood, the Bayesian framework also requires a prior distribution $\priorDens(\bpar, \CovObs)$, 
+which encodes existing knowledge about both the calibration and likelihood parameters. 
 The Bayesian inverse problem is solved by obtaining the 
 posterior distribution
 \begin{align*}
 \postDens(\bpar, \CovObs) &:= \frac{\Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs)}{\int \Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs) d\bpar d\CovObs},
 \end{align*}
 which synthesizes the prior knowledge with the observed data. Typically, interest centers on the marginal posterior for $\bpar$, which marginalizes over the nuisance 
-parameters $\CovObs$:
+parameters $\CovObs$,
 \begin{align*}
 \postDens(\bpar) &:= \int_{\parSpace} \postDens(\bpar, \CovObs) d\CovObs.
 \end{align*}
@@ -96,7 +101,7 @@ For notation, we let $\logUnPost(\bpar, \CovObs)$ denote the unnormalized log po
 The posterior distribution is typically summarized via samples and sample-based approximations of expectations of interest, i.e. $\E_{\bpar \sim \postDens}[\phi(\bpar)]$.
 However, the standard approach of applying a Markov Chain Monte Carlo (MCMC) algorithm to produce samples from $\postDens$ often requires 
 $\BigO(10^4)$ or more iterations, each of which requires evaluating $\logUnPost(\bpar, \CovObs)$, which 
-in turn entails computing a forward model evaluation $\fwd(\bpar)$.In the  case where the forward model takes the form of an expensive computer simulation, this 
+in turn entails computing a forward model evaluation $\fwd(\bpar)$. In the  case where the forward model takes the form of an expensive computer simulation, this 
 can render MCMC intractable. To address this issue, a variety of techniques have emerged which replace the expensive computations 
 $\logUnPost(\bpar, \CovObs)$ with a cheaper statistical approximation known as an \textit{emulator} or \textit{surrogate}. This paper focuses on Gaussian process 
 emulators, which are briefly introduced below before returning to the question of model emulation. 
@@ -155,7 +160,7 @@ the fact that it results in a smoother mapping. This approach can be problematic
 $\CovObs$. Fixing an estimate $\hat{\CovObs}$ in advance yields a function only of $\bpar$ but sacrifices uncertainty quantification for $\CovObs$. Alternatively, 
 one can extend the input space and instead emulate the map $(\bpar, \CovObs) \mapsto \llik(\bpar, \CovObs)$ 
 \cite{doi:10.1198/106186008X320681, LEBEL2019158}. Unfortunately, this results in a more challenging function approximation problem, especially when 
-the parameters $\CovObs$ have a large effect on the smoothness of log-likelihood. The emulation targets we propose in section \ref{emulation_targets} are 
+the parameters $\CovObs$ have a large effect on the smoothness of the log-likelihood. The emulation targets we propose in section \ref{emulation_targets} are 
 applicable in settings with high-dimensional forward model output and allow for a full Bayesian treatment of the likelihood parameters $\CovObs$ without 
 treating them as additional emulator inputs. 
 
@@ -164,14 +169,14 @@ $\logUnPost(\bpar, \CovObs)$, with the GP kernel providing an estimate of uncert
 We show that placing a GP prior on maps defined by certain emulation targets 
 (see section \ref{emulation_targets}) induces a GP prior on the unnormalized log posterior density, 
 \begin{align}
-\logUnPost \sim \GP(\GPMean, \GPKer), \label{logUnPost_prior}
+\logUnPost \sim \GP(\logUnPostMean, \logUnPostKer), \label{logUnPost_prior}
 \end{align}
 where the specific form of the prior mean $\GPMean(\cdot)$ and kernel $\GPKer(\cdot, \cdot)$ functions depend on the chosen emulation target, 
 the form of the prior mean and kernel functions of the underlying GP, and the optimized hyperparameters of these functions. 
 When the underlying GP is conditioned on a design set of size $\designIdx$, we write the distribution induced by the predictive distribution 
 of the underlying conditioned GP as 
 \begin{align}
-\logUnPostPred \sim \GP(\indexDesign{\GPMean}, \indexDesign{\GPKer}).
+\logUnPostPred \sim \GP(\logUnPostMeanPred, \logUnPostKerPred).
 \end{align}
 Importantly, note that this is different from directly conditioning \ref{logUnPost_prior} on observations of the form $(\bpar, \logUnPost(\bpar))$, as, 
 in particular, the response $\logUnPost(\bpar)$ depends on a particular choice of $\CovObs$, while the underlying GP emulator is independent of 
@@ -180,12 +185,35 @@ $\CovObs$. This distinction will be clarified in section \ref{emulation_targets}
 \subsection{Approximate MCMC Inference Algorithm}
 In addition to integrating out the GP, talk about joint sampling proposed/current; i.e. take into account predictive GP covariance. 
 
-\subsection{Sequential Design}
+\section{Experimental Design for Bayesian Inverse Problems}
+
+\subsection{The General Problem}
+why space-filling designs are often inefficient for inverse problems. Should also look into maximin latin hypercube for initial design. 
+
+\subsection{Batch Sequential Design}
+Here we provide a brief introduction to the problem of sequential design for iteratively constructing a GP emulator. In particular, we consider the 
+setting in which the final design set of $\Ndesign$ points is constructed over a sequence of steps, where at each step a \textit{batch} of 
+$\Nbatch$ new design points is acquired. 
+
 
 \section{Emulation Targets and Induced Posterior Density Approximations} \label{emulation_targets}
 Focus is on methods that produce GP approximation to the log joint posterior density. 
 
 \subsection{Loss Emulation}
+We first consider emulating a loss function which summarizes the discrepancy between forward model outputs $\fwd(\bpar)$ and observed 
+data $\bstate$. This method is directly applicable in the case where the likelihood \ref{llik} satisfies $\CovObs = \sdObs^2 \idMat$, but we discuss 
+extensions to non-spherical covariance below. Under a spherical covariance structure, the log-likelihood simplifies to 
+\begin{align}
+\llik(\bpar, \CovObs) &= -\frac{\Ntime}{2} \log(2\pi \sdObs^2) - \frac{1}{2 \sdObs^2} \f(\bpar),
+\end{align} 
+where $\f(\bpar) = \norm{\bstate - \fwd(\bpar)}^2_2$. One potential weakness of this emulation target is that the loss function is non-negative while the 
+GP is unbounded. We have not found this to be an issue in practice, where the use of time-averaged data over a large number of time steps 
+$\Ntime$ yields losses nowhere near zero. 
+
+After fitting GP hyperparameters and conditioning on the partial design set $\{\designMat, \fObs\}$, the predictive distribution 
+
+
+
 \subsection{Basis Functions}
 Surer et al approach. 
 
