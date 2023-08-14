@@ -71,6 +71,7 @@
 
 % Generic GP commands. 
 \newcommand{\GP}{\mathcal{GP}} % GP distribution.
+\newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
 \newcommand{\f}{f} % Generic univariate target function on which GP prior is placed. 
 \newcommand{\fObs}[1][\designIdx]{\mathbf{\f}_{#1}} % Vector of observed target function evaluations.  
 \newcommand{\GPMean}{\mu} % Generic GP prior mean function
@@ -104,6 +105,7 @@
 
 % Induced approximation to unnormalized log posterior density and unnormalized posterior density. 
 \newcommand{\logUnPostPred}[1][\designIdx]{\ell^{\postDens}_{#1}}
+\newcommand{\unPostPred}[1][\designIdx]{\postDens_{#1}}
 \newcommand{\logUnPostMean}{\mu}
 \newcommand{\logUnPostKer}{k}
 \newcommand{\logUnPostMeanPred}[1][\designIdx]{\mu_{#1}}
@@ -112,8 +114,7 @@
 \newcommand{\GPKerTarget}{C} % Underlying GP kernel
 \newcommand{\GPMeanTargetPred}[1][\designIdx]{m_{#1}} 
 \newcommand{\GPKerTargetPred}[1][\designIdx]{C_{#1}} 
-
-
+ 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
 % --------------------------------------------------------------------------------------------------
@@ -147,6 +148,7 @@
 \newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
 \newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
 \newcommand{\acq}[1][]{\mathcal{A}_{#1}} % Acquisition function
+\newcommand{\batchMat}{\tilde{\mathbf{U}}} % Matrix of candidate points in batch acquisition. 
 
 % --------------------------------------------------------------------------------------------------
 % Markov Chain Monte Carlo. 

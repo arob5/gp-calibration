@@ -211,9 +211,9 @@ GP is unbounded. We have not found this to be an issue in practice, where the us
 $\Ntime$ yields losses nowhere near zero. 
 
 After fitting GP hyperparameters and conditioning on the current $\designIdx$-point design set $\{\designMat, \fObs\}$, we obtain the predictive distribution 
-$\indexDesign{\f} \sim \GP(\GPMeanTargetPred, \GPKerTargetPred)$, which induces the predictive distribution
+$\indexDesign{\f} \sim \GP(\GPMeanTargetPred, \GPKerTargetPred)$, which induces a predictive distribution on the unnormalized log posterior density
 \begin{align*}
-\logUnPostPred \sim \GP(\logUnPostMeanPred, \logUnPostKerPred).
+\logUnPostPred \sim \GP(\logUnPostMeanPred, \logUnPostKerPred),
 \end{align*}
 where 
 \begin{align}
@@ -225,15 +225,38 @@ where
 \subsection{Basis Functions}
 Surer et al approach. 
 
-\section{Acquisition Targets}
-\subsection{Log-Posterior}
-\subsection{Posterior}
-\subsection{Underlying Emulators}
-
 \section{Acquisition Functions}
+Defining acquisition functions so that they are maximized. Mention that for now $\CovObs$ is considered fixed; suppressing dependence on 
+$\CovObs$ in the notation. Should either present 
+general batch sequential design algorithm here or above in introduction. Also introduce concept of lognormal process. 
 \subsection{Variance-based}
-\subsubsection{VAR}
-\subsubsection{EIVAR}
+\subsubsection{Maximum Variance}
+\subsubsection{Integrated Variance}
+As opposed to MVAR criteria, integrated variance (IVAR) criteria take into account the global effect of acquiring new design points. 
+In particular, the IVAR acquisition is maximized by the input batch that results in the largest decrease in predictive variance, averaged 
+over the entire input space $\parSpace$. Applied to the log posterior emulator $\logUnPostPred \sim \GP(\logUnPostMeanPred, \logUnPostKerPred)$, 
+the IVAR acquisition is defined as 
+\begin{align}
+\acq[\designIdx](\batchMat) &= -\E_{\bpar \sim \rho} \Var\left[\logUnPostPred(\bpar) | \batchMat \right] \label{IVAR_GP}
+\end{align}
+where $\rho$ is a density on $\parSpace$. A key observation is that the predictive variance of a GP is not a function of the observed 
+response, hence the reason that the variance in \ref{IVAR_GP} is conditioned only on $\batchMat$ and not on 
+$\{\batchMat, \logUnPost(\batchMat)\}$. Thus, for GPs the variance can be computed in closed-form. The expectation with respect to 
+$\rho$ is in general not 
+analytically tractable, aside from simple choices for $\parSpace$ and $\rho$ [TODO: cite Gramacy paper here]. 
+
+Applying this same acquisition 
+to $\unPostPred \sim \LNP(\logUnPostMeanPred, \logUnPostKerPred)$ requires a modification of the IVAR definition, due to the fact that the LNP predictive 
+variance depends on the response $Z\postDens(\batchMat)$. Since $Z\postDens(\batchMat)$ is unknown (as the forward model has not been run at the candidate 
+inputs $\batchMat$) then the IVAR definition \label{IVAR_GP} directly applied to $\unPostPred$ results in a random variable.
+We thus generalize the IVAR definition by integrating out the unknown quantity $\tilde{\boldsymbol{\postDens}} := Z \postDens(\batchMat)$, where the expectation is taken with respect to the current predictive distribution $\unPostPred$,
+\begin{align}
+\acq[\designIdx](\batchMat) &= -\E_{\bpar \sim \rho} \E_{\tilde{\boldsymbol{\postDens}}  \sim \unPostPred} \Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}}  \right]. \label{IVAR_LNP}
+\end{align}
+Similarly to \ref{IVAR_GP}, all expectations except the outermost are available in closed-form. IVAR expressions applied to $\logUnPostPred$ and 
+$\unPostPred$ are given below. The former is a direct application of the predictive variance equation for GPs \ref{kriging_eqns}, while the latter is 
+derived in the appendix. 
+
 \subsection{Information-based}
 \subsection{Optimization-focused}
 \subsection{Others}
