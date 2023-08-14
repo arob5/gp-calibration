@@ -210,8 +210,16 @@ where $\f(\bpar) = \norm{\bstate - \fwd(\bpar)}^2_2$. One potential weakness of 
 GP is unbounded. We have not found this to be an issue in practice, where the use of time-averaged data over a large number of time steps 
 $\Ntime$ yields losses nowhere near zero. 
 
-After fitting GP hyperparameters and conditioning on the partial design set $\{\designMat, \fObs\}$, the predictive distribution 
-
+After fitting GP hyperparameters and conditioning on the current $\designIdx$-point design set $\{\designMat, \fObs\}$, we obtain the predictive distribution 
+$\indexDesign{\f} \sim \GP(\GPMeanTargetPred, \GPKerTargetPred)$, which induces the predictive distribution
+\begin{align*}
+\logUnPostPred \sim \GP(\logUnPostMeanPred, \logUnPostKerPred).
+\end{align*}
+where 
+\begin{align}
+\logUnPostMeanPred(\bpar) &= -\frac{\Ntime}{2} \log(2\pi \sdObs^2) - \frac{\GPMeanTargetPred(\bpar)}{2\sdObs^2} + \Log{\priorDens(\bpar, \CovObs)} \\
+\logUnPostKerPred(\bpar) &= \frac{\GPKerTargetPred(\bpar)}{4\sdObs^4}
+\end{align}
 
 
 \subsection{Basis Functions}
