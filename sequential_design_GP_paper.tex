@@ -320,25 +320,31 @@ Note that the only dependence on $\tilde{\boldsymbol{\postDens}}$ stems from the
 \end{align*}
 
 \subsection{Determinant and Inverse of Block Matrix}
-In the sequential design setting, we are continually adding data to the design $X_n$ and then having to re-compute quantities such as 
-$K(X_{n+1})^{-1}$ and $\det\left(K(X_{n+1}) \right)$. Formulas for the inverse and determinant of block matrices will come in handy 
+In the sequential design setting, we iteratively add new data $\batchMat \in \R^{\Nbatch \times \Npar}$ to the current design 
+$\designMat \in \R^{\designIdx \times \Npar}$ and then often have to compute quantities such as 
+$\KerMat[\designIdx, \batchMat]^{-1}$ and $\det\left(\KerMat[\designIdx, \batchMat]\right)$, where $\KerMat^{-1}$ and $\det(\KerMat)$ are already known. 
+Formulas for the inverse and determinant of block matrices will come in handy 
 when deriving fast updates for these quantities. 
 
-\subsubsection{Determinant}
-Let $A$, $B$, $C$, $D$ be square matrices with $A$ invertible. Then, 
-\[
-\det\begin{pmatrix} A & B \\ C & D \end{pmatrix} = \det \begin{pmatrix} A & B \\ 0 & D - CA^{-1}B \end{pmatrix} = \det(A) \cdot 
-\det\left(D - CA^{-1}B \right)
-\]
+Let $\KerMat$, $\tilde{\KerMat[]}_{\designIdx} := \GPKer(\designMat, \batchMat)$, and $\tilde{\KerMat[]}$ be matrices with $\KerMat$ and 
+$\tilde{\KerMat[]}$ invertible. Let  $\mathbf{S} = \left(\tilde{\KerMat[]} - \tilde{\KerMat[]}_{\designIdx}^\top \KerMat^{-1} \tilde{\KerMat[]}_{\designIdx} \right)^{-1}$. Then,
+ 
+\begin{align}
+&\det\begin{pmatrix} \KerMat & \tilde{\KerMat[]}_{\designIdx}  \\ \tilde{\KerMat[]}_{\designIdx} ^\top & \tilde{\KerMat[]} \end{pmatrix} 
+= \det \begin{pmatrix} \KerMat & \tilde{\KerMat[]}_{\designIdx} \\ 0 & \mathbf{S}^{-1}   \end{pmatrix} 
+= \frac{\det(\KerMat)}{\det\left(\mathbf{S}\right)} \label{block_determinant}
+\end{align}
 
-\subsubsection{Inverse}
-James E. Pustejovsky provides a nice post on the inversion of partitioned matrices $\href{https://www.jepusto.com/inverting-partitioned-matrices/}{here}$. Suppose $A$ and $D$ are invertible, not necessarily of 
-equal dimension. Letting $S = \left(D - CA^{-1}B\right)^{-1}$ we have 
-\[
-\begin{pmatrix} A & B \\ C & D \end{pmatrix}^{-1} = \begin{pmatrix} A^{-1} + A^{-1}BSCA^{-1} & -A^{-1}BS \\
--SCA^{-1} & S \end{pmatrix}
-\]
+\begin{align}
+\begin{pmatrix} \KerMat & \tilde{\KerMat[]}_{\designIdx}  \\ \tilde{\KerMat[]}_{\designIdx}^\top & \tilde{\KerMat[]} \end{pmatrix}^{-1} 
+= \begin{pmatrix} \KerMat^{-1} + \KerMat^{-1}\tilde{\KerMat[]}_{\designIdx}\mathbf{S} \tilde{\KerMat[]}_{\designIdx}^\top \KerMat^{-1} & -\KerMat^{-1}\tilde{\KerMat[]}_{\designIdx} \mathbf{S}  \\
+-\mathbf{S} \tilde{\KerMat[]}_{\designIdx}^\top \KerMat^{-1} & \mathbf{S}  \end{pmatrix} \label{block_inverse}
+\end{align}
 
+The partitioned inverse updates require $\BigO(\Nbatch \designIdx^2 + \designIdx \Nbatch^2)$ operations, as opposed to the 
+$\BigO([\Npar + \Nbatch]^3)$ operations required to compute $\KerMat[\designIdx, \batchMat]^{-1}$ from scratch. 
+ 
+ [TODO: simplify this in the case where $\batchMat$ has only a single point.]
 
 
 
