@@ -636,6 +636,76 @@ acquisition_EIVAR_lpost_old <- function(theta_vals, emulator_info_list, sig2_eps
 }
 
 
+acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integrate, verbose = TRUE, include_nugget = TRUE, ...) {
+  # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
+  # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
+  # space is approximated by a finite sum over grid points `theta_grid_integrate`. In the code, I use the variable naming 
+  # convention "int", "can", and "n" to refer to the integration points (`theta_grid_integrate`), candidate points 
+  # (`theta_vals`), and current design inputs (`lpost_emulator$inputs$inputs_scaled`), respectively. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.
+  #    theta_grid_integrate: matrix, of dimension M_integrate x D. The set of inputs used to approximate the integral over the 
+  #                          input space required in evaluating the EIVAR criterion. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  #    Technically returns the negative of EIVAR to align with the acquisition convention that bigger is better. 
+  #
+  # TODO: 
+  #    - should have a way to also pass in unscaled inputs, or to compute them here. This function ends up unscaling 
+  #      multiple times, which is wasteful.
+  #    - should pass `include_nugget` to all acquisition functions. 
+  
+  n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Vector to store IVAR estimates at inputs `theta_vals`. 
+  IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  # Compute lpost prior mean and kernel evaluations. 
+  lpost_mu0_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
+  lpost_k0_int_n <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, lpost_emulator$inputs_lpost$inputs_scaled)
+  lpost_k0_int_can <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, theta_vals)
+                                                                                                                                                                                         
+  # Compute predictive means conditional on current design points. This is used to average over the unknown response when 
+  # conditioning on new points in `theta_vals`. 
+  lpost_curr_pred_can <- predict_lpost_emulator(theta_vals, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
+                                                include_nugget = include_nugget)
+                                            
+  for(i in 1:nrow(theta_vals)) {
+    
+    # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+    lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
+    
+    # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
+    lpost_pred_var_can <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "var", 
+                                                 include_nugget = include_nugget, verbose = verbose)$var
+    
+    # Compute term that averages over unknown response. 
+    a <- 2 * (drop(lpost_k0_int_n %*% lpost_emulator$K_inv[1:n, n+1, drop=FALSE]) + lpost_k0_int_can[,i])
+    exp_resp_term <- a * lpost_curr_pred_can$mean[i] + 0.5 * a^2 * lpost_curr_pred_can$var[i]                                                                                          
+    
+    # Compute log IVAR. 
+    log_IVAR <- lpost_pred_var_can$var + 2 * lpost_mu0_int * (1 - kpred_term) + log_obs_resp_term + log_exp_term + exp_resp_term
+    
+    # TODO: kpred_term, log_obs_resp_term, log_exp_term
+    
+    
+    # Estimate EIVAR via discrete sum over theta grid locations. 
+    EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)
+    
+  }
+  
+  return(EIVAR_est)
+  
+}
+
+
 acquisition_VAR_lpost <- function(theta_vals, lpost_emulator, ...) {
   # Implements the acquisition which is simply defined as the variance of the unnormalized log posterior approximation in  
   # the loss emulation setting. 
