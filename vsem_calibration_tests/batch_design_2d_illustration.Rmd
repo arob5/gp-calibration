@@ -481,7 +481,7 @@ for(j in seq_along(VAR_results)) {
 
 ```{r}
 #
-# Integrated Variance Acquisitions
+# Integrated Variance Acquisitions - lpost
 #
 
 acquisition_settings$acquisition_type <- "EIVAR_lpost"
@@ -499,7 +499,7 @@ names(EIVAR_results) <- c("KB", "CLO", "CLP")
 
 ```{r}
 #
-# Plot Integrated Variance acquisitions results. 
+# Plot Integrated Variance acquisitions results, lpost. 
 #
 
 for(j in seq_along(EIVAR_results)) {
@@ -517,6 +517,57 @@ for(j in seq_along(EIVAR_results)) {
 }
 
 ```
+
+```{r}
+#
+# Integrated Variance Acquisitions - post
+#
+
+acquisition_settings$acquisition_type <- "IVAR_post"
+
+# TEST
+acquisition_settings$batch_method <- "kriging_believer"
+test <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
+# End TEST
+
+
+
+
+f_IVAR_post <- function(heuristic) {
+  acquisition_settings$batch_method <- heuristic
+  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
+}
+
+IVAR_post_results <- mclapply(batch_heuristics, f_IVAR_post)
+names(IVAR_post_results) <- c("KB", "CLO", "CLP")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Current Thoughts 
 1. In this specific test, some sort of space-filling sub-sample of the approximate posterior samples would likely have outperformed 

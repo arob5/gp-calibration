@@ -658,6 +658,8 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   #    - should have a way to also pass in unscaled inputs, or to compute them here. This function ends up unscaling 
   #      multiple times, which is wasteful.
   #    - should pass `include_nugget` to all acquisition functions. 
+  #    - in the greedy batch procedure, there are computations I can pass in without re-computing; 
+  #      e.g. all of the prior quantities and `K_int_n_Kinv`.
   
   n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
   
@@ -697,20 +699,20 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
     kpred_term <- rowSums(A_int) + b_int
 
     # Numerically stable calculation of log[exp(k) - 1] term. 
-    k <- lpost_pred_var_int$var
-    idx_approx_sel <- (k >= 100)
-    log_exp_term <- vector(mode = "numeric", length = length(k))
-    log_exp_term[!idx_approx_sel] <- log(exp(k[!idx_approx_sel]) - 1)
-    log_exp_term[idx_approx_sel] <- k[idx_approx_sel] # Apply approximation. 
+    idx_approx_sel <- (lpost_pred_var_int >= 100)
+    log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
+    log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
+    log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
     
     # Term that weights the current observed lpost values. 
+    # TODO: need to debug this part. Values are way too large. 
     log_obs_response_term <- drop(A_int %*% lpost_emulator$outputs_lpost)
     
     # Term that averages over unknown response. 
     exp_response_term <- b_int * lpost_curr_pred_can$mean[i] + 0.5 * b_int^2 * lpost_curr_pred_can$var[i]                                                                                          
     
     # Compute log IVAR. 
-    log_IVAR_int <- lpost_pred_var_int$var + lpost_mu0_int * (2 - kpred_term) + log_obs_response_term + log_exp_term + exp_response_term
+    log_IVAR_int <- lpost_pred_var_int + lpost_mu0_int * (2 - kpred_term) + log_obs_response_term + log_exp_term + exp_response_term
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
     IVAR_est[i] <- -1.0 * mean(log_IVAR_int)
