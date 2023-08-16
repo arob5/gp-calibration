@@ -333,7 +333,7 @@ To isolate this block, we apply the partitioned matrix inverse equation \ref{blo
 where the block entries are given in \ref{block_inverse}. Additionally defining 
 $\boldsymbol{\logUnPostKer}_{\designIdx} := \logUnPostKer(\designMat, \bpar)$ and $\tilde{\boldsymbol{\logUnPostKer}} := \logUnPostKer(\batchMat, \bpar)$, we obtain 
 \begin{align*}
-\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \tilde{\boldsymbol{\postDens}}_{\designIdx, \batchMat}
+\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \tilde{\logUnPostObs[]}_{\designIdx, \batchMat}
 &= \begin{pmatrix} \boldsymbol{\logUnPostKer}_{\designIdx} \\ \tilde{\boldsymbol{\logUnPostKer}}  \end{pmatrix}^\top 
 \begin{pmatrix} \bS_{1} & \bS_{2} \\  \bS_{3} & \bS_{4} \end{pmatrix} 
 \begin{pmatrix} \logUnPostObs \\ \logUnPostBatch \end{pmatrix} \\
@@ -360,6 +360,15 @@ Plugging everything back into \ref{IVAR_LNP_derivation_var}, we obtain
 \begin{align}
 \Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right] &= \Exp{a_1 + a_2 + a_3}  \left[\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1\right] \Exp{\ba_4^\top \logUnPostMeanPred(\batchMat) + \frac{1}{2} \ba_4^\top \logUnPostKerPred(\batchMat) \ba_4}
 \end{align}
+where we recall that 
+\begin{align*}
+a_1 &:= \logUnPostKerPred[\designIdx, \batchMat](\bpar) \\
+a_2 &:= 2\logUnPostMean(\bpar) \left[1 -  \logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1}\oneVec\right] \\
+a_3 &:= 2\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_1 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_3 \right) \logUnPostObs  \\
+\ba_4 &:= 2\left(\bS_2^\top \boldsymbol{\logUnPostKer}_{\designIdx} + \bS_4 \tilde{\boldsymbol{\logUnPostKer}} \right) 
+\end{align*}
+
+
 
 s
 [TODO: $\tilde{\boldsymbol{\postDens}}_{\designIdx, \batchMat}$ is confusing: looks like I am referring to emulator but actually referring to observed data. Maybe 
