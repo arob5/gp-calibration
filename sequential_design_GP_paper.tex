@@ -370,7 +370,12 @@ which can be rearranged as
 	&\qquad 2\bb_{\Nbatch}^\top \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\bpar)\oneVec[\Nbatch] \right] + 
 	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
 \end{align*}
-
+This is easily vectorized over a set of evaluation inputs $\designMat[]$ by replacing $\bpar$ by $\designMat[]$ and 
+$\ba_{\designIdx}$, $\bb_{\Nbatch}$ by 
+\begin{align*}
+\mathbf{A}_{\designIdx} &:=  \bS_1 \GPKer(\designMat, \designMat[])  + \bS_{2} \GPKer(\batchMat, \designMat[]) \\
+\mathbf{B}_{\Nbatch} &:=  \bS_2^\top \GPKer(\designMat, \designMat[])  + \bS_{3}^\top \GPKer(\batchMat, \designMat[]) \\
+\end{align*}
 
 
 s
