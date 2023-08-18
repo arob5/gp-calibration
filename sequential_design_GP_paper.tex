@@ -300,10 +300,10 @@ $\unPostPred \sim \LNP(\logUnPostMeanPred, \logUnPostKerPred)$ and the notation
 $\unPostPred | \batchMat, \tilde{\boldsymbol{\postDens}} \sim \LNP(\logUnPostMeanPred[\designIdx, \batchMat], \logUnPostKerPred[\designIdx, \batchMat])$
 we have that 
 \begin{align}
-\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right] &= \Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} \left[\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1\right] \Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \label{IVAR_LNP_derivation_var} \\
-&=: \Exp{a_1}  \left[\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1\right] \Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \nonumber
+\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right] &= \Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} \left[\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1\right] \Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \label{IVAR_LNP_derivation_var} 
 \end{align}
-Since the predictive variance $\logUnPostKerPred[\designIdx, \batchMat](\bpar)$ does not depend on $\tilde{\boldsymbol{\postDens}}$, the first two terms in the 
+Since the predictive variance $\logUnPostKerPred[\designIdx, \batchMat](\bpar)$ does not depend on 
+$\tilde{\boldsymbol{\postDens}} = \Exp{\tilde{\boldsymbol{\logUnPost}}}$, the first two terms in the 
 product \ref{IVAR_LNP_derivation_var} can be pulled out of the expectation $\E_{\tilde{\boldsymbol{\postDens}}}$, leaving only the third term. Focusing on this third term, 
 recall that 
 \begin{align*}
@@ -313,8 +313,7 @@ Thus,
 \begin{align}
 \E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \right] 
 &= \Exp{2\logUnPostMean(\bpar) \left[1 -  \logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1}\oneVec\right] }
-\E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostObsBatch}\right]  \label{IVAR_LNP_derivation_exp_mean_term} \\
-&=: \Exp{a_2} \E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostObsBatch}\right] \nonumber
+\E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostObsBatch}\right]  \label{IVAR_LNP_derivation_exp_mean_term} 
 \end{align}
 Note that the only dependence on $\logUnPostBatch$ stems from the lower $\Nbatch \times 1$ block of the $(\designIdx + \Nbatch) \times 1$ vector 
 \begin{align*}
@@ -324,7 +323,7 @@ Note that the only dependence on $\logUnPostBatch$ stems from the lower $\Nbatch
 \end{align*}
 To isolate this block, we apply the partitioned matrix inverse equation \ref{block_inverse}
 \begin{align*}
-\KerMat[\designIdx, \batchMat]^{-1} &= \begin{pmatrix} \bS_{1} & \bS_{2} \\  \bS_{3} & \bS_{4} \end{pmatrix} := 
+\KerMat[\designIdx, \batchMat]^{-1} &= \begin{pmatrix} \bS_{1} & \bS_{2} \\  \bS_{2}^\top & \bS_{3} \end{pmatrix} := 
 \begin{pmatrix} 
 	\KerMat^{-1} + \KerMat^{-1}\tilde{\KerMat[]}_{\designIdx}\mathbf{S} \tilde{\KerMat[]}_{\designIdx}^\top \KerMat^{-1} & -\KerMat^{-1}\tilde{\KerMat[]}_{\designIdx} \mathbf{S}  \\
 	-\mathbf{S} \tilde{\KerMat[]}_{\designIdx}^\top \KerMat^{-1} & \mathbf{S}  
@@ -333,39 +332,43 @@ To isolate this block, we apply the partitioned matrix inverse equation \ref{blo
 where the block entries are given in \ref{block_inverse}. Additionally defining 
 $\boldsymbol{\logUnPostKer}_{\designIdx} := \logUnPostKer(\designMat, \bpar)$ and $\tilde{\boldsymbol{\logUnPostKer}} := \logUnPostKer(\batchMat, \bpar)$, we obtain 
 \begin{align*}
-\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \tilde{\logUnPostObs[]}_{\designIdx, \batchMat}
+\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostObsBatch
 &= \begin{pmatrix} \boldsymbol{\logUnPostKer}_{\designIdx} \\ \tilde{\boldsymbol{\logUnPostKer}}  \end{pmatrix}^\top 
-\begin{pmatrix} \bS_{1} & \bS_{2} \\  \bS_{3} & \bS_{4} \end{pmatrix} 
+\begin{pmatrix} \bS_{1} & \bS_{2} \\  \bS_{2}^\top & \bS_{3} \end{pmatrix} 
 \begin{pmatrix} \logUnPostObs \\ \logUnPostBatch \end{pmatrix} \\
-&= \left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_1 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_3 \right) \logUnPostObs + 
-\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_2 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_4 \right) \logUnPostBatch
+&= \left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_1 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_{2}^\top \right) \logUnPostObs + 
+\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_2 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_3 \right) \logUnPostBatch \\
+&=: \ba_{\designIdx}^\top \logUnPostObs + \bb_{\Nbatch}^\top \logUnPostBatch.
 \end{align*}
-Since only the second term depends on $\tilde{\boldsymbol{\logUnPostKer}}$, plugging back into \ref{IVAR_LNP_derivation_exp_mean_term} yields 
+Since only the second term depends on $\logUnPostBatch$, plugging back into \ref{IVAR_LNP_derivation_exp_mean_term} 
+(and substituting in the definitions for $\ba_{\designIdx} \in \R^{\designIdx}$ and $\bb_{\Nbatch} \in \R^{\Nbatch}$) yields 
 \begin{align*}
 \E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \right] 
-&= \Exp{a_2 + 
-2\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_1 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_3 \right) \logUnPostObs }
-\E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_2 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_4 \right) \logUnPostBatch}\right] \\
-&=: \Exp{a_2 + a_3} \E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{\ba_4^\top \logUnPostBatch} \right]
+&= \Exp{2\logUnPostMean(\bpar) \left[1 - \ba_{\designIdx}^\top \oneVec[\designIdx] - \bb_{\Nbatch}^\top \oneVec[\Nbatch] \right] }
+\Exp{2\ba_{\designIdx}^\top \logUnPostObs} \E_{\logUnPostBatch}\left[\Exp{2\bb_{\Nbatch}^\top \logUnPostBatch}\right]
 \end{align*}
 Now, since 
-$\ba_4^\top \logUnPostBatch | \designMat, \tilde{\boldsymbol{\postDens}} \sim 
-\Gaussian(\ba_4^\top \logUnPostMeanPred(\batchMat), \ba_2^\top \logUnPostKerPred(\batchMat) \ba_4)$ 
+$2\bb_{\Nbatch}^\top \logUnPostBatch | \designMat, \tilde{\boldsymbol{\postDens}} \sim 
+\Gaussian(2\bb_{\Nbatch}^\top \logUnPostMeanPred(\batchMat), 4\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch})$ 
 it follows that 
 \begin{align*}
-\E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{\ba_4^\top \logUnPostBatch} \right]
-&= \Exp{\ba_4^\top \logUnPostMeanPred(\batchMat) + \frac{1}{2} \ba_4^\top \logUnPostKerPred(\batchMat) \ba_4}
+\E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2\bb_{\Nbatch}^\top \logUnPostBatch} \right]
+&= \Exp{2\bb_{\Nbatch}^\top \logUnPostMeanPred(\batchMat) + 2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}}
 \end{align*}
-Plugging everything back into \ref{IVAR_LNP_derivation_var}, we obtain 
-\begin{align}
-\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right] &= \Exp{a_1 + a_2 + a_3}  \left[\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1\right] \Exp{\ba_4^\top \logUnPostMeanPred(\batchMat) + \frac{1}{2} \ba_4^\top \logUnPostKerPred(\batchMat) \ba_4}
-\end{align}
-where we recall that 
+Plugging everything back into \ref{IVAR_LNP_derivation_var} and taking logs for succinctness, we obtain 
 \begin{align*}
-a_1 &:= \logUnPostKerPred[\designIdx, \batchMat](\bpar) \\
-a_2 &:= 2\logUnPostMean(\bpar) \left[1 -  \logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1}\oneVec\right] \\
-a_3 &:= 2\left(\boldsymbol{\logUnPostKer}_{\designIdx}^\top \bS_1 + \tilde{\boldsymbol{\logUnPostKer}}^\top \bS_3 \right) \logUnPostObs  \\
-\ba_4 &:= 2\left(\bS_2^\top \boldsymbol{\logUnPostKer}_{\designIdx} + \bS_4 \tilde{\boldsymbol{\logUnPostKer}} \right) 
+\Log{\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
+&= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
+     2\logUnPostMean(\bpar) \left[1 - \ba_{\designIdx}^\top \oneVec[\designIdx] - \bb_{\Nbatch}^\top \oneVec[\Nbatch] \right] + \\
+     &\qquad 2\ba_{\designIdx}^\top \logUnPostObs + 2\bb_{\Nbatch}^\top \logUnPostMeanPred(\batchMat) + 2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
+\end{align*}
+which can be rearranged as
+\begin{align*}
+\Log{\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
+&= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
+	2\ba_{\designIdx}^\top\left[\logUnPostObs - \logUnPostMean(\bpar) \oneVec[\designIdx]  \right] + \\
+	&\qquad 2\bb_{\Nbatch}^\top \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\bpar)\oneVec[\Nbatch] \right] + 
+	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
 \end{align*}
 
 

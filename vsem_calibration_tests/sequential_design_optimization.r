@@ -660,6 +660,7 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   #    - should pass `include_nugget` to all acquisition functions. 
   #    - in the greedy batch procedure, there are computations I can pass in without re-computing; 
   #      e.g. all of the prior quantities and `K_int_n_Kinv`.
+  #    - pull out terms that can be pulled out of the integral. 
   
   n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
   
