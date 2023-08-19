@@ -662,6 +662,8 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   #      e.g. all of the prior quantities and `K_int_n_Kinv`.
   #    - pull out terms that can be pulled out of the integral. 
   
+  browser()
+  
   n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
   
   # Handle case of single input. 
@@ -675,9 +677,6 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   lpost_k0_int_n <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, lpost_emulator$inputs_lpost$inputs_scaled)
   lpost_k0_int_can <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, theta_vals)
   
-  # Pre-computed computations. 
-  K_int_n_Kinv <- lpost_k0_int_n %*% lpost_emulator$K_inv
-                                                                                                                                                                                         
   # Compute predictive means conditional on current design points. This is used to average over the unknown response when 
   # conditioning on new points in `theta_vals`. 
   lpost_curr_pred_can <- predict_lpost_emulator(theta_vals, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
@@ -693,28 +692,45 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
                                                  include_nugget = include_nugget, verbose = verbose)$var
     
     # Computations used both in kernel term for conditioned GP and averaged unknown response term. 
-    A_int <- 2 * (K_int_n_Kinv + lpost_k0_int_can[,i,drop=FALSE] %*% lpost_emulator_temp$K_inv[n+1, 1:n, drop=FALSE])
-    b_int <- 2 * (drop(lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + lpost_k0_int_can[,i] * lpost_emulator_temp$K_inv[n+1, n+1])
+    A <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, 1:n, drop=FALSE]) + 
+         (lpost_k0_int_can[,i,drop=FALSE] %*% lpost_emulator_temp$K_inv[n+1, 1:n, drop=FALSE])
+    B <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + 
+         (lpost_k0_int_can[,i,drop=FALSE] %*% lpost_emulator_temp$K_inv[n+1, n+1])
     
-    # Kernel term for conditioned GP.
-    kpred_term <- rowSums(A_int) + b_int
-
     # Numerically stable calculation of log[exp(k) - 1] term. 
     idx_approx_sel <- (lpost_pred_var_int >= 100)
     log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
     log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
     log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
     
-    # Term that weights the current observed lpost values. 
-    # TODO: need to debug this part. Values are way too large. 
-    log_obs_response_term <- drop(A_int %*% lpost_emulator$outputs_lpost)
+    # Observed data term. 
+    # TODO: need to look back at derivation; should not be combining these terms since `lpost_emulator$outputs_lpost`
+    # has dim n, while `lpost_mu0_int` has dim Nint. Probably works when prior mean is constant but not if 
+    # prior mean is non-constant. 
+    log_obs_term <- 2 * (A %*% (lpost_emulator$outputs_lpost - lpost_mu0_int))
     
-    # Term that averages over unknown response. 
-    exp_response_term <- b_int * lpost_curr_pred_can$mean[i] + 0.5 * b_int^2 * lpost_curr_pred_can$var[i]                                                                                          
+    # Current predictive mean term (conditioning on current n-point design). 
+    log_curr_pred_mean_term <- 2 * B * (lpost_curr_pred_can$mean[i] - lpost_mu0_int)
     
-    # Compute log IVAR. 
-    log_IVAR_int <- lpost_pred_var_int + lpost_mu0_int * (2 - kpred_term) + log_obs_response_term + log_exp_term + exp_response_term
+    # Current predictive variance term (conditioning on current n-point design).
+    log_curr_pred_var_term <- 2 * B^2 * lpost_curr_pred_can$var[i]
     
+    ## OLD
+    # # Kernel term for conditioned GP.
+    # kpred_term <- rowSums(A_int) + b_int
+    # 
+    # # Term that weights the current observed lpost values. 
+    # # TODO: need to debug this part. Values are way too large. 
+    # log_obs_response_term <- drop(A_int %*% lpost_emulator$outputs_lpost)
+    # 
+    # # Term that averages over unknown response. 
+    # exp_response_term <- b_int * lpost_curr_pred_can$mean[i] + 0.5 * b_int^2 * lpost_curr_pred_can$var[i]                                                                                          
+    # 
+    # # Compute log IVAR. 
+    # log_IVAR_int <- lpost_pred_var_int + lpost_mu0_int * (2 - kpred_term) + log_obs_response_term + log_exp_term + exp_response_term
+    
+    # TODO: need to take mean of exponentiated terms, not terms on log scale.     
+
     # Estimate EIVAR via discrete sum over theta grid locations. 
     IVAR_est[i] <- -1.0 * mean(log_IVAR_int)
     
