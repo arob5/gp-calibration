@@ -402,6 +402,48 @@ batch_heuristics <- c("kriging_believer", "constant_liar_optimist", "constant_li
 ```
 
 
+# Visual Investigation of Single-Point Acquisitions 
+```{r}
+# Fix candidate and integrate points. 
+theta_grid_candidate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = acquisition_settings$N_subsample_candidate, replace = FALSE)
+theta_grid_integrate_sel <- sample(1:nrow(acquisition_settings$theta_grid_integrate), size = acquisition_settings$N_subsample_integrate, replace = FALSE)
+```
+
+```{r}
+# IVAR-lpost 
+IVAR_lpost_vals <- acquisition_EIVAR_lpost(theta_vals = samp_round0_info$inputs_scaled[theta_grid_candidate_sel,], lpost_emulator = lpost_emulator, 
+                                           theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,], verbose = FALSE, include_nugget = TRUE)
+
+IVAR_lpost_heatmap_plt <- get_2d_heatmap_plot(X = samp_round0_info$inputs[theta_grid_candidate_sel,], 
+                                              y = IVAR_lpost_vals, param_names = computer_model_data$pars_cal_names, 
+                                              samples_kde = samp_exact_theta, raster = FALSE, 
+                                              samples_points = init_design$inputs, 
+                                              point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                              main_title = "IVAR-lpost")
+
+plot(IVAR_lpost_heatmap_plt)
+
+```
+
+
+```{r}
+# IVAR-post 
+IVAR_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_scaled[theta_grid_candidate_sel,], lpost_emulator = lpost_emulator, 
+                                   theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,], verbose = FALSE, include_nugget = TRUE)
+
+IVAR_heatmap_plt <- get_2d_heatmap_plot(X = samp_round0_info$inputs[theta_grid_candidate_sel,], 
+                                        y = IVAR_vals, param_names = computer_model_data$pars_cal_names, 
+                                        samples_kde = samp_exact_theta, raster = FALSE, 
+                                        samples_points = init_design$inputs, 
+                                        point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                        main_title = "log IVAR-post")
+
+plot(IVAR_heatmap_plt)
+
+```
+
+# Acquisition of Batch Points via Greedy Optimization
+
 ```{r}
 #
 # EI Acquisitions
@@ -560,12 +602,31 @@ for(j in seq_along(IVAR_post_results)) {
 ```
 
 
-# TODO: should look at one-point acquisition heatmaps to better understand acquisition functions. 
+# Compacting Approximate Posterior Samples
+```{r}
+support_points_list <- support::sp(n = acquisition_settings$batch_size, 
+                                   p = length(computer_model_data$theta_true), 
+                                   dist.samp = samp_round0_info$inputs)
+support_points <- support_points_list$sp
+colnames(support_points) <- colnames(lpost_emulator$inputs_lpost$inputs)
 
+# TODO: order of support points is irrelevant so should add plotting option to allow plotting different marker than numbers. 
+support_points_plt <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                                    lpost_vals = samp_round0_info$outputs,
+                                                    computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                                    samples_kde = samp_exact_theta, 
+                                                    init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                    sequential_design_points = support_points,
+                                                    raster = FALSE, point_coords = computer_model_data$theta_true, 
+                                                    main_title = "Support Points", 
+                                                    bigger_is_better = TRUE, log_scale = FALSE)
+plot(support_points_plt)
 
+# TODO: add contour plots for approximate posterior. Seems that most of the probability mass is actually at the top part. 
+# It seems that the best bet for this example would be a mixture of support points (which try to capture the approx 
+# posterior) and a purely space-filling design. 
 
-
-
+```
 
 
 
