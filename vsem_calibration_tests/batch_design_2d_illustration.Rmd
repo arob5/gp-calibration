@@ -520,7 +520,7 @@ for(j in seq_along(EIVAR_results)) {
 
 ```{r}
 #
-# Integrated Variance Acquisitions - lpost
+# Integrated Variance Acquisitions - post
 #
 
 acquisition_settings$acquisition_type <- "IVAR_post"
@@ -530,10 +530,35 @@ f_IVAR <- function(heuristic) {
   batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
 }
 
+test <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
+
 IVAR_post_results <- mclapply(batch_heuristics, f_IVAR_post)
 names(IVAR_post_results) <- c("KB", "CLO", "CLP")
 
 ```
+
+
+```{r}
+#
+# Plot Integrated Variance acquisitions results, lpost. 
+#
+
+for(j in seq_along(IVAR_post_results)) {
+  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                              lpost_vals = samp_round0_info$outputs,
+                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+                                              samples_kde = samp_exact_theta, 
+                                              init_design_points = IVAR_post_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
+                                              sequential_design_points = IVAR_post_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
+                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
+                                              main_title = paste0("Batch acquisition: IVAR-post, ", names(IVAR_post_results)[j]), 
+                                              bigger_is_better = TRUE, log_scale = FALSE)
+                                              
+  plot(batch_plot)
+}
+
+```
+
 
 
 
