@@ -560,41 +560,9 @@ for(j in seq_along(IVAR_post_results)) {
 ```
 
 
+# TODO: should look at one-point acquisition heatmaps to better understand acquisition functions. 
 
 
-```{r}
-#
-# Integrated Variance Acquisitions - post
-#
-
-acquisition_settings$acquisition_type <- "IVAR_post"
-
-# TEST
-acquisition_settings$N_subsample_candidate <- 10
-acquisition_settings$batch_method <- "kriging_believer"
-
-theta_grid_candidate <- acquisition_settings$theta_grid_candidate[sample(1:nrow(acquisition_settings$theta_grid_candidate), 
-                                                    size = acquisition_settings$N_subsample_candidate, replace = FALSE),, drop=FALSE]
-theta_grid_integrate <- acquisition_settings$theta_grid_integrate[sample(1:nrow(acquisition_settings$theta_grid_integrate), 
-                                                    size = acquisition_settings$N_subsample_integrate, replace = FALSE),, drop=FALSE]
-
-tester <- acquisition_IVAR_post(theta_vals = theta_grid_candidate, 
-                                lpost_emulator = lpost_emulator, 
-                                theta_grid_integrate = theta_grid_integrate)
-
-
-test <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
-# End TEST
-
-f_IVAR_post <- function(heuristic) {
-  acquisition_settings$batch_method <- heuristic
-  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
-}
-
-IVAR_post_results <- mclapply(batch_heuristics, f_IVAR_post)
-names(IVAR_post_results) <- c("KB", "CLO", "CLP")
-
-```
 
 
 
