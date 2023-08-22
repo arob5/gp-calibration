@@ -710,32 +710,96 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
     log_curr_pred_mean_term <- 2 * drop(lpost_curr_pred_can$mean[i]*B - lpost_mu0_int*B)
     
     # Current predictive variance term (conditioning on current n-point design).
+    # TODO: I don't think fast_diag is needed here. I think it should simply be B^2
     log_curr_pred_var_term <- 2 * lpost_curr_pred_can$var[i] * hetGP:::fast_diag(B, t(B))
 
     # Sum terms to compute log IVAR for current candidate point over all integration points. 
-    log_IVAR <- lpost_pred_var_int + log_exp_term + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term
+    log_IVAR <- lpost_pred_var_int + log_exp_term + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term + 2 * lpost_mu0_int
     
     # Approximate integral by summing values over integration points. Use numerically stable computation 
     # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
     # the optimization over candidate points. 
     IVAR_est[i] <- -1.0 * matrixStats::logSumExp(log_IVAR)
     
-    ## OLD
-    # # Kernel term for conditioned GP.
-    # kpred_term <- rowSums(A_int) + b_int
-    # 
-    # # Term that weights the current observed lpost values. 
-    # # TODO: need to debug this part. Values are way too large. 
-    # log_obs_response_term <- drop(A_int %*% lpost_emulator$outputs_lpost)
-    # 
-    # # Term that averages over unknown response. 
-    # exp_response_term <- b_int * lpost_curr_pred_can$mean[i] + 0.5 * b_int^2 * lpost_curr_pred_can$var[i]                                                                                          
-    # 
-    # # Compute log IVAR. 
-    # log_IVAR_int <- lpost_pred_var_int + lpost_mu0_int * (2 - kpred_term) + log_obs_response_term + log_exp_term + exp_response_term
-
   }
   
+  return(IVAR_est)
+  
+}
+
+
+acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_integrate, computer_model_data, 
+                                     N_MC_samples = 1000, verbose = TRUE, include_nugget = TRUE, ...) {
+  # NOTE: this function is intended only for validating `acquisition_IVAR_post()`. It does not fit into the current 
+  # acquisition function code standards, but can easily be updated so that it does. Updates required: 1.) remove the 
+  # argument `computer_model_data` which is not an argument accepted by acquisition functions and 2.) generate 
+  # samples from a function `sample_lpost_emulator()` (not yet implemented) instead of using `sample_GP_lpost_theta`. 
+  
+  n <- length(lpost_emulator$outputs_lpost)
+  
+  # Vector to store IVAR estimates at inputs `theta_vals`. 
+  IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  # Pre-compute prior mean evaluations at integration points. 
+  prior_mean_vals_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
+  
+  for(i in 1:nrow(theta_vals)) {
+    
+    # Condition lpost emulator on current candidate point.  
+    lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
+    
+    # Compute unnormalized log posterior approximation predictive variance at each theta grid location. The predictive mean will also 
+    # be required, but the predictive mean depends on the unknown response values. Thus, the predictive mean is approximated via 
+    # Monte Carlo below. 
+    lpost_pred_var_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "var", 
+                                                 include_nugget = include_nugget, verbose = verbose)$var
+    
+    # Compute the portion of the predictive lpost (log) variance that does not depend on the predictive mean of the lpost emulator. 
+    idx_approx_sel <- (lpost_pred_var_int >= 100)
+    log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
+    log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
+    log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
+    log_var_term1 <- log_exp_term + lpost_pred_var_int
+    
+    # Generate samples from current GP predictive distribution at current candidate point, since the post emulator is log-normal and 
+    # hence depends on the response value. 
+    # TODO: write function `sample_lpost_emulator()` to replace this. 
+    lpost_samp <- drop(sample_GP_lpost_theta(theta_vals_scaled = theta_vals[i,,drop=FALSE], 
+                                             emulator_info_list = lpost_emulator$emulator_info_list,
+                                             computer_model_data = computer_model_data, 
+                                             theta_prior_params = lpost_emulator$theta_prior_params, 
+                                             sig2_eps = lpost_emulator$sig2_eps, 
+                                             N_samples = N_MC_samples))
+    
+    # Approximating the predictive mean. 
+    log_post_pred_var <- vector(mode = "numeric", length = N_MC_samples * nrow(theta_grid_integrate))
+    idx <- 1
+    
+    for(k in seq_len(N_MC_samples)) {
+
+      # Add sampled response value. 
+      lpost_emulator_temp$outputs_lpost[n+1] <- lpost_samp[k]
+      
+      # Compute predictive mean at integration points, conditional on sampled response value. 
+      lpost_pred_mean_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "mean", 
+                                                    include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = prior_mean_vals_int)$mean
+
+      # Append predictive means. 
+      end_idx <- idx + length(lpost_pred_mean_int) - 1
+      log_post_pred_var[idx:end_idx] <- 2 * lpost_pred_mean_int + log_var_term1
+      idx <- end_idx+1
+    
+    }
+    
+    # Approximate double integral by summing values over integration points (averaging over input space) and Monte Carlo samples 
+    # averaging over unknown response. Use numerically stable computation 
+    # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
+    # the optimization over candidate points. Do normalize the sum approximating the inner integral so that the output
+    # of this function can be compared with `acquisition_IVAR_post()`. 
+    IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_post_pred_var) - log(N_MC_samples))
+    
+  }
+
   return(IVAR_est)
   
 }

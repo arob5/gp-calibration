@@ -368,15 +368,15 @@ which can be rearranged as
 &= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
 	2\ba_{\designIdx}^\top\left[\logUnPostObs - \logUnPostMean(\bpar) \oneVec[\designIdx]  \right] + \\
 	&\qquad 2\bb_{\Nbatch}^\top \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\bpar)\oneVec[\Nbatch] \right] + 
-	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
+	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch} + 2 \logUnPostMean(\bpar)
 \end{align*}
 This is easily vectorized over a set of evaluation inputs $\designMat[]$ as 
 \begin{align*}
 \Log{\Var\left[\unPostPred(\designMat[]) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
-&= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
+&= \logUnPostKerPred[\designIdx, \batchMat](\designMat[]) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\designMat[])} - 1} + 
       2\left[\mathbf{A}_{\designIdx}\logUnPostObs - \logUnPostMean(\designMat[]) \star \left(\mathbf{A}_{\designIdx} \oneVec[\designIdx] \right) \right] + \\
       &\qquad 2\left[\mathbf{B}_{\Nbatch}\logUnPostMeanPred(\batchMat) - \logUnPostMean(\designMat[]) \star \left(\mathbf{B}_{\Nbatch} \oneVec[\Nbatch] \right)  \right] + 
-      2 \cdot \text{diag}\left\{\mathbf{B}_{\Nbatch} \logUnPostKerPred(\batchMat) \mathbf{B}_{\Nbatch}^\top  \right\},
+      2 \cdot \text{diag}\left\{\mathbf{B}_{\Nbatch} \logUnPostKerPred(\batchMat) \mathbf{B}_{\Nbatch}^\top  \right\} + 2 \logUnPostMean(\designMat[]),
 \end{align*}
 where 
 \begin{align*}

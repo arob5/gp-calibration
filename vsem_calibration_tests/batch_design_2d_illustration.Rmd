@@ -410,6 +410,22 @@ theta_grid_integrate_sel <- sample(1:nrow(acquisition_settings$theta_grid_integr
 ```
 
 ```{r}
+theta_grid_validate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = 100, replace = FALSE)
+
+# Validating IVAR-post implementation. 
+IVAR_post_MC_vals <- acquisition_IVAR_post_MC(theta_vals = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
+                                              lpost_emulator = lpost_emulator, 
+                                              theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,,drop=FALSE], 
+                                              computer_model_data = computer_model_data, verbose = FALSE, include_nugget = TRUE)
+
+IVAR_post_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
+                                        lpost_emulator = lpost_emulator, 
+                                        theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,,drop=FALSE], 
+                                        verbose = FALSE, include_nugget = TRUE)
+
+```
+
+```{r}
 # IVAR-lpost 
 IVAR_lpost_vals <- acquisition_EIVAR_lpost(theta_vals = samp_round0_info$inputs_scaled[theta_grid_candidate_sel,], lpost_emulator = lpost_emulator, 
                                            theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,], verbose = FALSE, include_nugget = TRUE)
@@ -624,7 +640,8 @@ plot(support_points_plt)
 
 # TODO: add contour plots for approximate posterior. Seems that most of the probability mass is actually at the top part. 
 # It seems that the best bet for this example would be a mixture of support points (which try to capture the approx 
-# posterior) and a purely space-filling design. 
+# posterior) and a purely space-filling design. Or could adjust the approximate MCMC sampling itself to instead sample 
+# a prior-approx posterior mixture. 
 
 ```
 
