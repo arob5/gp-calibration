@@ -409,14 +409,15 @@ theta_grid_candidate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candid
 theta_grid_integrate_sel <- sample(1:nrow(acquisition_settings$theta_grid_integrate), size = acquisition_settings$N_subsample_integrate, replace = FALSE)
 ```
 
+
 ```{r}
-theta_grid_validate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = 100, replace = FALSE)
+theta_grid_validate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = 10, replace = FALSE)
 
 # Validating IVAR-post implementation. 
 IVAR_post_MC_vals <- acquisition_IVAR_post_MC(theta_vals = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
                                               lpost_emulator = lpost_emulator, 
                                               theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,,drop=FALSE], 
-                                              computer_model_data = computer_model_data, verbose = FALSE, include_nugget = TRUE)
+                                              verbose = FALSE, include_nugget = TRUE)
 
 IVAR_post_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
                                         lpost_emulator = lpost_emulator, 
@@ -424,6 +425,129 @@ IVAR_post_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_sca
                                         verbose = FALSE, include_nugget = TRUE)
 
 ```
+
+```{r}
+# Comparing samples from predictive distributions. 
+
+N_samp_validate <- 10000
+samp1 <- sample_lpost_emulator(inputs_new_scaled = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
+                               lpost_emulator, N_samples = N_samp_validate)
+           
+samp2 <- sample_GP_lpost_theta(theta_vals_scaled = samp_round0_info$inputs_scaled[theta_grid_validate_sel,,drop=FALSE], 
+                               emulator_info_list = lpost_emulator$emulator_info_list,
+                               computer_model_data = computer_model_data, 
+                               theta_prior_params = lpost_emulator$theta_prior_params, 
+                               sig2_eps = lpost_emulator$sig2_eps, 
+                               N_samples = N_samp_validate)
+
+hist(samp1[,1], 50, col = "red")
+hist(samp2[,1], 50, col = "blue")
+
+```
+
+```{r}
+# Comparing E[exp{2*mu_{n,tilde}(u)}] to its Monte Carlo estimate. 
+
+# Works well when conditioning on 7th u_tilde; why? But 1st is poor, starts deviating around MC value -17650. 
+
+Ntest <- 50
+
+lvalsMC <- vector(mode = "numeric", length = Ntest)
+lvals2 <- vector(mode = "numeric", length = Ntest)
+lvals3<- vector(mode = "numeric", length = Ntest)
+
+for(j in 1:Ntest) {
+  u <- samp_round0_info$inputs_scaled[theta_grid_integrate_sel[100+j],,drop=FALSE]
+  u_tilde <- samp_round0_info$inputs_scaled[theta_grid_validate_sel[7],,drop=FALSE]
+  prior_mean_u <- calc_lpost_mean(lpost_emulator, u)
+  prior_mean_u_tilde <- calc_lpost_mean(lpost_emulator, u_tilde)
+  n <- length(lpost_emulator$outputs_lpost)
+  
+  #
+  # Monte Carlo Estimate. 
+  #
+  
+  # Condition on u_tilde. 
+  lpost_emulator_cond <- update_lpost_emulator(lpost_emulator, u_tilde)
+  kn_tilde <- calc_lpost_kernel(lpost_emulator, u, lpost_emulator_cond$inputs_lpost$inputs_scaled)
+  kn_tilde_Kinv <- kn_tilde %*% lpost_emulator_cond$K_inv
+  
+  # Sample ell_pi_tilde values. 
+  N_MC <- 100000
+  log_pi_tilde_samp <- drop(sample_lpost_emulator(u_tilde, lpost_emulator, N_samples = N_MC))
+  
+  # Predictive mean evaluations at u for each Monte Carlo sample of ell_pi_tilde. 
+  pred_mean_cond_MC <- vector(mode = "numeric", length = N_MC)
+  for(k in seq_len(N_MC)) {
+    # lpost_emulator_cond$outputs_lpost[n+1] <- log_pi_tilde_samp[k]
+    response <- matrix(c(lpost_emulator$outputs_lpost, log_pi_tilde_samp[k]), ncol = 1)
+    pred_mean_cond_MC[k] <- prior_mean_u + kn_tilde_Kinv %*% (response - lpost_emulator_cond$mu0_design)
+      #predict_lpost_emulator(u, lpost_emulator_cond, return_vals = "mean")$mean # prior_mean_vals_new = prior_mean_u
+  }
+  MC_est <- matrixStats::logSumExp(2*pred_mean_cond_MC) - log(N_MC)
+  
+  
+  #
+  # Closed-Form Computation. 
+  #
+  
+  # Condition on u_tilde. 
+  lpost_emulator_cond2 <- update_lpost_emulator(lpost_emulator, u_tilde)
+  
+  # Predict ell_pi_tilde value. 
+  log_pi_tilde_pred <- predict_lpost_emulator(u_tilde, lpost_emulator, return_vals = c("mean", "var"))
+  
+  # Compute a and b vectors. 
+  kn <- calc_lpost_kernel(lpost_emulator, lpost_emulator$inputs_lpost$inputs_scaled, u)
+  k_tilde <- drop(calc_lpost_kernel(lpost_emulator, u_tilde, u))
+  a <- drop(lpost_emulator_cond2$K_inv[1:n, 1:n] %*% kn) + lpost_emulator_cond2$K_inv[1:n, n+1]*k_tilde
+  b <- sum(lpost_emulator_cond2$K_inv[1:n, n+1]*drop(kn)) + lpost_emulator_cond2$K_inv[n+1, n+1]*k_tilde
+  
+  # Compute log E[exp{2*mu_{n,tilde}(u)}]. 
+  lval2 <- 2 * (drop(prior_mean_u) - sum(a*drop(lpost_emulator$mu0_design)) - b*drop(prior_mean_u_tilde) + sum(a*lpost_emulator$outputs_lpost) + b*log_pi_tilde_pred$mean + b^2 * log_pi_tilde_pred$var)
+                  
+  
+  #
+  # Second closed-form computation. 
+  #
+  
+  # Condition on u_tilde. 
+  lpost_emulator_cond3 <- update_lpost_emulator(lpost_emulator, u_tilde)
+  
+  # Compute b. 
+  kn <- calc_lpost_kernel(lpost_emulator, lpost_emulator$inputs_lpost$inputs_scaled, u)
+  k_tilde <- drop(calc_lpost_kernel(lpost_emulator, u_tilde, u))
+  b <- sum(lpost_emulator_cond2$K_inv[1:n, n+1]*drop(kn)) + lpost_emulator_cond2$K_inv[n+1, n+1]*k_tilde
+  
+  # Compute lpost prediction, using kriging believer approach. 
+  lpost_pred_KB <- predict_lpost_emulator(u, lpost_emulator_cond3, return_vals = "mean", prior_mean_vals_new = prior_mean_u)$mean
+  
+  # Current predictive varianced at u_tilde. 
+  lpost_pred_var <- predict_lpost_emulator(u_tilde, lpost_emulator, return_vals = "var", prior_mean_vals_new = prior_mean_u_tilde)$var
+  
+  # Compute log E[exp{2*mu_{n,tilde}(u)}]. 
+  lval3 <- 2 * (lpost_pred_KB + b^2 * lpost_pred_var)
+  
+  
+  lvalsMC[j] <- MC_est
+  lvals2[j] <- lval2
+  lvals3[j] <- lval3
+  
+}
+
+plot(lvalsMC, lvals3)
+lines(c(min(lvalsMC), max(lvalsMC)), c(min(lvalsMC), max(lvalsMC)), col = "red")
+
+```
+
+
+
+```{r}
+print(IVAR_post_vals$log_mean_term)
+hist(IVAR_post_MC_vals$log_mean_term, 50)
+abline(v = IVAR_post_vals$log_mean_term, col = "red")
+```
+
 
 ```{r}
 # IVAR-lpost 

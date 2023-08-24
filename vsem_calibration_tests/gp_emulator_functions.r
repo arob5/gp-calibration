@@ -2145,7 +2145,6 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
   }
   n <- length(gp_means)
   
-  
   if(is.na(transformation_method)) {
     sample <- gp_means + sqrt(gp_vars) * rnorm(n)
   } else if(transformation_method == "truncated") {
@@ -2217,8 +2216,8 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
 
 
 sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list,  
-                                computer_model_data, theta_prior_params, sig2_eps, N_samples = 1, gp_pred_list = NULL, 
-                                include_sig_eps_prior = FALSE) {
+                                  computer_model_data, theta_prior_params, sig2_eps, N_samples = 1, gp_pred_list = NULL, 
+                                  include_sig_eps_prior = FALSE) {
   # In the loss emulation setting, where the squared error maps (SSR) are modeled as GPs, these GPs induce a 
   # random field approximation on the unnormalized log (conditional) posterior 
   # log pi(theta|Sigma) := log p(Y|theta, Sigma) + log pi_0(theta). This random field approximation is also 
@@ -2644,6 +2643,46 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
   
   return(rbind(cbind(K_inv_top_left, z), c(z, nu_inv)))
 
+}
+
+
+sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples = 1, inputs_new_unscaled = NULL, 
+                                  include_nugget = TRUE, prior_mean_vals = NULL, verbose = TRUE) {
+  # Samples from the GP predictive distribution of the lpost emulator (which is assumed to be a GP). 
+  #
+  # Args:
+  #    theta_vals_scaled: matrix of dimension M x D of input locations (scaled to lie in unit hypercube) at which to sample
+  #                       the log density values. Each row is a location. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`. 
+  #    N_samples: integer, the number of samples to draw at each input location. 
+  #    theta_vals_unscaled: matrix, of dimension M x D; the same as `theta_vals_scaled` but the inputs are unscaled. Both the 
+  #                       scaled and unscaled inputs are required here, but only one of them need be passed, as the scaling 
+  #                       can be performed using the information in `emulator_info_list$input_bounds`. 
+  #    include_nugget: If TRUE, includes nugget variances on underlying GP kernel computations used to compute 
+  #                    the lpost kernel. This implies the returned predictive variance is the variance of the 
+  #                    latent function plus the nugget variance. Otherwise, the returned variance excludes the  
+  #                    nugget variance. 
+  #    prior_mean_vals: numeric, vector of evaluations of the lpost prior mean function at inputs `inputs_new_scaled`. 
+  #                     See `predict_lpost_emulator()`. Default is NULL, in which case the mean function 
+  #                     evaluations are computed in the function. 
+  #
+  # Returns:
+  #    matrix, of dimension `N_samples` x M. The ith row contains the sampled values at the M input locations. 
+  
+  # Compute predictive mean and variance. 
+  lpost_pred <- predict_lpost_emulator(inputs_new_scaled = inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = c("mean", "var"), 
+                                       include_nugget = include_nugget, inputs_new_unscaled = inputs_new_unscaled, 
+                                       prior_mean_vals_new = prior_mean_vals, verbose = verbose)
+                                     
+  # Draw pointwise samples from marginal predictive distributions. 
+  samp <- matrix(nrow = N_samples, ncol = nrow(inputs_new_scaled))
+  for(t in seq_len(N_samples)) {
+    samp[t,] <- sample_GP_pointwise(lpost_pred$mean, lpost_pred$var) 
+  }
+  
+  if(N_samples == 1) return(samp[1,])
+  return(samp)
+  
 }
 
 
