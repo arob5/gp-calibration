@@ -663,6 +663,93 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   #    - in the greedy batch procedure, there are computations I can pass in without re-computing; 
   #      e.g. all of the prior quantities and `K_int_n_Kinv`.
   #    - pull out terms that can be pulled out of the integral. 
+  #    - maybe compute unscaled inputs once at the beginning 
+  
+  n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
+  N_int <- nrow(theta_grid_integrate)
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
+  
+  # Vector to store log IVAR estimates at inputs `theta_vals`. 
+  log_IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  # Compute lpost prior mean and kernel evaluations. 
+  lpost_mu0_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
+  lpost_k0_int_n <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, lpost_emulator$inputs_lpost$inputs_scaled)
+  lpost_k0_int_can <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, theta_vals)
+  
+  # Compute predictive means conditional on current design points. This is used to average over the unknown response when 
+  # conditioning on new points in `theta_vals`. 
+  lpost_curr_pred_can <- predict_lpost_emulator(theta_vals, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
+                                                include_nugget = include_nugget)
+  
+  for(i in 1:nrow(theta_vals)) {
+    
+    # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+    lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
+    
+    # Compute unnormalized log posterior approximation predictive mean and variance at each theta grid location. The variance prediction is exact, 
+    # while the mean prediction uses the plug-in kriging believer approach.
+    lpost_pred_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = c("mean", "var"), 
+                                             include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = lpost_mu0_int)
+    lpost_pred_mean_KB_int <- lpost_pred_int$mean
+    lpost_pred_var_int <- lpost_pred_int$var
+    
+    # Computations used both in kernel term for conditioned GP and averaged unknown response term. 
+    B <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + (lpost_k0_int_can[,i,drop=FALSE] %*% lpost_emulator_temp$K_inv[n+1, n+1]) 
+      
+    # Numerically stable calculation of log[exp(k) - 1] term. 
+    idx_approx_sel <- (lpost_pred_var_int >= 100)
+    log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
+    log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
+    log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
+    
+    # Term capturing the uncertainty in the value of the unknown response. 
+    log_uncertainty_term <- lpost_curr_pred_can$var[i] * drop(B)^2
+
+    # Sum terms to compute log expected variance for current candidate point over all integration points. 
+    log_EVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)
+    
+    return(list(exp_mean_term = 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)))
+    
+    # Approximate integral by summing values over integration points. Use numerically stable computation 
+    # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
+    # the optimization over candidate points. 
+    log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_EVAR) - log(N_int))
+    
+  }
+  
+  return(log_IVAR_est)
+  
+}
+
+
+acquisition_IVAR_post_old <- function(theta_vals, lpost_emulator, theta_grid_integrate, verbose = TRUE, include_nugget = TRUE, ...) {
+  # Implements the expected integrated variance (EIVAR) criteria that targets the log posterior in the loss emulation setting. 
+  # In this case the inner two integrals of EIVAR are available in closed form. The outer integral, the expectation over the input 
+  # space is approximated by a finite sum over grid points `theta_grid_integrate`. In the code, I use the variable naming 
+  # convention "int", "can", and "n" to refer to the integration points (`theta_grid_integrate`), candidate points 
+  # (`theta_vals`), and current design inputs (`lpost_emulator$inputs$inputs_scaled`), respectively. 
+  #
+  # Args:
+  #    theta_vals: matrix of dimension M x D, each row an input location at which to compute the value of the acquisition function. 
+  #                The inputs are assumed to already be properly scaled. 
+  #    lpost_emulator: list, the lpost emulator object, as returned by `get_lpost_emulator_obj()`.
+  #    theta_grid_integrate: matrix, of dimension M_integrate x D. The set of inputs used to approximate the integral over the 
+  #                          input space required in evaluating the EIVAR criterion. 
+  # 
+  # Returns:
+  #    numeric vector of length M, containing the evaluations of the acquisition at the M input points in `theta_vals`. 
+  #    Technically returns the negative of EIVAR to align with the acquisition convention that bigger is better. 
+  #
+  # TODO: 
+  #    - should have a way to also pass in unscaled inputs, or to compute them here. This function ends up unscaling 
+  #      multiple times, which is wasteful.
+  #    - should pass `include_nugget` to all acquisition functions. 
+  #    - in the greedy batch procedure, there are computations I can pass in without re-computing; 
+  #      e.g. all of the prior quantities and `K_int_n_Kinv`.
+  #    - pull out terms that can be pulled out of the integral. 
   
   n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
   
