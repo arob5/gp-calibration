@@ -449,6 +449,7 @@ hist(samp2[,1], 50, col = "blue")
 # Comparing E[exp{2*mu_{n,tilde}(u)}] to its Monte Carlo estimate. 
 
 # Works well when conditioning on 7th u_tilde; why? But 1st is poor, starts deviating around MC value -17650. 
+# In the 7th case, the maximal value is around -17660; check other inputs that have larger values (around -17650 or higher)
 
 Ntest <- 50
 
@@ -456,9 +457,21 @@ lvalsMC <- vector(mode = "numeric", length = Ntest)
 lvals2 <- vector(mode = "numeric", length = Ntest)
 lvals3<- vector(mode = "numeric", length = Ntest)
 
+mean_pred_vals <- vector(mode = "numeric", length = Ntest)
+mean_pred_vals_MC <- vector(mode = "numeric", length = Ntest)
+
+mean_MC <- vector(mode = "numeric", length = Ntest)
+sd_MC <- vector(mode = "numeric", length = Ntest)
+cond_pred_sd <- vector(mode = "numeric", length = Ntest)
+cond_pred_mean <- vector(mode = "numeric", length = Ntest)
+min_MC_samp <- vector(mode = "numeric", length = Ntest)
+max_MC_samp <- vector(mode = "numeric", length = Ntest)
+range_MC <- vector(mode = "numeric", length = Ntest)
+errs_MC <- vector(mode = "numeric", length = Ntest)
+
 for(j in 1:Ntest) {
   u <- samp_round0_info$inputs_scaled[theta_grid_integrate_sel[100+j],,drop=FALSE]
-  u_tilde <- samp_round0_info$inputs_scaled[theta_grid_validate_sel[7],,drop=FALSE]
+  u_tilde <- samp_round0_info$inputs_scaled[theta_grid_validate_sel[8],,drop=FALSE]
   prior_mean_u <- calc_lpost_mean(lpost_emulator, u)
   prior_mean_u_tilde <- calc_lpost_mean(lpost_emulator, u_tilde)
   n <- length(lpost_emulator$outputs_lpost)
@@ -529,9 +542,28 @@ for(j in 1:Ntest) {
   lval3 <- 2 * (lpost_pred_KB + b^2 * lpost_pred_var)
   
   
+  #
+  # Computations of 2*mu_{n,tilde}(u) (unexponentiated).
+  #
+  
+  mean_pred_vals[j] <- 2*lpost_pred_KB # Closed-form. 
+  mean_pred_vals_MC[j] <- 2*mean(pred_mean_cond_MC)
+  
+  #
+  # Store results.
+  #
+  
   lvalsMC[j] <- MC_est
   lvals2[j] <- lval2
   lvals3[j] <- lval3
+  range_MC[j] <- diff(range(2*pred_mean_cond_MC))
+  sd_MC[j] <- sd(2*pred_mean_cond_MC)
+  mean_MC[j] <- mean(2*pred_mean_cond_MC)
+  errs_MC[j] <- lval3 - MC_est
+  cond_pred_mean[j] <- lpost_pred_KB
+  cond_pred_sd[j] <- sqrt(predict_lpost_emulator(u, lpost_emulator_cond3, return_vals = "var", prior_mean_vals_new = prior_mean_u)$var)
+  min_MC_samp[j] <- min(pred_mean_cond_MC)
+  max_MC_samp[j] <- max(pred_mean_cond_MC)
   
 }
 
@@ -541,6 +573,43 @@ lines(c(min(lvalsMC), max(lvalsMC)), c(min(lvalsMC), max(lvalsMC)), col = "red")
 ```
 
 
+```{r}
+plot(cond_pred_sd, errs_MC)
+plot(cond_pred_mean, errs_MC)
+plot(min_MC_samp, errs_MC)
+plot(max_MC_samp, errs_MC)
+plot(mean_MC, errs_MC)
+plot(sd_MC, errs_MC)
+```
+
+
+```{r}
+# Unexponentiated mean predictions. 
+plot(mean_pred_vals_MC, mean_pred_vals)
+lines(c(min(mean_pred_vals_MC), max(mean_pred_vals_MC)), c(min(mean_pred_vals_MC), max(mean_pred_vals_MC)), col = "red")
+
+```
+
+
+
+
+
+```{r}
+plot(range_MC, errs_MC)
+
+```
+
+
+```{r}
+u_vals <- samp_round0_info$inputs_scaled[theta_grid_integrate_sel[101:150],,drop=FALSE]
+
+pred_std <- sqrt(predict_lpost_emulator(u_vals, lpost_emulator_cond3, return_vals = "var")$var)
+pred_mean <- predict_lpost_emulator(u_vals, lpost_emulator_cond3, return_vals = "mean")$mean
+
+plot(pred_std, errs)
+plot(pred_mean, errs)
+
+```
 
 ```{r}
 print(IVAR_post_vals$log_mean_term)
