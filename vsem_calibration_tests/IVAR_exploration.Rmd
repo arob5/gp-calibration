@@ -1,0 +1,275 @@
+---
+title: "IVAR Exploration"
+author: "Andrew Roberts"
+date: '2023-08-25'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+source("numerical_experiment_functions.r")
+source("mcmc_calibration_functions.r")
+source("gp_emulator_functions.r")
+source("sequential_design_optimization.r")
+```
+
+
+# Computer Model and Data 
+
+```{r, include = FALSE}
+# Synthetic data generation
+computer_model_data <- generate_vsem_test_case(4)
+```
+
+```{r, echo = FALSE}
+print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
+```
+
+```{r echo = FALSE}
+for(output_var in computer_model_data$output_vars) {
+ plotTimeSeries(observed = computer_model_data$data_obs[, output_var],
+                predicted = computer_model_data$data_ref[, output_var], main = output_var) 
+}
+```
+
+# Priors 
+
+## Calibration Parameters 
+```{r, echo = FALSE} 
+# Priors 
+theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
+theta_prior_params[,"param1"] <- c(1.3, 0.4) # theta_prior_params[,"lower"]
+theta_prior_params[,"param2"] <- c(1.7, 0.6)  # theta_prior_params[,"upper"]
+theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
+
+print("Calibration parameter prior:")
+print(theta_prior_params)
+```
+
+
+## Likelihood Parameters 
+```{r, echo = FALSE}
+sig2_prior_info <- get_IG_priors_numerical_test(sig2_true = diag(computer_model_data$Sig_eps), 
+                                                bias_frac = c(0.1, -0.15), bins = 50,
+                                                coef_var = c(0.3, 0.5), return_prior_plots = TRUE, 
+                                                output_variables = computer_model_data$output_vars)
+sig_eps_prior_params <- sig2_prior_info$prior
+plts <- sig2_prior_info$plots
+
+print("Priors on variance parameters:")
+grid.arrange(arrangeGrob(grobs = plts, nrow = 1))
+```
+
+# Exact MCMC Samples.
+
+## Exact MCMC. 
+```{r, echo = FALSE}
+N_mcmc_exact <- 50000
+
+time_start <- proc.time()
+mcmc_exact_list <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
+                                              theta_prior_params = theta_prior_params, 
+                                              learn_sig_eps = TRUE,
+                                              sig_eps_prior_params = sig_eps_prior_params,
+                                              N_mcmc = N_mcmc_exact)
+mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
+print(paste0("Exact MCMC runtime: ", mcmc_exact_runtime, " seconds."))
+
+# Format MCMC samples. 
+mcmc_samp_dt <- format_mcmc_output(samp_list = mcmc_exact_list[c("theta", "sig_eps")], test_label = "exact")
+
+```
+
+```{r, echo = FALSE}
+burn_ins <- c(exact = 10000)
+
+mcmc_exact_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")
+grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
+```
+
+```{r, echo = FALSE}
+mcmc_exact_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "sig_eps")
+grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
+```
+
+```{r, echo = FALSE}
+# Store matrix of calibration parameter samples from exact MCMC for plotting purposes. 
+samp_exact_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")[, .(param_name, sample)]
+samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+```
+
+
+# Setup for Design Initialization. 
+
+```{r, echo = FALSE}
+# Emulator settings
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
+                                kernel = "Gaussian", 
+                                transformation_method = c("truncated"),
+                                emulator_target = "SSR",
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+
+print("Emulator Settings:")
+print(emulator_settings)
+```
+
+```{r, echo = FALSE}
+
+# Design settings.
+design_settings <- data.frame(N_design = 15, design_method = "LHS")
+
+# Input bounds that will be used to scale all designs. 
+input_bounds <- t(as.matrix(theta_prior_params[, c("param1", "param2")]))
+rownames(input_bounds) <- c("min", "max")
+
+print("Design Settings:")
+print(design_settings)
+```
+
+```{r, include = FALSE}
+# Prior grid over which acquisitions will be evaluated. Also will be used for plotting. 
+
+prior_grid_info <- get_input_output_design(N_points = 51^2,
+                                           design_method = "grid", 
+                                           scale_inputs = TRUE,
+                                           param_ranges = input_bounds,
+                                           computer_model_data = computer_model_data, 
+                                           theta_prior_params = theta_prior_params)
+
+lpost_true_grid <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                theta_vals = prior_grid_info$inputs, 
+                                                vars_obs = diag(computer_model_data$Sig_eps), 
+                                                SSR = prior_grid_info$outputs,
+                                                na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                return_list = FALSE)
+
+```
+
+
+```{r, echo = FALSE}
+
+# True posterior heatmap plot. 
+true_post_plot <- get_2d_response_surface_plot(computer_model_data = computer_model_data, 
+                                               theta_vals = prior_grid_info$inputs, 
+                                               param_names = computer_model_data$pars_cal_names, 
+                                               response_surface = "posterior", 
+                                               output_variables = computer_model_data$output_vars, 
+                                               raster = TRUE, point_coords = computer_model_data$theta_true, 
+                                               samples_kde = samp_exact_theta, lpost_vals = lpost_true_grid)
+
+plot(true_post_plot)
+```
+
+
+# IVAR acquisition evaluations on different initial designs.  
+
+```{r}
+
+N_design_tests <- 2
+
+init_design <- get_input_output_design(N_points = design_settings$N_design, 
+                                       computer_model_data = computer_model_data, 
+                                       theta_prior_params = theta_prior_params, 
+                                       param_ranges = input_bounds,
+                                       scale_inputs = TRUE, 
+                                       normalize_response = TRUE, 
+                                       design_method = design_settings$design_method, 
+                                       na.rm = TRUE)
+```
+
+
+
+
+
+```{r}
+# Initial designs (round 0). I intentionally set a "bad design" here that completely misses the region of high posterior density. 
+# This design was not engineered; it was the result of a random LHS initial design sample that I saved for future use in exploring 
+# robustness to such bad designs. Actually, the first input in this design hits the true parameter value almost perfectly; however, 
+# GPs still struggle with this design. 
+
+bad_design_LAR <- c(1.50109273180366, 1.61540843766804, 1.4866612841934, 1.39175013386334, 1.69601865071803, 
+                    1.41327501159161, 1.54226316135998, 1.57441896485165, 1.45254932799687, 1.66622050972655, 
+                    1.37905605032419, 1.63773626082887, 1.53684211770073, 1.34601753323649, 1.32353227002546)
+bad_design_KEXT <- c(0.500122809115176, 0.55026316565151, 0.430623519240568, 0.509714466591055, 
+                     0.401992776303863, 0.544757780355091, 0.482141272605707, 0.447683127494529,
+                     0.460279626613483, 0.529357980353137, 0.474070533936222, 0.56090595252191, 
+                     0.598058511065319, 0.420622445465997, 0.582960123596713)
+bad_design_inputs <- cbind(bad_design_LAR, bad_design_KEXT)
+colnames(bad_design_inputs) <- c("LAR", "KEXT")
+bad_design_outputs <- get_computer_model_SSR(computer_model_data, theta_vals = bad_design_inputs, na.rm = TRUE)
+
+input_data_list <- prep_GP_training_data(X = bad_design_inputs, scale_X = TRUE)
+output_data_list <- prep_GP_training_data(Y = bad_design_outputs, normalize_Y = TRUE)
+
+init_design <- list(inputs = bad_design_inputs, 
+                    inputs_scaled = input_data_list$X, 
+                    input_bounds = input_data_list$input_bounds, 
+                    outputs = bad_design_outputs, 
+                    outputs_normalized = output_data_list$Y, 
+                    output_stats = output_data_list$output_stats)
+
+# Prior grid initial design for plotting purposes. 
+prior_grid_info <- get_input_output_design(N_points = 51^2,
+                                           design_method = "grid", 
+                                           scale_inputs = TRUE,
+                                           param_ranges = init_design$input_bounds,
+                                           computer_model_data = computer_model_data, 
+                                           theta_prior_params = theta_prior_params)
+lpost_true_grid <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                theta_vals = prior_grid_info$inputs, 
+                                                vars_obs = diag(computer_model_data$Sig_eps), 
+                                                na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                return_list = FALSE)
+
+```
+
+```{r}
+# Plot initial design. 
+
+plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = lpost_true_grid, param_names = computer_model_data$pars_cal_names, 
+                                       samples_kde = samp_exact_theta, samples_points = init_design$inputs, raster = TRUE, 
+                                       bigger_is_better = TRUE, main_title = "Initial Design over True Posterior", 
+                                       point_coords = computer_model_data$theta_true)
+plot(plt_init_design)
+
+
+```
+
+```{r}
+# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
+init_estimates <- get_init_param_estimates(init_design, computer_model_data, sig_eps_prior_params)
+init_design$init_estimates <- init_estimates
+print("Initial Estimates:")
+print(init_estimates)
+```
+
+
+```{r}
+# Fit emulators on initial design. 
+gp_fits <- fit_independent_GPs(X_train = init_design$inputs_scaled, Y_train = init_design$outputs_normalized, 
+                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
+emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design$input_bounds, 
+                           output_stats = init_design$output_stats, settings = emulator_settings)
+
+# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
+lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design, 
+                                         computer_model_data = computer_model_data, sig2_eps = init_design$init_estimates$best_sig2_eps, 
+                                         theta_prior_params = theta_prior_params)
+```
+
+
+
+

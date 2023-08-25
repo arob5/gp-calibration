@@ -711,8 +711,6 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
     # Sum terms to compute log expected variance for current candidate point over all integration points. 
     log_EVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)
     
-    return(list(exp_mean_term = 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)))
-    
     # Approximate integral by summing values over integration points. Use numerically stable computation 
     # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
     # the optimization over candidate points. 
@@ -804,16 +802,13 @@ acquisition_IVAR_post_old <- function(theta_vals, lpost_emulator, theta_grid_int
     # Sum terms to compute log IVAR for current candidate point over all integration points. 
     log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_mu0_int + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term)
     
-    
-    return(list(exp_mean_term = 2 * (lpost_mu0_int + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term)))
-    
     # Approximate integral by summing values over integration points. Use numerically stable computation 
     # of log-sum-exp.
     log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_IVAR) - log(N_int))
     
   }
   
-  return(IVAR_est)
+  return(log_IVAR_est)
   
 }
 
@@ -861,9 +856,6 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
     log_post_pred_var <- vector(mode = "numeric", length = N_MC_samples * nrow(theta_grid_integrate))
     idx <- 1
     
-    # TEMP
-    mean_term1 <- vector(mode = "numeric", length = N_MC_samples)
-    
     for(k in seq_len(N_MC_samples)) {
 
       # Add sampled response value. 
@@ -873,9 +865,6 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
       lpost_pred_mean_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "mean", 
                                                     include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = prior_mean_vals_int)$mean
 
-      # TEMP
-      mean_term1[k] <- 2*lpost_pred_mean_int[1]
-      
       # Append predictive means. 
       end_idx <- idx + length(lpost_pred_mean_int) - 1
       log_post_pred_var[idx:end_idx] <- 2 * lpost_pred_mean_int + log_var_term1
@@ -890,11 +879,9 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
     # of this function can be compared with `acquisition_IVAR_post()`. 
     log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_post_pred_var) - log(N_MC_samples * N_int))
     
-    return(list(IVAR = log_IVAR_est[i], log_var_term = log_var_term1, log_mean_term = mean_term1))
-    
   }
 
-  return(IVAR_est)
+  return(log_IVAR_est)
   
 }
 

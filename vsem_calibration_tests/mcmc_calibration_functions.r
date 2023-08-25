@@ -2599,7 +2599,7 @@ get_2d_response_surface_plot <- function(computer_model_data, theta_vals, param_
   }  else if(response_surface == "posterior") {
     
     if(is.null(SSR_vals) && is.null(llik_vals) && is.null(lpost_vals)) SSR_vals <- get_computer_model_SSR(computer_model_data, theta_vals = theta_vals_unscaled)
-    if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
+    if(is.null(lpost_vals) && is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(theta_vals_unscaled, theta_prior_params)
     
     plts <- get_2d_response_surface_plot_posterior(theta_vals = theta_vals,
                                                    computer_model_data = computer_model_data, 

@@ -2017,7 +2017,7 @@ get_design_list <- function(design_settings, computer_model_data, theta_prior_pa
   #    reps: integer(1), the number of reps of each design specification to create. Default is 1. 
   #    include_log: logical(1), whether or not to include the log-transformed response in the designs. 
   #                 Only relevant for the log-normal process emulator.
-  #    ...: other arguments passed to `get_input_output_design()`. For example, should inlcude "design_candidates" 
+  #    ...: other arguments passed to `get_input_output_design()`. For example, should include "design_candidates" 
   #         and "design_candidates_weights" if design method "sample_candidates" is being used. 
   #
   # Returns: 
