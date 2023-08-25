@@ -385,32 +385,30 @@ where
 \begin{align*}
 \Log{\E_{\tilde{\boldsymbol{\postDens}}} \Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
 &= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
-     2\logUnPostMean(\bpar) \left[1 - \ba_{\designIdx}^\top \oneVec[\designIdx] - \bb_{\Nbatch}^\top \oneVec[\Nbatch] \right] + \\
+     2\left[\logUnPostMean(\bpar) - \ba_{\designIdx}^\top \logUnPostMean(\designMat) - \bb_{\Nbatch}^\top \logUnPostMean(\batchMat) \right] + \\ 
      &\qquad 2\ba_{\designIdx}^\top \logUnPostObs + 2\bb_{\Nbatch}^\top \logUnPostMeanPred(\batchMat) + 2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
 \end{align*}
 which can be rearranged as
 \begin{align*}
-\Log{\Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
-&= \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
-	2\ba_{\designIdx}^\top\left[\logUnPostObs - \logUnPostMean(\bpar) \oneVec[\designIdx]  \right] + \\
-	&\qquad 2\bb_{\Nbatch}^\top \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\bpar)\oneVec[\Nbatch] \right] + 
-	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch} + 2 \logUnPostMean(\bpar)
+\Log{\E_{\tilde{\boldsymbol{\postDens}}} \Var\left[\unPostPred(\bpar) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
+&= 2 \logUnPostMean(\bpar) + \logUnPostKerPred[\designIdx, \batchMat](\bpar) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\bpar)} - 1} + 
+	2\ba_{\designIdx}^\top\left[\logUnPostObs - \logUnPostMean(\designMat) \right] + \\
+	&\qquad 2\bb_{\Nbatch}^\top \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\batchMat) \right] + 
+	2\bb_{\Nbatch}^\top \logUnPostKerPred(\batchMat) \bb_{\Nbatch}
 \end{align*}
 This is easily vectorized over a set of evaluation inputs $\designMat[]$ as 
 \begin{align*}
-\Log{\Var\left[\unPostPred(\designMat[]) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
-&= \logUnPostKerPred[\designIdx, \batchMat](\designMat[]) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\designMat[])} - 1} + 
-      2\left[\mathbf{A}_{\designIdx}\logUnPostObs - \logUnPostMean(\designMat[]) \star \left(\mathbf{A}_{\designIdx} \oneVec[\designIdx] \right) \right] + \\
-      &\qquad 2\left[\mathbf{B}_{\Nbatch}\logUnPostMeanPred(\batchMat) - \logUnPostMean(\designMat[]) \star \left(\mathbf{B}_{\Nbatch} \oneVec[\Nbatch] \right)  \right] + 
-      2 \cdot \text{diag}\left\{\mathbf{B}_{\Nbatch} \logUnPostKerPred(\batchMat) \mathbf{B}_{\Nbatch}^\top  \right\} + 2 \logUnPostMean(\designMat[]),
+\Log{\E_{\tilde{\boldsymbol{\postDens}}} \Var\left[\unPostPred(\designMat[]) | \batchMat, \tilde{\boldsymbol{\postDens}} \right]} 
+&= 2 \logUnPostMean(\designMat[]) + \logUnPostKerPred[\designIdx, \batchMat](\designMat[]) + \Log{\Exp{\logUnPostKerPred[\designIdx, \batchMat](\designMat[])} - 1} + 
+	2\mathbf{A}_{\designIdx}\left[\logUnPostObs - \logUnPostMean(\designMat) \right] + \\
+	&\qquad 2\mathbf{B}_{\Nbatch}  \left[\logUnPostMeanPred(\batchMat) - \logUnPostMean(\batchMat) \right] + 
+	2 \cdot \text{diag}\left\{\mathbf{B}_{\Nbatch} \logUnPostKerPred(\batchMat) \mathbf{B}_{\Nbatch}^\top  \right\},
 \end{align*}
 where 
 \begin{align*}
 \mathbf{A}_{\designIdx} &:= \GPKer(\designMat[], \designMat) \bS_1 + \GPKer(\designMat[], \batchMat) \bS_{2}^\top \\
-\mathbf{B}_{\Nbatch} &:=   \GPKer(\designMat[], \designMat) \bS_2  + \GPKer(\designMat[], \batchMat) \bS_{3}
+\mathbf{B}_{\Nbatch} &:=   \GPKer(\designMat[], \designMat) \bS_2  + \GPKer(\designMat[], \batchMat) \bS_{3}.
 \end{align*}
-and $\star$ denotes elementwise multiplication. 
-
 
 s
 [TODO: $\tilde{\boldsymbol{\postDens}}_{\designIdx, \batchMat}$ is confusing: looks like I am referring to emulator but actually referring to observed data. Maybe 

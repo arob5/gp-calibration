@@ -757,10 +757,11 @@ acquisition_IVAR_post_old <- function(theta_vals, lpost_emulator, theta_grid_int
   if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
   
   # Vector to store IVAR estimates at inputs `theta_vals`. 
-  IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  log_IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
   
   # Compute lpost prior mean and kernel evaluations. 
   lpost_mu0_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
+  lpost_mu0_can <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_vals)
   lpost_k0_int_n <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, lpost_emulator$inputs_lpost$inputs_scaled)
   lpost_k0_int_can <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, theta_vals)
   
@@ -791,28 +792,23 @@ acquisition_IVAR_post_old <- function(theta_vals, lpost_emulator, theta_grid_int
     log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
     
     # Observed data term. 
-    log_obs_term <- 2 * (drop(A %*% matrix(lpost_emulator$outputs_lpost, ncol=1)) - drop(lpost_mu0_int) * rowSums(A))
+    log_obs_term <- drop(A %*% (matrix(lpost_emulator$outputs_lpost, ncol=1) - lpost_emulator$mu0_design))
     
     # Current predictive mean term (conditioning on current n-point design). 
-    log_curr_pred_mean_term <- 2 * drop(lpost_curr_pred_can$mean[i]*B - lpost_mu0_int*B)
+    log_curr_pred_mean_term <- drop(B * (lpost_curr_pred_can$mean[i] - lpost_mu0_can[i]))
     
     # Current predictive variance term (conditioning on current n-point design).
-    log_curr_pred_var_term <- 2 * lpost_curr_pred_can$var[i] * drop(B)^2 # hetGP:::fast_diag(B, t(B))
+    log_curr_pred_var_term <- lpost_curr_pred_can$var[i] * drop(B)^2
 
     # Sum terms to compute log IVAR for current candidate point over all integration points. 
-    log_IVAR <- lpost_pred_var_int + log_exp_term + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term + 2 * lpost_mu0_int
+    log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_mu0_int + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term)
     
     
-    k <- 3000
-    return(list(IVAR = log_IVAR[k], log_var_term = lpost_pred_var_int[k] + log_exp_term[k], 
-                log_mean_term = log_obs_term[k] + log_curr_pred_mean_term[k] + log_curr_pred_var_term[k] + 2 * lpost_mu0_int[k], 
-                log_obs_term = log_obs_term[k], log_curr_pred_mean_term = log_curr_pred_mean_term[k], log_curr_pred_var_term = log_curr_pred_var_term[k], 
-                log_prior_term = 2 * lpost_mu0_int[k]))
+    return(list(exp_mean_term = 2 * (lpost_mu0_int + log_obs_term + log_curr_pred_mean_term + log_curr_pred_var_term)))
     
     # Approximate integral by summing values over integration points. Use numerically stable computation 
-    # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
-    # the optimization over candidate points. 
-    IVAR_est[i] <- -1.0 * matrixStats::logSumExp(log_IVAR)
+    # of log-sum-exp.
+    log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_IVAR) - log(N_int))
     
   }
   
