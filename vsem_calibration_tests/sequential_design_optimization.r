@@ -752,6 +752,7 @@ acquisition_IVAR_post_old <- function(theta_vals, lpost_emulator, theta_grid_int
   #    - pull out terms that can be pulled out of the integral. 
   
   n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
+  N_int <- nrow(theta_grid_integrate)
   
   # Handle case of single input. 
   if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow = 1)
@@ -825,9 +826,10 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
   # samples from a function `sample_lpost_emulator()` (not yet implemented) instead of using `sample_GP_lpost_theta`. 
   
   n <- length(lpost_emulator$outputs_lpost)
+  N_int <- nrow(theta_grid_integrate)
   
-  # Vector to store IVAR estimates at inputs `theta_vals`. 
-  IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
+  # Vector to store log IVAR estimates at inputs `theta_vals`. 
+  log_IVAR_est <- vector(mode = "numeric", length = nrow(theta_vals))
   
   # Pre-compute prior mean evaluations at integration points. 
   prior_mean_vals_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
@@ -836,7 +838,6 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
     
     # Condition lpost emulator on current candidate point.  
     lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
-    print(length(lpost_emulator_temp$outputs_lpost))
     
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. The predictive mean will also 
     # be required, but the predictive mean depends on the unknown response values. Thus, the predictive mean is approximated via 
@@ -856,7 +857,7 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
     lpost_samp <- drop(sample_lpost_emulator(inputs_new_scaled = theta_vals[i,,drop=FALSE], 
                                              lpost_emulator = lpost_emulator, N_samples = N_MC_samples))
     
-    # Approximating the predictive mean. 
+    # Approximating the predictive mean term. 
     log_post_pred_var <- vector(mode = "numeric", length = N_MC_samples * nrow(theta_grid_integrate))
     idx <- 1
     
@@ -873,7 +874,7 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
                                                     include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = prior_mean_vals_int)$mean
 
       # TEMP
-      mean_term1[k] <- 2*lpost_pred_mean_int[3000]
+      mean_term1[k] <- 2*lpost_pred_mean_int[1]
       
       # Append predictive means. 
       end_idx <- idx + length(lpost_pred_mean_int) - 1
@@ -887,9 +888,9 @@ acquisition_IVAR_post_MC <- function(theta_vals, lpost_emulator, theta_grid_inte
     # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
     # the optimization over candidate points. Do normalize the sum approximating the inner integral so that the output
     # of this function can be compared with `acquisition_IVAR_post()`. 
-    IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_post_pred_var) - log(N_MC_samples))
+    log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_post_pred_var) - log(N_MC_samples * N_int))
     
-    return(list(IVAR = IVAR_est[i], log_var_term = log_var_term1, log_mean_term = mean_term1))
+    return(list(IVAR = log_IVAR_est[i], log_var_term = log_var_term1, log_mean_term = mean_term1))
     
   }
 

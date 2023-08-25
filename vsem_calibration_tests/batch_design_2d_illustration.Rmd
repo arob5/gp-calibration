@@ -409,7 +409,6 @@ theta_grid_candidate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candid
 theta_grid_integrate_sel <- sample(1:nrow(acquisition_settings$theta_grid_integrate), size = acquisition_settings$N_subsample_integrate, replace = FALSE)
 ```
 
-
 ```{r}
 theta_grid_validate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = 10, replace = FALSE)
 
@@ -425,6 +424,8 @@ IVAR_post_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_sca
                                         verbose = FALSE, include_nugget = TRUE)
 
 ```
+
+
 
 ```{r}
 # Comparing samples from predictive distributions. 
@@ -541,7 +542,6 @@ for(j in 1:Ntest) {
   # Compute log E[exp{2*mu_{n,tilde}(u)}]. 
   lval3 <- 2 * (lpost_pred_KB + b^2 * lpost_pred_var)
   
-  
   #
   # Computations of 2*mu_{n,tilde}(u) (unexponentiated).
   #
@@ -571,6 +571,38 @@ plot(lvalsMC, lvals3)
 lines(c(min(lvalsMC), max(lvalsMC)), c(min(lvalsMC), max(lvalsMC)), col = "red")
 
 ```
+
+
+```{r}
+# Comparing with IVAR implementation. 
+u_vals <- samp_round0_info$inputs_scaled[theta_grid_integrate_sel[101:150],,drop=FALSE]
+
+IVAR_post_vals <- acquisition_IVAR_post(theta_vals = u_tilde, 
+                                        lpost_emulator = lpost_emulator, 
+                                        theta_grid_integrate = u_vals, 
+                                        verbose = FALSE, include_nugget = TRUE)$exp_mean_term
+IVAR_post_vals2 <- acquisition_IVAR_post_old(theta_vals = u_tilde, 
+                                             lpost_emulator = lpost_emulator, 
+                                             theta_grid_integrate = u_vals, 
+                                             verbose = FALSE, include_nugget = TRUE)$exp_mean_term
+
+IVAR_post_vals_MC <- acquisition_IVAR_post_MC(theta_vals = u_tilde, 
+                                              lpost_emulator = lpost_emulator, 
+                                              theta_grid_integrate = u_vals, 
+                                              N_MC_samples = N_MC)$log_mean_term
+
+
+```
+
+
+```{r}
+plot(lvals3, IVAR_post_vals)
+lines(c(min(lvals3), max(lvals3)), c(min(lvals3), max(lvals3)), col = "red")
+
+plot(lvals3, IVAR_post_vals2)
+lines(c(min(lvals3), max(lvals3)), c(min(lvals3), max(lvals3)), col = "red")
+```
+
 
 
 ```{r}
