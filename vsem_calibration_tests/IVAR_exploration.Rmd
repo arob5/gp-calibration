@@ -156,6 +156,10 @@ lpost_true_grid <- calc_lpost_theta_product_lik(computer_model_data = computer_m
                                                 na.rm = TRUE, theta_prior_params = theta_prior_params, 
                                                 return_list = FALSE)
 
+# Index selectors for candidate and integration points. 
+theta_grid_candidate_sel <- seq_len(nrow(prior_grid_info$inputs_scaled))
+theta_grid_integrate_sel <- seq_len(nrow(prior_grid_info$inputs_scaled))
+
 ```
 
 
@@ -178,96 +182,69 @@ plot(true_post_plot)
 
 ```{r}
 
-N_design_tests <- 2
+N_design_tests <- 1
+design_list <- vector(mode = "list", length = N_design_tests)
+lpost_emulator_list <- vector(mode = "list", length = N_design_tests)
+plt_list <- vector(mode = "list", length = N_design_tests)
 
-init_design <- get_input_output_design(N_points = design_settings$N_design, 
-                                       computer_model_data = computer_model_data, 
-                                       theta_prior_params = theta_prior_params, 
-                                       param_ranges = input_bounds,
-                                       scale_inputs = TRUE, 
-                                       normalize_response = TRUE, 
-                                       design_method = design_settings$design_method, 
-                                       na.rm = TRUE)
-```
+for(design_itr in seq_len(N_design_tests)) {
 
-
-
-
-
-```{r}
-# Initial designs (round 0). I intentionally set a "bad design" here that completely misses the region of high posterior density. 
-# This design was not engineered; it was the result of a random LHS initial design sample that I saved for future use in exploring 
-# robustness to such bad designs. Actually, the first input in this design hits the true parameter value almost perfectly; however, 
-# GPs still struggle with this design. 
-
-bad_design_LAR <- c(1.50109273180366, 1.61540843766804, 1.4866612841934, 1.39175013386334, 1.69601865071803, 
-                    1.41327501159161, 1.54226316135998, 1.57441896485165, 1.45254932799687, 1.66622050972655, 
-                    1.37905605032419, 1.63773626082887, 1.53684211770073, 1.34601753323649, 1.32353227002546)
-bad_design_KEXT <- c(0.500122809115176, 0.55026316565151, 0.430623519240568, 0.509714466591055, 
-                     0.401992776303863, 0.544757780355091, 0.482141272605707, 0.447683127494529,
-                     0.460279626613483, 0.529357980353137, 0.474070533936222, 0.56090595252191, 
-                     0.598058511065319, 0.420622445465997, 0.582960123596713)
-bad_design_inputs <- cbind(bad_design_LAR, bad_design_KEXT)
-colnames(bad_design_inputs) <- c("LAR", "KEXT")
-bad_design_outputs <- get_computer_model_SSR(computer_model_data, theta_vals = bad_design_inputs, na.rm = TRUE)
-
-input_data_list <- prep_GP_training_data(X = bad_design_inputs, scale_X = TRUE)
-output_data_list <- prep_GP_training_data(Y = bad_design_outputs, normalize_Y = TRUE)
-
-init_design <- list(inputs = bad_design_inputs, 
-                    inputs_scaled = input_data_list$X, 
-                    input_bounds = input_data_list$input_bounds, 
-                    outputs = bad_design_outputs, 
-                    outputs_normalized = output_data_list$Y, 
-                    output_stats = output_data_list$output_stats)
-
-# Prior grid initial design for plotting purposes. 
-prior_grid_info <- get_input_output_design(N_points = 51^2,
-                                           design_method = "grid", 
-                                           scale_inputs = TRUE,
-                                           param_ranges = init_design$input_bounds,
-                                           computer_model_data = computer_model_data, 
+  # Generate initial design.
+  init_design <- get_input_output_design(N_points = design_settings$N_design, 
+                                         computer_model_data = computer_model_data, 
+                                         theta_prior_params = theta_prior_params, 
+                                         param_ranges = input_bounds,
+                                         scale_inputs = TRUE, 
+                                         normalize_response = TRUE, 
+                                         design_method = design_settings$design_method, 
+                                         na.rm = TRUE)
+  init_design$input_bounds <- input_bounds
+  init_estimates <- get_init_param_estimates(init_design, computer_model_data, sig_eps_prior_params, verbose = FALSE)
+  init_design$init_estimates <- init_estimates
+  design_list[[design_itr]] <- init_design
+  
+  # Fit GP on initial design. 
+  gp_fits <- fit_independent_GPs(X_train = init_design$inputs_scaled, Y_train = init_design$outputs_normalized, 
+                                 gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
+  emulator_info_list <- list(gp_fits = gp_fits, input_bounds = input_bounds, 
+                             output_stats = init_design$output_stats, settings = emulator_settings)
+  lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design, 
+                                           computer_model_data = computer_model_data, sig2_eps = init_design$init_estimates$best_sig2_eps, 
                                            theta_prior_params = theta_prior_params)
-lpost_true_grid <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                theta_vals = prior_grid_info$inputs, 
-                                                vars_obs = diag(computer_model_data$Sig_eps), 
-                                                na.rm = TRUE, theta_prior_params = theta_prior_params, 
-                                                return_list = FALSE)
+
+  # Produce IVAR-post and IVAR-lpost plots. 
+  IVAR_lpost_vals <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled[theta_grid_candidate_sel,], 
+                                             lpost_emulator = lpost_emulator, 
+                                             theta_grid_integrate = prior_grid_info$inputs_scaled[theta_grid_integrate_sel,], 
+                                             verbose = FALSE, include_nugget = TRUE)
+  IVAR_post_vals <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled[theta_grid_candidate_sel,], 
+                                          lpost_emulator = lpost_emulator, 
+                                          theta_grid_integrate = prior_grid_info$inputs_scaled[theta_grid_integrate_sel,], 
+                                          verbose = FALSE, include_nugget = TRUE)
+  
+  plt_list[[design_itr]] <- list()
+  plt_list[[design_itr]]$IVAR_lpost <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
+                                                           y = IVAR_lpost_vals, param_names = computer_model_data$pars_cal_names, 
+                                                           samples_kde = samp_exact_theta, raster = TRUE, 
+                                                           samples_points = init_design$inputs, 
+                                                           point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                           main_title = "IVAR-lpost")
+  plt_list[[design_itr]]$IVAR_post <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
+                                                          y = IVAR_post_vals, param_names = computer_model_data$pars_cal_names, 
+                                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                                          samples_points = init_design$inputs, 
+                                                          point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                          main_title = "log IVAR-post")
+}
 
 ```
 
-```{r}
-# Plot initial design. 
-
-plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = lpost_true_grid, param_names = computer_model_data$pars_cal_names, 
-                                       samples_kde = samp_exact_theta, samples_points = init_design$inputs, raster = TRUE, 
-                                       bigger_is_better = TRUE, main_title = "Initial Design over True Posterior", 
-                                       point_coords = computer_model_data$theta_true)
-plot(plt_init_design)
-
-
-```
 
 ```{r}
-# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
-init_estimates <- get_init_param_estimates(init_design, computer_model_data, sig_eps_prior_params)
-init_design$init_estimates <- init_estimates
-print("Initial Estimates:")
-print(init_estimates)
-```
-
-
-```{r}
-# Fit emulators on initial design. 
-gp_fits <- fit_independent_GPs(X_train = init_design$inputs_scaled, Y_train = init_design$outputs_normalized, 
-                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
-emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design$input_bounds, 
-                           output_stats = init_design$output_stats, settings = emulator_settings)
-
-# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
-lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design, 
-                                         computer_model_data = computer_model_data, sig2_eps = init_design$init_estimates$best_sig2_eps, 
-                                         theta_prior_params = theta_prior_params)
+# TODO: need to compare to predictive mean and variance of lpost_emulator. 
+# TODO: also, compare predictive mean and (log) variance of post_emulator to that of lpost_emulator. 
+plot(plt_list[[1]]$IVAR_lpost)
+plot(plt_list[[1]]$IVAR_post)
 ```
 
 
