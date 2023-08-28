@@ -130,6 +130,8 @@ print(emulator_settings)
 
 # Design settings.
 design_settings <- data.frame(N_design = 15, design_method = "LHS")
+design_seed <- 5
+set.seed(design_seed)
 
 # Input bounds that will be used to scale all designs. 
 input_bounds <- t(as.matrix(theta_prior_params[, c("param1", "param2")]))
@@ -180,11 +182,12 @@ plot(true_post_plot)
 
 # IVAR acquisition evaluations on different initial designs.  
 
-```{r}
+```{r, include = FALSE}
 
 N_design_tests <- 1
 design_list <- vector(mode = "list", length = N_design_tests)
 lpost_emulator_list <- vector(mode = "list", length = N_design_tests)
+pred_list <- vector(mode = "list", length = N_design_tests)
 plt_list <- vector(mode = "list", length = N_design_tests)
 
 for(design_itr in seq_len(N_design_tests)) {
@@ -212,7 +215,14 @@ for(design_itr in seq_len(N_design_tests)) {
                                            computer_model_data = computer_model_data, sig2_eps = init_design$init_estimates$best_sig2_eps, 
                                            theta_prior_params = theta_prior_params)
 
-  # Produce IVAR-post and IVAR-lpost plots. 
+  # Generate lpost predictive plots. 
+  lpost_emulator_pred<- predict_lpost_emulator(lpost_emulator = lpost_emulator, 
+                                               inputs_new_scaled = prior_grid_info$inputs_scaled, 
+                                               inputs_new_unscaled = prior_grid_info$inputs, include_nugget = TRUE)
+  pred_list[[design_itr]] <- list()
+  pred_list[[design_itr]]$lpost_emulator_pred <- lpost_emulator_pred
+  
+  # Produce IVAR-post and IVAR-lpost evaluations. 
   IVAR_lpost_vals <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled[theta_grid_candidate_sel,], 
                                              lpost_emulator = lpost_emulator, 
                                              theta_grid_integrate = prior_grid_info$inputs_scaled[theta_grid_integrate_sel,], 
@@ -221,31 +231,121 @@ for(design_itr in seq_len(N_design_tests)) {
                                           lpost_emulator = lpost_emulator, 
                                           theta_grid_integrate = prior_grid_info$inputs_scaled[theta_grid_integrate_sel,], 
                                           verbose = FALSE, include_nugget = TRUE)
+  pred_list[[design_itr]]$IVAR_lpost <- IVAR_lpost_vals
+  pred_list[[design_itr]]$IVAR_post <- IVAR_post_vals
   
-  plt_list[[design_itr]] <- list()
-  plt_list[[design_itr]]$IVAR_lpost <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
-                                                           y = IVAR_lpost_vals, param_names = computer_model_data$pars_cal_names, 
-                                                           samples_kde = samp_exact_theta, raster = TRUE, 
-                                                           samples_points = init_design$inputs, 
-                                                           point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
-                                                           main_title = "IVAR-lpost")
-  plt_list[[design_itr]]$IVAR_post <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
-                                                          y = IVAR_post_vals, param_names = computer_model_data$pars_cal_names, 
-                                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                                          samples_points = init_design$inputs, 
-                                                          point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
-                                                          main_title = "log IVAR-post")
+  
+  # Produce plots. 
+  plt_list[[design_itr]] <- list(scatter = list(), heatmap = list(), lpost_pred = list())
+  plt_list[[design_itr]]$lpost_pred$mean <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                                                y = lpost_emulator_pred$mean, param_names = computer_model_data$pars_cal_names, 
+                                                                samples_kde = samp_exact_theta, raster = TRUE, 
+                                                                samples_points = init_design$inputs, 
+                                                                point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                                main_title = "lpost predictive mean")
+  plt_list[[design_itr]]$lpost_pred$var <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                                               y = lpost_emulator_pred$var, param_names = computer_model_data$pars_cal_names, 
+                                                               samples_kde = samp_exact_theta, raster = TRUE, 
+                                                               samples_points = init_design$inputs, log_scale = TRUE, 
+                                                               point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                               main_title = "lpost predictive var")
+
+  plt_list[[design_itr]]$heatmap$IVAR_lpost <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
+                                                                   y = IVAR_lpost_vals, param_names = computer_model_data$pars_cal_names, 
+                                                                   samples_kde = samp_exact_theta, raster = TRUE, 
+                                                                   samples_points = init_design$inputs, 
+                                                                   point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                                   main_title = "IVAR-lpost")
+  plt_list[[design_itr]]$heatmap$IVAR_post <- get_2d_heatmap_plot(X = prior_grid_info$inputs[theta_grid_candidate_sel,], 
+                                                                  y = IVAR_post_vals, param_names = computer_model_data$pars_cal_names, 
+                                                                  samples_kde = samp_exact_theta, raster = TRUE, 
+                                                                  samples_points = init_design$inputs, 
+                                                                  point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                                                  main_title = "log IVAR-post")
+  plt_list[[design_itr]]$scatter$IVAR_lpost$mean <- plot(x = lpost_emulator_pred$mean[theta_grid_candidate_sel], 
+                                                         y = IVAR_lpost_vals, 
+                                                         xlab = "lpost pred mean", ylab = "IVAR-lpost", main = "Predictive Mean vs. Acquisition")
+  plt_list[[design_itr]]$scatter$IVAR_post$mean <- plot(x = lpost_emulator_pred$mean[theta_grid_candidate_sel], 
+                                                        y = IVAR_post_vals, 
+                                                        xlab = "lpost pred mean", ylab = "log IVAR-post", main = "Predictive Mean vs. Acquisition")
+  plt_list[[design_itr]]$scatter$IVAR_lpost$var <- plot(x = lpost_emulator_pred$var[theta_grid_candidate_sel], 
+                                                        y = IVAR_lpost_vals, 
+                                                        xlab = "lpost pred var", ylab = "IVAR-lpost", main = "Predictive Var vs. Acquisition")
+  plt_list[[design_itr]]$scatter$IVAR_post$var <- plot(x = lpost_emulator_pred$var[theta_grid_candidate_sel], 
+                                                       y = IVAR_post_vals, 
+                                                       xlab = "lpost pred var", ylab = "log IVAR-post", main = "Predictive Var vs. Acquisition")
+  
+  
 }
 
 ```
 
 
 ```{r}
+# Compare true log posterior density to lpost emulator. 
+plot(true_post_plot)
+plot(plt_list[[1]]$lpost_pred$mean)
+plot(plt_list[[1]]$lpost_pred$var)
+```
+
+```{r}
+# Compare true log posterior density to log of post emulator moments. 
+
+mu <- pred_list[[1]]$lpost_emulator_pred$mean
+sig2 <- pred_list[[1]]$lpost_emulator_pred$var
+
+log_post_mean <- mu + 0.5 * sig2
+
+idx_approx_sel <- (sig2 >= 100)
+log_exp_term <- vector(mode = "numeric", length = length(sig2))
+log_exp_term[!idx_approx_sel] <- log(exp(sig2[!idx_approx_sel]) - 1)
+log_exp_term[idx_approx_sel] <- sig2[idx_approx_sel] # Apply approximation. 
+
+log_post_var <- 2*mu + sig2 + log_exp_term 
+
+
+post_mean_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                      y = log_post_mean - min(log_post_mean) + 1 , param_names = computer_model_data$pars_cal_names, 
+                                      samples_kde = samp_exact_theta, raster = TRUE, 
+                                      samples_points = init_design$inputs, log_scale = TRUE, 
+                                      point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                      main_title = "log of post predictive mean")
+post_var_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                     y = log_post_var - min(log_post_var) + 1, param_names = computer_model_data$pars_cal_names, 
+                                     samples_kde = samp_exact_theta, raster = TRUE, 
+                                     samples_points = init_design$inputs, log_scale = TRUE,
+                                     point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
+                                     main_title = "log of post predictive var")
+
+plot(true_post_plot)
+plot(post_mean_plot)
+plot(post_var_plot)
+```
+
+
+```{r}
+plot(plt_list[[design_itr]]$heatmap$IVAR_lpost)
+plot(plt_list[[design_itr]]$heatmap$IVAR_post)
+```
+
+
+
+
+
+
+```{r}
 # TODO: need to compare to predictive mean and variance of lpost_emulator. 
 # TODO: also, compare predictive mean and (log) variance of post_emulator to that of lpost_emulator. 
+# TODO: scatterplots comparing the acquisitions to the lpost emulator predictive mean and variance. 
 plot(plt_list[[1]]$IVAR_lpost)
 plot(plt_list[[1]]$IVAR_post)
 ```
+
+
+
+
+
+
 
 
 

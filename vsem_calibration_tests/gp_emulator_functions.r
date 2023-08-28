@@ -1667,7 +1667,7 @@ density_rectified_norm <- function(x, mean_norm = 0, sd_norm = 0, allow_inf = FA
 get_input_output_design <- function(N_points, computer_model_data, theta_prior_params, scale_inputs = TRUE, normalize_response = TRUE,
                                     param_ranges = NULL, output_stats = NULL, log_output_stats = NULL, transformation_method = NA_character_,
                                     design_method = "LHS", order_1d = TRUE, tail_prob_excluded = 0.01, na.rm = TRUE, 
-                                    design_candidates = NULL, design_candidates_weights = NULL) {
+                                    design_candidates = NULL, design_candidates_weights = NULL, design_seed = NULL) {
   # Generates input points in parameter space and runs the VSEM model at these points to obtain the corresponding outputs, which is the L2 error between 
   # the model outputs and observed data. Handles scaling of input data and normalization of response data. Also handles log-transformation of response data
   # in the case of the log-normal process. 
@@ -1707,11 +1707,14 @@ get_input_output_design <- function(N_points, computer_model_data, theta_prior_p
   #    na.rm: logical(1), whether or not to remove NA values from the sum of squares calculation, when computing L2 error between computer model 
   #           outputs and observed data. Default is FALSE. 
   #    design_candidates, design_candidates_weights: Used by `get_sample_candidates_design()`, see explanation in `get_input_design()`. 
+  #    design_seed: integer, an optional random seed to set before generating the design. 
   #           
   # Returns:
   #    list, containing all elements returned by `get_input_design()`. In addition, will at least contain element "outputs", containing an N x p matrix 
   #    storing the squared L2 errors (N = number inputs, p = number output variables). Will also optionally contain elements "outputs_normalized", "output_stats", 
   #    "log_outputs", "log_outputs_normalized", and "log_output_stats". 
+  
+  if(!is.null(design_seed)) set.seed(design_seed)
   
   # Input points. 
   design_list <- get_input_design(N_points = N_points, 

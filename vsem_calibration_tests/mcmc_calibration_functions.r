@@ -2343,7 +2343,8 @@ get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, co
 
 get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
                                 raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
-                                bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE) {
+                                bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE, 
+                                point_coords_shape = 8, point_coords_col = "black", point_coords_size = 3) {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2384,7 +2385,6 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   plt_transformation <- ifelse(log_scale, "log10", "identity")
   if(log_scale) {
     main_title <- paste0(main_title, ", log10 scale")
-    legend_label <- paste0("log10 ", legend_label)
   }
   
   # Heatmap. 
@@ -2425,7 +2425,8 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   # Mark specific point in plot. 
   if(!is.null(point_coords)) {
     plt <- plt + geom_point(data = data.frame(theta1 = point_coords[1], theta2 = point_coords[2]), 
-                            aes(x = theta1, y = theta2), color = "red", shape = 17)
+                            aes(x = theta1, y = theta2), color = point_coords_col, 
+                            shape = point_coords_shape, size = point_coords_size)
   }
   
   return(plt)
