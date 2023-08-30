@@ -254,13 +254,12 @@ mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc
 burn_ins <- c(burn_ins, round0 = 10000)
 
 mcmc_round0_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")
-grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 1))
-```
-
-```{r}
 mcmc_round0_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "sig_eps")
+
+grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 1))
 grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 1))
 ```
+
 
 ```{r}
 #
@@ -270,6 +269,9 @@ grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 1))
 
 samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")[, .(param_name, sample)]
 samp_round0_theta <- as.matrix(unstack(samp_round0_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+
+samp_round0_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "sig_eps")[, .(param_name, sample)]
+samp_round0_sig_eps <- as.matrix(unstack(samp_round0_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
 
 SSR_round0 <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = samp_round0_theta, na.rm = TRUE)
 lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
@@ -297,6 +299,15 @@ lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emul
 #                                                          metrics = c("mean", "cov"))
 # print(round0_sample_metrics$metrics_individual)
 # print(round0_sample_metrics$metrics_agg)
+```
+
+```{r}
+# Contours of round 1 approximate posterior vs true contours. 
+# TODO: need to modify plot legend here. Also consider overlaying design points. 
+post_comparison_plts_round0 <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_round0_info$inputs, 
+                                                                    main_title = "Round 0 Posterior Approximation")
+
+plot(post_comparison_plts_round0)
 ```
 
 
@@ -424,316 +435,265 @@ plot(IVAR_post_grid_post_wt_plot)
 
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ```{r}
-#
-# Test batch acquisition.
-#
+N_acq <- 10
 
-# Acquisition settings; acquisition type and batch method will be changed throughout the following tests.                                   
-acquisition_settings <- list(acquisition_type = "",
-                             opt_method = "grid",
-                             batch_size = 10, 
-                             batch_method = "",
-                             theta_grid_candidate = samp_round0_info$inputs_scaled, 
-                             theta_grid_integrate = samp_round0_info$inputs_scaled, 
-                             N_subsample_candidate = 10000, 
-                             N_subsample_integrate = 3000)
+lpost_emulator_lpost_temp <- lpost_emulator
+plt_list <- vector(mode = "list", length = N_acq)
 
-# Index selector for the new batch inputs. 
-new_batch_sel <- c(rep(FALSE, nrow(init_design$inputs)), rep(TRUE, acquisition_settings$batch_size))
-
-# Batch sequential design heuristic methods. 
-batch_heuristics <- c("kriging_believer", "constant_liar_optimist", "constant_liar_pessimist")
-
-```
-
-
-# Visual Investigation of Single-Point Acquisitions 
-```{r}
-# Fix candidate and integrate points. 
-theta_grid_candidate_sel <- sample(1:nrow(acquisition_settings$theta_grid_candidate), size = acquisition_settings$N_subsample_candidate, replace = FALSE)
-theta_grid_integrate_sel <- sample(1:nrow(acquisition_settings$theta_grid_integrate), size = acquisition_settings$N_subsample_integrate, replace = FALSE)
-```
-
-```{r}
-# IVAR-lpost 
-IVAR_lpost_vals <- acquisition_EIVAR_lpost(theta_vals = samp_round0_info$inputs_scaled[theta_grid_candidate_sel,], lpost_emulator = lpost_emulator, 
-                                           theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,], verbose = FALSE, include_nugget = TRUE)
-
-IVAR_lpost_heatmap_plt <- get_2d_heatmap_plot(X = samp_round0_info$inputs[theta_grid_candidate_sel,], 
-                                              y = IVAR_lpost_vals, param_names = computer_model_data$pars_cal_names, 
-                                              samples_kde = samp_exact_theta, raster = FALSE, 
-                                              samples_points = init_design$inputs, 
-                                              point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
-                                              main_title = "IVAR-lpost")
-
-plot(IVAR_lpost_heatmap_plt)
-
-```
-
-
-```{r}
-# IVAR-post 
-IVAR_post_vals <- acquisition_IVAR_post(theta_vals = samp_round0_info$inputs_scaled[theta_grid_candidate_sel,], lpost_emulator = lpost_emulator, 
-                                        theta_grid_integrate = samp_round0_info$inputs_scaled[theta_grid_integrate_sel,], verbose = FALSE, include_nugget = TRUE)
-
-IVAR_post_heatmap_plt <- get_2d_heatmap_plot(X = samp_round0_info$inputs[theta_grid_candidate_sel,], 
-                                             y = IVAR_post_vals, param_names = computer_model_data$pars_cal_names, 
-                                             samples_kde = samp_exact_theta, raster = FALSE, 
-                                             samples_points = init_design$inputs, 
-                                             point_coords = computer_model_data$theta_true, bigger_is_better = TRUE, 
-                                             main_title = "log IVAR-post")
-
-plot(IVAR_post_heatmap_plt)
-
-```
-
-
-
-# Acquisition of Batch Points via Greedy Optimization
-
-```{r}
-#
-# EI Acquisitions
-#
-
-acquisition_settings$acquisition_type <- "EI_lpost"
-
-f_EI <- function(heuristic) {
-  acquisition_settings$batch_method <- heuristic
-  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
-}
-
-EI_results <- mclapply(batch_heuristics, f_EI)
-names(EI_results) <- c("KB", "CLO", "CLP")
-```
-
-
-```{r}
-#
-# Plot EI acquisitions results. 
-#
-
-for(j in seq_along(EI_results)) {
-  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                              lpost_vals = samp_round0_info$outputs,
-                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
-                                              samples_kde = samp_exact_theta, 
-                                              init_design_points = EI_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                              sequential_design_points = EI_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
-                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                              main_title = paste0("Batch acquisition: EI-lpost, ", names(EI_results)[j]), 
-                                              bigger_is_better = TRUE, log_scale = FALSE)
-                                              
-  plot(batch_plot)
-}
-
-```
-
-```{r}
-#
-# Max Variance Acquisitions
-#
-
-acquisition_settings$acquisition_type <- "VAR_lpost"
-
-f_VAR <- function(heuristic) {
-  acquisition_settings$batch_method <- heuristic
-  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings)
-}
-
-VAR_results <- mclapply(batch_heuristics, f_VAR)
-names(VAR_results) <- c("KB", "CLO", "CLP")
-
-```
-
-
-```{r}
-#
-# Plot Max Variance acquisitions results. 
-#
-
-for(j in seq_along(VAR_results)) {
-  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                              lpost_vals = samp_round0_info$outputs,
-                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
-                                              samples_kde = samp_exact_theta, 
-                                              init_design_points = VAR_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                              sequential_design_points = VAR_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
-                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                              main_title = paste0("Batch acquisition: VAR-lpost, ", names(VAR_results)[j]), 
-                                              bigger_is_better = TRUE, log_scale = FALSE)
-                                              
-  plot(batch_plot)
-}
-
-```
-
-```{r}
-#
-# Integrated Variance Acquisitions - lpost
-#
-
-acquisition_settings$acquisition_type <- "EIVAR_lpost"
-
-f_EIVAR <- function(heuristic) {
-  acquisition_settings$batch_method <- heuristic
-  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
-}
-
-EIVAR_results <- mclapply(batch_heuristics, f_EIVAR)
-names(EIVAR_results) <- c("KB", "CLO", "CLP")
-
-```
-
-
-```{r}
-#
-# Plot Integrated Variance acquisitions results, lpost. 
-#
-
-for(j in seq_along(EIVAR_results)) {
-  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                              lpost_vals = samp_round0_info$outputs,
-                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
-                                              samples_kde = samp_exact_theta, 
-                                              init_design_points = EIVAR_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                              sequential_design_points = EIVAR_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
-                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                              main_title = paste0("Batch acquisition: EIVAR-lpost, ", names(EIVAR_results)[j]), 
-                                              bigger_is_better = TRUE, log_scale = FALSE)
-                                              
-  plot(batch_plot)
-}
-
-```
-
-```{r}
-#
-# Integrated Variance Acquisitions - post
-#
-
-acquisition_settings$acquisition_type <- "IVAR_post"
-
-f_IVAR <- function(heuristic) {
-  acquisition_settings$batch_method <- heuristic
-  batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
-}
-
-test <- batch_acquisition_opt_one_step(lpost_emulator, acquisition_settings, verbose = FALSE)
-
-IVAR_post_results <- mclapply(batch_heuristics, f_IVAR_post)
-names(IVAR_post_results) <- c("KB", "CLO", "CLP")
-
-```
-
-
-```{r}
-#
-# Plot Integrated Variance acquisitions results, lpost. 
-#
-
-for(j in seq_along(IVAR_post_results)) {
-  batch_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                              lpost_vals = samp_round0_info$outputs,
-                                              computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
-                                              samples_kde = samp_exact_theta, 
-                                              init_design_points = IVAR_post_results[[j]]$inputs_lpost$inputs[!new_batch_sel,,drop=FALSE], 
-                                              sequential_design_points = IVAR_post_results[[j]]$inputs_lpost$inputs[new_batch_sel,,drop=FALSE],
-                                              raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                              main_title = paste0("Batch acquisition: IVAR-post, ", names(IVAR_post_results)[j]), 
-                                              bigger_is_better = TRUE, log_scale = FALSE)
-                                              
-  plot(batch_plot)
+for(i in seq_len(N_acq)) {
+  
+  # Evaluate Acquisition. 
+  acq_values <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
+                                        lpost_emulator = lpost_emulator_lpost_temp, 
+                                        theta_grid_integrate = support_point_info$inputs_scaled, 
+                                        verbose = FALSE, include_nugget = TRUE)
+  # Optimizer of acquisition. 
+  best_idx <- which.max(acq_values)
+  
+  # Generate plot. 
+  plt_list[[i]] <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                       y = -acq_values, param_names = computer_model_data$pars_cal_names, 
+                                       samples_kde = samp_exact_theta, raster = TRUE, 
+                                       samples_points = lpost_emulator_lpost_temp$inputs_lpost$inputs, 
+                                       bigger_is_better = FALSE, 
+                                       point_coords = prior_grid_info$inputs[best_idx,],
+                                       main_title = paste0("IVAR-lpost, Approx Posterior Weights, Iteration ", i), point_coords_col = "black")
+  
+  # Update emulator using true observation (but keep hyperparameters fixed). 
+  lpost_obs_new <- prior_grid_info$lpost[best_idx]
+  lpost_emulator_lpost_temp <- update_lpost_emulator(lpost_emulator = lpost_emulator_lpost_temp, 
+                                                     inputs_new_scaled = prior_grid_info$inputs_scaled[best_idx,, drop=FALSE], 
+                                                     inputs_new_unscaled = prior_grid_info$inputs[best_idx,, drop=FALSE], 
+                                                     outputs_lpost_new = lpost_obs_new)
+  
 }
 
 ```
 
 
-# Compacting Approximate Posterior Samples
 ```{r}
-support_points_list <- support::sp(n = acquisition_settings$batch_size, 
-                                   p = length(computer_model_data$theta_true), 
-                                   dist.samp = samp_round0_info$inputs)
-support_points <- support_points_list$sp
-colnames(support_points) <- colnames(lpost_emulator$inputs_lpost$inputs)
+# TODO: should do these plots with added approx round0 contours, as well as using predictive variance or mean as heatmap. 
 
-# TODO: order of support points is irrelevant so should add plotting option to allow plotting different marker than numbers. 
-support_points_plt <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                                    lpost_vals = samp_round0_info$outputs,
-                                                    computer_model_data = computer_model_data, param_names = computer_model_data$pars_cal_names, 
+for(i in seq_len(N_acq)) plot(plt_list[[i]])
+
+```
+
+```{r}
+# Plot numbered acquisitions. 
+new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_temp$inputs_lpost$inputs))
+  
+lpost_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
+                                                     lpost_vals = prior_grid_info$lpost,
+                                                     param_names = computer_model_data$pars_cal_names,
+                                                     samples_kde = samp_exact_theta, 
+                                                     init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                     sequential_design_points =lpost_emulator_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                     raster = TRUE, 
+                                                     main_title = "IVAR-lpost Acquisitions and True Post", bigger_is_better = TRUE)
+
+# Heatmap from approx distribution but contours from true distribution. 
+lpost_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                                                   lpost_vals = samp_round0_info$outputs, # samp_round0_info$outputs,
+                                                                   param_names = computer_model_data$pars_cal_names,
+                                                                   samples_kde = samp_exact_theta, 
+                                                                   init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                                   sequential_design_points=lpost_emulator_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                                   raster = FALSE, 
+                                                                   main_title = "IVAR-lpost Acquisitions and Approx Round0 Samp", 
+                                                                   legend_label = "Log Post",
+                                                                   bigger_is_better = TRUE)
+                                                      
+plot(lpost_numbered_plot)
+
+# Targets points towards the center of the approx distribution and then works its way to the boundaries as the center is covered. 
+# This makes sense given the global scope of the integrated variance criterion. 
+plot(lpost_numbered_plot_approx_scatter) 
+
+
+```
+
+
+```{r}
+
+lpost_emulator_post_temp <- lpost_emulator
+post_plt_list <- vector(mode = "list", length = N_acq)
+
+for(i in seq_len(N_acq)) {
+  
+  # Evaluate Acquisition. 
+  acq_values <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
+                                      lpost_emulator = lpost_emulator_post_temp, 
+                                      theta_grid_integrate = support_point_info$inputs_scaled, 
+                                      verbose = FALSE, include_nugget = TRUE)
+  # Optimizer of acquisition. 
+  best_idx <- which.max(acq_values)
+  
+  # Generate plot. 
+  post_plt_list[[i]] <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                            y = -acq_values, param_names = computer_model_data$pars_cal_names, 
+                                            samples_kde = samp_exact_theta, raster = TRUE, 
+                                            samples_points = lpost_emulator_post_temp$inputs_lpost$inputs, 
+                                            bigger_is_better = FALSE, 
+                                            point_coords = prior_grid_info$inputs[best_idx,],
+                                            main_title = paste0("IVAR-post, Approx Posterior Weights, Iteration ", i), point_coords_col = "black")
+  
+  # Update emulator using true observation (but keep hyperparameters fixed). 
+  lpost_obs_new <- prior_grid_info$lpost[best_idx]
+  lpost_emulator_post_temp <- update_lpost_emulator(lpost_emulator = lpost_emulator_post_temp, 
+                                                    inputs_new_scaled = prior_grid_info$inputs_scaled[best_idx,, drop=FALSE], 
+                                                    inputs_new_unscaled = prior_grid_info$inputs[best_idx,, drop=FALSE], 
+                                                    outputs_lpost_new = lpost_obs_new)
+  
+}
+
+```
+
+
+```{r}
+
+for(i in seq_len(N_acq)) plot(post_plt_list[[i]])
+
+```
+
+```{r}
+# Plot numbered acquisitions. 
+
+new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_post_temp$inputs_lpost$inputs))
+  
+post_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
+                                                    lpost_vals = prior_grid_info$lpost,
+                                                    param_names = computer_model_data$pars_cal_names,
                                                     samples_kde = samp_exact_theta, 
                                                     init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                    sequential_design_points = support_points,
-                                                    raster = FALSE, point_coords = computer_model_data$theta_true, 
-                                                    main_title = "Support Points", 
-                                                    bigger_is_better = TRUE, log_scale = FALSE)
-plot(support_points_plt)
+                                                    sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                    raster = TRUE, 
+                                                    main_title = "IVAR-post Acquisitions; true post contours", bigger_is_better = TRUE)
 
-# TODO: add contour plots for approximate posterior. Seems that most of the probability mass is actually at the top part. 
-# It seems that the best bet for this example would be a mixture of support points (which try to capture the approx 
-# posterior) and a purely space-filling design. Or could adjust the approximate MCMC sampling itself to instead sample 
-# a prior-approx posterior mixture. 
+# Heatmap from true distribution, but contours from approx distribution. 
+# TODO: maybe want to overlay both true and approx contours. 
+# TODO: also would be interesting to run approx MCMC with fixed sig2_eps estimate to see how acquisitions (with this fixed estimate)
+#       align with approx posterior under fixed estimate. 
+post_numbered_plot_approx <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
+                                                           lpost_vals = prior_grid_info$lpost,
+                                                           param_names = computer_model_data$pars_cal_names,
+                                                           samples_kde = samp_round0_info$inputs, 
+                                                           init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                           sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                           raster = TRUE, 
+                                                           main_title = "IVAR-post Acquisitions; approx post contours", 
+                                                           bigger_is_better = TRUE)
+
+# Heatmap from approx distribution but contours from true distribution. 
+# TODO: change the argument `lpost_vals` to be more general (e.g. passing in predictive variance here).
+post_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
+                                                                   lpost_vals = lpost_emulator_pred_round0$var, # samp_round0_info$outputs,
+                                                                   param_names = computer_model_data$pars_cal_names,
+                                                                   samples_kde = samp_exact_theta, 
+                                                                   init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                                   sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                                   raster = FALSE, 
+                                                                   main_title = "IVAR-post Acquisitions", 
+                                                                   legend_label = "lpost pred var",
+                                                                   bigger_is_better = TRUE)
+
+                                                      
+plot(post_numbered_plot)
+plot(post_numbered_plot_approx)
+
+# Seems like the complete opposite of IVAR-lpost. Acting almost like MaxVar, targeting regions on the 
+# edges of the approx posterior and then finally later on working its way to the center. My guess is 
+# that exponentiating the variance causes it to completely dominate the mean. 
+plot(post_numbered_plot_approx_scatter) 
+
+```
+
+## Re-fit kernel hyperparameters. 
+```{r}
+# TODO: should have this functionality built into lpost_emulator object. Also should save the SSR vals as points are acquired to avoid 
+#       having to re-calculate here. 
+
+# IVAR-lpost. 
+inputs_IVAR_lpost_round1 <- lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
+SSR_lpost_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_lpost_round1, na.rm = TRUE)
+gp_fits_IVAR_lpost_round1 <- update_independent_GPs(gp_fits = lpost_emulator_lpost_temp$emulator_info_list$gp_fits, 
+                                                    gp_lib = lpost_emulator_lpost_temp$emulator_info_list$settings$gp_lib, 
+                                                    X_new = inputs_IVAR_lpost_round1, Y_new = SSR_lpost_round1, 
+                                                    update_hyperparameters = TRUE, 
+                                                    input_bounds = lpost_emulator_lpost_temp$design_info_list$input_bounds, 
+                                                    output_stats = lpost_emulator_lpost_temp$design_info_list$output_stats)
+lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_lpost_round1 # Should also update design_info_list.
+lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
+lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
+
+# IVAR-post.
+inputs_IVAR_post_round1 <- lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
+SSR_post_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_post_round1, na.rm = TRUE)
+gp_fits_IVAR_post_round1 <- update_independent_GPs(gp_fits = lpost_emulator_post_temp$emulator_info_list$gp_fits, 
+                                                   gp_lib = lpost_emulator_post_temp$emulator_info_list$settings$gp_lib, 
+                                                   X_new = inputs_IVAR_post_round1, Y_new = SSR_post_round1, 
+                                                   update_hyperparameters = TRUE, 
+                                                   input_bounds = lpost_emulator_post_temp$design_info_list$input_bounds, 
+                                                   output_stats = lpost_emulator_post_temp$design_info_list$output_stats)
+lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_post_round1
+lpost_emulator_post_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
+lpost_emulator_post_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
+
+
 
 ```
 
 
+# Round 1 approximate sampling. 
 
+```{r}
+#
+# Round 1 approximate posterior sampling: IVAR-lpost
+#
 
+mcmc_approx_IVAR_lpost_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                                       theta_prior_params = theta_prior_params, 
+                                                       emulator_info = lpost_emulator_lpost_temp$emulator_info_list,
+                                                       theta_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input, 
+                                                       sig_eps_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps, 
+                                                       learn_sig_eps = TRUE, 
+                                                       sig_eps_prior_params = sig_eps_prior_params, 
+                                                       N_mcmc = N_mcmc_approx)
+```
 
+```{r}
+# Combine with existing data.table of MCMC output. 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_IVAR_lpost_round1[c("theta", "sig_eps")], test_label = "round1_IVAR_lpost")), 
+                          use.names = TRUE)
+```
 
+### Round 0 MCMC sampling diagnostics. 
+```{r}
 
+burn_ins <- c(burn_ins, round1_IVAR_post = 10000)
 
+mcmc_round1_IVAR_lpost_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")
+mcmc_round1_IVAR_lpost_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "sig_eps")
 
+grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts, nrow = 1))
+grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts_sig_eps, nrow = 1))
+```
 
+```{r}
+# Store round1 IVAR-lpost MCMC output. 
 
+#
+# Store round 0 MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
+# as well as for plotting purposes. 
+#
 
+samp_round1_IVAR_lpost_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")[, .(param_name, sample)]
+samp_round1_IVAR_lpost_theta <- as.matrix(unstack(samp_round1_IVAR_lpost_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
 
-
-
-
-
-
-
-
-
-
-
-
-# Current Thoughts 
-1. In this specific test, some sort of space-filling sub-sample of the approximate posterior samples would likely have outperformed 
-   any of the acquisition-based methods; this is likely due to the poor GP fit.  
-2. Priorities for generalizing tests:  
-    + Target the posterior, instead of log-posterior, approximation in the acquisition functions. 
-    + Investigate the effect of varying batch size. 
-    + After re-fitting hyperparameters, sample from updated posterior approximation and compute sample-based metrics. 
-    + Simulation study: assess performance over many random initial designs. 
-    + Method for sub-sampling approximate posterior samples, while also encouraging space-filling. 
-    + Sample candidate points from approx posterior-prior mixture. 
-3. When these priorities are completed, I think it will be a good time to focus on PEcAn implementation and tests on real data. 
-4. Future work on sequential design: 
-    + Consider sample-average approximation, gradient-based optimization approach. 
-    + Assess different methods of handling likelihood parameters. 
-    + Hybrid approaches, such as acquiring points in a greedy batch fashion, or online switching between acquisition functions. 
-
-
+samp_round1_IVAR_lpost_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
+                                                   test_labels = "round1_IVAR_lpost", param_types = "sig_eps")[, .(param_name, sample)]
+samp_round1_IVAR_lpost_sig_eps <- as.matrix(unstack(samp_round1_IVAR_lpost_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
+```
 
 
 
