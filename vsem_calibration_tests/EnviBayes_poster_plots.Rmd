@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r, echo = FALSE, include = FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 
 library(lhs)
 library(hetGP)
@@ -26,7 +26,7 @@ source("sequential_design_optimization.r")
 
 # Computer Model and Data 
 
-```{r}
+```{r, include = FALSE}
 # Synthetic data generation
 computer_model_data <- generate_vsem_test_case(4)
 ```
@@ -90,16 +90,16 @@ mcmc_samp_dt <- format_mcmc_output(samp_list = mcmc_exact_list[c("theta", "sig_e
 ```
 
 ```{r}
+# TODO: write function `get_mcmc_diagnostics()`. 
 burn_ins <- c(exact = 10000)
 
 mcmc_exact_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")
-grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
-```
-
-```{r}
 mcmc_exact_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "sig_eps")
+
+grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
 grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
 ```
+
 
 ```{r}
 # Store matrix of calibration parameter samples from exact MCMC for plotting purposes. 
@@ -357,21 +357,21 @@ IVAR_lpost_grid_prior_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs,
                                                      samples_points = init_design_info$inputs, 
                                                      bigger_is_better = FALSE, 
                                                      point_coords = prior_grid_info$inputs[IVAR_lpost_grid_prior_wt_best_idx,],
-                                                     main_title = "IVAR-lpost", point_coords_col = "black")
+                                                     main_title = "IVAR-lpost, prior weighted", point_coords_col = "black")
 IVAR_post_grid_prior_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
                                                     y = -IVAR_post_grid_prior_wt, param_names = computer_model_data$pars_cal_names, 
                                                     samples_kde = samp_exact_theta, raster = TRUE, 
                                                     samples_points = init_design_info$inputs, 
                                                     bigger_is_better = FALSE, 
                                                     point_coords = prior_grid_info$inputs[IVAR_post_grid_prior_wt_best_idx,],
-                                                    main_title = "IVAR-post", point_coords_col = "black")
+                                                    main_title = "IVAR-post, prior weighted", point_coords_col = "black")
 
 plot(IVAR_lpost_grid_prior_wt_plot)
 plot(IVAR_post_grid_prior_wt_plot)
 
 ```
 
-```{r}
+```{r, include = FALSE}
 # Sub-sample approximate posterior samples to use as weight points in acquisitions. 
 N_support_points <- 1000
 
@@ -392,12 +392,16 @@ support_point_plot <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost
 
 plot(support_point_plot)
 ```
-
+```{r}
+plot(support_point_plot)
+```
 
 ```{r}
 # Approx Posterior-Weighted 
 # NOTE: plotting negative of IVAR vals to avoid negatives to produce more intuitive plots. 
 # TODO: should probably also keep consistent color scheme (i.e. yellow = bigger)
+# TODO: IVAR-lpost plots seem to become much more discontinuous/jumpy when the number of design points increases. 
+#       Investigate why this may be; assuming it is something to do with numerical instability. 
 
 # Evaluate Acquisitions. 
 IVAR_lpost_grid_post_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
@@ -481,14 +485,14 @@ for(i in seq_len(N_acq)) plot(plt_list[[i]])
 
 ```{r}
 # Plot numbered acquisitions. 
-new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_temp$inputs_lpost$inputs))
+new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_lpost_temp$inputs_lpost$inputs))
   
 lpost_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
                                                      lpost_vals = prior_grid_info$lpost,
                                                      param_names = computer_model_data$pars_cal_names,
                                                      samples_kde = samp_exact_theta, 
                                                      init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                     sequential_design_points =lpost_emulator_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                     sequential_design_points =lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
                                                      raster = TRUE, 
                                                      main_title = "IVAR-lpost Acquisitions and True Post", bigger_is_better = TRUE)
 
@@ -498,7 +502,7 @@ lpost_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals =
                                                                    param_names = computer_model_data$pars_cal_names,
                                                                    samples_kde = samp_exact_theta, 
                                                                    init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                                   sequential_design_points=lpost_emulator_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                                   sequential_design_points=lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
                                                                    raster = FALSE, 
                                                                    main_title = "IVAR-lpost Acquisitions and Approx Round0 Samp", 
                                                                    legend_label = "Log Post",
@@ -609,35 +613,35 @@ plot(post_numbered_plot_approx_scatter)
 ```
 
 ## Re-fit kernel hyperparameters. 
-```{r}
+```{r, include = FALSE}
 # TODO: should have this functionality built into lpost_emulator object. Also should save the SSR vals as points are acquired to avoid 
 #       having to re-calculate here. 
 
-# IVAR-lpost. 
-inputs_IVAR_lpost_round1 <- lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
-SSR_lpost_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_lpost_round1, na.rm = TRUE)
-gp_fits_IVAR_lpost_round1 <- update_independent_GPs(gp_fits = lpost_emulator_lpost_temp$emulator_info_list$gp_fits, 
-                                                    gp_lib = lpost_emulator_lpost_temp$emulator_info_list$settings$gp_lib, 
-                                                    X_new = inputs_IVAR_lpost_round1, Y_new = SSR_lpost_round1, 
-                                                    update_hyperparameters = TRUE, 
-                                                    input_bounds = lpost_emulator_lpost_temp$design_info_list$input_bounds, 
-                                                    output_stats = lpost_emulator_lpost_temp$design_info_list$output_stats)
-lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_lpost_round1 # Should also update design_info_list.
-lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
-lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
-
-# IVAR-post.
-inputs_IVAR_post_round1 <- lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
-SSR_post_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_post_round1, na.rm = TRUE)
-gp_fits_IVAR_post_round1 <- update_independent_GPs(gp_fits = lpost_emulator_post_temp$emulator_info_list$gp_fits, 
-                                                   gp_lib = lpost_emulator_post_temp$emulator_info_list$settings$gp_lib, 
-                                                   X_new = inputs_IVAR_post_round1, Y_new = SSR_post_round1, 
-                                                   update_hyperparameters = TRUE, 
-                                                   input_bounds = lpost_emulator_post_temp$design_info_list$input_bounds, 
-                                                   output_stats = lpost_emulator_post_temp$design_info_list$output_stats)
-lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_post_round1
-lpost_emulator_post_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
-lpost_emulator_post_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
+# # IVAR-lpost. 
+# inputs_IVAR_lpost_round1 <- lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
+# SSR_lpost_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_lpost_round1, na.rm = TRUE)
+# gp_fits_IVAR_lpost_round1 <- update_independent_GPs(gp_fits = lpost_emulator_lpost_temp$emulator_info_list$gp_fits, 
+#                                                     gp_lib = lpost_emulator_lpost_temp$emulator_info_list$settings$gp_lib, 
+#                                                     X_new = inputs_IVAR_lpost_round1, Y_new = SSR_lpost_round1, 
+#                                                     update_hyperparameters = TRUE, 
+#                                                     input_bounds = lpost_emulator_lpost_temp$design_info_list$input_bounds, 
+#                                                     output_stats = lpost_emulator_lpost_temp$design_info_list$output_stats)
+# lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_lpost_round1 # Should also update design_info_list.
+# lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
+# lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
+# 
+# # IVAR-post.
+# inputs_IVAR_post_round1 <- lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
+# SSR_post_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_post_round1, na.rm = TRUE)
+# gp_fits_IVAR_post_round1 <- update_independent_GPs(gp_fits = lpost_emulator_post_temp$emulator_info_list$gp_fits, 
+#                                                    gp_lib = lpost_emulator_post_temp$emulator_info_list$settings$gp_lib, 
+#                                                    X_new = inputs_IVAR_post_round1, Y_new = SSR_post_round1, 
+#                                                    update_hyperparameters = TRUE, 
+#                                                    input_bounds = lpost_emulator_post_temp$design_info_list$input_bounds, 
+#                                                    output_stats = lpost_emulator_post_temp$design_info_list$output_stats)
+# lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_post_round1
+# lpost_emulator_post_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
+# lpost_emulator_post_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
 
 
 
@@ -646,40 +650,40 @@ lpost_emulator_post_temp$design_info_list$round0_estimates$best_sig2_eps <- colM
 
 # Round 1 approximate sampling. 
 
-```{r}
+```{r, include = FALSE}
 #
 # Round 1 approximate posterior sampling: IVAR-lpost
 #
 
-mcmc_approx_IVAR_lpost_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                                                       theta_prior_params = theta_prior_params, 
-                                                       emulator_info = lpost_emulator_lpost_temp$emulator_info_list,
-                                                       theta_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input, 
-                                                       sig_eps_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps, 
-                                                       learn_sig_eps = TRUE, 
-                                                       sig_eps_prior_params = sig_eps_prior_params, 
-                                                       N_mcmc = N_mcmc_approx)
+# mcmc_approx_IVAR_lpost_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+#                                                        theta_prior_params = theta_prior_params, 
+#                                                        emulator_info = lpost_emulator_lpost_temp$emulator_info_list,
+#                                                        theta_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input, 
+#                                                        sig_eps_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps, 
+#                                                        learn_sig_eps = TRUE, 
+#                                                        sig_eps_prior_params = sig_eps_prior_params, 
+#                                                        N_mcmc = N_mcmc_approx)
 ```
 
-```{r}
-# Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_IVAR_lpost_round1[c("theta", "sig_eps")], test_label = "round1_IVAR_lpost")), 
-                          use.names = TRUE)
+```{r, include = FALSE}
+# # Combine with existing data.table of MCMC output. 
+# mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_IVAR_lpost_round1[c("theta", "sig_eps")], test_label = "round1_IVAR_lpost")), 
+#                           use.names = TRUE)
 ```
 
-### Round 0 MCMC sampling diagnostics. 
-```{r}
+### Round 1 MCMC sampling diagnostics. 
+```{r, include = FALSE}
 
-burn_ins <- c(burn_ins, round1_IVAR_post = 10000)
-
-mcmc_round1_IVAR_lpost_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")
-mcmc_round1_IVAR_lpost_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "sig_eps")
-
-grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts_sig_eps, nrow = 1))
+# burn_ins <- c(burn_ins, round1_IVAR_post = 10000)
+# 
+# mcmc_round1_IVAR_lpost_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")
+# mcmc_round1_IVAR_lpost_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "sig_eps")
+# 
+# grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts, nrow = 1))
+# grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts_sig_eps, nrow = 1))
 ```
 
-```{r}
+```{r, include = FALSE}
 # Store round1 IVAR-lpost MCMC output. 
 
 #
@@ -687,15 +691,13 @@ grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts_sig_eps, nrow
 # as well as for plotting purposes. 
 #
 
-samp_round1_IVAR_lpost_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")[, .(param_name, sample)]
-samp_round1_IVAR_lpost_theta <- as.matrix(unstack(samp_round1_IVAR_lpost_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-
-samp_round1_IVAR_lpost_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
-                                                   test_labels = "round1_IVAR_lpost", param_types = "sig_eps")[, .(param_name, sample)]
-samp_round1_IVAR_lpost_sig_eps <- as.matrix(unstack(samp_round1_IVAR_lpost_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
+# samp_round1_IVAR_lpost_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")[, .(param_name, sample)]
+# samp_round1_IVAR_lpost_theta <- as.matrix(unstack(samp_round1_IVAR_lpost_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+# 
+# samp_round1_IVAR_lpost_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
+#                                                    test_labels = "round1_IVAR_lpost", param_types = "sig_eps")[, .(param_name, sample)]
+# samp_round1_IVAR_lpost_sig_eps <- as.matrix(unstack(samp_round1_IVAR_lpost_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
 ```
-
-
 
 
 
