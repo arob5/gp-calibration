@@ -1486,7 +1486,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   #               calibration parameters with be a sub-matrix of `Sig_theta`.
   #    sig2_eps: numeric(1), the observation variance. If not provided, then the obsevation variance will be set using `coef_var`, or 
   #              if `coef_var`.
-  #    sig_eps_frac: numeric(1), If `sig2_eps` is provided directly then `coef_var` will not be used.
+  #    sig_eps_frac: numeric(1), If `sig2_eps` is provided directly then `sig_eps_frac` will not be used.
   #                  Otherwise, the noise variance  will be set so that the standard deviation sqrt(sig2_eps) equals 
   #                  the range of the data * `sig_eps_frac`. 
   #    G: matrix of dimension N_obs x D, the linear forward model.

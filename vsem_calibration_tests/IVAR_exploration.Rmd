@@ -5,7 +5,7 @@ date: '2023-08-25'
 output: html_document
 ---
 
-```{r, echo = FALSE, include = FALSE}
+```{r, echo = TRUE, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(lhs)
@@ -23,6 +23,155 @@ source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
 source("sequential_design_optimization.r")
 ```
+
+# One-Dimensional Linear Gaussian Example 
+
+We begin we the simplest possible example, the one-dimensional linear Gaussian model 
+$$
+\begin{align*}
+\mathbf{y} &= \mathbf{g}u + \epsilon \\
+\epsilon &\sim \mathcal{N}(0, \sigma_\epsilon^2) \\
+u &\sim \mathcal{N}(\mu_0, \sigma^2_0),
+\end{align*}
+$$
+where $\mathbf{g}, \mathbf{y} \in \mathbb{R}^T$ and the noise variance $\sigma_\epsilon^2$ is assumed to be known. This results in an unnormalized log posterior density 
+$$
+\ell^\pi(u) \propto -\frac{1}{2} \log(2\pi\sigma_{\epsilon}^2) - \frac{\Phi(u)}{2\sigma^2_\epsilon} - \frac{1}{2\sigma^2_0}(u - \mu_0)^2,
+$$
+where 
+$$
+\Phi(u) := ||\mathbf{y} - \mathbf{g}u||_2^2
+$$
+is the data-misfit. 
+
+
+
+```{r}
+# Linear Gaussian Model Setup. 
+linear_Gaussian_seed <- 72
+N_obs <- 100
+freq <- 1
+g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol = 1)
+sig2_eps <- 1
+sig2_0 <- matrix(1)
+mu0 <- 0
+
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(linear_Gaussian_seed, N_obs = N_obs, D = 1, Sig_theta = sig2_0, G = g, sig2_eps = sig2_eps)
+computer_model_data <- linear_Gaussian_info$computer_model_data
+theta_prior_params <- linear_Gaussian_info$theta_prior_params
+
+plot(1:N_obs, computer_model_data$data_obs, main = "Ground Truth and Observed Data", xlab = "t")
+lines(1:N_obs, computer_model_data$data_ref, col = "red")
+```
+
+
+```{r}
+# Initial design and grid of points for plotting purposes. 
+
+# Initial design (round 0). 
+design_settings <- data.frame(N_design = 3, design_method = "LHS", design_seed = 5)
+init_design_info <- get_input_output_design(N_points = design_settings$N_design,
+                                            design_method = design_settings$design_method, 
+                                            scale_inputs = TRUE,
+                                            computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params)
+init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                       theta_vals = init_design_info$inputs, 
+                                                       vars_obs = diag(computer_model_data$Sig_eps), 
+                                                       SSR = init_design_info$outputs,
+                                                       na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                       return_list = FALSE)
+
+# Grid of points spread across prior (for plotting).  
+prior_grid_info <- get_input_output_design(N_points = 1000,
+                                           design_method = "grid", 
+                                           scale_inputs = TRUE,
+                                           param_ranges = init_design_info$input_bounds,
+                                           computer_model_data = computer_model_data, 
+                                           theta_prior_params = theta_prior_params, 
+                                           design_seed = design_settings$design_seed)
+prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                      theta_vals = prior_grid_info$inputs, 
+                                                      vars_obs = diag(computer_model_data$Sig_eps), 
+                                                      SSR = prior_grid_info$outputs,
+                                                      na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                      return_list = FALSE)
+
+
+# lpost
+plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", 
+     main = "Prior Design and True lpost values", xlab = "u", ylab = "Unnormalized log posterior")
+points(init_design_info$inputs, init_design_info$lpost, col = "black")
+
+# SSR 
+plot(prior_grid_info$inputs, prior_grid_info$outputs, col = "red", type = "l", 
+     main = "Prior Design and True Data Misfit values", xlab = "u", ylab = "Data Misfit")
+points(init_design_info$inputs, init_design_info$outputs, col = "black")
+
+```
+
+## GP Fit on Initial Design 
+
+```{r}
+# Emulator settings
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
+                                kernel = "Gaussian", 
+                                transformation_method = c("truncated"),
+                                emulator_target = "SSR",
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+print(emulator_settings)
+
+# Fit emulators on initial design. 
+gp_fits <- fit_independent_GPs(X_train = init_design_info$inputs_scaled, Y_train = init_design_info$outputs_normalized, 
+                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
+emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design_info$input_bounds, 
+                           output_stats = init_design_info$output_stats, settings = emulator_settings)
+
+# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
+lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
+                                         computer_model_data = computer_model_data, sig2_eps = sig2_eps, 
+                                         theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
+
+# Plot initial emulator fit. 
+pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator)
+upper_CI <- pred_grid_init_design$mean + 2*sqrt(pred_grid_init_design$var)
+lower_CI <- pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var)
+
+plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", ylim = c(min(lower_CI), max(upper_CI)),
+     main = "lpost Initial GP Fit", xlab = "u", ylab = "Unnormalized log posterior")
+points(init_design_info$inputs, init_design_info$lpost, col = "black")
+lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
+lines(prior_grid_info$inputs, upper_CI, col = "gray")
+lines(prior_grid_info$inputs, pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var), col = "gray")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Computer Model and Data 

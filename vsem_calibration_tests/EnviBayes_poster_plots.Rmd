@@ -160,6 +160,7 @@ prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = comp
                                                       return_list = FALSE)
 ```
 
+
 ```{r}
 # Plot initial design. 
 # TODO: change axis labels to theta1 and theta2 or something generic like that. 
