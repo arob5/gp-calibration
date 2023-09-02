@@ -145,28 +145,99 @@ lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
 lines(prior_grid_info$inputs, upper_CI, col = "gray")
 lines(prior_grid_info$inputs, pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var), col = "gray")
 
+```
 
+```{r}
+# Round 0 approximate posterior sampling. 
+
+
+N_mcmc_approx <- 50000
+
+mcmc_approx_round0 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params, 
+                                            emulator_info = lpost_emulator$emulator_info_list,
+                                            theta_init = drop(init_design_info$inputs)[which.max(init_design_info$lpost)], 
+                                            sig_eps_init = lpost_emulator$sig2_eps, 
+                                            learn_sig_eps = FALSE, 
+                                            N_mcmc = N_mcmc_approx)
+
+mcmc_samp_dt <- format_mcmc_output(samp_list = mcmc_approx_round0[c("theta")], test_label = "round0")
+burn_ins <- c(round0 = 10000)
+```
+
+```{r}
+# Trace plot. 
+round0_trace_plt <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")
+plot(round0_trace_plt[[1]])
+```
+
+```{r}
+# Approximate vs. True Samples. 
+samp_approx_hist <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")$sample, ncol=1)
+samp_exact <- matrix(rnorm(n = nrow(samp_approx_hist), mean = drop(linear_Gaussian_info$true_posterior$mean), 
+                           sd = sqrt(drop(linear_Gaussian_info$true_posterior$Cov))), ncol = 1)
+
+round0_hist_plot <- get_hist_plot(list(samp_exact, samp_approx_hist), bins = 50, xlab = "samples", ylab = "density", 
+                                  main_title = "Histogram", data_names = c("exact", "round0")) 
+
+plot(round0_hist_plot)
+
+```
+
+# Single Point IVAR Acqusitions
+
+```{r}
+#
+# Uniform Weights. 
+#
+
+# Observations: 
+#    - Issue: IVAR-post is peaking around the design points. Why would this be? 
+#    - One RHS we see IVAR-post drop off much faster than IVAR-lpost, likely because the expected lpost value is 
+#      is small on this side of the domain. IVAR-post takes into account predictive lpost mean, unlike IVAR-lpost. 
+#      
+
+# Evaluate Acquisitions. 
+l_IVAR_uniform_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator, 
+                                           theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                           include_nugget = TRUE)
+
+IVAR_uniform_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator, 
+                                        theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                        include_nugget = TRUE)
+
+# Optimizers of acquisitions. 
+l_IVAR_uniform_wt_best_idx<- which.max(l_IVAR_uniform_wt)
+IVAR_uniform_wt_best_idx <- which.max(IVAR_uniform_wt)
+max_var_idx <- which.max(pred_grid_init_design$var)
+
+# Plot. 
+plot_max_y <- max(upper_CI)
+plot_min_y <- min(lower_CI)
+plot_range <- plot_max_y - plot_min_y
+l_IVAR_uniform_wt_scaled <- (l_IVAR_uniform_wt - min(l_IVAR_uniform_wt)) / diff(range(l_IVAR_uniform_wt)) * plot_range + plot_min_y
+IVAR_uniform_wt_scaled <- (IVAR_uniform_wt - min(IVAR_uniform_wt)) / diff(range(IVAR_uniform_wt)) * plot_range + plot_min_y
+
+plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", ylim = c(min(lower_CI), max(upper_CI)),
+     main = "lpost Initial GP Fit", xlab = "u", ylab = "Unnormalized log posterior")
+points(init_design_info$inputs, init_design_info$lpost, col = "black")
+lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
+lines(prior_grid_info$inputs, upper_CI, col = "gray")
+lines(prior_grid_info$inputs, pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var), col = "gray")
+lines(prior_grid_info$inputs, l_IVAR_uniform_wt_scaled, col = "green")
+lines(prior_grid_info$inputs, IVAR_uniform_wt_scaled, col = "orange")
+points(prior_grid_info$inputs[l_IVAR_uniform_wt_best_idx,], l_IVAR_uniform_wt_scaled[l_IVAR_uniform_wt_best_idx], col = "green", pch = 8)
+points(prior_grid_info$inputs[IVAR_uniform_wt_best_idx,], IVAR_uniform_wt_scaled[IVAR_uniform_wt_best_idx], col = "orange", pch = 8)
+points(prior_grid_info$inputs[max_var_idx,], upper_CI[max_var_idx], col = "gray", pch = 8)
 
 ```
 
 
+```{r}
+# IVAR-post debugging. 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```
 
 
 

@@ -2769,7 +2769,7 @@ get_trace_plots <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, p
   #
   # Returns:
   #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
-  
+
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
                                      param_types = param_types, param_names = param_names)
