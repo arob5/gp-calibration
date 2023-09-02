@@ -340,7 +340,8 @@ Since only the second term depends on $\logUnPostBatch$, plugging back into \ref
 (and substituting in the definitions for $\ba_{\designIdx} \in \R^{\designIdx}$ and $\bb_{\Nbatch} \in \R^{\Nbatch}$) yields 
 \begin{align*}
 \E_{\tilde{\boldsymbol{\postDens}}}\left[\Exp{2 \logUnPostMeanPred[\designIdx, \batchMat](\bpar)} \right] 
-&= \Exp{2\logUnPostMean(\bpar) - 2\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostMean(\designMat) + 2\ba_{\designIdx}^\top \logUnPostObs} \E_{\tilde{\boldsymbol{\logUnPost}}}\left[2\bb_{\Nbatch}^\top \logUnPostBatch \right] 
+&= \Exp{2\logUnPostMean(\bpar) - 2\logUnPostKer(\bpar, \designMat[\designIdx, \batchMat]) \KerMat[\designIdx, \batchMat]^{-1} \logUnPostMean(\designMat) + 2\ba_{\designIdx}^\top \logUnPostObs} 
+\E_{\tilde{\boldsymbol{\logUnPost}}}\left[\Exp{2\bb_{\Nbatch}^\top \logUnPostBatch} \right] 
 \end{align*}
 Now, since 
 $2\bb_{\Nbatch}^\top \logUnPostBatch | \designMat, \tilde{\boldsymbol{\logUnPost}} \sim 
