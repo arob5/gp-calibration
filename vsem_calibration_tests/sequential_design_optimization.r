@@ -682,7 +682,7 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   # Compute predictive means conditional on current design points. This is used to average over the unknown response when 
   # conditioning on new points in `theta_vals`. 
   lpost_curr_pred_can <- predict_lpost_emulator(theta_vals, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
-                                                include_nugget = include_nugget)
+                                                include_nugget = include_nugget, unscale = TRUE, uncenter = FALSE)
   
   for(i in 1:nrow(theta_vals)) {
     
@@ -692,7 +692,8 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
     # Compute unnormalized log posterior approximation predictive mean and variance at each theta grid location. The variance prediction is exact, 
     # while the mean prediction uses the plug-in kriging believer approach.
     lpost_pred_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = c("mean", "var"), 
-                                             include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = lpost_mu0_int)
+                                             include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = lpost_mu0_int, 
+                                             unscale = TRUE, uncenter = FALSE)
     lpost_pred_mean_KB_int <- lpost_pred_int$mean
     lpost_pred_var_int <- lpost_pred_int$var
     

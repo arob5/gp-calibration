@@ -2310,7 +2310,8 @@ sample_GP_lpost_theta <- function(theta_vals_scaled = NULL, theta_vals_unscaled 
 #      GPs approximating the loss functions). 
 # ------------------------------------------------------------------------------
 
-get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params) {
+get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, computer_model_data, sig2_eps, theta_prior_params, 
+                                   center_output = TRUE, scale_output = TRUE) {
   # Returns a list that represents a fit emulator object, namely the random field approximation to 
   # the unnormalized log posterior density induced by the underlying GPs. The observed input locations 
   # are thus the same as the underlying GPs, while the observed response vector are the unnormalized  
@@ -2351,6 +2352,13 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
                                                                    theta_prior_params = theta_prior_params, 
                                                                    return_list = FALSE)
   
+  # Optionally normalize response (i.e. unnormalized log posterior density values). 
+  lpost_emulator_obj$center_output <- center_output
+  lpost_emulator_obj$scale_output <- scale_output
+  if(center_output) lpost_emulator_obj$mean_center <- mean(lpost_emulator_obj$outputs_lpost)
+  if(scale_output) lpost_emulator_obj$sd_scale <- sd(lpost_emulator_obj$outputs_lpost)
+  lpost_emulator_obj$outputs_lpost <- normalize_lpost_outputs(lpost_emulator_obj$outputs_lpost, lpost_emulator_obj)
+  
   # lpost emulator is a function of the likelihood parameters (observation variances), prior on the calibration 
   # parameters, and the number of observations (n_obs). 
   lpost_emulator_obj$sig2_eps <- sig2_eps
@@ -2375,6 +2383,21 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   lpost_emulator_obj$var_comb_prior <- drop(calc_lpost_kernel(lpost_emulator_obj, inputs_scaled_1=design_info_list$inputs_scaled[1,,drop=FALSE], include_nugget = TRUE))
   
   return(lpost_emulator_obj)
+  
+}
+
+
+normalize_lpost_outputs <- function(outputs, lpost_emulator, inverse = FALSE) {
+  
+  if(inverse) {
+    if(lpost_emulator$scale_output) outputs <- outputs * lpost_emulator$sd_scale
+    if(lpost_emulator$center_output) outputs <- outputs + lpost_emulator$mean_center
+  } else {
+    if(lpost_emulator$center_output) outputs <- outputs - lpost_emulator$mean_center
+    if(lpost_emulator$scale_output) outputs <- outputs / lpost_emulator$sd_scale
+  }
+
+  return(outputs)
   
 }
 
@@ -2423,6 +2446,9 @@ calc_lpost_kernel <- function(lpost_emulator_obj, inputs_scaled_1, inputs_scaled
     stop("Other emulator targets not yet implemented.")
   }
   
+  # Scale according to lpost normalization. 
+  if(lpost_emulator_obj$scale_output) K_lpost <- K_lpost / lpost_emulator_obj$sd_scale^2
+  
   return(K_lpost)
   
 }
@@ -2465,14 +2491,18 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
     
   # Prior mean function induced on lpost emulator. Note that since the underlying GPs are (for now) assumed to have constant prior 
   # mean functions, that the only potential variation in the lpost prior mean function comes from the log prior evaluations. 
+  # Also scale mean function according to the lpost centering transformation. 
   means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(GP_means / lpost_emulator$sig2_eps)) + lprior_vals
-
+  
+  # Scale according to lpost normalization. 
+  means <- normalize_lpost_outputs(means, lpost_emulator)
+  
   return(matrix(means, ncol = 1))
   
 }
 
 
-update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, inputs_new_unscaled = NULL) {
+update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, inputs_new_unscaled = NULL, outputs_normalized = FALSE) {
   # Updates the random field approximation to the unnormalized log posterior density induced 
   # by the underlying GPs by conditioning on newly observed data {`input_new`, `output_lpost_new`}. 
   # In the primary use case of this function, `output_lpost_new` is "pseudo-data" used for heuristic 
@@ -2497,6 +2527,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   #    inputs_new_unscaled: Optionally provide unscaled version of `inputs_new_scaled` as well, which is required to compute  
   #                         predictive means (as the predictive mean depends on the prior distribution on the calibration 
   #                         parameters). 
+  #    outputs_normalized: logical(1), indicates whether or not `outputs_lpost_new` has already been centered (according to the 
+  #                        centering transformation defined by `lpost_emulator$mean_center`).
   #
   # Returns:
   #    The updated lpost emulator object. 
@@ -2507,8 +2539,10 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   
   # If no new responses are provided, set to GP expectation. 
   if(is.null(outputs_lpost_new)) {
-    outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, 
-                                                return_vals = "mean", inputs_new_unscaled = inputs_new_unscaled)$mean
+    outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = "mean",
+                                                inputs_new_unscaled = inputs_new_unscaled, unscale = FALSE, uncenter = FALSE)$mean
+  } else {
+    if(!outputs_normalized) outputs_lpost_new <- normalize_lpost_outputs(outputs_lpost_new, lpost_emulator)
   }
    
   # Add log prior density evaluations at new points. 
@@ -2537,7 +2571,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
 
 
 predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, 
-                                   inputs_new_unscaled = NULL, prior_mean_vals_new = NULL, verbose = TRUE) {
+                                   inputs_new_unscaled = NULL, prior_mean_vals_new = NULL, 
+                                   verbose = TRUE, unscale = TRUE, uncenter = TRUE) {
   # Compute predictive mean and variance equations for the `lpost_emulator`. 
   # Importantly, note that this function will potentially yield different predictions than `predict_lpost_GP_approx()`. 
   # The latter always generates predictions based on the underlying GPs, encapsulated in `emulator_info_list`. On the 
@@ -2570,6 +2605,7 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   #                         If predicting at the same set of points repeatedly, pre-computing these mean function 
   #                         evaluations can result in very large speedups. Default is NULL, in which case the mean function 
   #                         evaluations are computed in the function. 
+  #    denormalize: if TRUE, undoes the centering transformation defined by `lpost_emulator$mean_center`. 
   #
   # Returns:
   #    list, with names "mean" and "var", containing respectively the predictive mean and variance values computed 
@@ -2609,8 +2645,19 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
     return_list$var <- drop(pred_vars)
     
   }
+  
+  # Optionally invert lpost normalization. 
+  if(unscale || uncenter) {
     
+    if(unscale && lpost_emulator$scale_output) {
+      return_list$var <- lpost_emulator$sd_scale^2 * return_list$var
+      return_list$mean <- lpost_emulator$sd_scale * return_list$mean
+    }
+    
+    if(uncenter && lpost_emulator$center_output) return_list$mean <- lpost_emulator$mean_center + return_list$mean
 
+  }
+  
   return(return_list)
   
 }
@@ -2650,7 +2697,7 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
 
 
 sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples = 1, inputs_new_unscaled = NULL, 
-                                  include_nugget = TRUE, prior_mean_vals = NULL, verbose = TRUE) {
+                                  include_nugget = TRUE, prior_mean_vals = NULL, verbose = TRUE, denormalize = TRUE) {
   # Samples from the GP predictive distribution of the lpost emulator (which is assumed to be a GP). 
   #
   # Args:
@@ -2668,6 +2715,7 @@ sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples =
   #    prior_mean_vals: numeric, vector of evaluations of the lpost prior mean function at inputs `inputs_new_scaled`. 
   #                     See `predict_lpost_emulator()`. Default is NULL, in which case the mean function 
   #                     evaluations are computed in the function. 
+  #    denormalize: if TRUE, undoes the centering transformation defined by `lpost_emulator$mean_center`. 
   #
   # Returns:
   #    matrix, of dimension `N_samples` x M. The ith row contains the sampled values at the M input locations. 
@@ -2682,6 +2730,8 @@ sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples =
   for(t in seq_len(N_samples)) {
     samp[t,] <- sample_GP_pointwise(lpost_pred$mean, lpost_pred$var) 
   }
+  
+  if(denormalize) samp <- normalize_lpost_outputs(samp, lpost_emulator, inverse = TRUE)
   
   if(N_samples == 1) return(samp[1,])
   return(samp)
