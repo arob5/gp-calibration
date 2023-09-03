@@ -133,7 +133,12 @@ lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list
                                          computer_model_data = computer_model_data, sig2_eps = sig2_eps, 
                                          theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
 
-# Plot initial emulator fit. 
+# TODO: TEMP, Emulator that centers but does not scale response. Temporarily keep this until I clean up transforamtion code. 
+lpost_emulator_no_scale <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
+                                                  computer_model_data = computer_model_data, sig2_eps = sig2_eps, 
+                                                  theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = FALSE)
+
+# Plot initial emulator fit.
 pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator)
 upper_CI <- pred_grid_init_design$mean + 2*sqrt(pred_grid_init_design$var)
 lower_CI <- pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var)
@@ -198,13 +203,13 @@ plot(round0_hist_plot)
 #      
 
 # Evaluate Acquisitions. 
-l_IVAR_uniform_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator, 
-                                           theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                           include_nugget = TRUE)
+l_IVAR_uniform_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator_no_scale, 
+                                             theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                             include_nugget = TRUE)
 
-IVAR_uniform_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator, 
-                                        theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                        include_nugget = TRUE)
+IVAR_uniform_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator_no_scale, 
+                                         theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                         include_nugget = TRUE)
 
 # Optimizers of acquisitions. 
 l_IVAR_uniform_wt_best_idx<- which.max(l_IVAR_uniform_wt)
@@ -233,8 +238,143 @@ points(prior_grid_info$inputs[max_var_idx,], upper_CI[max_var_idx], col = "gray"
 ```
 
 
+# Effect of Conditioning on Individual Candidate Points. 
 ```{r}
-# IVAR-post debugging. 
+log_var1 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[999,], lpost_emulator_no_scale, theta_grid_integrate = prior_grid_info$inputs_scaled)
+log_var2 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[1000,], lpost_emulator_no_scale, theta_grid_integrate = prior_grid_info$inputs_scaled)
+log_var3 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[max_var_idx,], lpost_emulator_no_scale, theta_grid_integrate = prior_grid_info$inputs_scaled)
+
+curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "var")$var
+
+plot(prior_grid_info$inputs, log_var2, col = "red", type = "l")
+lines(prior_grid_info$inputs, log_var1, col = "blue")
+lines(prior_grid_info$inputs, log_var3, col = "green")
+lines(prior_grid_info$inputs, curr_post_log_var, col = "black")
+
+points(prior_grid_info$inputs[1000,], 0, col = "red")
+points(prior_grid_info$inputs[999,], 0, col = "blue")
+points(prior_grid_info$inputs[max_var_idx,], 0, col = "green")
+
+# TODO: need to explore conditioned GP plots. 
+# Also add another line corresponding to third candidate that is not right next to the other two, somewhere more influential. 
+# The difference is coming from the B term, need to investigate this. 
+
+# TODO: there may be an issue with how I'm scaling lpost_emulator covariance. When I call predict_lpost_emulator() I specify to unscale, 
+#       but then when I call calc_lpost_kernel() the scaling is still happening. NEED TO FIX. 
+```
+
+```{r}
+
+lpost_emulator_cond_1 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[999,,drop=FALSE])
+lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[1000,,drop=FALSE])
+
+pred_cond_1 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_1)
+pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
+
+curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "log_var")$log_var
+post_cond_log_var_1 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_1, pred_cond_1$mean, pred_cond_1$var, "log_var")$log_var
+post_cond_log_var_2 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_2, pred_cond_2$mean, pred_cond_2$var, "log_var")$log_var
+
+
+plot(prior_grid_info$inputs, curr_post_log_var, col = "black", lty = 5, type = "l")
+lines(prior_grid_info$inputs, post_cond_log_var_1, col = "blue")
+lines(prior_grid_info$inputs, post_cond_log_var_2, col = "green")
+
+
+```
+
+```{r}
+
+# Choose integration point u and candidate point u_tilde to investigate (both scaled).
+u <- scale_input_data(matrix(0.5, nrow = 1), input_bounds = lpost_emulator_no_scale$design_info_list$input_bounds)
+u_tilde <- prior_grid_info$inputs_scaled[600,,drop=FALSE] # 999
+
+# Unconditioned log variance. 
+un_lpost_pred <- predict_lpost_emulator(u, lpost_emulator_no_scale, uncenter = FALSE)
+un_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, un_lpost_pred$mean, un_lpost_pred$var)$log_var
+
+# Closed-form log expected conditional variance. 
+cond_log_var <- get_IVAR_post_vars(u_tilde, lpost_emulator_no_scale, u, verbose = TRUE) 
+
+# Monte Carlo Approximation of log expected conditional variance (i.e., estimate expected conditional variance, then take log of result). 
+lpost_tilde_pred <- predict_lpost_emulator(u_tilde, lpost_emulator_no_scale, uncenter = FALSE)
+log_pi_tilde_pred <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, lpost_tilde_pred$mean, lpost_tilde_pred$var)
+N_MC_test <- 10000
+lpost_tilde_samp <- rnorm(N_MC_test, lpost_tilde_pred$mean, sqrt(lpost_tilde_pred$var))
+
+# Condition lpost emulator.  
+lpost_emulator_no_scale_cond <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = u_tilde)
+np1 <- length(lpost_emulator_no_scale_cond$outputs_lpost)
+
+cond_lpost_mean_samp <- vector(mode = "numeric", length = N_MC_test)
+cond_lpost_var_samp <- vector(mode = "numeric", length = N_MC_test)
+
+for(j in seq_len(N_MC_test)) {
+  
+  # Update response. 
+  lpost_emulator_no_scale_cond$outputs_lpost[np1] <- lpost_tilde_samp[j]
+  
+  # Compute conditioned variance. 
+  results <- predict_lpost_emulator(u, lpost_emulator_no_scale_cond, uncenter = FALSE)
+  cond_lpost_mean_samp[j] <- results$mean
+  cond_lpost_var_samp[j] <- results$var # Note: this should be constant for all j, since pred var not function of response. 
+  
+}
+
+cond_log_var_MC_samp <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale_cond, cond_lpost_mean_samp, cond_lpost_var_samp)
+cond_log_var_MC <- logSumExp(cond_log_var_MC_samp$log_var) - log(N_MC_test)
+
+print(paste0("Log unconditioned post var: ", un_log_var))
+print(paste0("Log Expected conditional post var (closed-form): ", cond_log_var))
+print(paste0("Log Expected conditional post var (MC Estimate): ", cond_log_var_MC))
+
+range(cond_log_var_MC_samp$log_var) # Entire range is less than un_log_var, as it should be. 
+
+
+# Conclusions: 
+#    - Closed-form expected conditional variance calculation is wrong. Investigate `get_IVAR_post_vars()`. 
+#    - It appears that the issue is coming from the B vector / "uncertainty term". Need to check this. 
+
+
+lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[1000,,drop=FALSE])
+pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
+
+
+pi_tilde_samp <- rlnorm(n = 1000, pred_cond_2$mean, sqrt(pred_cond_2$var))
+MC_pred <- vector(mode = "numeric", length = nrow(prior_grid_info$inputs_scaled))
+
+for(i in seq_along(MC_pred)) {
+
+  
+  lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[1000,,drop=FALSE])
+  pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
+  
+}
+
+
+
+curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "log_var")$log_var
+post_cond_log_var_1 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_1, pred_cond_1$mean, pred_cond_1$var, "log_var")$log_var
+post_cond_log_var_2 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_2, pred_cond_2$mean, pred_cond_2$var, "log_var")$log_var
+
+
+plot(prior_grid_info$inputs, curr_post_log_var, col = "black", lty = 5, type = "l")
+lines(prior_grid_info$inputs, post_cond_log_var_1, col = "blue")
+lines(prior_grid_info$inputs, post_cond_log_var_2, col = "green")
+
+
+```
+
+
+
+
+
+
+```{r}
+# IVAR-post debugging: exploring evaluation at design point vs. point right next to design point. 
+test <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled[c(999, 1000),,drop=FALSE], lpost_emulator = lpost_emulator, 
+                              theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                              include_nugget = TRUE)
 
 
 ```

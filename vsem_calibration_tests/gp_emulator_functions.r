@@ -2533,8 +2533,16 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   # Returns:
   #    The updated lpost emulator object. 
   
+  # Remove any repeated observations. If the only new observation is removed, return `lpost_emulator` unchanged. 
+  repeated_obs_sel <- inputs_new_scaled %in% lpost_emulator$inputs_lpost$inputs_scaled
+  if(any(repeated_obs_sel)) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
+  inputs_new_scaled <- inputs_new_scaled[!repeated_obs_sel,, drop = FALSE]
+  if(length(inputs_new_scaled) == 0) return(lpost_emulator)
+  
   if(is.null(inputs_new_unscaled)) {
     inputs_new_unscaled <- scale_input_data(inputs_new_scaled, input_bounds = lpost_emulator$emulator_info_list$input_bounds, inverse = TRUE)
+  } else {
+    inputs_new_unscaled <- inputs_new_unscaled[!repeated_obs_sel,, drop = FALSE]
   }
   
   # If no new responses are provided, set to GP expectation. 
@@ -2542,6 +2550,7 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
     outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = "mean",
                                                 inputs_new_unscaled = inputs_new_unscaled, unscale = FALSE, uncenter = FALSE)$mean
   } else {
+    outputs_lpost_new <- outputs_lpost_new[!repeated_obs_sel]
     if(!outputs_normalized) outputs_lpost_new <- normalize_lpost_outputs(outputs_lpost_new, lpost_emulator)
   }
    
@@ -2735,6 +2744,31 @@ sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples =
   
   if(N_samples == 1) return(samp[1,])
   return(samp)
+  
+}
+
+
+convert_to_post_emulator_log_moments <- function(lpost_emulator, lpost_means, lpost_vars, return_vals = c("log_mean", "log_var")) {
+  
+  return_list <- list(log_mean = NULL, log_var = NULL)
+  
+  # Log Mean. 
+  if("log_mean" %in% return_vals) return_list$log_mean <- lpost_means + 0.5 * lpost_vars
+  
+  # Log Variance. 
+  if("log_var" %in% return_vals) {
+    
+    # Numerically stable computation of log exponential term. 
+    idx_approx_sel <- (lpost_vars >= 100)
+    log_exp_term <- vector(mode = "numeric", length = length(lpost_vars))
+    log_exp_term[!idx_approx_sel] <- log(exp(lpost_vars[!idx_approx_sel]) - 1)
+    log_exp_term[idx_approx_sel] <- lpost_vars[idx_approx_sel] # Apply approximation. 
+    
+    return_list$log_var <- 2 * lpost_means + lpost_vars + log_exp_term
+    
+  }
+  
+  return(return_list)
   
 }
 

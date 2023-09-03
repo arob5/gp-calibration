@@ -683,12 +683,13 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
   # conditioning on new points in `theta_vals`. 
   lpost_curr_pred_can <- predict_lpost_emulator(theta_vals, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
                                                 include_nugget = include_nugget, unscale = TRUE, uncenter = FALSE)
-  
+
   for(i in 1:nrow(theta_vals)) {
     
     # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
     lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_vals[i,,drop=FALSE], outputs_lpost_new = NULL)
-    
+    repeated_design_input <- ifelse(nrow(lpost_emulator_temp$inputs_lpost$inputs_scaled) == n, TRUE, FALSE)
+
     # Compute unnormalized log posterior approximation predictive mean and variance at each theta grid location. The variance prediction is exact, 
     # while the mean prediction uses the plug-in kriging believer approach.
     lpost_pred_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = c("mean", "var"), 
@@ -697,25 +698,31 @@ acquisition_IVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integra
     lpost_pred_mean_KB_int <- lpost_pred_int$mean
     lpost_pred_var_int <- lpost_pred_int$var
     
-    # Computations used both in kernel term for conditioned GP and averaged unknown response term. 
-    B <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + (lpost_k0_int_can[,i,drop=FALSE] %*% lpost_emulator_temp$K_inv[n+1, n+1]) 
-      
+    if(!repeated_design_input) {
+      # Computations used both in kernel term for conditioned GP and averaged unknown response term. 
+      B <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + (lpost_k0_int_can[,i,drop=FALSE] * lpost_emulator_temp$K_inv[n+1, n+1]) 
+        
+      # Term capturing the uncertainty in the value of the unknown response. 
+      log_uncertainty_term <- lpost_curr_pred_can$var[i] * drop(B)^2
+    }
+    
     # Numerically stable calculation of log[exp(k) - 1] term. 
     idx_approx_sel <- (lpost_pred_var_int >= 100)
     log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
     log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
     log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
     
-    # Term capturing the uncertainty in the value of the unknown response. 
-    log_uncertainty_term <- lpost_curr_pred_can$var[i] * drop(B)^2
-
     # Sum terms to compute log expected variance for current candidate point over all integration points. 
-    log_EVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)
+    if(!repeated_design_input) {
+      log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var[i] * drop(B)^2)
+    } else {
+      log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * lpost_pred_mean_KB_int
+    }
     
     # Approximate integral by summing values over integration points. Use numerically stable computation 
     # of log-sum-exp. Not normalizing sum, as division by number of integration points does not affect 
     # the optimization over candidate points. 
-    log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_EVAR) - log(N_int))
+    log_IVAR_est[i] <- -1.0 * (matrixStats::logSumExp(log_IVAR) - log(N_int))
     
   }
   
@@ -1031,6 +1038,63 @@ acquisition_VAR_post_old <- function(theta_vals, emulator_info_list, computer_mo
 }
 
 
+get_IVAR_post_vars <- function(theta_candidate, lpost_emulator, theta_grid_integrate, verbose = TRUE, include_nugget = TRUE, ...) {
+  # A function for testing purposes. Instead of integrating over the computed variance values, this function returns the 
+  # vector of values. 
+  
+  n <- nrow(lpost_emulator$inputs_lpost$inputs_scaled)
+  N_int <- nrow(theta_grid_integrate)
+  
+  # Handle case of single input. 
+  if(is.null(nrow(theta_candidate))) theta_candidate <- matrix(theta_candidate, nrow = 1)
+  
+  # Compute lpost prior mean and kernel evaluations. 
+  lpost_mu0_int <- calc_lpost_mean(lpost_emulator, inputs_scaled = theta_grid_integrate)
+  lpost_k0_int_n <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, lpost_emulator$inputs_lpost$inputs_scaled)
+  lpost_k0_int_can <- calc_lpost_kernel(lpost_emulator, theta_grid_integrate, theta_candidate)
+  
+  # Compute predictive means conditional on current design points. This is used to average over the unknown response when 
+  # conditioning on new points in `theta_vals`. 
+  lpost_curr_pred_can <- predict_lpost_emulator(theta_candidate, lpost_emulator, return_vals = c("mean", "var"), verbose = verbose, 
+                                                include_nugget = include_nugget, unscale = TRUE, uncenter = FALSE)
+  
+  # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
+  lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_candidate, outputs_lpost_new = NULL)
+  repeated_design_input <- ifelse(nrow(lpost_emulator_temp$inputs_lpost$inputs_scaled) == n, TRUE, FALSE)
+  browser()
+    
+  # Compute unnormalized log posterior approximation predictive mean and variance at each theta grid location. The variance prediction is exact, 
+  # while the mean prediction uses the plug-in kriging believer approach.
+  lpost_pred_int <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = c("mean", "var"), 
+                                           include_nugget = include_nugget, verbose = verbose, prior_mean_vals_new = lpost_mu0_int, 
+                                           unscale = TRUE, uncenter = FALSE)
+  lpost_pred_mean_KB_int <- lpost_pred_int$mean
+  lpost_pred_var_int <- lpost_pred_int$var
+    
+  if(!repeated_design_input) {
+    # Computations used both in kernel term for conditioned GP and averaged unknown response term. 
+    B <- (lpost_k0_int_n %*% lpost_emulator_temp$K_inv[1:n, n+1, drop=FALSE]) + (lpost_k0_int_can * lpost_emulator_temp$K_inv[n+1, n+1]) 
+      
+    # Term capturing the uncertainty in the value of the unknown response. 
+    log_uncertainty_term <- lpost_curr_pred_can$var * drop(B)^2
+  }
+    
+  # Numerically stable calculation of log[exp(k) - 1] term. 
+  idx_approx_sel <- (lpost_pred_var_int >= 100)
+  log_exp_term <- vector(mode = "numeric", length = length(lpost_pred_var_int))
+  log_exp_term[!idx_approx_sel] <- log(exp(lpost_pred_var_int[!idx_approx_sel]) - 1)
+  log_exp_term[idx_approx_sel] <- lpost_pred_var_int[idx_approx_sel] # Apply approximation. 
+    
+  # Sum terms to compute log expected variance for current candidate point over all integration points. 
+  if(!repeated_design_input) {
+    log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var * drop(B)^2)
+  } else {
+    log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * lpost_pred_mean_KB_int
+  }
+
+  return(log_IVAR)
+  
+}
 
 
 
