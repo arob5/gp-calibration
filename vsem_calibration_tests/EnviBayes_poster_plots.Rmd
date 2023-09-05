@@ -137,12 +137,13 @@ print(emulator_settings)
 
 ```{r}
 # Initial design (round 0). 
-design_settings <- data.frame(N_design = 15, design_method = "LHS", design_seed = 5)
+design_settings <- data.frame(N_design = 7, design_method = "LHS", design_seed = 1)
 init_design_info <- get_input_output_design(N_points = design_settings$N_design,
                                             design_method = design_settings$design_method, 
                                             scale_inputs = TRUE,
                                             computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params)
+                                            theta_prior_params = theta_prior_params, 
+                                            design_seed = design_settings$design_seed)
 
 # Grid of points spread across prior (for plotting).  
 prior_grid_info <- get_input_output_design(N_points = 51^2,
@@ -160,17 +161,14 @@ prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = comp
                                                       return_list = FALSE)
 ```
 
-
 ```{r}
-# Plot initial design. 
-# TODO: change axis labels to theta1 and theta2 or something generic like that. 
-
 library(svglite)
 base_dir <- getwd()
 poster_figure_dir <- "poster_figures"
+```
 
-# TODO: increase size of design points 
-
+```{r}
+# Plot initial design. 
 plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
                                        samples_kde = samp_exact_theta, samples_points = init_design_info$inputs, raster = TRUE, 
                                        bigger_is_better = TRUE, main_title = "Initial Design and True Posterior", 
@@ -354,7 +352,7 @@ plt_round0_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_gri
 plt_round0_samp <- plt_round0_samp + 
                    geom_point(data =  support_points_for_plot, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
                    # geom_density_2d(data = as.data.frame(samp_round0_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "orange") + 
-                   # geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue") + 
+                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8) + 
                    geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3)
   
 plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
@@ -557,7 +555,8 @@ plot(IVAR_lpost_grid_post_wt_plot)
 ```
 
 ```{r}
-N_acq <- 10
+N_acq <- 5
+new_design_sel <- seq(nrow(init_design_info$inputs)+1, nrow(init_design_info$inputs)+N_acq)
 
 lpost_emulator_lpost_temp <- lpost_emulator
 plt_list <- vector(mode = "list", length = N_acq)
@@ -601,67 +600,134 @@ for(i in seq_len(N_acq)) plot(plt_list[[i]])
 ```
 
 ```{r}
+# First round of acquisition points. 
 
-# TODO: left off here. 
-# plt_round0_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
-#                                        raster = TRUE, bigger_is_better = TRUE, main_title = "Initial Design and True Posterior",
-#                                        legend = "Log Post Density", samples_points_lab = "Initial Design", 
-#                                        samples_kde_lab = "True Post KDE", samples_points_size = 3)
-# 
-# plt_round0_samp <- plt_round0_samp + 
-#                    geom_point(data =  support_points_for_plot, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
-#                    # geom_density_2d(data = as.data.frame(samp_round0_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "orange") + 
-#                    # geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue") + 
-#                    geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3)
-#   
-# plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
-#                                            axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-#                                            panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-#                                            panel.border = element_blank(), panel.background = element_blank(), 
-#                                            plot.background = element_blank()) + 
-#                    ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
-# plot(plt_round0_samp)
-# 
-# ggsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
-
-
-
-
-
-
-
-# Plot numbered acquisitions. 
-new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_lpost_temp$inputs_lpost$inputs))
-  
-lpost_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
-                                                     lpost_vals = prior_grid_info$lpost,
-                                                     param_names = computer_model_data$pars_cal_names,
-                                                     samples_kde = samp_exact_theta, 
-                                                     init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                     sequential_design_points =lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                     raster = TRUE, 
-                                                     main_title = "IVAR-lpost Acquisitions and True Post", bigger_is_better = TRUE)
-
-# Heatmap from approx distribution but contours from true distribution. 
-lpost_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                                                    lpost_vals = samp_round0_info$outputs, # samp_round0_info$outputs,
-                                                                    param_names = computer_model_data$pars_cal_names,
-                                                                    samples_kde = samp_exact_theta, 
-                                                                    init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                                    sequential_design_points=lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                                    raster = FALSE, 
-                                                                    main_title = "Active Learning Design", 
-                                                                    legend_label = "Log Post",
-                                                                    bigger_is_better = TRUE)
-                                                      
-plot(lpost_numbered_plot)
-
-# Targets points towards the center of the approx distribution and then works its way to the boundaries as the center is covered. 
-# This makes sense given the global scope of the integrated variance criterion. 
-plot(lpost_numbered_plot_approx_scatter) 
+plt_round1_acq <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names,
+                                      samples_points = lpost_emulator$inputs_lpost$inputs,raster = TRUE, bigger_is_better = TRUE, samples_points_size = 3)
+plt_round1_acq <- plt_round1_acq + geom_point(as.data.frame(lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]), 
+                                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8) + 
+                                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8)
+plt_round1_acq <- plt_round1_acq + theme(legend.position = "none", axis.text.x=element_blank(),
+                                         axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(),
+                                         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                         panel.border = element_blank(), panel.background = element_blank(),
+                                         plot.background = element_blank()) +
+                  ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
+plot(plt_round1_acq)
+ggsave(filename = file.path(base_dir, poster_figure_dir, "round1_acquisition_points.svg"), width = 5.0, height = 5.0, units = "in")
 
 
 ```
+
+```{r}
+# Update GPs after round 1 acquisitions. 
+round1_acq_points_outputs <- get_computer_model_SSR(computer_model_data, 
+                                                    theta_vals = lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE], na.rm = TRUE)
+round1_design_info_list <- lpost_emulator_lpost_temp$design_info_list[c("inputs", "inputs_scaled", "input_bounds", "output_stats")]
+round1_design_info_list$outputs <- round1_acq_points_outputs
+round1_design_info_list$outputs_normalized <- normalize_output_data(round1_acq_points_outputs, output_stats = init_design_info$output_stats)
+round1_design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
+round1_design_info_list$round0_estimates$best_sig2_eps <-colMeans(samp_round0_sig_eps)
+
+gp_fits_round1 <- update_independent_GPs(emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib,
+                                         X_new = lpost_emulator_lpost_temp$inputs_lpost$inputs_scaled[new_design_sel,,drop=FALSE],
+                                         update_hyperparameters = TRUE, Y_new = round1_design_info_list$outputs_normalized)
+emulator_info_list_round1 <- emulator_info_list
+emulator_info_list_round1$gp_fits <- gp_fits_round1 
+  
+lpost_emualtor_round1 <- get_lpost_emulator_obj(emulator_info_list_round1, round1_design_info_list, computer_model_data, 
+                                                sig2_eps = round1_design_info_list$round0_estimates$best_sig2_eps, 
+                                                theta_prior_params = theta_prior_params)
+```
+
+
+```{r}
+#
+# Round 1 approximate posterior sampling. 
+#
+
+mcmc_approx_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                            theta_prior_params = theta_prior_params, 
+                                            emulator_info = lpost_emualtor_round1$emulator_info_list,
+                                            theta_init = round1_design_info_list$round0_estimates$best_input, 
+                                            sig_eps_init = round1_design_info_list$round0_estimates$best_sig2_eps, 
+                                            learn_sig_eps = TRUE, 
+                                            sig_eps_prior_params = sig_eps_prior_params, 
+                                            N_mcmc = N_mcmc_approx)
+```
+
+```{r}
+# Combine with existing data.table of MCMC output. 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_round1[c("theta", "sig_eps")], test_label = "round1")), 
+                          use.names = TRUE)
+```
+
+### Round 1 MCMC sampling diagnostics. 
+```{r}
+
+burn_ins <- c(burn_ins, round0 = 10000, round1 = 10000)
+
+mcmc_round1_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")
+mcmc_round1_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "sig_eps")
+
+grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts, nrow = 1))
+grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts_sig_eps, nrow = 1))
+```
+
+
+```{r}
+#
+# Store round 1 MCMC approximate posterior samples.
+#
+
+samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
+samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+
+samp_round1_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "sig_eps")[, .(param_name, sample)]
+samp_round1_sig_eps <- as.matrix(unstack(samp_round1_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
+```
+
+```{r}
+# Round 1 samples plot. 
+
+support_points_for_plot_round1 <- support::sp(n = N_support_points_plot, 
+                                              p = length(computer_model_data$theta_true), 
+                                              dist.samp = samp_round1_theta)$sp
+support_points_for_plot_round1 <- as.data.frame(support_points_for_plot_round1)
+colnames(support_points_for_plot_round1) <- c("LAR", "KEXT")
+
+
+plt_round1_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
+                                       raster = TRUE, bigger_is_better = TRUE, samples_points_size = 3)
+
+plt_round1_samp <- plt_round1_samp + 
+                   geom_point(data =  support_points_for_plot_round1, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
+                   geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3) + 
+                   geom_point(data = as.data.frame(lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]), 
+                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8)
+  
+plt_round1_samp <- plt_round1_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
+                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                                           panel.border = element_blank(), panel.background = element_blank(), 
+                                           plot.background = element_blank()) + 
+                   ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
+plot(plt_round1_samp)
+
+ggsave(filename = file.path(base_dir, poster_figure_dir, "round1_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
+
+
+
+```
+
+
+
+
+
+
+
+
+
 
 
 ```{r}

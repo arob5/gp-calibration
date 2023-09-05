@@ -2346,7 +2346,7 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
                                 bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE, 
                                 point_coords_shape = 8, point_coords_col = "black", 
                                 samples_points_size = 1, point_coords_size = 3, 
-                                samples_kde_lab = "KDE", samples_points_lab = "samples_points") {
+                                samples_kde_lab = "KDE", samples_points_lab = "samples_points", KDE_opacity = 1.0) {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2421,7 +2421,7 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
     samples_kde <- as.data.frame(samples_kde[, param_names])
     colnames(samples_kde) <- c("theta1", "theta2")
     
-    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2, color = samples_kde_lab))
+    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2, color = samples_kde_lab), alpha = KDE_opacity)
     color_breaks <- c(color_breaks, samples_kde_lab)
     color_values <- c(color_values, setNames("blue", samples_kde_lab))
   }
@@ -2504,7 +2504,7 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
                                           sequential_design_points = NULL, raster = FALSE, point_coords = NULL,  
                                           main_title = "Heatmap: Sequential Design", bigger_is_better = TRUE, 
                                           legend_label = "y", log_scale = FALSE, SSR_vals = NULL, llik_vals = NULL, lprior_vals = NULL, 
-                                          lpost_vals = NULL, sig2_eps = NULL) {
+                                          lpost_vals = NULL, sig2_eps = NULL, init_design_points_size = 1, sequential_design_points_size = 1) {
   # TODO: currently main title and legend label arguments do nothing. 
   
   # Log Posterior response surface plot. 
@@ -2522,7 +2522,8 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
                                                 lpost_vals = lpost_vals, 
                                                 theta_prior_params = theta_prior_params, 
                                                 sig2_eps = sig2_eps, 
-                                                main_title = main_title)
+                                                main_title = main_title, 
+                                                samples_points_size = init_design_points_size)
   
   # Add sequentially chosen design points. 
   if(!is.null(sequential_design_points)) {
@@ -2530,7 +2531,8 @@ get_2d_Bayes_opt_heatmap_plot <- function(theta_vals, computer_model_data, param
     colnames(sequential_design_points) <- c("theta1", "theta2")
     sequential_design_points[, "ID"] <- as.character(seq(1, nrow(sequential_design_points)))
     
-    plt <- plt + geom_text(data = sequential_design_points, mapping = aes(x = theta1, y = theta2, label = ID), color = "red")
+    plt <- plt + geom_text(data = sequential_design_points, 
+                           mapping = aes(x = theta1, y = theta2, label = ID), color = "red", size = sequential_design_points_size)
             
   }  
   
@@ -2738,7 +2740,7 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
                                                    raster = FALSE, point_coords = NULL, samples_kde = NULL, 
                                                    samples_points = NULL, SSR_vals = NULL, llik_vals = NULL,  
                                                    lprior_vals = NULL, lpost_vals = NULL, theta_prior_params = NULL, 
-                                                   sig2_eps = NULL, main_title = NULL) {
+                                                   sig2_eps = NULL, main_title = NULL, samples_points_size = 1) {
   
   # Log posterior evaluations. 
   if(is.null(lpost_vals)) {
@@ -2766,7 +2768,8 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
                              main_title = main_title, 
                              point_coords = point_coords,
                              bigger_is_better = TRUE, 
-                             legend_label = "Log Posterior")
+                             legend_label = "Log Posterior", 
+                             samples_points_size = samples_points_size)
   
   return(plt)
   
