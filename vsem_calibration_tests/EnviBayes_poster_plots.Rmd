@@ -299,8 +299,8 @@ samp_round0_info <- list(inputs = samp_round0_theta,
 # lpost emulator predictions at sampled points. 
 lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emulator, 
                                                      inputs_new_scaled = samp_round0_info$inputs_scaled, 
-                                                     inputs_new_unscaled = samp_round0_info$inputs, include_nugget = TRUE, 
-                                                     denormalize = FALSE)
+                                                     inputs_new_unscaled = samp_round0_info$inputs, include_nugget = TRUE)
+                                                     
 ```
 
 
@@ -329,14 +329,15 @@ plot(post_comparison_plts_round0)
 # GP predictive mean and variance plots. 
 
 plt_mean <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$mean, param_names = computer_model_data$pars_cal_names, 
-                                samples_kde = samp_exact_theta, raster = FALSE, 
-                                samples_points = init_design_info$inputs, 
-                                bigger_is_better = TRUE, 
-                                main_title = "lpost predictive mean")
+                                samples_kde = samp_exact_theta, raster = FALSE, samples_points = init_design_info$inputs, 
+                                bigger_is_better = TRUE, main_title = "lpost predictive mean", legend_label = "lpost predictive mean", 
+                                samples_kde_lab = "True Posterior KDE", samples_points_lab = "Initial Design")
+                                
 plt_var <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$var, param_names = computer_model_data$pars_cal_names, 
                                samples_kde = samp_exact_theta, raster = FALSE, 
-                               samples_points = init_design_info$inputs, 
-                               bigger_is_better = TRUE, log_scale = TRUE, main_title = "lpost predictive var")
+                               samples_points = init_design_info$inputs, legend_label = "lpost predictive mean",
+                               bigger_is_better = TRUE, log_scale = TRUE, main_title = "lpost predictive var", 
+                               samples_kde_lab = "True Posterior KDE", samples_points_lab = "Initial Design")
 
 plot(plt_mean)
 plot(plt_var)

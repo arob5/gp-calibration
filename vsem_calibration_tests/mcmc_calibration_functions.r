@@ -2377,6 +2377,7 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   #                      posterior density). Set to FALSE for values like SSR, where smaller is better. 
   #    legend_label: character(1), the title for the legend which indicates the color scale. 
   
+  
   if(length(param_names) != 2) stop("<param_names> must have length 2.")
   color_direction <- ifelse(bigger_is_better, 1, -1)
   color_breaks <- c()
@@ -2390,7 +2391,13 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
     main_title <- paste0(main_title, ", log10 scale")
   }
   
+  #
   # Heatmap. 
+  #
+  # NOTE: it is essential that in neither case a "color scale" is added, since this causes difficulties when trying to 
+  # manually set a color scale later. To make this work in the non-raster case, I set "`hape = 21`, which is a point 
+  # that has both fill and color attributes. We can then use the fill attribute as the mapping, while removing 
+  # the border of these points with `stroke = NA`. 
   if(raster) {
     plt <- ggplot() + 
             geom_tile(data = df, aes(x = theta1, y = theta2, fill = y)) + 
@@ -2398,9 +2405,9 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
             labs(fill = legend_label)
   } else {
     plt <- ggplot() + 
-            geom_point(data = df, aes(x = theta1, y = theta2, color = y)) + 
-            scale_color_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + 
-            labs(color = legend_label)
+            geom_point(data = df, aes(x = theta1, y = theta2, fill = y), shape = 21, stroke = NA) + # changed color to fill
+            scale_fill_viridis(discrete=FALSE, direction = color_direction, trans = plt_transformation) + # changed scale_color_viridis to scale_fill_viridis
+            labs(fill = legend_label) # changed color to fill
   }
   
   # Title and axis labels. 
@@ -2438,9 +2445,8 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   
   # Legend. 
   if(length(color_breaks) > 0) {
-    plt <- plt + scale_color_manual(name = "", breaks = color_breaks, values = color_values)
+    plt <- plt + scale_colour_manual(aesthetics = "colour", name = "", breaks = color_breaks, values = color_values)
   }
-  
   
   return(plt)
   
