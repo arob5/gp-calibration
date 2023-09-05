@@ -2344,7 +2344,8 @@ get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, co
 get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
                                 raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
                                 bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE, 
-                                point_coords_shape = 8, point_coords_col = "black", point_coords_size = 3) {
+                                point_coords_shape = 8, point_coords_col = "black", point_coords_size = 3, 
+                                samples_kde_lab = "KDE", samples_points_lab = "samples_points") {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2378,6 +2379,8 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
   
   if(length(param_names) != 2) stop("<param_names> must have length 2.")
   color_direction <- ifelse(bigger_is_better, 1, -1)
+  color_breaks <- c()
+  color_values <- c()
   
   df <- as.data.frame(cbind(X[, param_names], y))
   colnames(df) <- c("theta1", "theta2", "y")
@@ -2410,7 +2413,9 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
     samples_kde <- as.data.frame(samples_kde[, param_names])
     colnames(samples_kde) <- c("theta1", "theta2")
     
-    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2))
+    plt <- plt + geom_density_2d(data = samples_kde, mapping = aes(x = theta1, y = theta2, color = samples_kde_lab))
+    color_breaks <- c(color_breaks, samples_kde_lab)
+    color_values <- c(color_values, setNames("blue", samples_kde_lab))
   }
   
   # Plot points. 
@@ -2419,15 +2424,23 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
     samples_points <- as.data.frame(samples_points[, param_names])
     colnames(samples_points) <- c("theta1", "theta2")
     
-    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2), color = "red")
+    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2, color = samples_points_lab))
+    color_breaks <- c(color_breaks, samples_points_lab)
+    color_values <- c(color_values, setNames("red", samples_points_lab))
   }
-  
+
   # Mark specific point in plot. 
   if(!is.null(point_coords)) {
     plt <- plt + geom_point(data = data.frame(theta1 = point_coords[1], theta2 = point_coords[2]), 
                             aes(x = theta1, y = theta2), color = point_coords_col, 
                             shape = point_coords_shape, size = point_coords_size)
   }
+  
+  # Legend. 
+  if(length(color_breaks) > 0) {
+    plt <- plt + scale_color_manual(name = "", breaks = color_breaks, values = color_values)
+  }
+  
   
   return(plt)
   

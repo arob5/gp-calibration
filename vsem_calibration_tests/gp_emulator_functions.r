@@ -2502,7 +2502,8 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
 }
 
 
-update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, inputs_new_unscaled = NULL, outputs_normalized = FALSE) {
+update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, 
+                                  inputs_new_unscaled = NULL, outputs_normalized = FALSE, verbose = TRUE) {
   # Updates the random field approximation to the unnormalized log posterior density induced 
   # by the underlying GPs by conditioning on newly observed data {`input_new`, `output_lpost_new`}. 
   # In the primary use case of this function, `output_lpost_new` is "pseudo-data" used for heuristic 
@@ -2535,7 +2536,9 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   
   # Remove any repeated observations. If the only new observation is removed, return `lpost_emulator` unchanged. 
   repeated_obs_sel <- inputs_new_scaled %in% lpost_emulator$inputs_lpost$inputs_scaled
-  if(any(repeated_obs_sel)) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
+  if(any(repeated_obs_sel)) {
+    if(verbose) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
+  }
   inputs_new_scaled <- inputs_new_scaled[!repeated_obs_sel,, drop = FALSE]
   if(length(inputs_new_scaled) == 0) return(lpost_emulator)
   

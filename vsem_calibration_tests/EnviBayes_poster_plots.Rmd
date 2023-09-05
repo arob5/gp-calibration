@@ -167,10 +167,18 @@ prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = comp
 
 plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
                                        samples_kde = samp_exact_theta, samples_points = init_design_info$inputs, raster = TRUE, 
-                                       bigger_is_better = TRUE, main_title = "Initial Design and Heatmap of True Posterior")
-                                       
+                                       bigger_is_better = TRUE, main_title = "Initial Design and Heatmap of True Posterior", 
+                                       legend = "Log Posterior Density", samples_points_lab = "Initial Design", 
+                                       samples_kde_lab = "True Posterior KDE")
+plt_init_design <- plt_init_design + xlab("theta1") + ylab("theta2")
+
 plot(plt_init_design)
 
+
+test <- ggplot() + geom_density_2d(data = as.data.frame(samp_exact_theta), 
+                                   mapping = aes(x = LAR, y = KEXT, color = "blue"), show.legend = TRUE) + 
+                                   scale_color_identity(guide = "legend", name = "Tester", labels = "testlab")
+plot(test)
 
 ```
 

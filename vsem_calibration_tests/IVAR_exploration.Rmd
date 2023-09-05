@@ -336,33 +336,6 @@ range(cond_log_var_MC_samp$log_var) # Entire range is less than un_log_var, as i
 #    - It appears that the issue is coming from the B vector / "uncertainty term". Need to check this. 
 
 
-lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[1000,,drop=FALSE])
-pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
-
-
-pi_tilde_samp <- rlnorm(n = 1000, pred_cond_2$mean, sqrt(pred_cond_2$var))
-MC_pred <- vector(mode = "numeric", length = nrow(prior_grid_info$inputs_scaled))
-
-for(i in seq_along(MC_pred)) {
-
-  
-  lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = prior_grid_info$inputs_scaled[1000,,drop=FALSE])
-  pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
-  
-}
-
-
-
-curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "log_var")$log_var
-post_cond_log_var_1 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_1, pred_cond_1$mean, pred_cond_1$var, "log_var")$log_var
-post_cond_log_var_2 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_2, pred_cond_2$mean, pred_cond_2$var, "log_var")$log_var
-
-
-plot(prior_grid_info$inputs, curr_post_log_var, col = "black", lty = 5, type = "l")
-lines(prior_grid_info$inputs, post_cond_log_var_1, col = "blue")
-lines(prior_grid_info$inputs, post_cond_log_var_2, col = "green")
-
-
 ```
 
 

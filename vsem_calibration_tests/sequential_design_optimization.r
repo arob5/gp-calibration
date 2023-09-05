@@ -1061,7 +1061,6 @@ get_IVAR_post_vars <- function(theta_candidate, lpost_emulator, theta_grid_integ
   # Update variance by conditioning on theta evaluation value. Should not affect `lpost_emulator` outside of local function scope.
   lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = theta_candidate, outputs_lpost_new = NULL)
   repeated_design_input <- ifelse(nrow(lpost_emulator_temp$inputs_lpost$inputs_scaled) == n, TRUE, FALSE)
-  browser()
     
   # Compute unnormalized log posterior approximation predictive mean and variance at each theta grid location. The variance prediction is exact, 
   # while the mean prediction uses the plug-in kriging believer approach.
@@ -1087,7 +1086,7 @@ get_IVAR_post_vars <- function(theta_candidate, lpost_emulator, theta_grid_integ
     
   # Sum terms to compute log expected variance for current candidate point over all integration points. 
   if(!repeated_design_input) {
-    log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + lpost_curr_pred_can$var * drop(B)^2)
+    log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * (lpost_pred_mean_KB_int + log_uncertainty_term)
   } else {
     log_IVAR <- lpost_pred_var_int + log_exp_term + 2 * lpost_pred_mean_KB_int
   }
