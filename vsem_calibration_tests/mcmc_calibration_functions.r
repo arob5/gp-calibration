@@ -2344,7 +2344,8 @@ get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, co
 get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
                                 raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
                                 bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE, 
-                                point_coords_shape = 8, point_coords_col = "black", point_coords_size = 3, 
+                                point_coords_shape = 8, point_coords_col = "black", 
+                                samples_points_size = 1, point_coords_size = 3, 
                                 samples_kde_lab = "KDE", samples_points_lab = "samples_points") {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
@@ -2431,7 +2432,7 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
     samples_points <- as.data.frame(samples_points[, param_names])
     colnames(samples_points) <- c("theta1", "theta2")
     
-    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2, color = samples_points_lab))
+    plt <- plt + geom_point(data = samples_points, mapping = aes(x = theta1, y = theta2, color = samples_points_lab), size = samples_points_size)
     color_breaks <- c(color_breaks, samples_points_lab)
     color_values <- c(color_values, setNames("red", samples_points_lab))
   }

@@ -165,20 +165,31 @@ prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = comp
 # Plot initial design. 
 # TODO: change axis labels to theta1 and theta2 or something generic like that. 
 
+library(svglite)
+base_dir <- getwd()
+poster_figure_dir <- "poster_figures"
+
+# TODO: increase size of design points 
+
 plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
                                        samples_kde = samp_exact_theta, samples_points = init_design_info$inputs, raster = TRUE, 
-                                       bigger_is_better = TRUE, main_title = "Initial Design and Heatmap of True Posterior", 
-                                       legend = "Log Posterior Density", samples_points_lab = "Initial Design", 
-                                       samples_kde_lab = "True Posterior KDE")
-plt_init_design <- plt_init_design + xlab("theta1") + ylab("theta2")
+                                       bigger_is_better = TRUE, main_title = "Initial Design and True Posterior", 
+                                       legend = "Log Post Density", samples_points_lab = "Initial Design", 
+                                       samples_kde_lab = "True Post KDE", samples_points_size = 3)
+# plt_init_design <- plt_init_design + theme_classic()
 
+plt_init_design <- plt_init_design + theme(legend.position = "none", axis.text.x=element_blank(), 
+                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                                           panel.border = element_blank(), panel.background = element_blank(), 
+                                           plot.background = element_blank()) + 
+                   ggtitle(NULL) + xlab(NULL) + ylab(NULL)
 plot(plt_init_design)
 
+plot_x_range <- layer_scales(plt_init_design)$x$range$range
+plot_y_range <- layer_scales(plt_init_design)$y$range$range
 
-test <- ggplot() + geom_density_2d(data = as.data.frame(samp_exact_theta), 
-                                   mapping = aes(x = LAR, y = KEXT, color = "blue"), show.legend = TRUE) + 
-                                   scale_color_identity(guide = "legend", name = "Tester", labels = "testlab")
-plot(test)
+ggsave(filename = file.path(base_dir, poster_figure_dir, "initial_design.svg"), width = 5.0, height = 5.0, units = "in")
 
 ```
 
@@ -322,6 +333,41 @@ post_comparison_plts_round0 <- get_overlaid_2d_density_contour_plot(samp_baselin
                                                                     main_title = "Round 0 Posterior Approximation")
 
 plot(post_comparison_plts_round0)
+```
+
+```{r}
+# Round 0 samples plots 
+
+N_support_points_plot <- 1000
+support_points_for_plot <- support::sp(n = N_support_points_plot, 
+                                       p = length(computer_model_data$theta_true), 
+                                       dist.samp = samp_round0_info$inputs)$sp
+support_points_for_plot <- as.data.frame(support_points_for_plot)
+colnames(support_points_for_plot) <- c("LAR", "KEXT")
+
+
+plt_round0_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
+                                       raster = TRUE, bigger_is_better = TRUE, main_title = "Initial Design and True Posterior",
+                                       legend = "Log Post Density", samples_points_lab = "Initial Design", 
+                                       samples_kde_lab = "True Post KDE", samples_points_size = 3)
+
+plt_round0_samp <- plt_round0_samp + 
+                   geom_point(data =  support_points_for_plot, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
+                   # geom_density_2d(data = as.data.frame(samp_round0_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "orange") + 
+                   # geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue") + 
+                   geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3)
+  
+plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
+                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                                           panel.border = element_blank(), panel.background = element_blank(), 
+                                           plot.background = element_blank()) + 
+                   ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
+plot(plt_round0_samp)
+
+ggsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
+
+
 ```
 
 
@@ -480,14 +526,14 @@ IVAR_lpost_grid_post_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$
                                                    theta_grid_integrate = support_point_info$inputs_scaled, 
                                                    verbose = FALSE, include_nugget = TRUE)
 
-IVAR_post_grid_post_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-                                                lpost_emulator = lpost_emulator, 
-                                                theta_grid_integrate = support_point_info$inputs_scaled, 
-                                                verbose = FALSE, include_nugget = TRUE)
+# IVAR_post_grid_post_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
+#                                                 lpost_emulator = lpost_emulator, 
+#                                                 theta_grid_integrate = support_point_info$inputs_scaled, 
+#                                                 verbose = FALSE, include_nugget = TRUE)
 
 # Optimizers of acquisitions. 
 IVAR_lpost_grid_post_wt_best_idx <- which.max(IVAR_lpost_grid_post_wt)
-IVAR_post_grid_post_wt_best_idx <- which.max(IVAR_post_grid_post_wt)
+# IVAR_post_grid_post_wt_best_idx <- which.max(IVAR_post_grid_post_wt)
   
 # Generate Plots. 
 IVAR_lpost_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
@@ -497,16 +543,16 @@ IVAR_lpost_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs,
                                                     bigger_is_better = FALSE, 
                                                     point_coords = prior_grid_info$inputs[IVAR_lpost_grid_post_wt_best_idx,],
                                                     main_title = "IVAR-lpost, Approx Posterior Weights", point_coords_col = "black")
-IVAR_post_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                                   y = -IVAR_post_grid_post_wt, param_names = computer_model_data$pars_cal_names, 
-                                                   samples_kde = samp_exact_theta, raster = TRUE, 
-                                                   samples_points = init_design_info$inputs, 
-                                                   bigger_is_better = FALSE, 
-                                                   point_coords = prior_grid_info$inputs[IVAR_post_grid_post_wt_best_idx,],
-                                                   main_title = "IVAR-post, Approx Posterior Weights", point_coords_col = "black")
+# IVAR_post_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+#                                                    y = -IVAR_post_grid_post_wt, param_names = computer_model_data$pars_cal_names, 
+#                                                    samples_kde = samp_exact_theta, raster = TRUE, 
+#                                                    samples_points = init_design_info$inputs, 
+#                                                    bigger_is_better = FALSE, 
+#                                                    point_coords = prior_grid_info$inputs[IVAR_post_grid_post_wt_best_idx,],
+#                                                    main_title = "IVAR-post, Approx Posterior Weights", point_coords_col = "black")
 
 plot(IVAR_lpost_grid_post_wt_plot)
-plot(IVAR_post_grid_post_wt_plot)
+# plot(IVAR_post_grid_post_wt_plot)
 
 ```
 
@@ -555,6 +601,35 @@ for(i in seq_len(N_acq)) plot(plt_list[[i]])
 ```
 
 ```{r}
+
+# TODO: left off here. 
+# plt_round0_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
+#                                        raster = TRUE, bigger_is_better = TRUE, main_title = "Initial Design and True Posterior",
+#                                        legend = "Log Post Density", samples_points_lab = "Initial Design", 
+#                                        samples_kde_lab = "True Post KDE", samples_points_size = 3)
+# 
+# plt_round0_samp <- plt_round0_samp + 
+#                    geom_point(data =  support_points_for_plot, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
+#                    # geom_density_2d(data = as.data.frame(samp_round0_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "orange") + 
+#                    # geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue") + 
+#                    geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3)
+#   
+# plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
+#                                            axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+#                                            panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+#                                            panel.border = element_blank(), panel.background = element_blank(), 
+#                                            plot.background = element_blank()) + 
+#                    ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
+# plot(plt_round0_samp)
+# 
+# ggsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
+
+
+
+
+
+
+
 # Plot numbered acquisitions. 
 new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_lpost_temp$inputs_lpost$inputs))
   
@@ -569,15 +644,15 @@ lpost_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_inf
 
 # Heatmap from approx distribution but contours from true distribution. 
 lpost_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                                                   lpost_vals = samp_round0_info$outputs, # samp_round0_info$outputs,
-                                                                   param_names = computer_model_data$pars_cal_names,
-                                                                   samples_kde = samp_exact_theta, 
-                                                                   init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                                   sequential_design_points=lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                                   raster = FALSE, 
-                                                                   main_title = "IVAR-lpost Acquisitions and Approx Round0 Samp", 
-                                                                   legend_label = "Log Post",
-                                                                   bigger_is_better = TRUE)
+                                                                    lpost_vals = samp_round0_info$outputs, # samp_round0_info$outputs,
+                                                                    param_names = computer_model_data$pars_cal_names,
+                                                                    samples_kde = samp_exact_theta, 
+                                                                    init_design_points = lpost_emulator$inputs_lpost$inputs, 
+                                                                    sequential_design_points=lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
+                                                                    raster = FALSE, 
+                                                                    main_title = "Active Learning Design", 
+                                                                    legend_label = "Log Post",
+                                                                    bigger_is_better = TRUE)
                                                       
 plot(lpost_numbered_plot)
 

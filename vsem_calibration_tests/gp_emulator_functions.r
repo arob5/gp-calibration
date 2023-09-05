@@ -2535,17 +2535,19 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   #    The updated lpost emulator object. 
   
   # Remove any repeated observations. If the only new observation is removed, return `lpost_emulator` unchanged. 
-  repeated_obs_sel <- inputs_new_scaled %in% lpost_emulator$inputs_lpost$inputs_scaled
-  if(any(repeated_obs_sel)) {
-    if(verbose) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
-  }
-  inputs_new_scaled <- inputs_new_scaled[!repeated_obs_sel,, drop = FALSE]
-  if(length(inputs_new_scaled) == 0) return(lpost_emulator)
+  # TODO: think better about how to handle this; does it even matter? 
+  # repeated_obs_sel <- inputs_new_scaled %in% lpost_emulator$inputs_lpost$inputs_scaled
+  # if(any(repeated_obs_sel)) {
+  #   if(verbose) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
+  # }
+  # inputs_new_scaled <- inputs_new_scaled[!repeated_obs_sel,, drop = FALSE]
+  # if(length(inputs_new_scaled) == 0) return(lpost_emulator)
   
   if(is.null(inputs_new_unscaled)) {
     inputs_new_unscaled <- scale_input_data(inputs_new_scaled, input_bounds = lpost_emulator$emulator_info_list$input_bounds, inverse = TRUE)
   } else {
-    inputs_new_unscaled <- inputs_new_unscaled[!repeated_obs_sel,, drop = FALSE]
+    # TODO: update this
+    # inputs_new_unscaled <- inputs_new_unscaled[!repeated_obs_sel,, drop = FALSE] 
   }
   
   # If no new responses are provided, set to GP expectation. 
@@ -2553,7 +2555,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
     outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = "mean",
                                                 inputs_new_unscaled = inputs_new_unscaled, unscale = FALSE, uncenter = FALSE)$mean
   } else {
-    outputs_lpost_new <- outputs_lpost_new[!repeated_obs_sel]
+    # TODO: update this
+    # outputs_lpost_new <- outputs_lpost_new[!repeated_obs_sel]
     if(!outputs_normalized) outputs_lpost_new <- normalize_lpost_outputs(outputs_lpost_new, lpost_emulator)
   }
    
