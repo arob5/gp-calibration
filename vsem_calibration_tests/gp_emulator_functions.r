@@ -334,7 +334,8 @@ fit_emulator_design_list <- function(emulator_setting, design_list) {
 #    - Currently sd2_nug should not be trusted; e.g. it is not corrected in the case of truncation/rectification. Might just be easier to 
 #      drop this or combine it with the pointwise variance predictions. 
 predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
-                       output_stats = NULL, transformation_method = NA_character_, return_df = FALSE) {
+                       output_stats = NULL, transformation_method = NA_character_, return_df = FALSE, 
+                       X_pred_2 = NULL) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -359,6 +360,9 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
   #               with column names "mean", "var", and "var_nug". The return type of this function is then a list with the first 
   #               element being this data.frame, and the second element "cov" being the predictive covariance matrix (NULL if 
   #               `include_cov_mat` is FALSE). Default is FALSE (return list with named elements "mean", "var", "var_nug", "cov").
+  #    X_pred_2: matrix of dimension N_pred_2 x 2. A second set of input locations used to compute the predictive covariance 
+  #              between  `X_pred` and `X_pred_2`. Only required if `include_cov_mat` is TRUE. To produce the predictive 
+  #              covariance matrix at the inputs `X_pred`, then simply set this argument equal to `X_pred`. 
   #
   # Returns:
   #    list, potentially with named elements "mean", "var", "cov". If no transformation is applied, will also contain elements 
@@ -389,7 +393,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
     if(include_cov_mat) {
-      X_prime <- X_pred
+      X_prime <- X_pred_2
     } else {
       X_prime <- NULL
     }
@@ -435,7 +439,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
 #    - update predict_GP so that it can return data.frame in wide or long format. 
 predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
                                     output_stats = NULL, transformation_method = NA_character_, return_df = FALSE, 
-                                    output_variables = NULL) {
+                                    output_variables = NULL, X_pred_2 = NULL) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -484,7 +488,7 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   
   pred_list <- lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, include_cov_mat, denormalize_predictions, 
                                                                      output_stats[,j,drop=FALSE], transformation_method = transformation_method, 
-                                                                     return_df = return_df))
+                                                                     return_df = return_df, X_pred_2 = X_pred_2))
 
   if(return_df) {
     pred_df_list <- lapply(pred_list, function(l) l$df)
@@ -505,7 +509,8 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
 #    - Need to write function to compute sig_eps prior log density. 
 predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscaled = NULL, emulator_info_list,
                                     sig2_eps, theta_prior_params = NULL, N_obs = NULL, include_nugget = TRUE,  
-                                    gp_pred_list = NULL, include_sig_eps_prior = FALSE, return_vals = c("mean", "var")) {
+                                    gp_pred_list = NULL, include_sig_eps_prior = FALSE, theta_vals_scaled_2 = NULL,
+                                    return_vals = c("mean", "var")) {
   # In the loss emulation setting, where the squared error maps (SSR) are modeled as GPs, these GPs induce a 
   # random field approximation on the unnormalized log (conditional) posterior 
   # log pi(theta|Sigma) := log p(Y|theta, Sigma) + log pi_0(theta). This random field approximation is also 
@@ -549,15 +554,28 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
   
   # Mean and variance predictions for the underlying GP fits to SSR. 
   if(is.null(gp_pred_list)) {
-    gp_pred_list <- predict_independent_GPs(X_pred = theta_vals_scaled, 
+    
+    include_cov_mat <- FALSE
+    if("cov" %in% return_vals) {
+      if(is.null(theta_vals_scaled_2)) stop("`theta_vals_scaled_2` is required to compute predictive covariance.")
+      include_cov_mat <- TRUE
+    }
+    
+    gp_pred_info <- predict_independent_GPs(X_pred = theta_vals_scaled, 
                                             gp_obj_list = emulator_info_list$gp_fits,  
                                             gp_lib = emulator_info_list$settings$gp_lib, 
                                             denormalize_predictions = TRUE, 
                                             output_stats = emulator_info_list$output_stats, 
-                                            return_df = TRUE)$df
+                                            include_cov_mat = include_cov_mat, 
+                                            X_pred_2 = theta_vals_scaled_2, 
+                                            return_df = TRUE)
+    
+    gp_pred_list <- gp_pred_info$df
+    gp_pred_cov_list <- gp_pred_info$cov_list
+    
   }
 
-  return_list <- list(mean = NULL, var = NULL)
+  return_list <- list(mean = NULL, var = NULL, cov = NULL)
   
   # Compute predictive mean of lpost approximation.
   if("mean" %in% return_vals) {
@@ -575,6 +593,12 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
     scaled_vars <- as.matrix(gp_pred_list[, grep(col_pattern_var, colnames(gp_pred_list))]) %*% diag(1/sig2_eps^2)
     lpost_pred_var <- 0.25 * rowSums(scaled_vars)
     return_list$var <- lpost_pred_var
+  }
+  
+  # Compute predictive covariance of lpost values between inputs `theta_vals_scaled` and `theta_vals_scaled_2`
+  if("cov" %in% return_vals) {
+    gp_pred_cov_list <- lapply(seq_along(gp_pred_cov_list), function(p) gp_pred_cov_list[[p]] / sig2_eps[p]^2)
+    return_list$cov <- 0.25 * Reduce("+", gp_pred_cov_list)
   }
   
   # Optionally include prior on likelihood variance parameters, in which case `lpost` refers to the point unnormalized 
@@ -2585,7 +2609,8 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
 }
 
 
-predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), include_nugget = TRUE, 
+predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_vals = c("mean", "var"), 
+                                   inputs_new_scaled_2 = NULL, include_nugget = TRUE, 
                                    inputs_new_unscaled = NULL, prior_mean_vals_new = NULL, 
                                    verbose = TRUE, unscale = TRUE, uncenter = TRUE) {
   # Compute predictive mean and variance equations for the `lpost_emulator`. 
@@ -2627,7 +2652,7 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
   #    at the test inputs `inputs_new_scaled`. The associated value with be NULL if it is not included in 
   #    `return_vals`. 
   
-  return_list <- list(mean = NULL, var = NULL)
+  return_list <- list(mean = NULL, var = NULL, cov = NULL)
   
   # Cross covariances. 
   kn <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1 = inputs_new_scaled, inputs_scaled_2 = lpost_emulator$inputs_lpost$inputs_scaled)
@@ -2661,12 +2686,36 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
     
   }
   
+  # Predictive Covariance. 
+  if("cov" %in% return_vals) {
+    if(is.null(inputs_new_scaled_2)) stop("`inputs_new_scaled` is required to compute predictive covariance.")
+    
+    # Cross covariance between design points and second set of inputs. 
+    kn2 <- calc_lpost_kernel(lpost_emulator, inputs_scaled_1 = lpost_emulator$inputs_lpost$inputs_scaled, inputs_scaled_2 = inputs_new_scaled_2)
+    
+    # Predictive covariance matrix. 
+    if(nrow(inputs_new_scaled) < nrow(inputs_new_scaled_2)) {
+      pred_cov <- calc_lpost_kernel(lpost_emulator, inputs_new_scaled, inputs_new_scaled_2) - (kn %*% lpost_emulator$K_inv) %*% kn2
+    } else {
+      pred_cov <- calc_lpost_kernel(lpost_emulator, inputs_new_scaled, inputs_new_scaled_2) - kn %*% (lpost_emulator$K_inv %*% kn2)
+    }
+    
+    # Ordinary kriging variance correction. Assumes underlying GPs either all use ordinary kriging or all use simple kriging.
+    if(lpost_emulator$emulator_info_list$gp_fits[[1]]$trendtype == "OK") {
+      pred_cov <- pred_cov + crossprod(1 - tcrossprod(rowSums(lpost_emulator$K_inv), kn), 1 - rowSums(lpost_emulator$K_inv) %*% kn2)/sum(lpost_emulator$K_inv)
+    }
+    
+    return_list$cov <- pred_cov
+    
+  }
+  
   # Optionally invert lpost normalization. 
   if(unscale || uncenter) {
     
     if(unscale && lpost_emulator$scale_output) {
-      return_list$var <- lpost_emulator$sd_scale^2 * return_list$var
-      return_list$mean <- lpost_emulator$sd_scale * return_list$mean
+      if("var" %in% return_vals) return_list$var <- lpost_emulator$sd_scale^2 * return_list$var
+      if("mean" %in% return_vals) return_list$mean <- lpost_emulator$sd_scale * return_list$mean
+      if("cov" %in% return_vals) return_list$cov <- lpost_emulator$sd_scale^2 * return_list$cov
     }
     
     if(uncenter && lpost_emulator$center_output) return_list$mean <- lpost_emulator$mean_center + return_list$mean

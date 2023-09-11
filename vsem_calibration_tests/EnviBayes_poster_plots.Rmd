@@ -704,7 +704,8 @@ plt_round1_samp <- plt_round1_samp +
                    geom_point(data =  support_points_for_plot_round1, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
                    geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3) + 
                    geom_point(data = as.data.frame(lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]), 
-                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8)
+                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8) + 
+                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8)
   
 plt_round1_samp <- plt_round1_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
                                            axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
@@ -719,6 +720,10 @@ ggsave(filename = file.path(base_dir, poster_figure_dir, "round1_mcmc_samp.svg")
 
 
 ```
+
+
+
+
 
 
 
