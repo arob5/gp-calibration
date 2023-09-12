@@ -2379,7 +2379,7 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   # Optionally normalize response (i.e. unnormalized log posterior density values). 
   lpost_emulator_obj$center_output <- center_output
   lpost_emulator_obj$scale_output <- scale_output
-  if(center_output) lpost_emulator_obj$mean_center <- mean(lpost_emulator_obj$outputs_lpost)
+  if(center_output) lpost_emulator_obj$mean_center <- max(lpost_emulator_obj$outputs_lpost) # mean(lpost_emulator_obj$outputs_lpost)
   if(scale_output) lpost_emulator_obj$sd_scale <- sd(lpost_emulator_obj$outputs_lpost)
   lpost_emulator_obj$outputs_lpost <- normalize_lpost_outputs(lpost_emulator_obj$outputs_lpost, lpost_emulator_obj)
   
@@ -2803,7 +2803,7 @@ sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples =
 }
 
 
-convert_to_post_emulator_log_moments <- function(lpost_emulator, lpost_means, lpost_vars, return_vals = c("log_mean", "log_var")) {
+convert_to_post_emulator_log_moments <- function(lpost_means, lpost_vars, return_vals = c("log_mean", "log_var")) {
   
   return_list <- list(log_mean = NULL, log_var = NULL)
   

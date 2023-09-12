@@ -244,7 +244,7 @@ log_var1 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[9
 log_var2 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[1000,], lpost_emulator_no_scale, theta_grid_integrate = prior_grid_info$inputs_scaled)
 log_var3 <- get_IVAR_post_vars(theta_candidate = prior_grid_info$inputs_scaled[max_var_idx,], lpost_emulator_no_scale, theta_grid_integrate = prior_grid_info$inputs_scaled)
 
-curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "var")$var
+curr_post_log_var <- convert_to_post_emulator_log_moments(pred_grid_init_design$mean, pred_grid_init_design$var, "var")$var
 
 plot(prior_grid_info$inputs, log_var2, col = "red", type = "l")
 lines(prior_grid_info$inputs, log_var1, col = "blue")
@@ -271,9 +271,9 @@ lpost_emulator_cond_2 <- update_lpost_emulator(lpost_emulator_no_scale, inputs_n
 pred_cond_1 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_1)
 pred_cond_2 <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator_cond_2)
 
-curr_post_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, pred_grid_init_design$mean, pred_grid_init_design$var, "log_var")$log_var
-post_cond_log_var_1 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_1, pred_cond_1$mean, pred_cond_1$var, "log_var")$log_var
-post_cond_log_var_2 <- convert_to_post_emulator_log_moments(lpost_emulator_cond_2, pred_cond_2$mean, pred_cond_2$var, "log_var")$log_var
+curr_post_log_var <- convert_to_post_emulator_log_moments(pred_grid_init_design$mean, pred_grid_init_design$var, "log_var")$log_var
+post_cond_log_var_1 <- convert_to_post_emulator_log_moments(pred_cond_1$mean, pred_cond_1$var, "log_var")$log_var
+post_cond_log_var_2 <- convert_to_post_emulator_log_moments(pred_cond_2$mean, pred_cond_2$var, "log_var")$log_var
 
 
 plot(prior_grid_info$inputs, curr_post_log_var, col = "black", lty = 5, type = "l")
@@ -291,11 +291,11 @@ lines(prior_grid_info$inputs, post_cond_log_var_2, col = "green")
 
 # Choose integration point u and candidate point u_tilde to investigate (both scaled).
 u <- scale_input_data(matrix(-0.5, nrow = 1), input_bounds = lpost_emulator_no_scale$design_info_list$input_bounds)
-u_tilde <- prior_grid_info$inputs_scaled[600,,drop=FALSE] # 999
+u_tilde <- prior_grid_info$inputs_scaled[200,,drop=FALSE] # 600, 999
 
 # Unconditioned log variance. 
 un_lpost_pred <- predict_lpost_emulator(u, lpost_emulator_no_scale, uncenter = FALSE)
-un_log_var <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, un_lpost_pred$mean, un_lpost_pred$var)$log_var
+un_log_var <- convert_to_post_emulator_log_moments(un_lpost_pred$mean, un_lpost_pred$var)$log_var
 
 # Closed-form log expected conditional variance. 
 cond_log_var <- get_IVAR_post_vars(u_tilde, lpost_emulator_no_scale, u, verbose = TRUE) 
@@ -303,17 +303,26 @@ cond_log_var <- get_IVAR_post_vars(u_tilde, lpost_emulator_no_scale, u, verbose 
 # New closed-form derivation of log expected conditional variance. 
 lpost_emulator_no_scale_cond <- update_lpost_emulator(lpost_emulator_no_scale, inputs_new_scaled = u_tilde)
 cond_lpost_pred <- predict_lpost_emulator(u, lpost_emulator_no_scale_cond, uncenter = FALSE)
-log_var_KB <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale_cond, cond_lpost_pred$mean, cond_lpost_pred$var, return_vals = "log_var")$log_var
+log_var_KB <- convert_to_post_emulator_log_moments(cond_lpost_pred$mean, cond_lpost_pred$var, return_vals = "log_var")$log_var
 un_lpost_pred_tilde <- predict_lpost_emulator(u_tilde, lpost_emulator_no_scale, return_vals = c("mean", "var", "cov"), 
                                               inputs_new_scaled_2 = u, uncenter = FALSE)
 
 log_uncertainty_inflation_term <- 2 * drop(un_lpost_pred_tilde$cov)^2 / un_lpost_pred_tilde$var
 cond_log_var_new_calc <- log_var_KB + log_uncertainty_inflation_term
 
+# Log variance of conditional expectation.
+cov_var_ratio <- drop(un_lpost_pred_tilde$cov)^2 / un_lpost_pred_tilde$var
+log_var_cond_exp <- 2*cond_lpost_pred$mean + cond_lpost_pred$var + 2*cov_var_ratio # Note: using approx here; should do full log-sum-exp approx. 
+total_variance_check <- matrixStats::logSumExp(c(cond_log_var_new_calc, log_var_cond_exp))
+if(!all.equal(total_variance_check, un_log_var)) {
+  message("Non-zero difference total variance calculation: ", total_variance_check - log_var_cond_exp)
+}
+
+
 # Monte Carlo Approximation of log expected conditional variance (i.e., estimate expected conditional variance, then take log of result). 
 lpost_tilde_pred <- predict_lpost_emulator(u_tilde, lpost_emulator_no_scale, uncenter = FALSE)
-log_pi_tilde_pred <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale, lpost_tilde_pred$mean, lpost_tilde_pred$var)
-N_MC_test <- 100000
+log_pi_tilde_pred <- convert_to_post_emulator_log_moments(lpost_tilde_pred$mean, lpost_tilde_pred$var)
+N_MC_test <- 1000000
 lpost_tilde_samp <- rnorm(N_MC_test, lpost_tilde_pred$mean, sqrt(lpost_tilde_pred$var))
 
 # Condition lpost emulator.  
@@ -335,13 +344,14 @@ for(j in seq_len(N_MC_test)) {
   
 }
 
-cond_log_var_MC_samp <- convert_to_post_emulator_log_moments(lpost_emulator_no_scale_cond_MC, cond_lpost_mean_samp, cond_lpost_var_samp)
+cond_log_var_MC_samp <- convert_to_post_emulator_log_moments(cond_lpost_mean_samp, cond_lpost_var_samp)
 cond_log_var_MC <- logSumExp(cond_log_var_MC_samp$log_var) - log(N_MC_test)
 
 print(paste0("Log unconditioned post var: ", un_log_var))
 print(paste0("Log Expected conditional post var (closed-form): ", cond_log_var))
 print(paste0("Log Expected conditional post var (closed-form new calculation): ", cond_log_var_new_calc))
 print(paste0("Log Expected conditional post var (MC Estimate): ", cond_log_var_MC))
+print(paste0("Log Variance of conditional expectation: ", log_var_cond_exp))
 
 range(cond_log_var_MC_samp$log_var) # Entire range is less than un_log_var, as it should be. 
 
@@ -352,6 +362,44 @@ range(cond_log_var_MC_samp$log_var) # Entire range is less than un_log_var, as i
 
 
 ```
+
+```{r}
+# Monte Carlo Approximations. 
+
+# Choose integration point u and candidate point u_tilde to investigate (both scaled).
+u <- scale_input_data(matrix(-0.5, nrow = 1), input_bounds = lpost_emulator_no_scale$design_info_list$input_bounds)
+u_tilde <- prior_grid_info$inputs_scaled[200,,drop=FALSE] # 600, 999
+
+# Unconditioned log moments  
+un_lpost_pred <- predict_lpost_emulator(u, lpost_emulator_no_scale, uncenter = FALSE)
+un_post_pred <- convert_to_post_emulator_log_moments(un_lpost_pred$mean, un_lpost_pred$var)
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ```{r}

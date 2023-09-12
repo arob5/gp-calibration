@@ -1,0 +1,172 @@
+---
+title: "IEVAR Numerical Tests"
+author: "Andrew Roberts"
+date: '2023-09-12'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(hetGP)
+
+base_dir <- getwd() # Should be `pecan`
+source(file.path(base_dir, "vsem_calibration_tests", "gp_emulator_functions.r"))
+```
+
+# Functions for EVAR computations. 
+
+```{r}
+calc_EVAR <- function(gpi, x_cond, x_int) {
+  
+  # Condition GP, using kriging believer approach. 
+  pred_cond <- predict(gpi, x = x_cond)
+  gpi_cond_KB <- update(gpi, Xnew = x_cond, Znew = pred_cond$mean, maxit = 0)
+  
+  # Predictions with kriging believer conditioned GP. 
+  pred_KB_int <- predict(gpi_cond_KB, x = x_int)
+  
+  # Predict using current (unconditioned) GP. 
+  pred_int <- predict(gpi, x = x_cond, xprime = x_int)
+  
+  # Compute EVAR. 
+  inflation_factor <- 2 * drop(pred_int$cov)^2 / pred_int$sd2
+  EVAR_vals <- transform_GP_predictions(pred_KB_int$mean, pred_KB_int$sd2, "LNP")$var * exp(inflation_factor)
+  
+  return(EVAR_vals)
+}
+
+
+calc_EVAR_MC <- function(gpi, x_cond, x_int, N_MC = 100000) {
+  
+  # Sample from current (unconditioned) GP at conditioning location. 
+  pred_cond <- predict(gpi, x = x_cond)
+  y_cond_samp <- rnorm(n = N_MC, pred_cond$mean, sqrt(pred_cond$sd2))
+  
+  # Condition GP on input conditioning location, leaving corresponding output NULL for now. 
+  gpi_cond <- update(gpi, Xnew = x_cond, maxit = 0)
+  gpi_cond$Z0 <- matrix(c(gpi_cond$Z0, NA), ncol = 1)
+  gpi_cond$Z <- matrix(c(gpi_cond$Z, NA), ncol = 1)
+  np1_idx <- nrow(gpi_cond$Z0)
+  
+  # Condition GP at each sample, compute conditioned LNP variance, and average over samples. 
+  EVAR_approx_vals <- vector(mode = "numeric", length = nrow(x_int))
+  for(i in seq_along(y_cond_samp)) {
+    # Fill in output at conditioning input with current sample. 
+    gpi_cond$Z0[np1_idx,1] <- y_cond_samp[i]
+    gpi_cond$Z[np1_idx,1] <- y_cond_samp[i]
+    
+    # Compute predictive variance. 
+    pred_samp_cond <- predict(gpi_cond, x = x_int)
+    EVAR_samp <- transform_GP_predictions(pred_samp_cond$mean, pred_samp_cond$sd2, "LNP")$var
+    EVAR_approx_vals <- EVAR_approx_vals + EVAR_samp/N_MC
+  }
+  
+  return(EVAR_approx_vals)
+  
+}
+
+
+```
+
+
+
+# Simple 1D Example 
+
+In this section we seek to calculate 
+$$
+\text{EVAR}(x, \tilde{x}) := \mathbb{E}_{\tilde{x} \sim f_n} \text{Var}\left[\exp\left\{f_n(x)\right\} | \tilde{x}, \tilde{y} \right]
+$$
+
+where $f_n \sim \mathcal{GP}(\mu_n, k_n)$ is a GP over some unknown function $f$ that has already been conditioned on an initial design, 
+and $\tilde{y} := f(\tilde{x})$. EVAR admits the closed-form expression 
+$$
+\text{EVAR}(x, \tilde{x}) = \text{Var}\left[\exp\left\{f_n(x)\right\} | \tilde{x}, \mu_n(\tilde{x}) \right] \cdot \exp\left\{2 \frac{k_n^2(\tilde{x}, x)}{k_n(\tilde{x})}\right\}
+$$
+
+```{r}
+# GP Setup. 
+
+x_design <- matrix(c(0.0, 0.5, 1.0), ncol = 1)
+x_grid <- matrix(seq(0, 1, length.out = 51), ncol = 1)
+
+f_test <- function(x) sin(2*x)
+
+y_design <- f_test(x_design)
+y_grid <- f_test(x_grid)
+
+plot(x_grid, y_grid, type = "l", col = "red", xlab = "x", ylab = "y", main = "True Function and Design Points")
+points(x_design, y_design, col = "black")
+
+```
+
+```{r}
+# Fit GP
+eps_nug <- sqrt(.Machine$double.eps)
+gpi <- mleHomGP(x_design, y_design, covtype = "Gaussian", known = list(g = eps_nug))
+gp_pred_grid <- predict(gpi, x = x_grid)
+
+CI_upper <- qnorm(.99, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))
+CI_lower <- qnorm(.01, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))  
+
+plot(x_grid, y_grid, type = "l", col = "red", xlab = "x", ylab = "y", 
+     main = "Initial GP Fit", ylim = c(min(CI_lower), max(CI_upper)))
+points(x_design, y_design, col = "black")
+lines(x_grid, gp_pred_grid$mean, col = "blue")
+lines(x_grid, CI_upper, col = "gray")
+lines(x_grid, CI_lower, col = "gray")
+
+```
+
+```{r}
+# LNP Fit 
+LNP_pred_list <- transform_GP_predictions(gp_pred_grid$mean, gp_pred_grid$sd2, "LNP") 
+
+CI_upper_LNP <- qlnorm(.99, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))
+CI_lower_LNP <- qlnorm(.01, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2)) 
+
+plot(x_grid, exp(y_grid), type = "l", col = "red", xlab = "x", ylab = "y", 
+     main = "Initial GP Fit", ylim = c(min(CI_lower_LNP), max(CI_upper_LNP)))
+points(x_design, exp(y_design), col = "black")
+lines(x_grid, LNP_pred_list$mean, col = "blue")
+lines(x_grid, CI_upper_LNP, col = "gray")
+lines(x_grid, CI_lower_LNP, col = "gray")
+
+```
+
+
+# Basic EVAR Plots. 
+
+
+```{r}
+test <- calc_EVAR_MC(gpi, x_cond = 0.75, x_int = x_grid, N_MC = 100000)
+
+  plot(x_grid, LNP_pred_list$var, type = "l", col = "blue", xlab = "x", 
+       ylab = "predictive variance (LNP)", main = "EVAR vs. Unconditioned Predictive Variance")
+  lines(x_grid, test, col = "green")
+  abline(v = 0.75, col = "green", lty = "dashed")
+
+```
+
+
+```{r}
+x_cond_vals <- c(0.05, 0.3, 0.75, 0.9)
+
+for(x_cond in x_cond_vals) {
+  EVAR_grid <- calc_EVAR(gpi, x_cond, x_grid)
+  EVAR_grid_MC <- calc_EVAR_MC(gpi, x_cond, x_grid)
+  
+  plot(x_grid, LNP_pred_list$var, type = "l", col = "blue", xlab = "x", 
+       ylab = "predictive variance (LNP)", main = "EVAR vs. Unconditioned Predictive Variance")
+  lines(x_grid, EVAR_grid, col = "green")
+  lines(x_grid, EVAR_grid_MC, col = "purple")
+  abline(v = x_cond, col = "green", lty = "dashed")
+}
+
+
+```
+
+
+
+
+
