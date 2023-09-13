@@ -1038,6 +1038,33 @@ acquisition_VAR_post_old <- function(theta_vals, emulator_info_list, computer_mo
 }
 
 
+calc_log_EVAR_post <- function(lpost_emulator, input_candidate, inputs_integrate) {
+  
+  # TODO:
+  #    - Add argument checks. 
+  #    - Walk through and pull out steps that can pre-computed for efficiency (will definitely want to pass in 
+  #      `prior_mean_vals_integrate` to this function to be passed to `predict_lpost_emulator`). 
+  
+  # Predictions using GP conditioned on current design.  
+  pred_curr_cand <- predict_lpost_emulator(input_candidate, lpost_emulator, return_vals = c("mean", "var", "cov"),
+                                           inputs_new_scaled_2 = inputs_integrate, unscale = TRUE, uncenter = FALSE)
+
+  # Update GP using kriging believer approach. 
+  lpost_emulator_KB <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_candidate)
+  
+  # Predict with kriging believer GP. 
+  pred_KB_int <- predict_lpost_emulator(inputs_integrate, lpost_emulator_KB)
+  
+  # Compute log EVAR evaluations at the integration inputs. 
+  inflation_factor <- 2 * drop(pred_curr_cand$cov)^2 / pred_curr_cand$var
+  log_EVAR_vals <- convert_to_post_emulator_log_moments(pred_KB_int$mean, pred_KB_int$var, return_vals = "log_var")$log_var + inflation_factor
+  
+  
+  return(log_EVAR_vals)
+  
+}
+
+
 get_IVAR_post_vars <- function(theta_candidate, lpost_emulator, theta_grid_integrate, verbose = TRUE, include_nugget = TRUE, ...) {
   # A function for testing purposes. Instead of integrating over the computed variance values, this function returns the 
   # vector of values. 

@@ -34,6 +34,7 @@ calc_EVAR <- function(gpi, x_cond, x_int) {
   EVAR_vals <- transform_GP_predictions(pred_KB_int$mean, pred_KB_int$sd2, "LNP")$var * exp(inflation_factor)
   
   return(EVAR_vals)
+  
 }
 
 
@@ -67,11 +68,63 @@ calc_EVAR_MC <- function(gpi, x_cond, x_int, N_MC = 100000) {
 }
 
 
+calc_log_EVAR <- function(gpi, x_cond, x_int) {
+  
+  # Condition GP, using kriging believer approach. 
+  pred_cond <- predict(gpi, x = x_cond)
+  gpi_cond_KB <- update(gpi, Xnew = x_cond, Znew = pred_cond$mean, maxit = 0)
+  
+  # Predictions with kriging believer conditioned GP. 
+  pred_KB_int <- predict(gpi_cond_KB, x = x_int)
+  
+  # Predict using current (unconditioned) GP. 
+  pred_int <- predict(gpi, x = x_cond, xprime = x_int)
+  
+  # Compute EVAR. 
+  inflation_factor <- 2 * drop(pred_int$cov)^2 / pred_int$sd2
+  log_EVAR_vals <- convert_to_post_emulator_log_moments(pred_KB_int$mean, pred_KB_int$sd2, return_vals = "log_var")$log_var + inflation_factor
+  
+  return(log_EVAR_vals)
+  
+}
+
+
+calc_log_EVAR_MC <- function(gpi, x_cond, x_int, N_MC = 100000) {
+  
+  # Sample from current (unconditioned) GP at conditioning location. 
+  pred_cond <- predict(gpi, x = x_cond)
+  y_cond_samp <- rnorm(n = N_MC, pred_cond$mean, sqrt(pred_cond$sd2))
+  
+  # Condition GP on input conditioning location, leaving corresponding output NULL for now. 
+  gpi_cond <- update(gpi, Xnew = x_cond, maxit = 0)
+  gpi_cond$Z0 <- matrix(c(gpi_cond$Z0, NA), ncol = 1)
+  gpi_cond$Z <- matrix(c(gpi_cond$Z, NA), ncol = 1)
+  np1_idx <- nrow(gpi_cond$Z0)
+  
+  # Condition GP at each sample, compute conditioned LNP variance, and average over samples. 
+  log_EVAR_approx_vals <- matrix(nrow = N_MC, ncol = nrow(x_int))
+  for(i in seq_along(y_cond_samp)) {
+    # Fill in output at conditioning input with current sample. 
+    gpi_cond$Z0[np1_idx,1] <- y_cond_samp[i]
+    gpi_cond$Z[np1_idx,1] <- y_cond_samp[i]
+    
+    # Compute predictive variance. 
+    pred_samp_cond <- predict(gpi_cond, x = x_int)
+    log_EVAR_samp <- convert_to_post_emulator_log_moments(pred_samp_cond$mean, pred_samp_cond$sd2, return_vals = "log_var")$log_var
+    log_EVAR_approx_vals[i,] <- log_EVAR_samp
+  }
+  
+  log_EVAR_MC_estimates <- apply(log_EVAR_approx_vals, MARGIN = 2, FUN = matrixStats::logSumExp) - log(N_MC)
+  
+  return(log_EVAR_MC_estimates)
+  
+}
+
 ```
 
 
 
-# Simple 1D Example 
+# Simple 1D Example with some numbers
 
 In this section we seek to calculate 
 $$
@@ -87,13 +140,14 @@ $$
 ```{r}
 # GP Setup. 
 
+scale_factor <- 1.0
 x_design <- matrix(c(0.0, 0.5, 1.0), ncol = 1)
 x_grid <- matrix(seq(0, 1, length.out = 51), ncol = 1)
 
-f_test <- function(x) sin(2*x)
+f_test <- function(x, scale = 1.0) scale * sin(2*x)
 
-y_design <- f_test(x_design)
-y_grid <- f_test(x_grid)
+y_design <- f_test(x_design, scale = scale_factor)
+y_grid <- f_test(x_grid, scale = scale_factor)
 
 plot(x_grid, y_grid, type = "l", col = "red", xlab = "x", ylab = "y", main = "True Function and Design Points")
 points(x_design, y_design, col = "black")
@@ -126,7 +180,7 @@ CI_upper_LNP <- qlnorm(.99, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))
 CI_lower_LNP <- qlnorm(.01, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2)) 
 
 plot(x_grid, exp(y_grid), type = "l", col = "red", xlab = "x", ylab = "y", 
-     main = "Initial GP Fit", ylim = c(min(CI_lower_LNP), max(CI_upper_LNP)))
+     main = "Initial LNP Fit", ylim = c(min(CI_lower_LNP), max(CI_upper_LNP)))
 points(x_design, exp(y_design), col = "black")
 lines(x_grid, LNP_pred_list$mean, col = "blue")
 lines(x_grid, CI_upper_LNP, col = "gray")
@@ -150,21 +204,140 @@ test <- calc_EVAR_MC(gpi, x_cond = 0.75, x_int = x_grid, N_MC = 100000)
 
 
 ```{r}
-x_cond_vals <- c(0.05, 0.3, 0.75, 0.9)
+x_cond_vals <- c(0.05, 0.3, 0.75, 0.9, 0.999)
+IEVAR_vals <- vector(mode = "numeric", length = length(x_cond_vals))
+IEVAR_vals_MC <- vector(mode = "numeric", length = length(x_cond_vals))
 
-for(x_cond in x_cond_vals) {
+# EVAR plots. 
+for(i in seq_along(x_cond_vals)) {
+  x_cond <- x_cond_vals[i]
   EVAR_grid <- calc_EVAR(gpi, x_cond, x_grid)
   EVAR_grid_MC <- calc_EVAR_MC(gpi, x_cond, x_grid)
+  IEVAR_vals[i] <- mean(EVAR_grid)
+  IEVAR_vals_MC[i] <- mean(EVAR_grid_MC)
   
-  plot(x_grid, LNP_pred_list$var, type = "l", col = "blue", xlab = "x", 
+  plot(x_grid, LNP_pred_list$var, pch = 20, col = "blue", xlab = "x", 
        ylab = "predictive variance (LNP)", main = "EVAR vs. Unconditioned Predictive Variance")
   lines(x_grid, EVAR_grid, col = "green")
   lines(x_grid, EVAR_grid_MC, col = "purple")
   abline(v = x_cond, col = "green", lty = "dashed")
 }
 
+# IEVAR plot comparing conditioning points. 
+plot(x_cond_vals, IEVAR_vals, col = "green", xlab = "x", ylab = "IEVAR", main = "IEVAR Evaluations")
+points(x_cond_vals, IEVAR_vals_MC, col = "purple")
 
 ```
+
+
+```{r}
+# Same test but with log-scale computations. 
+
+for(x_cond in x_cond_vals) {
+  log_EVAR_grid <- calc_log_EVAR(gpi, x_cond, x_grid)
+  log_EVAR_grid_MC <- calc_log_EVAR_MC(gpi, x_cond, x_grid)
+  
+  min_y <- min(min(log(LNP_pred_list$var)), min(log_EVAR_grid_MC), min(log_EVAR_grid))
+  max_y <- max(max(log(LNP_pred_list$var)), max(log_EVAR_grid_MC), max(log_EVAR_grid))
+  plot(x_grid, log(LNP_pred_list$var), pch = 20, col = "blue", xlab = "x", 
+       ylab = "log predictive variance (LNP)", 
+       main = "log(EVAR) vs. Log Unconditioned Predictive Variance", ylim = c(min_y, max_y))
+  lines(x_grid, log_EVAR_grid, col = "green")
+  lines(x_grid, log_EVAR_grid_MC, col = "purple")
+  abline(v = x_cond, col = "green", lty = "dashed")
+}
+
+```
+
+# Simple 1D Example with small or large numbers: makes log computations necessary. 
+
+```{r}
+# GP Setup. 
+
+scale_factor <- 200
+x_design <- matrix(c(0.0, 0.5, 1.0), ncol = 1)
+x_grid <- matrix(seq(0, 1, length.out = 51), ncol = 1)
+
+f_test <- function(x, scale = 1.0) scale * sin(2*x)
+
+y_design <- f_test(x_design, scale = scale_factor)
+y_grid <- f_test(x_grid, scale = scale_factor)
+
+plot(x_grid, y_grid, type = "l", col = "red", xlab = "x", ylab = "y", main = "True Function and Design Points")
+points(x_design, y_design, col = "black")
+
+```
+
+```{r}
+# Fit GP
+eps_nug <- sqrt(.Machine$double.eps)
+gpi <- mleHomGP(x_design, y_design, covtype = "Gaussian", known = list(g = eps_nug))
+gp_pred_grid <- predict(gpi, x = x_grid)
+lnp_log_pred_grid <- convert_to_post_emulator_log_moments(gp_pred_grid$mean, gp_pred_grid$sd2)
+
+CI_upper <- qnorm(.99, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))
+CI_lower <- qnorm(.01, gp_pred_grid$mean, sqrt(gp_pred_grid$sd2))  
+
+plot(x_grid, y_grid, type = "l", col = "red", xlab = "x", ylab = "y", 
+     main = "Initial GP Fit", ylim = c(min(CI_lower), max(CI_upper)))
+points(x_design, y_design, col = "black")
+lines(x_grid, gp_pred_grid$mean, col = "blue")
+lines(x_grid, CI_upper, col = "gray")
+lines(x_grid, CI_lower, col = "gray")
+```
+
+```{r}
+x_cond_vals <- c(0.05, 0.3, 0.75, 0.9, 0.999)
+IEVAR_vals <- vector(mode = "numeric", length = length(x_cond_vals))
+IEVAR_vals_MC <- vector(mode = "numeric", length = length(x_cond_vals))
+
+for(x_cond in x_cond_vals) {
+  log_EVAR_grid <- calc_log_EVAR(gpi, x_cond, x_grid)
+  log_EVAR_grid_MC <- calc_log_EVAR_MC(gpi, x_cond, x_grid)
+  
+  min_y <- min(min(lnp_log_pred_grid$log_var), min(log_EVAR_grid_MC), min(log_EVAR_grid))
+  max_y <- max(max(lnp_log_pred_grid$log_var), max(log_EVAR_grid_MC), max(log_EVAR_grid))
+  plot(x_grid, lnp_log_pred_grid$log_var, pch = 20, col = "blue", xlab = "x", 
+       ylab = "log predictive variance (LNP)", 
+       main = "log(EVAR) vs. Log Unconditioned Predictive Variance", ylim = c(min_y, max_y))
+  lines(x_grid, log_EVAR_grid, col = "green")
+  lines(x_grid, log_EVAR_grid_MC, col = "purple")
+  abline(v = x_cond, col = "green", lty = "dashed")
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# TODO: 
+# 1.) include estimation of other term in law of total variance, and check that the two sum to the total variance. 
+# 2.) investigate the impact of using logs/logSumExp. 
+# 3.) solution to issue with candidate points already being in design - simply exclude them. More interesting thing to look at 
+#     is candidate points very close to existing design points. 
+# 4.) add comparison of IEVAR estimates using logSumExp vs. not logSumExp. 
+```
+
+
+
+
+
+
+
+
 
 
 

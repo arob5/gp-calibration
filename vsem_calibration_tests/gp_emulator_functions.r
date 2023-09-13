@@ -2379,7 +2379,7 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   # Optionally normalize response (i.e. unnormalized log posterior density values). 
   lpost_emulator_obj$center_output <- center_output
   lpost_emulator_obj$scale_output <- scale_output
-  if(center_output) lpost_emulator_obj$mean_center <- max(lpost_emulator_obj$outputs_lpost) # mean(lpost_emulator_obj$outputs_lpost)
+  if(center_output) lpost_emulator_obj$mean_center <- mean(lpost_emulator_obj$outputs_lpost)
   if(scale_output) lpost_emulator_obj$sd_scale <- sd(lpost_emulator_obj$outputs_lpost)
   lpost_emulator_obj$outputs_lpost <- normalize_lpost_outputs(lpost_emulator_obj$outputs_lpost, lpost_emulator_obj)
   
@@ -2559,7 +2559,7 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   #    The updated lpost emulator object. 
   
   # Remove any repeated observations. If the only new observation is removed, return `lpost_emulator` unchanged. 
-  # TODO: think better about how to handle this; does it even matter? 
+  # TODO: think better about how to handle this; see hetGP `find_reps()` function. 
   # repeated_obs_sel <- inputs_new_scaled %in% lpost_emulator$inputs_lpost$inputs_scaled
   # if(any(repeated_obs_sel)) {
   #   if(verbose) message("Removing repeated input(s) prior to updating emulator; indices: ", seq_along(inputs_new_scaled)[repeated_obs_sel])
