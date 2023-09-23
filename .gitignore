@@ -10,6 +10,7 @@
 output/
 images/
 renv/
+support_points/
 *.bbl
 *.blg
 .Rproj.user

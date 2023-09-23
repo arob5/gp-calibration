@@ -1050,7 +1050,9 @@ calc_log_EVAR_post <- function(lpost_emulator, input_candidate, inputs_integrate
                                            inputs_new_scaled_2 = inputs_integrate, unscale = TRUE, uncenter = FALSE)
 
   # Update GP using kriging believer approach. 
-  lpost_emulator_KB <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_candidate)
+  lpost_emulator_KB <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_candidate, 
+                                             outputs_lpost_new = pred_curr_cand$mean, outputs_scaled = FALSE, 
+                                             outputs_centered = TRUE)
   
   # Predict with kriging believer GP. 
   pred_KB_int <- predict_lpost_emulator(inputs_integrate, lpost_emulator_KB)

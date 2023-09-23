@@ -2381,8 +2381,10 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
   lpost_emulator_obj$scale_output <- scale_output
   if(center_output) lpost_emulator_obj$mean_center <- mean(lpost_emulator_obj$outputs_lpost)
   if(scale_output) lpost_emulator_obj$sd_scale <- sd(lpost_emulator_obj$outputs_lpost)
-  lpost_emulator_obj$outputs_lpost <- normalize_lpost_outputs(lpost_emulator_obj$outputs_lpost, lpost_emulator_obj)
-  
+  lpost_emulator_obj$outputs_lpost <- normalize_lpost_outputs(lpost_emulator_obj$outputs_lpost, 
+                                                              output_stats = lpost_emulator_obj[c("mean_center", "sd_scale")], 
+                                                              scale_output = scale_output, center_output = center_output) 
+                                                              
   # lpost emulator is a function of the likelihood parameters (observation variances), prior on the calibration 
   # parameters, and the number of observations (n_obs). 
   lpost_emulator_obj$sig2_eps <- sig2_eps
@@ -2411,14 +2413,14 @@ get_lpost_emulator_obj <- function(emulator_info_list, design_info_list, compute
 }
 
 
-normalize_lpost_outputs <- function(outputs, lpost_emulator, inverse = FALSE) {
+normalize_lpost_outputs <- function(outputs, output_stats, scale_output = TRUE, center_output = TRUE, inverse = FALSE) {
   
   if(inverse) {
-    if(lpost_emulator$scale_output) outputs <- outputs * lpost_emulator$sd_scale
-    if(lpost_emulator$center_output) outputs <- outputs + lpost_emulator$mean_center
+    if(scale_output) outputs <- outputs * output_stats$sd_scale
+    if(center_output) outputs <- outputs + output_stats$mean_center
   } else {
-    if(lpost_emulator$center_output) outputs <- outputs - lpost_emulator$mean_center
-    if(lpost_emulator$scale_output) outputs <- outputs / lpost_emulator$sd_scale
+    if(center_output) outputs <- outputs - output_stats$mean_center
+    if(scale_output) outputs <- outputs / output_stats$sd_scale
   }
 
   return(outputs)
@@ -2519,7 +2521,8 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
   means <- -0.5 * (sum(lpost_emulator$n_obs * log(2*pi*lpost_emulator$sig2_eps)) + sum(GP_means / lpost_emulator$sig2_eps)) + lprior_vals
   
   # Scale according to lpost normalization. 
-  means <- normalize_lpost_outputs(means, lpost_emulator)
+  means <- normalize_lpost_outputs(means, output_stats = lpost_emulator[c("mean_center", "sd_scale")], 
+                                   scale_output = lpost_emulator$scale_output, center_output = lpost_emulator$center_output)
   
   return(matrix(means, ncol = 1))
   
@@ -2527,7 +2530,8 @@ calc_lpost_mean <- function(lpost_emulator, inputs_scaled = NULL, inputs_unscale
 
 
 update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpost_new = NULL, 
-                                  inputs_new_unscaled = NULL, outputs_normalized = FALSE, verbose = TRUE) {
+                                  inputs_new_unscaled = NULL, outputs_scaled = FALSE,
+                                  outputs_centered = FALSE, verbose = TRUE) {
   # Updates the random field approximation to the unnormalized log posterior density induced 
   # by the underlying GPs by conditioning on newly observed data {`input_new`, `output_lpost_new`}. 
   # In the primary use case of this function, `output_lpost_new` is "pseudo-data" used for heuristic 
@@ -2567,23 +2571,31 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   # inputs_new_scaled <- inputs_new_scaled[!repeated_obs_sel,, drop = FALSE]
   # if(length(inputs_new_scaled) == 0) return(lpost_emulator)
   
+  # Remove duplicated inputs and their associated outputs. 
+  dup_idx_new <- get_duplicate_inputs(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled)
+  keep_idx_new <- setdiff(seq_len(nrow(inputs_new_scaled)), dup_idx_new)
+  inputs_new_scaled <- inputs_new_scaled[keep_idx_new,,drop=FALSE]
+  
   if(is.null(inputs_new_unscaled)) {
-    inputs_new_unscaled <- scale_input_data(inputs_new_scaled, input_bounds = lpost_emulator$emulator_info_list$input_bounds, inverse = TRUE)
+    inputs_new_unscaled <- scale_input_data(inputs_new_scaled, input_bounds = lpost_emulator$emulator_info_list$input_bounds, inverse=TRUE)
   } else {
-    # TODO: update this
-    # inputs_new_unscaled <- inputs_new_unscaled[!repeated_obs_sel,, drop = FALSE] 
+    inputs_new_unscaled <- inputs_new_unscaled[keep_idx_new,, drop=FALSE] 
   }
   
   # If no new responses are provided, set to GP expectation. 
   if(is.null(outputs_lpost_new)) {
-    outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = "mean",
-                                                inputs_new_unscaled = inputs_new_unscaled, unscale = FALSE, uncenter = FALSE)$mean
+    outputs_lpost_new <- predict_lpost_emulator(inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals="mean",
+                                                inputs_new_unscaled=inputs_new_unscaled, unscale=FALSE, uncenter=FALSE)$mean
   } else {
-    # TODO: update this
-    # outputs_lpost_new <- outputs_lpost_new[!repeated_obs_sel]
-    if(!outputs_normalized) outputs_lpost_new <- normalize_lpost_outputs(outputs_lpost_new, lpost_emulator)
+    outputs_lpost_new <- outputs_lpost_new[keep_idx_new]
+
+    if(!outputs_scaled || !outputs_centered) {
+      outputs_lpost_new <- normalize_lpost_outputs(outputs_lpost_new, output_stats = lpost_emulator[c("mean_center", "sd_scale")],
+                                                   scale_output = !outputs_scaled && lpost_emulator$scale_output,
+                                                   center_output = !outputs_centered && lpost_emulator$center_output)
+    }
   }
-   
+  
   # Add log prior density evaluations at new points. 
   lprior_vals_new <- calc_lprior_theta(inputs_new_unscaled, lpost_emulator$theta_prior_params)
   lpost_emulator$lprior_design <- c(lpost_emulator$lprior_design, lprior_vals_new)
@@ -2605,6 +2617,41 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   }
   
   return(lpost_emulator)
+  
+}
+
+
+get_duplicate_inputs <- function(X_old, X_new = NULL) {
+  # Returns indices of duplicate rows in a matrix, or across two matrices. The first 
+  # use case is when `X_new = NULL`, in which case the indices of duplicate rows 
+  # of `X_old` are returned. If `X_old` and `X_new` are non-NULL, then the indices 
+  # returned correspond to the rows of `X_new`; in particular, the indices 
+  # correspond to either duplicate rows within `X_new`, or rows that are duplicated
+  # across the two matrices. In this second use case, the rows of `X_old` are assumed
+  # unique, and an error is thrown if not. This second use case is useful when adding 
+  # new design data to an existing model. Note that for duplicate rows, the first 
+  # instance is not considered a duplicate, while all remaining repititions of the first 
+  # instance are considered duplicates. 
+  #
+  # Args:
+  #    X_old: matrix. If `X_new` is not NULL, then `X_old` must not have duplicate rows. 
+  #    X_new: matrix, with equal number of columns to `X_old`. Or NULL, in which case 
+  #           `X_old` is searched for duplicates. 
+  #
+  # Returns:
+  # integer vector containing the indices of the duplicate rows. Note that if 
+  # `X_new` is NULL then the indices correspond to the rows of `X_old`. If 
+  # `X_new` is non-NULL then the indices correspond to rows of `X_new`. 
+  
+  # Check for duplicates in `X_old`. 
+  if(is.null(X_new)) return(which(duplicated(X_old)))
+  
+  # Check for duplicates either within `X_new`, or across `X_old` and `X_new`. 
+  dup_idx <- which(duplicated(rbind(X_old, X_new)))
+  dup_idx_new <- dup_idx - nrow(X_old)
+  if(any(dup_idx_new < 1)) stop("Duplicate rows found in `X_old`.")
+  
+  return(dup_idx_new)
   
 }
 
@@ -2761,7 +2808,8 @@ update_lpost_inverse_kernel_matrix <- function(lpost_emulator, input_new_scaled)
 
 
 sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples = 1, inputs_new_unscaled = NULL, 
-                                  include_nugget = TRUE, prior_mean_vals = NULL, verbose = TRUE, denormalize = TRUE) {
+                                  include_nugget = TRUE, prior_mean_vals = NULL, verbose = TRUE, 
+                                  unscale = TRUE, uncenter = TRUE) {
   # Samples from the GP predictive distribution of the lpost emulator (which is assumed to be a GP). 
   #
   # Args:
@@ -2785,18 +2833,18 @@ sample_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, N_samples =
   #    matrix, of dimension `N_samples` x M. The ith row contains the sampled values at the M input locations. 
   
   # Compute predictive mean and variance. 
-  lpost_pred <- predict_lpost_emulator(inputs_new_scaled = inputs_new_scaled, lpost_emulator = lpost_emulator, return_vals = c("mean", "var"), 
-                                       include_nugget = include_nugget, inputs_new_unscaled = inputs_new_unscaled, 
-                                       prior_mean_vals_new = prior_mean_vals, verbose = verbose)
+  lpost_pred <- predict_lpost_emulator(inputs_new_scaled = inputs_new_scaled, lpost_emulator = lpost_emulator,  
+                                       return_vals = c("mean", "var"), include_nugget = include_nugget, 
+                                       inputs_new_unscaled = inputs_new_unscaled, 
+                                       prior_mean_vals_new = prior_mean_vals, verbose = verbose, 
+                                       unscale = unscale, uncenter = uncenter)
                                      
   # Draw pointwise samples from marginal predictive distributions. 
   samp <- matrix(nrow = N_samples, ncol = nrow(inputs_new_scaled))
   for(t in seq_len(N_samples)) {
     samp[t,] <- sample_GP_pointwise(lpost_pred$mean, lpost_pred$var) 
   }
-  
-  if(denormalize) samp <- normalize_lpost_outputs(samp, lpost_emulator, inverse = TRUE)
-  
+
   if(N_samples == 1) return(samp[1,])
   return(samp)
   

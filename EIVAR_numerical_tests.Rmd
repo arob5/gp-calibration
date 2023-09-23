@@ -124,7 +124,7 @@ calc_log_EVAR_MC <- function(gpi, x_cond, x_int, N_MC = 100000) {
 
 
 
-# Simple 1D Example with some numbers
+# Simple 1D Example
 
 In this section we seek to calculate 
 $$
