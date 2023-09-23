@@ -143,7 +143,7 @@ plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", yli
 points(init_design_info$inputs, init_design_info$lpost, col = "black")
 lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
 lines(prior_grid_info$inputs, upper_CI, col = "gray")
-lines(prior_grid_info$inputs, pred_grid_init_design$mean - 2*sqrt(pred_grid_init_design$var), col = "gray")
+lines(prior_grid_info$inputs, lower_CI, col = "gray")
 
 ```
 
@@ -184,26 +184,107 @@ plot(round0_hist_plot)
 ```{r}
 # TEST: conditioning GP on a new design point (not re-fitting hyperparameters). 
 
-new_design_point_info <- list(inputs=matrix(-0.5))
+new_design_point_info <- list(inputs=matrix(0.0))
 new_design_point_info$inputs_scaled <- scale_input_data(new_design_point_info$inputs, input_bounds=init_design_info$input_bounds)
-new_design_point_info$outputs <- 
+new_design_point_info$outputs <- get_computer_model_SSR(computer_model_data, theta_vals = new_design_point_info$inputs, na.rm = TRUE)
+new_design_point_info$outputs_normalized <- normalize_output_data(new_design_point_info$outputs, output_stats=init_design_info$output_stats)
+new_design_point_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                            theta_vals = new_design_point_info$inputs, 
+                                                            vars_obs = sig2_eps, 
+                                                            SSR = new_design_point_info$outputs,
+                                                            na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                            return_list = FALSE)
+
+lpost_emulator_update_test <- update_lpost_emulator(lpost_emulator, new_design_point_info$inputs_scaled, 
+                                                    outputs_lpost_new = new_design_point_info$lpost, 
+                                                    inputs_new_unscaled = new_design_point_info$inputs, 
+                                                    outputs_scaled = FALSE, outputs_centered = FALSE)
 
 
-init_design_info <- get_input_output_design(N_points = design_settings$N_design,
-                                            design_method = design_settings$design_method, 
-                                            scale_inputs = TRUE,
-                                            computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params)
-init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                       theta_vals = init_design_info$inputs, 
-                                                       vars_obs = diag(computer_model_data$Sig_eps), 
-                                                       SSR = init_design_info$outputs,
-                                                       na.rm = TRUE, theta_prior_params = theta_prior_params, 
-                                                       return_list = FALSE)
+# Plot updated fit. 
+pred_grid_update_test <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator_update_test)
+upper_CI_update_test <- qnorm(.99, pred_grid_update_test$mean, sqrt(pred_grid_update_test$var))
+lower_CI_update_test <- qnorm(.01, pred_grid_update_test$mean, sqrt(pred_grid_update_test$var)) 
+
+plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", ylim = c(min(lower_CI_update_test), max(upper_CI_update_test)),
+     main = "lpost Updated GP Fit", xlab = "u", ylab = "Unnormalized log posterior")
+points(init_design_info$inputs, init_design_info$lpost, col = "black")
+lines(prior_grid_info$inputs, pred_grid_update_test$mean, col = "blue")
+lines(prior_grid_info$inputs, upper_CI_update_test, col = "gray")
+lines(prior_grid_info$inputs, lower_CI_update_test, col = "gray")
+
+
 
 
 ```
 
+# Acquisition Tests. 
+
+## Single Point log EVAR: conditioning on single candidate point and looking at plot over integration points. 
+```{r}
+
+# Var lpost.
+lpost_emulator_temp <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = new_design_point_info$inputs_scaled, outputs_lpost_new = NULL)
+log_var_lpost_vals <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator_temp,
+                                             return_vals = "var", include_nugget = TRUE, verbose = verbose)$var
+                                              
+# EVAR-post.
+log_EVAR_post_vals <- calc_log_EVAR_post(lpost_emulator, new_design_point_info$inputs_scaled, prior_grid_info$inputs_scaled)
+
+# Plot.
+plot_max_y <- max(log_EVAR_post_vals)
+plot_min_y <- min(log_EVAR_post_vals)
+plot_range <- plot_max_y - plot_min_y
+log_var_lpost_vals_scaled <- (log_var_lpost_vals - min(log_var_lpost_vals)) / diff(range(log_var_lpost_vals)) * plot_range + plot_min_y
+
+
+plot(prior_grid_info$inputs, log_EVAR_post_vals, type = "l", col = "green")
+lines(prior_grid_info$inputs, log_var_lpost_vals_scaled, col = "orange")
+
+
+
+```
+
+## Actual acquisition values. 
+
+```{r}
+
+# Consider less dense grid of canidate points to reduce computation time. 
+candidate_grid_info <- get_input_output_design(N_points = 51,
+                                               design_method = "grid", 
+                                               scale_inputs = TRUE,
+                                               param_ranges = init_design_info$input_bounds,
+                                               computer_model_data = computer_model_data, 
+                                               theta_prior_params = theta_prior_params, 
+                                               design_seed = design_settings$design_seed)
+candidate_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                          theta_vals = candidate_grid_info$inputs, 
+                                                          vars_obs = sig2_eps, 
+                                                          SSR = candidate_grid_info$outputs,
+                                                          na.rm = TRUE, theta_prior_params = theta_prior_params, 
+                                                          return_list = FALSE)
+
+# IEVAR-lpost. 
+IEVAR_lpost_vals <- acquisition_EIVAR_lpost(candidate_grid_info$inputs_scaled, lpost_emulator, 
+                                            theta_grid_integrate=prior_grid_info$inputs_scaled, verbose = TRUE)
+                                            
+# IEVAR-post. 
+log_IEVAR_post_vals <- acquisition_IEVAR_post(candidate_grid_info$inputs_scaled, lpost_emulator, 
+                                              theta_grid_integrate=prior_grid_info$inputs_scaled, verbose = TRUE, 
+                                              include_nugget = TRUE)
+
+# Plot.plot_max_y <- max(log_EVAR_post_vals)
+plot_max_y <- max(log_IEVAR_post_vals)
+plot_min_y <- min(log_IEVAR_post_vals)
+plot_range <- plot_max_y - plot_min_y
+IEVAR_lpost_vals_scaled <- (IEVAR_lpost_vals - min(IEVAR_lpost_vals)) / diff(range(IEVAR_lpost_vals)) * plot_range + plot_min_y
+
+plot(candidate_grid_info$inputs, log_IEVAR_post_vals, type = "l", col = "green")
+lines(candidate_grid_info$inputs, IEVAR_lpost_vals_scaled, col = "orange")
+
+plot(candidate_grid_info$inputs, IEVAR_lpost_vals_scaled, type = "l", col = "orange")
+
+```
 
 
 

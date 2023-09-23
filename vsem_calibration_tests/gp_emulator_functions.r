@@ -2574,6 +2574,7 @@ update_lpost_emulator <- function(lpost_emulator, inputs_new_scaled, outputs_lpo
   # Remove duplicated inputs and their associated outputs. 
   dup_idx_new <- get_duplicate_inputs(lpost_emulator$inputs_lpost$inputs_scaled, inputs_new_scaled)
   keep_idx_new <- setdiff(seq_len(nrow(inputs_new_scaled)), dup_idx_new)
+  if(length(keep_idx_new) == 0) return(lpost_emulator)
   inputs_new_scaled <- inputs_new_scaled[keep_idx_new,,drop=FALSE]
   
   if(is.null(inputs_new_unscaled)) {

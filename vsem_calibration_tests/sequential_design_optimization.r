@@ -579,7 +579,7 @@ acquisition_EIVAR_lpost <- function(theta_vals, lpost_emulator, theta_grid_integ
     
     # Compute unnormalized log posterior approximation predictive variance at each theta grid location. 
     lpost_pred_var_grid <- predict_lpost_emulator(inputs_new_scaled = theta_grid_integrate, lpost_emulator = lpost_emulator_temp, return_vals = "var", 
-                                                  include_nugget = TRUE, verbose = verbose)$var
+                                                  include_nugget = TRUE, verbose = verbose, unscale = FALSE, uncenter = FALSE)$var
     
     # Estimate EIVAR via discrete sum over theta grid locations. 
     EIVAR_est[i] <- -1.0 * mean(lpost_pred_var_grid)
@@ -1038,6 +1038,20 @@ acquisition_VAR_post_old <- function(theta_vals, emulator_info_list, computer_mo
 }
 
 
+acquisition_IEVAR_post <- function(theta_vals, lpost_emulator, theta_grid_integrate, verbose = TRUE, 
+                                   include_nugget = TRUE, ...) {
+  
+  log_IEVAR_vals <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  for(i in seq_len(nrow(theta_vals))) {
+    log_IEVAR_vals[i] <- matrixStats::logSumExp(calc_log_EVAR_post(lpost_emulator, theta_vals[i,,drop=FALSE], theta_grid_integrate))
+  }
+  
+  return(-1.0 * (log_IEVAR_vals - log(nrow(theta_grid_integrate))))
+  
+}
+
+
 calc_log_EVAR_post <- function(lpost_emulator, input_candidate, inputs_integrate) {
   
   # TODO:
@@ -1055,12 +1069,12 @@ calc_log_EVAR_post <- function(lpost_emulator, input_candidate, inputs_integrate
                                              outputs_centered = TRUE)
   
   # Predict with kriging believer GP. 
-  pred_KB_int <- predict_lpost_emulator(inputs_integrate, lpost_emulator_KB)
+  pred_KB_int <- predict_lpost_emulator(inputs_integrate, lpost_emulator_KB, return_vals = c("mean", "var"),
+                                        unscale = TRUE, uncenter = FALSE)
   
   # Compute log EVAR evaluations at the integration inputs. 
   inflation_factor <- 2 * drop(pred_curr_cand$cov)^2 / pred_curr_cand$var
   log_EVAR_vals <- convert_to_post_emulator_log_moments(pred_KB_int$mean, pred_KB_int$var, return_vals = "log_var")$log_var + inflation_factor
-  
   
   return(log_EVAR_vals)
   
