@@ -1081,6 +1081,55 @@ calc_log_EVAR_post <- function(lpost_emulator, input_candidate, inputs_integrate
 }
 
 
+acquisition_IEVAR_post_test_mode <- function(theta_vals, lpost_emulator, theta_grid_integrate, verbose = TRUE, 
+                                   include_nugget = TRUE, ...) {
+  
+  log_IEVAR_vals <- vector(mode = "numeric", length = nrow(theta_vals))
+  avg_log_KB_vars <- vector(mode = "numeric", length = nrow(theta_vals))
+  avg_inflation_term_vals <- vector(mode = "numeric", length = nrow(theta_vals))
+  
+  for(i in seq_len(nrow(theta_vals))) {
+    IEVAR_info <- calc_log_EVAR_post_test_mode(lpost_emulator, theta_vals[i,,drop=FALSE], theta_grid_integrate)
+    log_IEVAR_vals[i] <- matrixStats::logSumExp(IEVAR_info$log_EVAR) - log(nrow(theta_grid_integrate))
+    avg_log_KB_vars[i] <- matrixStats::logSumExp(IEVAR_info$log_var_term) - log(nrow(theta_grid_integrate))
+    avg_inflation_term_vals[i] <- matrixStats::logSumExp(IEVAR_info$inflation_factor) - log(nrow(theta_grid_integrate))
+  }
+  
+  return(list(log_IEVAR_vals = -log_IEVAR_vals, avg_log_KB_vars = -avg_log_KB_vars, avg_inflation_term_vals = -avg_inflation_term_vals))
+  
+}
+
+
+calc_log_EVAR_post_test_mode <- function(lpost_emulator, input_candidate, inputs_integrate) {
+  
+  # TODO:
+  #    - Add argument checks. 
+  #    - Walk through and pull out steps that can pre-computed for efficiency (will definitely want to pass in 
+  #      `prior_mean_vals_integrate` to this function to be passed to `predict_lpost_emulator`). 
+  
+  # Predictions using GP conditioned on current design.  
+  pred_curr_cand <- predict_lpost_emulator(input_candidate, lpost_emulator, return_vals = c("mean", "var", "cov"),
+                                           inputs_new_scaled_2 = inputs_integrate, unscale = TRUE, uncenter = FALSE)
+  
+  # Update GP using kriging believer approach. 
+  lpost_emulator_KB <- update_lpost_emulator(lpost_emulator, inputs_new_scaled = input_candidate, 
+                                             outputs_lpost_new = pred_curr_cand$mean, outputs_scaled = FALSE, 
+                                             outputs_centered = TRUE)
+  
+  # Predict with kriging believer GP. 
+  pred_KB_int <- predict_lpost_emulator(inputs_integrate, lpost_emulator_KB, return_vals = c("mean", "var"),
+                                        unscale = TRUE, uncenter = FALSE)
+  
+  # Compute log EVAR evaluations at the integration inputs. 
+  inflation_factor <- 2 * drop(pred_curr_cand$cov)^2 / pred_curr_cand$var
+  log_var_term <- convert_to_post_emulator_log_moments(pred_KB_int$mean, pred_KB_int$var, return_vals = "log_var")$log_var
+  log_EVAR_vals <- log_var_term + inflation_factor
+  
+  return(list(log_EVAR = log_EVAR_vals, log_var_term = log_var_term, inflation_factor = inflation_factor))
+  
+}
+
+
 get_IVAR_post_vars <- function(theta_candidate, lpost_emulator, theta_grid_integrate, verbose = TRUE, include_nugget = TRUE, ...) {
   # A function for testing purposes. Instead of integrating over the computed variance values, this function returns the 
   # vector of values. 

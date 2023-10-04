@@ -187,7 +187,7 @@ plot(plt_init_design)
 plot_x_range <- layer_scales(plt_init_design)$x$range$range
 plot_y_range <- layer_scales(plt_init_design)$y$range$range
 
-ggsave(filename = file.path(base_dir, poster_figure_dir, "initial_design.svg"), width = 5.0, height = 5.0, units = "in")
+# ggsave(filename = file.path(base_dir, poster_figure_dir, "initial_design.svg"), width = 5.0, height = 5.0, units = "in")
 
 ```
 
@@ -211,10 +211,6 @@ emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design_info$in
 lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
                                          computer_model_data = computer_model_data, sig2_eps = init_design_info$init_estimates$best_sig2_eps, 
                                          theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
-
-lpost_emulator_no_scale <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
-                                                  computer_model_data = computer_model_data, sig2_eps = init_design_info$init_estimates$best_sig2_eps, 
-                                                  theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = FALSE)
 ```
 
 
@@ -363,7 +359,7 @@ plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x
                    ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
 plot(plt_round0_samp)
 
-ggsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
+# gsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
 
 
 ```
@@ -400,10 +396,10 @@ IVAR_lpost_grid_prior_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info
                                                     theta_grid_integrate = prior_grid_info$inputs_scaled, 
                                                     verbose = FALSE, include_nugget = TRUE)
 
-IVAR_post_grid_prior_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-                                                 lpost_emulator = lpost_emulator, 
-                                                 theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                                 verbose = FALSE, include_nugget = TRUE)
+IVAR_post_grid_prior_wt <- acquisition_IEVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
+                                                  lpost_emulator = lpost_emulator, 
+                                                  theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                                  verbose = FALSE, include_nugget = TRUE)
 
 # Optimizers of acquisitions. 
 IVAR_lpost_grid_prior_wt_best_idx <- which.max(IVAR_lpost_grid_prior_wt)
@@ -429,6 +425,156 @@ plot(IVAR_lpost_grid_prior_wt_plot)
 plot(IVAR_post_grid_prior_wt_plot)
 
 ```
+
+```{r}
+# Test. 
+IVAR_post_grid_prior_wt_test_model <- acquisition_IEVAR_post_test_mode(theta_vals = prior_grid_info$inputs_scaled, 
+                                                                       lpost_emulator = lpost_emulator, 
+                                                                       theta_grid_integrate = prior_grid_info$inputs_scaled, 
+                                                                       verbose = FALSE, include_nugget = TRUE)
+
+```
+
+
+# TODO: the below plot seems contradictory. It seems like the inflation term should be smaller when u_tilde is more central and vice versa. 
+# But this is the opposite of what we observe. 
+
+```{r}
+
+log_IEVAR <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                 y = -IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals, param_names = computer_model_data$pars_cal_names, 
+                                 samples_kde = samp_exact_theta, raster = TRUE, 
+                                 samples_points = init_design_info$inputs, 
+                                 bigger_is_better = FALSE, 
+                                 main_title = "log IVAR-post, prior weighted", point_coords_col = "black")
+
+log_KB_vars <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                   y = -IVAR_post_grid_prior_wt_test_model$avg_log_KB_vars, param_names = computer_model_data$pars_cal_names, 
+                                   samples_kde = samp_exact_theta, raster = TRUE, 
+                                   samples_points = init_design_info$inputs, 
+                                   bigger_is_better = FALSE, 
+                                   main_title = "log Mean KB Vars, prior weighted", point_coords_col = "black")
+
+inflation_term_vals <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                           y = -IVAR_post_grid_prior_wt_test_model$avg_inflation_term_vals, param_names = computer_model_data$pars_cal_names, 
+                                           samples_kde = samp_exact_theta, raster = TRUE, 
+                                           samples_points = init_design_info$inputs, 
+                                           bigger_is_better = FALSE, 
+                                           main_title = "Mean Inflation Term, prior weighted", point_coords_col = "black")
+
+
+plot(log_IEVAR)
+plot(log_KB_vars)
+plot(inflation_term_vals)
+
+```
+TODOs: 
+- Look at predictive mean and variance of lpost GP to better understand what's going on here. 
+- Plot log pred var and log pred mean for the post LNP. 
+- Zoom in on IVAR-post plot to see if there is actually more variability that the color scheme is not showing. 
+- Specifically look at the effect of conditioning on that one corner point; examine EVAR values after conditioning on this point. 
+
+
+## Zoom in. 
+This is an issue. IEVAR should not be constant over this whole region. This almost seems like this is an effect of the total 
+variance formula, and I'm accidentally adding two terms that are guaranteed to yield a constant value or something like that. 
+```{r}
+
+zoom_idx_sel <- (prior_grid_info$inputs[,1] > 1.47) & (prior_grid_info$inputs[,1] < 1.52) & 
+                (prior_grid_info$inputs[,2] < 0.525) & (prior_grid_info$inputs[,2] > .465)
+
+tester <- get_2d_heatmap_plot(X = prior_grid_info$inputs[zoom_idx_sel,,drop=FALSE], 
+                              y = -IVAR_post_grid_prior_wt[zoom_idx_sel], param_names = computer_model_data$pars_cal_names, 
+                              samples_kde = samp_exact_theta, raster = TRUE, 
+                              samples_points = init_design_info$inputs, 
+                              bigger_is_better = FALSE, 
+                              main_title = "IVAR-post, prior weighted", point_coords_col = "black")
+
+plot(tester)
+
+```
+
+
+## Conditioning on the corner point with very high IEVAR.
+```{r}
+max_idx <- which.max(IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals)
+input_test <- prior_grid_info$inputs_scaled[max_idx,,drop=FALSE]
+# input_test <- scale_input_data(matrix(computer_model_data$theta_true, nrow=1), lpost_emulator$design_info_list$input_bounds)  
+
+log_EVAR_info_test <- calc_log_EVAR_post_test_mode(lpost_emulator = lpost_emulator, 
+                                                   input_candidate = input_test, 
+                                                   inputs_integrate = prior_grid_info$inputs_scaled)
+
+log_EVAR_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = log_EVAR_info_test$log_EVAR, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          main_title = "log EVAR", point_coords_col = "black")
+
+log_var_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = log_EVAR_info_test$log_var_term, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          main_title = "log KB var", point_coords_col = "black")
+
+log_inflation_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = log_EVAR_info_test$inflation_factor, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          main_title = "log inflation term", point_coords_col = "black")
+
+plot(log_EVAR_plot_test)
+plot(log_var_term_plot_test)
+plot(log_inflation_term_plot_test)
+
+```
+
+# Predictive mean and variance of lpost emulator vs. post emulator. 
+```{r}
+
+lpost_pred <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator, return_vals = c("mean", "var"), unscale = TRUE)
+post_pred <- convert_to_post_emulator_log_moments(lpost_pred$mean, lpost_pred$var)
+
+lpost_mean_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                       y = lpost_pred$mean, param_names = computer_model_data$pars_cal_names, 
+                                       samples_kde = samp_exact_theta, raster = TRUE, 
+                                       samples_points = init_design_info$inputs, 
+                                       bigger_is_better = TRUE, 
+                                       main_title = "lpost pred mean", point_coords_col = "black")
+
+lpost_var_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                      y = lpost_pred$var, param_names = computer_model_data$pars_cal_names, 
+                                      samples_kde = samp_exact_theta, raster = TRUE, 
+                                      samples_points = init_design_info$inputs, 
+                                      bigger_is_better = TRUE, 
+                                      main_title = "lpost pred var", point_coords_col = "black")
+
+post_log_mean_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = post_pred$log_mean, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          main_title = "post log pred mean", point_coords_col = "black")
+
+post_log_var_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                         y = post_pred$log_var, param_names = computer_model_data$pars_cal_names, 
+                                         samples_kde = samp_exact_theta, raster = TRUE, 
+                                         samples_points = init_design_info$inputs, 
+                                         bigger_is_better = TRUE, 
+                                         main_title = "lpost log pred var", point_coords_col = "black")
+
+plot(lpost_mean_plot)
+plot(lpost_var_plot)
+
+plot(post_log_mean_plot)
+plot(post_log_var_plot)
+
+```
+
+
 
 ```{r}
 

@@ -240,7 +240,8 @@ log_var_lpost_vals_scaled <- (log_var_lpost_vals - min(log_var_lpost_vals)) / di
 
 plot(prior_grid_info$inputs, log_EVAR_post_vals, type = "l", col = "green")
 lines(prior_grid_info$inputs, log_var_lpost_vals_scaled, col = "orange")
-
+legend(x="topright", legend = c("log EVAR post", "log var lpost"), 
+       fill = c("green", "orange"))
 
 
 ```
@@ -281,8 +282,6 @@ IEVAR_lpost_vals_scaled <- (IEVAR_lpost_vals - min(IEVAR_lpost_vals)) / diff(ran
 
 plot(candidate_grid_info$inputs, log_IEVAR_post_vals, type = "l", col = "green")
 lines(candidate_grid_info$inputs, IEVAR_lpost_vals_scaled, col = "orange")
-
-plot(candidate_grid_info$inputs, IEVAR_lpost_vals_scaled, type = "l", col = "orange")
 
 ```
 
