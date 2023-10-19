@@ -437,7 +437,8 @@ IVAR_post_grid_prior_wt_test_model <- acquisition_IEVAR_post_test_mode(theta_val
 
 
 # TODO: the below plot seems contradictory. It seems like the inflation term should be smaller when u_tilde is more central and vice versa. 
-# But this is the opposite of what we observe. 
+# But this is the opposite of what we observe. It makes more sense to me that the expected KB vars are smaller in the corner in this example, since 
+# the post pred var is so large in that corner so that observing a point there will lead to a large reduction in the integrated variance. 
 
 ```{r}
 
@@ -497,19 +498,26 @@ plot(tester)
 
 ## Conditioning on the corner point with very high IEVAR.
 ```{r}
-max_idx <- which.max(IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals)
-input_test <- prior_grid_info$inputs_scaled[max_idx,,drop=FALSE]
-# input_test <- scale_input_data(matrix(computer_model_data$theta_true, nrow=1), lpost_emulator$design_info_list$input_bounds)  
+#max_idx <- which.max(IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals)
+#input_test <- prior_grid_info$inputs_scaled[max_idx,,drop=FALSE]
+
+input_test <- scale_input_data(matrix(computer_model_data$theta_true, nrow=1), lpost_emulator$design_info_list$input_bounds)  
 
 log_EVAR_info_test <- calc_log_EVAR_post_test_mode(lpost_emulator = lpost_emulator, 
                                                    input_candidate = input_test, 
                                                    inputs_integrate = prior_grid_info$inputs_scaled)
+
+# Check: two calculations of log inflation term yield the same result. 
+inflation_term_calc2 <- 2 * log_EVAR_info_test$kn_u * log_EVAR_info_test$rho_n^2
+print(paste0("Inflation term calculations match: ", all.equal(log_EVAR_info_test$inflation_factor, inflation_term_calc2)))
+
 
 log_EVAR_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
                                           y = log_EVAR_info_test$log_EVAR, param_names = computer_model_data$pars_cal_names, 
                                           samples_kde = samp_exact_theta, raster = TRUE, 
                                           samples_points = init_design_info$inputs, 
                                           bigger_is_better = TRUE, 
+                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
                                           main_title = "log EVAR", point_coords_col = "black")
 
 log_var_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
@@ -517,6 +525,7 @@ log_var_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs,
                                           samples_kde = samp_exact_theta, raster = TRUE, 
                                           samples_points = init_design_info$inputs, 
                                           bigger_is_better = TRUE, 
+                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
                                           main_title = "log KB var", point_coords_col = "black")
 
 log_inflation_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
@@ -524,11 +533,31 @@ log_inflation_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs,
                                           samples_kde = samp_exact_theta, raster = TRUE, 
                                           samples_points = init_design_info$inputs, 
                                           bigger_is_better = TRUE, 
+                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
                                           main_title = "log inflation term", point_coords_col = "black")
+
+rho_n_sq_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = log_EVAR_info_test$rho_n^2, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
+                                          main_title = "rho_n^2(u, u_tilde)", point_coords_col = "black")
+
+kn_u_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
+                                          y = log_EVAR_info_test$kn_u, param_names = computer_model_data$pars_cal_names, 
+                                          samples_kde = samp_exact_theta, raster = TRUE, 
+                                          samples_points = init_design_info$inputs, 
+                                          bigger_is_better = TRUE, 
+                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
+                                          main_title = "kn(u)", point_coords_col = "black")
+
 
 plot(log_EVAR_plot_test)
 plot(log_var_term_plot_test)
 plot(log_inflation_term_plot_test)
+plot(rho_n_sq_plot_test)
+plot(kn_u_plot_test)
 
 ```
 

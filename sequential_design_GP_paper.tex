@@ -811,6 +811,40 @@ Recall that in the case of an expensive forward model $\fwd$, MCMC is often impr
  \end{align}
  However, it is not immediately clear how to run MCMC on the approximate posterior given that, for each $\bpar$,  $\postDens_{\Ndesign}(\bpar, \CovObs)$ is a random variable. 
 
+\subsubsection{Hierarchical Model}
+[Note: this is specific for the product likelihood, model-data misfit emulation approach]. We opt to view $\postDens_{\Ndesign}$ as yet another variable in the model, and hence seek to 
+sample from the extended posterior $\postDens(\bpar, \CovObs, \postDens_{\Ndesign})$. We thus have, 
+\begin{align*}
+p(\bpar, \CovObs, \indexDesign{\SSR} | \stateMat) \propto p(\stateMat | \bpar, \CovObs, \indexDesign{\SSR}) p(\bpar, \CovObs | \indexDesign{\SSR})p()
+\end{align*}
+
+
+Under the product Gaussian likelihood with model-data misfit GP emulation strategy, we have 
+\begin{align*}
+\postDens_{\Ndesign}(\bpar) | &\bpar, \CovObs \sim \mathcal{LN}\left(-\frac{1}{2}\sum_{p=1}^{P} \frac{\GPMeanPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^2}, 
+													   \frac{1}{4} \sum_{\objIdx = 1}^{\Nobj} \frac{\GPKerPredOut{\designIdx}{\objIdx}(\bpar)}{\sdObs_{\objIdx}^4}\right) \\
+&\	bpar \sim \priorDens \\
+&\sdObs^2_{\objIdx} \overset{\text{ind}}{\sim} \text{IG}(\indexObj{\IGShape}, \indexObj{\IGScale}) 													   
+\end{align*}
+
+\subsubsection{Integrate out the GPs}
+One approach that reduces the parameter space back to $(\bpar, \CovObs)$ is to integrate out the underlying GP $\indexDesign{\SSR}$, which can be done analytically. In other words, 
+we compute the marginal likelihood 
+\begin{align*}
+p(\stateMat | \bpar, \CovObs) &= \E_{\indexDesign{\SSR}}\left[ p(\stateMat | \bpar, \CovObs, \indexDesign{\SSR})p(\indexDesign{\SSR}(\bpar)) | \bpar, \CovObs \right] 
+= \E_{\indexDesign{\SSR}}\left[\llik_{\designIdx}(\bpar, \CovObs) \right]
+\end{align*}
+
+Noting that the likelihood approximation takes the form 
+\[
+\llik_{\designIdx}(\bpar, \CovObs) = \prod_{\objIdx=1}^{\Nobj} \det(2\pi \indexObj{\CovObs})^{-1/2} \exp\left\{-\frac{\indexObj{\SSR}(\bpar)}{2\indexObj{\sdObs}} \right\} 
+\]
+
+
+
+
+
+
 % Sequential Design 
 \section{Sequential Design}
 In sequential design and optimization, we often consider the effect of adding a candidate input $\tilde{\bpar}$ to the design. To evaluate the quality of this candidate, we 

@@ -1125,7 +1125,12 @@ calc_log_EVAR_post_test_mode <- function(lpost_emulator, input_candidate, inputs
   log_var_term <- convert_to_post_emulator_log_moments(pred_KB_int$mean, pred_KB_int$var, return_vals = "log_var")$log_var
   log_EVAR_vals <- log_var_term + inflation_factor
   
-  return(list(log_EVAR = log_EVAR_vals, log_var_term = log_var_term, inflation_factor = inflation_factor))
+  # Further specify the quantities making up the inflation term. 
+  kn_u <- predict_lpost_emulator(inputs_integrate, lpost_emulator, return_vals = "var")$var
+  rho_n <- drop(pred_curr_cand$cov) / (sqrt(kn_u * pred_curr_cand$var))
+  
+  return(list(log_EVAR = log_EVAR_vals, log_var_term = log_var_term, inflation_factor = inflation_factor, 
+              kn_u = kn_u, rho_n = rho_n))
   
 }
 

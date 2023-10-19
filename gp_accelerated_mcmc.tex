@@ -1,0 +1,111 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Local custom commands. 
+\include{local-defs}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Gaussian Process Accelerated MCMC Algorithm}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\section{Setup and Notation}
+We begin by briefly introducing the statistical calibration model for parameter calibration. Let 
+\begin{align*}
+\fwd: \R^{\Npar} \to \R^{\Ntime \times \Nobj}
+\end{align*}
+denote the forward model which maps unknown calibration parameters $\bpar \in \parSpace \subseteq \R^{\Npar}$ to model predictions 
+$\fwd(\bpar) \in \R^{\Ntime \times \Nobj}$. The outputs consist of time series for $\Nobj$ different outputs, each of length $\Ntime$. 
+Individual outputs, corresponding to columns of the matrix $\fwd(\bpar)$, are denoted by $\indexObj{\fwd}(\bpar)$. 
+The task is to infer the value of the parameters $\bpar$ by comparing predictions $\fwd(\bpar)$ to noisy 
+observations $\{\indexObj{\bstate}\}_{\objIdx=1}^{\Nobj}$ of the true system being modeled, with observation dimensions 
+$\indexObj{\bstate} \in \R^{\indexObj{\Ntime}}$ potentially varying due to missing data. We write 
+$\stateMat := \{\indexObj[1]{\bstate}, \dots, \indexObj[\Nobj]{\bstate} \}$ to denote all observed data. 
+
+We connect the observations to the model predictions via the (log) likelihood 
+\begin{align}
+\llik(\bpar, \CovObs) 
+&:= \log p(\stateMat|\bpar, \CovObs) \\
+&= \log \prod_{\objIdx=1}^{\Nobj} \Gaussian(\indexObj{\bstate} | \indexObj{\fwd}(\bpar), \sdObs^2_{\objIdx}) \\
+&= -\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \indexObj{\Ntime} \log(2\pi \sdObs^2_{\objIdx}) - \frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \frac{\indexObj{\SSR}(\bpar)}{\sdObs^2_{\objIdx}}
+\end{align}
+where we denote the \textit{model-data misfit} by 
+\begin{align}
+\indexObj{\SSR}(\bpar) := \norm{\indexObj{\bstate} - \indexObj{\fwd}(\bpar)}_2^2,
+\end{align}
+ and write $\CovObs := \{\sdObs^2_1, \dots, \sdObs^2_{\Nobj}\}$ to denote the variance parameters for each output. 
+
+
+
+
+Let $\llik(\bpar, \CovObs) := \llik(\bpar |\CovObs, \bstate)$ denote 
+a log-likelihood function which quantifies discrepancy between the forward model predictions and observed data. The 
+explicit dependence on $\bstate$ dropped from the notation as the data is assumed constant throughout the analysis. We use $\CovObs$ to denote 
+\textit{likelihood parameters}; that is, any unknown parameters other than $\bpar$ used to define the likelihood. This paper will focus on Gaussian likelihoods, 
+where the likelihood parameters take the form of an unknown positive-definite covariance matrix 
+\begin{align}
+\llik(\bpar, \CovObs) &= \log \Gaussian_{\Ntime}\left(\bstate | \fwd(\bpar), \CovObs \right) \nonumber \\
+			       &= -\frac{\Ntime}{2} \log(2\pi) - \frac{1}{2} \log \det(\CovObs) - \frac{1}{2} (\bstate - \fwd(\bpar))^\top \CovObs^{-1} (\bstate - \fwd(\bpar)) \label{llik}
+\end{align}
+In addition to the likelihood, the Bayesian framework also requires a prior distribution $\priorDens(\bpar, \CovObs)$, 
+which encodes existing knowledge about both the calibration and likelihood parameters. 
+The Bayesian inverse problem is solved by obtaining the 
+posterior distribution
+\begin{align*}
+\postDens(\bpar, \CovObs) &:= \frac{\Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs)}{\int \Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs) d\bpar d\CovObs},
+\end{align*}
+which synthesizes the prior knowledge with the observed data. Typically, interest centers on the marginal posterior for $\bpar$, which marginalizes over the nuisance 
+parameters $\CovObs$,
+\begin{align*}
+\postDens(\bpar) &:= \int_{\parSpace} \postDens(\bpar, \CovObs) d\CovObs.
+\end{align*}
+For notation, we let $\logUnPost(\bpar, \CovObs)$ denote the unnormalized log posterior density, such that 
+\begin{align*}
+\logUnPost(\bpar, \CovObs) := \llik(\bpar, \CovObs) + \Log{\priorDens(\bpar, \CovObs)}.
+\end{align*}
+The posterior distribution is typically summarized via samples and sample-based approximations of expectations of interest, i.e. $\E_{\bpar \sim \postDens}[\phi(\bpar)]$.
+However, the standard approach of applying a Markov Chain Monte Carlo (MCMC) algorithm to produce samples from $\postDens$ often requires 
+$\BigO(10^4)$ or more iterations, each of which requires evaluating $\logUnPost(\bpar, \CovObs)$, which 
+in turn entails computing a forward model evaluation $\fwd(\bpar)$. In the  case where the forward model takes the form of an expensive computer simulation, this 
+can render MCMC intractable. To address this issue, a variety of techniques have emerged which replace the expensive computations 
+$\logUnPost(\bpar, \CovObs)$ with a cheaper statistical approximation known as an \textit{emulator} or \textit{surrogate}. This paper focuses on Gaussian process 
+emulators, which are briefly introduced below before returning to the question of model emulation. 
+
+
+\end{document}

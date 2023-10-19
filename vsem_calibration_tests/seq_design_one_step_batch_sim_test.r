@@ -38,7 +38,7 @@ acquisition_settings <- data.frame(acq_method = "IVAR_lpost",
 # For now only allow one emulator and iterate over acquisition settings, but should generalize to multiple emulators eventually
 # (e.g. to be able to compare loss emulation to basis function approach). 
 seq_design_batch_sim_test <- function(computer_model_data, prior_info, mcmc_info, emulator_settings, init_design_settings, 
-                                      acquisition_settings, validation_settings, random_seed) {
+                                      input_bounds, acquisition_settings, validation_settings, random_seed) {
   
   # ---------------------------------------------------------------------------------------------------------
   # Should save a file containing all input information including random seed so that output is reproducible. 
@@ -47,7 +47,6 @@ seq_design_batch_sim_test <- function(computer_model_data, prior_info, mcmc_info
   # saved to file. 
   
   set.seed(random_seed)
-  
   
   # ---------------------------------------------------------------------------------------------------------
   # Run Exact MCMC and format samples. 
