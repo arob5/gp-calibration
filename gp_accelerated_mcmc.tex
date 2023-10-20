@@ -124,7 +124,7 @@ p(\bpar, \bphi|\CovObs, \stateMat)
 \end{align*}
 Specific proposal distributions are discussed below. 
 
-\subsubsection{Proposal 1}
+\subsubsection{Proposal Option 1}
 We first consider the straightforward approach of first sampling a proposal $\tilde{\bpar}$ from a Gaussian proposal, and then proposing $\tilde{\bphi}$ by sampling from the 
 GP predictive distribution conditional on $\tilde{\bphi}$: 
 \begin{align*}
@@ -136,6 +136,20 @@ Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice o
 \accProbMH([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}]) 
 &= \max\left\{1, \exp\left\{\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \left(\frac{ \indexObj{\phi} - \indexObj{\tilde{\phi}}}{\sdObs^2_{\objIdx}}\right)\right\} \cdot \frac{\priorDens(\tilde{\bpar})}{\priorDens(\bpar)} \right\}
 \end{align*}
+
+\subsubsection{Proposal Option 2: Taking advantage of GP Predictive Correlation}
+We now try to obtained a better unformed proposal for $\tilde{\bphi}$ by leveraging the GP predictive correlation. 
+\begin{align*}
+\tilde{\bpar} &\sim \Gaussian(\bpar, \CovProp) \\
+\left[\indexObj{\phi}_1, \indexObj{\tilde{\phi}}\right]|\left[\bpar, \tilde{\bpar}\right] &\overset{ind}{\sim} \Gaussian\left(\GPMeanPredOut{\Ndesign}{\objIdx}(\left[\bpar, \tilde{\bpar}\right]), \GPKerPredOut{\Ndesign}{\objIdx}(\left[\bpar, \tilde{\bpar}\right])\right).
+\end{align*}
+The sample $\indexObj{\phi}_1$ is simply discarded. 
+
+% Gibbs Step for CovObs
+\subsection{Gibbs Step for $\CovObs$}
+
+ % Additional Gibbs Step for phi
+\subsection{Additional Gibbs Step for $\bphi$}
 
 
 
