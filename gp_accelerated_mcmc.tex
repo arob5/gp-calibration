@@ -20,6 +20,7 @@
 
 % Local custom commands. 
 \include{local-defs}
+\newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
 \setlist[1]{leftmargin=\parindent}
@@ -45,6 +46,7 @@
 
 \begin{document}
 
+% Setup and Notation
 \section{Setup and Notation}
 We begin by briefly introducing the statistical calibration model for parameter calibration. Let 
 \begin{align*}
@@ -70,42 +72,80 @@ where we denote the \textit{model-data misfit} by
 \indexObj{\SSR}(\bpar) := \norm{\indexObj{\bstate} - \indexObj{\fwd}(\bpar)}_2^2,
 \end{align}
  and write $\CovObs := \{\sdObs^2_1, \dots, \sdObs^2_{\Nobj}\}$ to denote the variance parameters for each output. 
-
-
-
-
-Let $\llik(\bpar, \CovObs) := \llik(\bpar |\CovObs, \bstate)$ denote 
-a log-likelihood function which quantifies discrepancy between the forward model predictions and observed data. The 
-explicit dependence on $\bstate$ dropped from the notation as the data is assumed constant throughout the analysis. We use $\CovObs$ to denote 
-\textit{likelihood parameters}; that is, any unknown parameters other than $\bpar$ used to define the likelihood. This paper will focus on Gaussian likelihoods, 
-where the likelihood parameters take the form of an unknown positive-definite covariance matrix 
+ 
+ The model-data misfit functions $\indexObj{\SSR}$ are emulated by independent GPs
+ \begin{align}
+&\SSRVecPredOut{\Ndesign}{\objIdx} \overset{ind}{\sim} \GP(\GPMeanPredOut{\Ndesign}{\objIdx}, \GPKerPredOut{\Ndesign}{\objIdx}), &&\objIdx = 1, \dots, \Nobj,
+ \end{align}
+ where the subscript $\Ndesign$ indicates a GP predictive distribution, conditional on a design dataset consisting of $\Ndesign$ input-output data pairs. We will write 
+ $\indexDesign[\Ndesign]{\SSR} := \left[\SSRVecPredOut{\Ndesign}{1}, \dots, \SSRVecPredOut{\Ndesign}{\Nobj}\right]^\top$ when referencing all of the GPs, which can 
+ also be thought of as a single, multi-output GP with independent covariance structure across outputs. 
+ 
+Finally, we consider priors on $\bpar$ and $\CovObs$. The former is left arbitrary, with prior density denoted by $\priorDens(\bpar)$. 
+The variance parameters $\sdObs_{\objIdx}^2$ are assigned inverse gamma priors $\sdObs_{\objIdx}^2 \overset{ind}{\sim} \mathcal{IG}(\indexObj{\IGShape}, \indexObj{\IGScale})$ so the
+prior density can be written, 
 \begin{align}
-\llik(\bpar, \CovObs) &= \log \Gaussian_{\Ntime}\left(\bstate | \fwd(\bpar), \CovObs \right) \nonumber \\
-			       &= -\frac{\Ntime}{2} \log(2\pi) - \frac{1}{2} \log \det(\CovObs) - \frac{1}{2} (\bstate - \fwd(\bpar))^\top \CovObs^{-1} (\bstate - \fwd(\bpar)) \label{llik}
+\priorDens(\CovObs) 
+&= \prod_{\objIdx = 1}^{\Nobj} \mathcal{IG}(\sdObs_{\objIdx}^2|\indexObj{\IGShape}, \indexObj{\IGScale}). \label{inv_gamma_prior} \\
+&= \prod_{\objIdx = 1}^{\Nobj} \frac{\left[ \indexObj{\IGScale}\right]^{\indexObj{\IGShape}}}{\Gamma(\indexObj{\IGShape})} \left(\frac{1}{\sdObs^2_{\objIdx}}\right)^{\indexObj{\IGShape}+1} 
+\exp\left\{-\frac{\indexObj{\IGScale}}{\sdObs^2_{\objIdx}} \right\}. \nonumber
 \end{align}
-In addition to the likelihood, the Bayesian framework also requires a prior distribution $\priorDens(\bpar, \CovObs)$, 
-which encodes existing knowledge about both the calibration and likelihood parameters. 
-The Bayesian inverse problem is solved by obtaining the 
-posterior distribution
+
+% MCMC Algorithm
+\section{MCMC Algorithm}
+Replacing the true model-data misfits with the GP approximation $\indexDesign[\Ndesign]{\SSR} $ results in a method to approximately sample from the posterior 
+distribution $p(\bpar, \CovObs | \stateMat)$, while significantly accelerating the computation. Given that the emulator induces approximation error, we seek to 
+propagate the uncertainty in $\indexDesign[\Ndesign]{\SSR}$ in order to prevent overconfidence in the posterior samples. To this end, we treat $\indexDesign[\Ndesign]{\SSR}$
+as another variable to be explored in the parameter space; i.e. the posterior over this extended parameter space becomes 
+$p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar) | \stateMat)$. The joint distribution over all unknowns is thus 
 \begin{align*}
-\postDens(\bpar, \CovObs) &:= \frac{\Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs)}{\int \Exp{\llik(\bpar, \CovObs)}\priorDens(\bpar, \CovObs) d\bpar d\CovObs},
+&p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar), \stateMat) = 
+p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar))p(\indexDesign[\Ndesign]{\SSR}(\bpar) | \bpar) \priorDens(\bpar) \priorDens(\CovObs) \\
+&= \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexDesign[\Ndesign]{\SSR}(\bpar)}{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\indexDesign[\Ndesign]{\SSR}(\bpar) | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] 
 \end{align*}
-which synthesizes the prior knowledge with the observed data. Typically, interest centers on the marginal posterior for $\bpar$, which marginalizes over the nuisance 
-parameters $\CovObs$,
+
+In the algorithms detailed below, we denote $\bphi := \indexDesign[\Ndesign]{\SSR}(\bpar)$, so that the posterior density is then $p(\bpar, \CovObs, \bphi | \stateMat)$. This notation suppresses 
+the functional dependence on $\bpar$, but makes it more clear that we are simply considering $\bphi$ to be another parameter in the parameter space, which happens to be strongly 
+related to $\bpar$. The below sections detail a Metropolis-within-Gibbs (MwG) scheme for sampling from this posterior. 
+
+\subsection{Block $(\bpar, \bphi)$ update.}
+We consider a block Metropolis step for $\bpar$ and $\bphi$ jointly. Let $\propDens\left([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}] \right)$ be the density for the proposal distribution for 
+proposing $[\tilde{\bpar}, \tilde{\bphi}]$ given current state $[\bpar, \bphi]$. This yields a MH acceptance probability
 \begin{align*}
-\postDens(\bpar) &:= \int_{\parSpace} \postDens(\bpar, \CovObs) d\CovObs.
+\accProbMH([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}]) 
+&= \max\left\{1,  \frac{p(\tilde{\bpar}, \tilde{\bphi}|\CovObs, \stateMat)\propDens\left([\tilde{\bpar}, \tilde{\bphi}], [\bpar, \bphi] \right)}{p(\bpar, \bphi|\CovObs, \stateMat) \propDens\left([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}] \right)} \right\},
 \end{align*}
-For notation, we let $\logUnPost(\bpar, \CovObs)$ denote the unnormalized log posterior density, such that 
+where 
 \begin{align*}
-\logUnPost(\bpar, \CovObs) := \llik(\bpar, \CovObs) + \Log{\priorDens(\bpar, \CovObs)}.
+p(\bpar, \bphi|\CovObs, \stateMat) 
+&\propto \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[\exp\left\{-\frac{\indexObj{\phi}}{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\bphi | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \right].
 \end{align*}
-The posterior distribution is typically summarized via samples and sample-based approximations of expectations of interest, i.e. $\E_{\bpar \sim \postDens}[\phi(\bpar)]$.
-However, the standard approach of applying a Markov Chain Monte Carlo (MCMC) algorithm to produce samples from $\postDens$ often requires 
-$\BigO(10^4)$ or more iterations, each of which requires evaluating $\logUnPost(\bpar, \CovObs)$, which 
-in turn entails computing a forward model evaluation $\fwd(\bpar)$. In the  case where the forward model takes the form of an expensive computer simulation, this 
-can render MCMC intractable. To address this issue, a variety of techniques have emerged which replace the expensive computations 
-$\logUnPost(\bpar, \CovObs)$ with a cheaper statistical approximation known as an \textit{emulator} or \textit{surrogate}. This paper focuses on Gaussian process 
-emulators, which are briefly introduced below before returning to the question of model emulation. 
+Specific proposal distributions are discussed below. 
+
+\subsubsection{Proposal 1}
+We first consider the straightforward approach of first sampling a proposal $\tilde{\bpar}$ from a Gaussian proposal, and then proposing $\tilde{\bphi}$ by sampling from the 
+GP predictive distribution conditional on $\tilde{\bphi}$: 
+\begin{align*}
+\tilde{\bpar} &\sim \Gaussian(\bpar, \CovProp) \\
+\indexObj{\tilde{\phi}}|\tilde{\bpar} &\overset{ind}{\sim} \Gaussian\left(\GPMeanPredOut{\Ndesign}{\objIdx}(\tilde{\bpar}), \GPKerPredOut{\Ndesign}{\objIdx}(\tilde{\bpar})\right).
+\end{align*}
+Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice of proposal yields to cancellation of many of the terms in the MH acceptance ratio, yielding
+\begin{align*}
+\accProbMH([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}]) 
+&= \max\left\{1, \exp\left\{\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \left(\frac{ \indexObj{\phi} - \indexObj{\tilde{\phi}}}{\sdObs^2_{\objIdx}}\right)\right\} \cdot \frac{\priorDens(\tilde{\bpar})}{\priorDens(\bpar)} \right\}
+\end{align*}
+
+
+
+% MCMC Algorithm: Marginal Likelihood Approach
+\section{MCMC Algorithm: Marginal Likelihood Approach}
+
+
 
 
 \end{document}
+
+
+
