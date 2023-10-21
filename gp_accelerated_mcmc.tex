@@ -101,13 +101,18 @@ $p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar) | \stateMat)$. The joint 
 \begin{align*}
 &p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar), \stateMat) = 
 p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar))p(\indexDesign[\Ndesign]{\SSR}(\bpar) | \bpar) \priorDens(\bpar) \priorDens(\CovObs) \\
-&= \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexDesign[\Ndesign]{\SSR}(\bpar)}{2\sdObs^2_{\objIdx}} \right\} 
-\Gaussian\left(\indexDesign[\Ndesign]{\SSR}(\bpar) | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] 
+&= \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\SSRVecPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\SSRVecPredOut{\Ndesign}{\Nobj}(\bpar) | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] 
 \end{align*}
 
 In the algorithms detailed below, we denote $\bphi := \indexDesign[\Ndesign]{\SSR}(\bpar)$, so that the posterior density is then $p(\bpar, \CovObs, \bphi | \stateMat)$. This notation suppresses 
 the functional dependence on $\bpar$, but makes it more clear that we are simply considering $\bphi$ to be another parameter in the parameter space, which happens to be strongly 
-related to $\bpar$. The below sections detail a Metropolis-within-Gibbs (MwG) scheme for sampling from this posterior. 
+related to $\bpar$ via the conditionals
+\begin{align*}
+&\indexObj{\phi} | \bpar \sim \Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar) \right), &&\objIdx = 1, \dots, \Nobj.
+\end{align*}
+
+The below sections detail a Metropolis-within-Gibbs (MwG) scheme for sampling from this posterior. 
 
 \subsection{Block $(\bpar, \bphi)$ update.}
 We consider a block Metropolis step for $\bpar$ and $\bphi$ jointly. Let $\propDens\left([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}] \right)$ be the density for the proposal distribution for 
@@ -119,8 +124,10 @@ proposing $[\tilde{\bpar}, \tilde{\bphi}]$ given current state $[\bpar, \bphi]$.
 where 
 \begin{align*}
 p(\bpar, \bphi|\CovObs, \stateMat) 
-&\propto \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[\exp\left\{-\frac{\indexObj{\phi}}{2\sdObs^2_{\objIdx}} \right\} 
-\Gaussian\left(\bphi | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \right].
+&\propto \priorDens(\bpar) \exp\left\{-\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \frac{\indexObj{\phi}}{\sdObs^2_{\objIdx}} \right\} 
+ \prod_{\objIdx=1}^{\Nobj} \Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \\
+&\propto \priorDens(\bpar) \exp\left\{-\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \left[\frac{\indexObj{\phi}}{\sdObs^2_{\objIdx}} + \frac{(\indexObj{\phi} - \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar))^2}{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right]  \right\}
+	\prod_{\objIdx=1}^{\Nobj} \det\left(\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right)^{-1/2}
 \end{align*}
 Specific proposal distributions are discussed below. 
 
@@ -131,7 +138,7 @@ GP predictive distribution conditional on $\tilde{\bphi}$:
 \tilde{\bpar} &\sim \Gaussian(\bpar, \CovProp) \\
 \indexObj{\tilde{\phi}}|\tilde{\bpar} &\overset{ind}{\sim} \Gaussian\left(\GPMeanPredOut{\Ndesign}{\objIdx}(\tilde{\bpar}), \GPKerPredOut{\Ndesign}{\objIdx}(\tilde{\bpar})\right).
 \end{align*}
-Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice of proposal yields to cancellation of many of the terms in the MH acceptance ratio, yielding
+Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice of proposal leads to cancellation of many of the terms in the MH acceptance ratio, yielding
 \begin{align*}
 \accProbMH([\bpar, \bphi], [\tilde{\bpar}, \tilde{\bphi}]) 
 &= \max\left\{1, \exp\left\{\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \left(\frac{ \indexObj{\phi} - \indexObj{\tilde{\phi}}}{\sdObs^2_{\objIdx}}\right)\right\} \cdot \frac{\priorDens(\tilde{\bpar})}{\priorDens(\bpar)} \right\}
@@ -139,17 +146,39 @@ Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice o
 
 \subsubsection{Proposal Option 2: Taking advantage of GP Predictive Correlation}
 We now try to obtained a better unformed proposal for $\tilde{\bphi}$ by leveraging the GP predictive correlation. 
+
+% Gibbs Step for phi
+\subsection{Gibbs Step for $\bphi$}
+We consider an alternative update for $\bphi$; namely, a Gibbs update. The conditional posterior for $\bphi$ is given by 
 \begin{align*}
-\tilde{\bpar} &\sim \Gaussian(\bpar, \CovProp) \\
-\left[\indexObj{\phi}_1, \indexObj{\tilde{\phi}}\right]|\left[\bpar, \tilde{\bpar}\right] &\overset{ind}{\sim} \Gaussian\left(\GPMeanPredOut{\Ndesign}{\objIdx}(\left[\bpar, \tilde{\bpar}\right]), \GPKerPredOut{\Ndesign}{\objIdx}(\left[\bpar, \tilde{\bpar}\right])\right).
+p(\bphi | \bpar, \CovObs, \stateMat) 
+&\propto \prod_{\objIdx=1}^{\Nobj} \exp\left\{-\frac{\indexObj{\phi}}{2\sdObs^2_{\objIdx}} \right\} 
+	\Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \\
+&\propto \prod_{\objIdx=1}^{\Nobj} \exp\left\{-\frac{1}{2} \frac{(\indexObj{\phi} - \indexObj{a}(\bpar))^2}{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} \\
+&\propto \prod_{\objIdx=1}^{\Nobj} \Gaussian\left(\indexObj{\phi} | \indexObj{a}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right)
 \end{align*}
-The sample $\indexObj{\phi}_1$ is simply discarded. 
+where $\indexObj{a}(\bpar) := \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) - \frac{1}{2}\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{\sdObs^2_{\objIdx}}$. We thus see that 
+the conditional distribution for $\bphi$ is given by another GP, with the same variance as before, but with the mean function decreased by an additive factor depending on the 
+ratio of the GP uncertainty $\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)$ and the data likelihood noise $\sdObs^2_{\objIdx}$. We note that, 
+\begin{align*}
+p(\indexObj{\phi} | \bpar, \CovObs, \stateMat) \to \delta(\indexObj{\phi} - \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)) \text{ as } \GPKerPredOut{\Ndesign}{\objIdx}(\bpar) \to 0.
+\end{align*}
+This makes intuitive sense: if there is no uncertainty about the model-data misfit value, then the conditional draw will simply be the GP prediction $\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)$.
+Similarly, 
+\begin{align*}
+p(\indexObj{\phi} | \bpar, \CovObs, \stateMat) \to \Gaussian(\indexObj{\phi}|\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) , \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)) \text{ as } \sdObs^2_{\objIdx} \to \infty.
+\end{align*}
+That is, in the case where the likelihood is essentially pure noise, then the conditional draw will be sampled from the GP $\SSRVecPredOut{\Ndesign}{\objIdx}(\bpar)$. In general, the 
+conditional for $\bphi$ will balances the data fit with the GP predictive uncertainty. 
+
+% MH Step for u
+\subsection{MH Step for $\bpar$}
+
+
 
 % Gibbs Step for CovObs
 \subsection{Gibbs Step for $\CovObs$}
 
- % Additional Gibbs Step for phi
-\subsection{Additional Gibbs Step for $\bphi$}
 
 
 
