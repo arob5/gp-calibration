@@ -109,8 +109,15 @@ In the algorithms detailed below, we denote $\bphi := \indexDesign[\Ndesign]{\SS
 the functional dependence on $\bpar$, but makes it more clear that we are simply considering $\bphi$ to be another parameter in the parameter space, which happens to be strongly 
 related to $\bpar$ via the conditionals
 \begin{align*}
-&\indexObj{\phi} | \bpar \sim \Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar) \right), &&\objIdx = 1, \dots, \Nobj.
+&p(\indexObj{\phi} | \bpar) = \Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar) \right), &&\objIdx = 1, \dots, \Nobj.
 \end{align*}
+The joint distribution over all unknowns can thus be written as
+\begin{align}
+&p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar), \stateMat) = 
+p(\stateMat | \bpar, \CovObs, \bphi)p(\bphi | \bpar) \priorDens(\bpar) \priorDens(\CovObs) \\
+&= \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] \nonumber
+\end{align}
 
 The below sections detail a Metropolis-within-Gibbs (MwG) scheme for sampling from this posterior. 
 
@@ -145,7 +152,7 @@ Here, $\CovProp$ is some $\Npar \times \Npar$ proposal covariance. This choice o
 \end{align*}
 
 \subsubsection{Proposal Option 2: Taking advantage of GP Predictive Correlation}
-We now try to obtained a better unformed proposal for $\tilde{\bphi}$ by leveraging the GP predictive correlation. 
+We now try to obtained a better unformed proposal for $\tilde{\bphi}$ by leveraging the GP predictive correlation. \textbf{TODO}
 
 % Gibbs Step for phi
 \subsection{Gibbs Step for $\bphi$}
@@ -169,17 +176,29 @@ Similarly,
 p(\indexObj{\phi} | \bpar, \CovObs, \stateMat) \to \Gaussian(\indexObj{\phi}|\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) , \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)) \text{ as } \sdObs^2_{\objIdx} \to \infty.
 \end{align*}
 That is, in the case where the likelihood is essentially pure noise, then the conditional draw will be sampled from the GP $\SSRVecPredOut{\Ndesign}{\objIdx}(\bpar)$. In general, the 
-conditional for $\bphi$ will balances the data fit with the GP predictive uncertainty. 
+conditional for $\bphi$ balances the data fit with the GP predictive uncertainty.
 
 % MH Step for u
 \subsection{MH Step for $\bpar$}
-
+In the case that a Gibbs step is used for $\bphi$, then a MH step may be used to update $\bpar$. The conditional posterior is 
+\begin{align*}
+p(\bpar | \bphi, \CovObs, \stateMat) 
+&\propto \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \Gaussian\left(\indexObj{\phi} | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar))\right).
+\end{align*}
 
 
 % Gibbs Step for CovObs
 \subsection{Gibbs Step for $\CovObs$}
-
-
+The inverse gamma priors on $\CovObs$ yield conditional conjugacy. Indeed, the conditional posterior is given by 
+\begin{align*}
+p(\CovObs | \bpar, \bphi, \stateMat) 
+&\propto \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+\mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] \\
+&\propto \prod_{\objIdx=1}^{\Nobj} \left[\left(\frac{1}{\sdObs^2_{\objIdx}}\right)^{\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+ \left(\frac{1}{\sdObs^2_{\objIdx}}\right)^{\indexObj{\IGShape}+1} \exp\left\{-\frac{\indexObj{\IGScale}}{\sdObs^2_{\objIdx}} \right\}\right] \\
+ &= \prod_{\objIdx=1}^{\Nobj} \left(\frac{1}{\sdObs^2_{\objIdx}}\right)^{\indexObj{\IGShape}+\indexObj{\Ntime}/2+1} \exp\left\{-\frac{\indexObj{\IGScale} + \indexObj{\phi}/2}{\sdObs^2_{\objIdx}} \right\} \\
+ &\propto \prod_{\objIdx=1}^{\Nobj} \mathcal{IG}\left(\sdObs^2_{\objIdx} \bigg| \indexObj{\IGShape} + \frac{\indexObj{\Ntime}}{2}, \indexObj{\IGScale} + \frac{\indexObj{\phi}}{2} \right).
+\end{align*}
 
 
 % MCMC Algorithm: Marginal Likelihood Approach
