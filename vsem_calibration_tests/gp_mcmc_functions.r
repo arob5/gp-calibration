@@ -7,7 +7,7 @@
 # Helper Functions. 
 # -----------------------------------------------------------------------------
 
-sample_emulator_cond <- function(input_scaled, emulator_info_list, cond_type, sig2_eps = NULL) {
+sample_emulator_cond <- function(input_scaled, emulator_info_list, cond_type, sig2_eps = NULL, gp_pred_list = NULL) {
   # Draws a sample either from p(phi|u) or p(phi|u,Sigma,Y). The former is the GP predictive 
   # distribution for the model-data misfit evaluated at input u. The latter is the conditional 
   # posterior of the model-data misfit value, given input u and variance parameters Sigma. 
@@ -21,14 +21,20 @@ sample_emulator_cond <- function(input_scaled, emulator_info_list, cond_type, si
   #               samples from the GP predictive distribution p(phi|u). If "post", samples
   #               from the GP conditional posterior distribution p(phi|u,Sigma,Y).
   #    sig2_eps: numeric(p), the vector of variance parameters. Only required if cond_type is "post". 
+  #    gp_pred_list: list, as returned by the function `predict_independent_GPs()`. This can be optionally 
+  #                  passed in if this list has already been pre-computed. 
   #
   # Returns:
   #    matrix, of dimension 1xp, with p being the number of output variables. 
   
+  if(!(cond_type %in% c("prior", "post"))) stop("Invalid `cond_type`.")
+  
   # Compute GP predictions. 
-  gp_pred_list <- predict_independent_GPs(X_pred = input_scaled, gp_obj_list = emulator_info_list$gp_fits, 
-                                          gp_lib = emulator_info_list$settings$gp_lib, include_cov_mat = FALSE, 
-                                          denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats)
+  if(is.null(gp_pred_list)) {
+    gp_pred_list <- predict_independent_GPs(X_pred = input_scaled, gp_obj_list = emulator_info_list$gp_fits, 
+                                            gp_lib = emulator_info_list$settings$gp_lib, include_cov_mat = FALSE, 
+                                            denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats)
+  }
   
   # Sample from GP predictive distribution. 
   SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods = emulator_info_list$settings$transformation_method, 
@@ -52,11 +58,11 @@ sample_emulator_cond <- function(input_scaled, emulator_info_list, cond_type, si
 # emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
 # TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
 # on the correct scale (e.g. it should be on log scale for LNP).
-mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emulator_info,
-                                  theta_init = NULL, sig2_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
-                                  N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                                  proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
-                                  adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
+mcmc_calibrate_ind_GP_Gibbs <- function(computer_model_data, theta_prior_params, emulator_info,
+                                        theta_init = NULL, sig2_eps_init = NULL, learn_sig_eps = FALSE, sig_eps_prior_params = NULL, 
+                                        N_mcmc = 50000, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                                        proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                                        adapt_scale_method = "MH_ratio", adapt_init_threshold = 3) {
   # `theta_prior_params` should already be truncated, if desired. 
   
   if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
@@ -71,10 +77,14 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
   
   # Objects to store samples.
-  theta_samp <- matrix(nrow = N_mcmc, ncol = d)
+  theta_samp <- matrix(nrow=N_mcmc, ncol=d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  sig2_eps_samp <- matrix(nrow = N_mcmc, ncol = p)
+  sig2_eps_samp <- matrix(nrow=N_mcmc, ncol=p)
   colnames(sig2_eps_samp) <- computer_model_data$output_vars
+  
+  # TODO: TEMP.
+  SSR_samp <- matrix(nrow=N_mcmc, ncol=p)
+  colnames(SSR_samp) <- computer_model_data$output_vars
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -93,9 +103,17 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
   sig2_eps_samp[1,] <- sig2_eps_init
   
   theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info$input_bounds)
+  gp_pred_list_curr <- predict_independent_GPs(X_pred=theta_scaled_curr, gp_obj_list=emulator_info_list$gp_fits, 
+                                               gp_lib=emulator_info_list$settings$gp_lib, include_cov_mat=FALSE, 
+                                               denormalize_predictions=TRUE, output_stats=emulator_info_list$output_stats)
+  gp_pred_means_curr <- sapply(gp_pred_list_curr, function(x) x$mean)
+  gp_pred_vars_curr <- sapply(gp_pred_list_curr, function(x) x$var_comb)
   sig2_eps_curr <- sig2_eps_init
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", sig2_eps=sig2_eps_curr)
+  
+  # TODO: TEMP
+  SSR_samp[1,] <- SSR_curr
   
   # Proposal covariance.
   Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
@@ -125,19 +143,26 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
       alpha <- 0
       
     } else {
-      
+
       # Accept-Reject step. 
-      lpost_theta_curr <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals=lprior_theta_curr, SSR=SSR_curr, 
-                                                       vars_obs=sig2_eps_curr, normalize_lik=FALSE, na.rm=TRUE, return_list=FALSE)
-      lpost_theta_prop_list <- calc_lpost_theta_product_lik(computer_model_data, theta_vals=matrix(theta_prop, nrow=1), SSR=SSR_curr, 
-                                                            vars_obs = sig2_eps_curr, normalize_lik=FALSE, na.rm=TRUE, theta_prior_params=theta_prior_params, 
-                                                            return_list=TRUE)
-      alpha <- min(1.0, exp(lpost_theta_prop_list$lpost - lpost_theta_curr))
+      lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+      theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info$input_bounds)
+      gp_pred_list_prop <- predict_independent_GPs(X_pred = theta_scaled_prop, gp_obj_list = emulator_info_list$gp_fits, 
+                                                   gp_lib = emulator_info_list$settings$gp_lib, include_cov_mat = FALSE, 
+                                                   denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats)
+      gp_pred_means_prop <- sapply(gp_pred_list_prop, function(x) x$mean)
+      gp_pred_vars_prop <- sapply(gp_pred_list_prop, function(x) x$var_comb)
+      
+      lpost_theta_curr <- lprior_theta_curr + sum(dnorm(drop(SSR_curr), gp_pred_means_curr, sqrt(gp_pred_vars_curr), log=TRUE))
+      lpost_theta_prop <- lprior_theta_prop + sum(dnorm(drop(SSR_curr), gp_pred_means_prop, sqrt(gp_pred_vars_prop), log=TRUE))
+      
+      alpha <- min(1.0, exp(lpost_theta_prop - lpost_theta_curr))
       
       if(runif(1) <= alpha) {
         theta_samp[itr,] <- theta_prop
-        theta_scaled_curr <- scale_input_data(matrix(theta_prop,nrow=1), input_bounds=emulator_info$input_bounds)
-        lprior_theta_curr <- lpost_theta_prop_list$lprior
+        gp_pred_list_curr <- gp_pred_list_prop
+        theta_scaled_curr <- theta_scaled_prop
+        lprior_theta_curr <- lpost_theta_prop
         accept_count <- accept_count + 1 
       } else {
         theta_samp[itr,] <- theta_samp[itr-1,]
@@ -160,7 +185,11 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
     # Gibbs step for phi. 
     #
     
-    SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", sig2_eps=sig2_eps_curr)
+    SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", 
+                                     sig2_eps=sig2_eps_curr, gp_pred_list=gp_pred_list_curr) 
+    
+    # TODO: TEMP
+    SSR_samp[itr,] <- SSR_curr
     
     #
     # Gibbs step for sig2_eps. 
@@ -173,9 +202,17 @@ mcmc_calibrate_ind_GP <- function(computer_model_data, theta_prior_params, emula
       sig2_eps_samp[itr,] <- sig2_eps_init
     }
     
+    #
+    # Second Gibbs step for phi. 
+    #
+    
+    SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", 
+                                     sig2_eps=sig2_eps_curr, gp_pred_list=gp_pred_list_curr) 
+    
+    
   }
   
-  return(list(theta = theta_samp, sig2_eps = sig2_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop)))
+  return(list(theta = theta_samp, sig_eps = sig2_eps_samp, Cov_prop = Cov_prop, scale_prop = exp(log_scale_prop), SSR = SSR_samp))
   
 }
 

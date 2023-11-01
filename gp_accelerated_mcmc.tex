@@ -113,7 +113,7 @@ related to $\bpar$ via the conditionals
 \end{align*}
 The joint distribution over all unknowns can thus be written as
 \begin{align}
-&p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar), \stateMat) = 
+&p(\bpar, \CovObs, \bphi, \stateMat) = 
 p(\stateMat | \bpar, \CovObs, \bphi)p(\bphi | \bpar) \priorDens(\bpar) \priorDens(\CovObs) \\
 &= \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(2\pi\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
 \Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \mathcal{IG}(\sdObs^2_{\objIdx}| \indexObj{\IGShape}, \indexObj{\IGScale}) \right] \nonumber
@@ -215,6 +215,12 @@ p(\CovObs | \bpar, \bphi, \stateMat)
 % MCMC Algorithm: Marginal Likelihood Approach
 % \section{MCMC Algorithm: Marginal Likelihood Approach}
 
+% Numerical Experiments
+\section{Numerical Experiments}
+\begin{enumerate}
+\item Vary dimension of parameter space
+\item Vary number of design points (noisy vs. precise GP emulator)
+\end{enumerate}
 
 
 

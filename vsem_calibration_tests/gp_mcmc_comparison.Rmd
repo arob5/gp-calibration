@@ -22,6 +22,7 @@ source("numerical_experiment_functions.r")
 source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
 source("gp_mcmc_functions.r")
+source("sequential_design_optimization.r")
 ```
 
 # Computer Model and Data 
@@ -100,7 +101,6 @@ grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
 grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
 ```
 
-
 ```{r}
 # Store matrix of calibration parameter samples from exact MCMC for plotting purposes. 
 samp_exact_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")[, .(param_name, sample)]
@@ -108,21 +108,7 @@ samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, 
 ```
 
 
-```{r}
-# Store exact samples that will be used to compute error metrics. 
-
-# Samples for sample-based metrics that require approximately independent samples. 
-# TODO: should monitor estimated auto-correlation here. 
-samp_exact_theta_thinned <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 5),]
-
-# Samples for computing emulator-based metrics. This requires computing GP predictions at every sample, so must reduce 
-# the number of samples for computational feasibility. 
-samp_exact_theta_emulator_metrics <- samp_exact_theta[seq(1, nrow(samp_exact_theta), 10),]
-
-```
-
-
-# Round 0: Fit GP on initial space-filling design. 
+# Fit GP on space-filling design. 
 
 ```{r, echo = FALSE}
 # Emulator settings
@@ -137,7 +123,7 @@ print(emulator_settings)
 
 ```{r}
 # Initial design (round 0). 
-design_settings <- data.frame(N_design = 7, design_method = "LHS", design_seed = 1)
+design_settings <- data.frame(N_design = 17, design_method = "LHS", design_seed = 1) # should test with 7 design points again. 
 init_design_info <- get_input_output_design(N_points = design_settings$N_design,
                                             design_method = design_settings$design_method, 
                                             scale_inputs = TRUE,
@@ -149,7 +135,7 @@ init_design_info <- get_input_output_design(N_points = design_settings$N_design,
 prior_grid_info <- get_input_output_design(N_points = 51^2,
                                            design_method = "grid", 
                                            scale_inputs = TRUE,
-                                           param_ranges = init_design_info$input_bounds,
+                                           # param_ranges = init_design_info$input_bounds,
                                            computer_model_data = computer_model_data, 
                                            theta_prior_params = theta_prior_params, 
                                            design_seed = design_settings$design_seed)
@@ -161,11 +147,6 @@ prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = comp
                                                       return_list = FALSE)
 ```
 
-```{r}
-library(svglite)
-base_dir <- getwd()
-poster_figure_dir <- "poster_figures"
-```
 
 ```{r}
 # Plot initial design. 
@@ -176,18 +157,16 @@ plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_gri
                                        samples_kde_lab = "True Post KDE", samples_points_size = 3)
 # plt_init_design <- plt_init_design + theme_classic()
 
-plt_init_design <- plt_init_design + theme(legend.position = "none", axis.text.x=element_blank(), 
-                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-                                           panel.border = element_blank(), panel.background = element_blank(), 
-                                           plot.background = element_blank()) + 
-                   ggtitle(NULL) + xlab(NULL) + ylab(NULL)
+# plt_init_design <- plt_init_design + theme(legend.position = "none", axis.text.x=element_blank(), 
+#                                            axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+#                                            panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+#                                            panel.border = element_blank(), panel.background = element_blank(), 
+#                                            plot.background = element_blank()) + 
+#                    ggtitle(NULL) + xlab(NULL) + ylab(NULL)
 plot(plt_init_design)
 
-plot_x_range <- layer_scales(plt_init_design)$x$range$range
-plot_y_range <- layer_scales(plt_init_design)$y$range$range
-
-# ggsave(filename = file.path(base_dir, poster_figure_dir, "initial_design.svg"), width = 5.0, height = 5.0, units = "in")
+#plot_x_range <- layer_scales(plt_init_design)$x$range$range
+#plot_y_range <- layer_scales(plt_init_design)$y$range$range
 
 ```
 
@@ -214,98 +193,52 @@ lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list
 ```
 
 
-```{r}
-#
-# Compute round 0 emulator-based metrics.  
-#
-
-# # Validation data for evaluating emulator-based metrics. 
-# lpost_emulator_metrics <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-#                                                        theta_vals = samp_exact_theta_emulator_metrics, 
-#                                                        vars_obs = diag(computer_model_data$Sig_eps), 
-#                                                        na.rm = TRUE, theta_prior_params = theta_prior_params, 
-#                                                        return_list = FALSE)
-# 
-# val_data_emulator_metrics <- list(inputs = samp_exact_theta_emulator_metrics, 
-#                                   inputs_scaled = scale_input_data(samp_exact_theta_emulator_metrics, init_design$input_bounds), 
-#                                   outputs = lpost_emulator_metrics)
-# 
-# # Compute metrics. 
-# metrics_results <- get_lpost_emulator_metrics(lpost_emulator = lpost_emulator, 
-#                                               lpost_validation_inputs = val_data_emulator_metrics$inputs, 
-#                                               lpost_validation_inputs_scaled = val_data_emulator_metrics$inputs_scaled,
-#                                               lpost_validation_outputs = val_data_emulator_metrics$outputs,
-#                                               metrics = c("crps", "rmse"),  
-#                                               include_nugget = TRUE)
-# emulator_metrics_results <- data.frame(as.list(metrics_results))
-# emulator_metrics_results$round <- 0
-```
-
-
 ## Sample approximate posterior. 
 ```{r}
 #
-# Round 0 approximate posterior sampling. 
+# Baseline GP MCMC algorithm (sampling from GP)
 #
 
 N_mcmc_approx <- 50000
 
-mcmc_approx_round0 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params, 
-                                            emulator_info = lpost_emulator$emulator_info_list,
-                                            theta_init = init_design_info$init_estimates$best_input[1,], 
-                                            sig_eps_init = init_design_info$init_estimates$best_sig2_eps, 
-                                            learn_sig_eps = TRUE, 
-                                            sig_eps_prior_params = sig_eps_prior_params, 
-                                            N_mcmc = N_mcmc_approx)
+mcmc_approx_baseline <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
+                                              theta_prior_params = theta_prior_params, 
+                                              emulator_info = lpost_emulator$emulator_info_list,
+                                              theta_init = init_design_info$init_estimates$best_input[1,], 
+                                              sig_eps_init = init_design_info$init_estimates$best_sig2_eps, 
+                                              learn_sig_eps = TRUE, 
+                                              sig_eps_prior_params = sig_eps_prior_params, 
+                                              N_mcmc = N_mcmc_approx)
 ```
 
 ```{r}
 # Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_round0[c("theta", "sig_eps")], test_label = "round0")), 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_baseline[c("theta", "sig_eps")], test_label = "baseline")), 
                           use.names = TRUE)
 ```
 
-### Round 0 MCMC sampling diagnostics. 
+### GP-MCMC-Bsseline sampling diagnostics. 
 ```{r}
 
-burn_ins <- c(burn_ins, round0 = 10000)
+burn_ins <- c(burn_ins, baseline = 10000)
 
-mcmc_round0_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")
-mcmc_round0_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "sig_eps")
+mcmc_baseline_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "theta")
+mcmc_baseline_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "sig_eps")
 
-grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_round0_trace_plts_sig_eps, nrow = 1))
+grid.arrange(arrangeGrob(grobs = mcmc_baseline_trace_plts, nrow = 1))
+grid.arrange(arrangeGrob(grobs = mcmc_baseline_trace_plts_sig_eps, nrow = 1))
 ```
 
 
 ```{r}
 #
-# Store round 0 MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
+# Store baseline MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
 # as well as for plotting purposes. 
 #
 
-samp_round0_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "theta")[, .(param_name, sample)]
-samp_round0_theta <- as.matrix(unstack(samp_round0_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+samp_baseline_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "theta")[, .(param_name, sample)]
+samp_baseline_theta <- as.matrix(unstack(samp_baseline_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
 
-samp_round0_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round0", param_types = "sig_eps")[, .(param_name, sample)]
-samp_round0_sig_eps <- as.matrix(unstack(samp_round0_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
-
-SSR_round0 <- get_computer_model_SSR(computer_model_data = computer_model_data, theta_vals = samp_round0_theta, na.rm = TRUE)
-lpost_round0_outputs <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                     theta_vals = samp_round0_theta, 
-                                                     SSR = SSR_round0, 
-                                                     vars_obs = lpost_emulator$sig2_eps, 
-                                                     theta_prior_params = theta_prior_params)
-samp_round0_info <- list(inputs = samp_round0_theta, 
-                         inputs_scaled = scale_input_data(samp_round0_theta, init_design_info$input_bounds), 
-                         outputs = lpost_round0_outputs$lpost)
-
-# lpost emulator predictions at sampled points. 
-lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emulator, 
-                                                     inputs_new_scaled = samp_round0_info$inputs_scaled, 
-                                                     inputs_new_unscaled = samp_round0_info$inputs, include_nugget = TRUE)
-                                                     
 ```
 
 
@@ -323,773 +256,79 @@ lpost_emulator_pred_round0 <- predict_lpost_emulator(lpost_emulator = lpost_emul
 ```{r}
 # Contours of round 1 approximate posterior vs true contours. 
 # TODO: need to modify plot legend here. Also consider overlaying design points. 
-post_comparison_plts_round0 <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_round0_info$inputs, 
-                                                                    main_title = "Round 0 Posterior Approximation")
+post_comparison_plts_baseline <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_baseline_theta, 
+                                                                      main_title = "GP MCMC: Baseline")
 
-plot(post_comparison_plts_round0)
-```
-
-```{r}
-# Round 0 samples plots 
-
-N_support_points_plot <- 1000
-support_points_for_plot <- support::sp(n = N_support_points_plot, 
-                                       p = length(computer_model_data$theta_true), 
-                                       dist.samp = samp_round0_info$inputs)$sp
-support_points_for_plot <- as.data.frame(support_points_for_plot)
-colnames(support_points_for_plot) <- c("LAR", "KEXT")
-
-
-plt_round0_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
-                                       raster = TRUE, bigger_is_better = TRUE, main_title = "Initial Design and True Posterior",
-                                       legend = "Log Post Density", samples_points_lab = "Initial Design", 
-                                       samples_kde_lab = "True Post KDE", samples_points_size = 3)
-
-plt_round0_samp <- plt_round0_samp + 
-                   geom_point(data =  support_points_for_plot, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
-                   # geom_density_2d(data = as.data.frame(samp_round0_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "orange") + 
-                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8) + 
-                   geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3)
-  
-plt_round0_samp <- plt_round0_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
-                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-                                           panel.border = element_blank(), panel.background = element_blank(), 
-                                           plot.background = element_blank()) + 
-                   ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
-plot(plt_round0_samp)
-
-# gsave(filename = file.path(base_dir, poster_figure_dir, "round0_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
-
-
-```
-
-
-```{r}
-# GP predictive mean and variance plots. 
-
-plt_mean <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$mean, param_names = computer_model_data$pars_cal_names, 
-                                samples_kde = samp_exact_theta, raster = FALSE, samples_points = init_design_info$inputs, 
-                                bigger_is_better = TRUE, main_title = "lpost predictive mean", legend_label = "lpost predictive mean", 
-                                samples_kde_lab = "True Posterior KDE", samples_points_lab = "Initial Design")
-                                
-plt_var <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$var, param_names = computer_model_data$pars_cal_names, 
-                               samples_kde = samp_exact_theta, raster = FALSE, 
-                               samples_points = init_design_info$inputs, legend_label = "lpost predictive mean",
-                               bigger_is_better = TRUE, log_scale = TRUE, main_title = "lpost predictive var", 
-                               samples_kde_lab = "True Posterior KDE", samples_points_lab = "Initial Design")
-
-plot(plt_mean)
-plot(plt_var)
-```
-# Investigating Single-Point Acquisitions 
-
-## Integrated Variance Acquisitions
-```{r}
-# Prior-Weighted 
-# NOTE: plotting negative of IVAR vals to avoid negatives to produce more intuitive plots. 
-# TODO: should probably also keep consistent color scheme (i.e. yellow = bigger)
-
-# Evaluate Acquisitions. 
-IVAR_lpost_grid_prior_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
-                                                    lpost_emulator = lpost_emulator, 
-                                                    theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                                    verbose = FALSE, include_nugget = TRUE)
-
-IVAR_post_grid_prior_wt <- acquisition_IEVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-                                                  lpost_emulator = lpost_emulator, 
-                                                  theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                                  verbose = FALSE, include_nugget = TRUE)
-
-# Optimizers of acquisitions. 
-IVAR_lpost_grid_prior_wt_best_idx <- which.max(IVAR_lpost_grid_prior_wt)
-IVAR_post_grid_prior_wt_best_idx <- which.max(IVAR_post_grid_prior_wt)
-  
-# Generate Plots. 
-IVAR_lpost_grid_prior_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                                     y = -IVAR_lpost_grid_prior_wt, param_names = computer_model_data$pars_cal_names, 
-                                                     samples_kde = samp_exact_theta, raster = TRUE, 
-                                                     samples_points = init_design_info$inputs, 
-                                                     bigger_is_better = FALSE, 
-                                                     point_coords = prior_grid_info$inputs[IVAR_lpost_grid_prior_wt_best_idx,],
-                                                     main_title = "IVAR-lpost, prior weighted", point_coords_col = "black")
-IVAR_post_grid_prior_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                                    y = -IVAR_post_grid_prior_wt, param_names = computer_model_data$pars_cal_names, 
-                                                    samples_kde = samp_exact_theta, raster = TRUE, 
-                                                    samples_points = init_design_info$inputs, 
-                                                    bigger_is_better = FALSE, 
-                                                    point_coords = prior_grid_info$inputs[IVAR_post_grid_prior_wt_best_idx,],
-                                                    main_title = "IVAR-post, prior weighted", point_coords_col = "black")
-
-plot(IVAR_lpost_grid_prior_wt_plot)
-plot(IVAR_post_grid_prior_wt_plot)
-
-```
-
-```{r}
-# Test. 
-IVAR_post_grid_prior_wt_test_model <- acquisition_IEVAR_post_test_mode(theta_vals = prior_grid_info$inputs_scaled, 
-                                                                       lpost_emulator = lpost_emulator, 
-                                                                       theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                                                       verbose = FALSE, include_nugget = TRUE)
-
-```
-
-
-# TODO: the below plot seems contradictory. It seems like the inflation term should be smaller when u_tilde is more central and vice versa. 
-# But this is the opposite of what we observe. It makes more sense to me that the expected KB vars are smaller in the corner in this example, since 
-# the post pred var is so large in that corner so that observing a point there will lead to a large reduction in the integrated variance. 
-
-```{r}
-
-log_IEVAR <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                 y = -IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals, param_names = computer_model_data$pars_cal_names, 
-                                 samples_kde = samp_exact_theta, raster = TRUE, 
-                                 samples_points = init_design_info$inputs, 
-                                 bigger_is_better = FALSE, 
-                                 main_title = "log IVAR-post, prior weighted", point_coords_col = "black")
-
-log_KB_vars <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                   y = -IVAR_post_grid_prior_wt_test_model$avg_log_KB_vars, param_names = computer_model_data$pars_cal_names, 
-                                   samples_kde = samp_exact_theta, raster = TRUE, 
-                                   samples_points = init_design_info$inputs, 
-                                   bigger_is_better = FALSE, 
-                                   main_title = "log Mean KB Vars, prior weighted", point_coords_col = "black")
-
-inflation_term_vals <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                           y = -IVAR_post_grid_prior_wt_test_model$avg_inflation_term_vals, param_names = computer_model_data$pars_cal_names, 
-                                           samples_kde = samp_exact_theta, raster = TRUE, 
-                                           samples_points = init_design_info$inputs, 
-                                           bigger_is_better = FALSE, 
-                                           main_title = "Mean Inflation Term, prior weighted", point_coords_col = "black")
-
-
-plot(log_IEVAR)
-plot(log_KB_vars)
-plot(inflation_term_vals)
-
-```
-TODOs: 
-- Look at predictive mean and variance of lpost GP to better understand what's going on here. 
-- Plot log pred var and log pred mean for the post LNP. 
-- Zoom in on IVAR-post plot to see if there is actually more variability that the color scheme is not showing. 
-- Specifically look at the effect of conditioning on that one corner point; examine EVAR values after conditioning on this point. 
-
-
-## Zoom in. 
-This is an issue. IEVAR should not be constant over this whole region. This almost seems like this is an effect of the total 
-variance formula, and I'm accidentally adding two terms that are guaranteed to yield a constant value or something like that. 
-```{r}
-
-zoom_idx_sel <- (prior_grid_info$inputs[,1] > 1.47) & (prior_grid_info$inputs[,1] < 1.52) & 
-                (prior_grid_info$inputs[,2] < 0.525) & (prior_grid_info$inputs[,2] > .465)
-
-tester <- get_2d_heatmap_plot(X = prior_grid_info$inputs[zoom_idx_sel,,drop=FALSE], 
-                              y = -IVAR_post_grid_prior_wt[zoom_idx_sel], param_names = computer_model_data$pars_cal_names, 
-                              samples_kde = samp_exact_theta, raster = TRUE, 
-                              samples_points = init_design_info$inputs, 
-                              bigger_is_better = FALSE, 
-                              main_title = "IVAR-post, prior weighted", point_coords_col = "black")
-
-plot(tester)
-
-```
-
-
-## Conditioning on the corner point with very high IEVAR.
-```{r}
-#max_idx <- which.max(IVAR_post_grid_prior_wt_test_model$log_IEVAR_vals)
-#input_test <- prior_grid_info$inputs_scaled[max_idx,,drop=FALSE]
-
-input_test <- scale_input_data(matrix(computer_model_data$theta_true, nrow=1), lpost_emulator$design_info_list$input_bounds)  
-
-log_EVAR_info_test <- calc_log_EVAR_post_test_mode(lpost_emulator = lpost_emulator, 
-                                                   input_candidate = input_test, 
-                                                   inputs_integrate = prior_grid_info$inputs_scaled)
-
-# Check: two calculations of log inflation term yield the same result. 
-inflation_term_calc2 <- 2 * log_EVAR_info_test$kn_u * log_EVAR_info_test$rho_n^2
-print(paste0("Inflation term calculations match: ", all.equal(log_EVAR_info_test$inflation_factor, inflation_term_calc2)))
-
-
-log_EVAR_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = log_EVAR_info_test$log_EVAR, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
-                                          main_title = "log EVAR", point_coords_col = "black")
-
-log_var_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = log_EVAR_info_test$log_var_term, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
-                                          main_title = "log KB var", point_coords_col = "black")
-
-log_inflation_term_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = log_EVAR_info_test$inflation_factor, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
-                                          main_title = "log inflation term", point_coords_col = "black")
-
-rho_n_sq_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = log_EVAR_info_test$rho_n^2, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
-                                          main_title = "rho_n^2(u, u_tilde)", point_coords_col = "black")
-
-kn_u_plot_test <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = log_EVAR_info_test$kn_u, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          point_coords = scale_input_data(input_test, lpost_emulator$design_info_list$input_bounds, inverse = TRUE),
-                                          main_title = "kn(u)", point_coords_col = "black")
-
-
-plot(log_EVAR_plot_test)
-plot(log_var_term_plot_test)
-plot(log_inflation_term_plot_test)
-plot(rho_n_sq_plot_test)
-plot(kn_u_plot_test)
-
-```
-
-# Predictive mean and variance of lpost emulator vs. post emulator. 
-```{r}
-
-lpost_pred <- predict_lpost_emulator(prior_grid_info$inputs_scaled, lpost_emulator, return_vals = c("mean", "var"), unscale = TRUE)
-post_pred <- convert_to_post_emulator_log_moments(lpost_pred$mean, lpost_pred$var)
-
-lpost_mean_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                       y = lpost_pred$mean, param_names = computer_model_data$pars_cal_names, 
-                                       samples_kde = samp_exact_theta, raster = TRUE, 
-                                       samples_points = init_design_info$inputs, 
-                                       bigger_is_better = TRUE, 
-                                       main_title = "lpost pred mean", point_coords_col = "black")
-
-lpost_var_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                      y = lpost_pred$var, param_names = computer_model_data$pars_cal_names, 
-                                      samples_kde = samp_exact_theta, raster = TRUE, 
-                                      samples_points = init_design_info$inputs, 
-                                      bigger_is_better = TRUE, 
-                                      main_title = "lpost pred var", point_coords_col = "black")
-
-post_log_mean_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                          y = post_pred$log_mean, param_names = computer_model_data$pars_cal_names, 
-                                          samples_kde = samp_exact_theta, raster = TRUE, 
-                                          samples_points = init_design_info$inputs, 
-                                          bigger_is_better = TRUE, 
-                                          main_title = "post log pred mean", point_coords_col = "black")
-
-post_log_var_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                         y = post_pred$log_var, param_names = computer_model_data$pars_cal_names, 
-                                         samples_kde = samp_exact_theta, raster = TRUE, 
-                                         samples_points = init_design_info$inputs, 
-                                         bigger_is_better = TRUE, 
-                                         main_title = "lpost log pred var", point_coords_col = "black")
-
-plot(lpost_mean_plot)
-plot(lpost_var_plot)
-
-plot(post_log_mean_plot)
-plot(post_log_var_plot)
-
-```
-
-
-
-```{r}
-
-IVAR_post_grid_prior_wt2 <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-                                                  lpost_emulator = lpost_emulator_test, 
-                                                  theta_grid_integrate = prior_grid_info$inputs_scaled, 
-                                                  verbose = FALSE, include_nugget = TRUE)
-IVAR_post_grid_prior_wt_best_idx2 <- which.max(IVAR_post_grid_prior_wt2)
-
-IVAR_post_grid_prior_wt_plot2 <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                                     y = -IVAR_post_grid_prior_wt2, param_names = computer_model_data$pars_cal_names, 
-                                                     samples_kde = samp_exact_theta, raster = TRUE, 
-                                                     samples_points = init_design_info$inputs, 
-                                                     bigger_is_better = FALSE, 
-                                                     point_coords = prior_grid_info$inputs[IVAR_post_grid_prior_wt_best_idx,],
-                                                     main_title = "IVAR-post, prior weighted", point_coords_col = "black")
-
-
-grid_pred <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator, unscale = FALSE, uncenter = FALSE)
-
-plt_mean <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = grid_pred$mean, param_names = computer_model_data$pars_cal_names, 
-                                samples_kde = samp_exact_theta, raster = TRUE, 
-                                samples_points = init_design_info$inputs, 
-                                bigger_is_better = TRUE, 
-                                main_title = "lpost predictive mean")
-plt_var <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = grid_pred$var, param_names = computer_model_data$pars_cal_names, 
-                               samples_kde = samp_exact_theta, raster = TRUE, 
-                               samples_points = init_design_info$inputs, 
-                               bigger_is_better = TRUE, log_scale = TRUE, main_title = "lpost predictive var")
-
-
-
-
-plot(plt_mean)
-plot(plt_var)
-plot(IVAR_lpost_grid_prior_wt_plot)
-plot(IVAR_post_grid_prior_wt_plot)
-plot(IVAR_post_grid_prior_wt_plot2)
-
-
-```
-
-
-```{r}
-# TODO:
-#    - LOOK AT EFFECT OF CONDITIONING ON INDIVUDAL POINTS TO BETTER UNDERSTAND INTEGRATED VARIANCE. 
-#    - 1D PLOTS OF INTEGRATED VARIANCE
-#    - PLOTS INVESTIGATING THE EFFECT OF TEH DOMINANT TERMS IN IVAR-POST AND IVAR-LPOST
-
-# ALL THESE PLOTS SHOULD BE PUT IN THE IVAR EXPLORATION DOCUMENT. START WITH 1D CASE. 
-```
-
-
-
-
-
-
-```{r, include = FALSE}
-# Sub-sample approximate posterior samples to use as weight points in acquisitions. 
-N_support_points <- 1000
-
-support_points_list <- support::sp(n = N_support_points, 
-                                   p = length(computer_model_data$theta_true), 
-                                   dist.samp = samp_round0_info$inputs)
-support_points <- support_points_list$sp
-colnames(support_points) <- colnames(lpost_emulator$inputs_lpost$inputs)
-support_point_info <- list(inputs = support_points, 
-                           inputs_scaled = scale_input_data(support_points, input_bounds = init_design_info$input_bounds))
-
-support_point_plot <- get_2d_heatmap_plot(X = samp_round0_info$inputs, y = lpost_emulator_pred_round0$mean, 
-                                          param_names = computer_model_data$pars_cal_names, 
-                                          raster = FALSE, 
-                                          samples_points = support_points, 
-                                          bigger_is_better = TRUE, 
-                                          main_title = "Support Points")
-
-plot(support_point_plot)
-```
-```{r}
-plot(support_point_plot)
-```
-
-```{r}
-# Approx Posterior-Weighted 
-# NOTE: plotting negative of IVAR vals to avoid negatives to produce more intuitive plots. 
-# TODO: should probably also keep consistent color scheme (i.e. yellow = bigger)
-# TODO: IVAR-lpost plots seem to become much more discontinuous/jumpy when the number of design points increases. 
-#       Investigate why this may be; assuming it is something to do with numerical instability. 
-
-# Evaluate Acquisitions. 
-IVAR_lpost_grid_post_wt <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
-                                                   lpost_emulator = lpost_emulator, 
-                                                   theta_grid_integrate = support_point_info$inputs_scaled, 
-                                                   verbose = FALSE, include_nugget = TRUE)
-
-# IVAR_post_grid_post_wt <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-#                                                 lpost_emulator = lpost_emulator, 
-#                                                 theta_grid_integrate = support_point_info$inputs_scaled, 
-#                                                 verbose = FALSE, include_nugget = TRUE)
-
-# Optimizers of acquisitions. 
-IVAR_lpost_grid_post_wt_best_idx <- which.max(IVAR_lpost_grid_post_wt)
-# IVAR_post_grid_post_wt_best_idx <- which.max(IVAR_post_grid_post_wt)
-  
-# Generate Plots. 
-IVAR_lpost_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                                    y = -IVAR_lpost_grid_post_wt, param_names = computer_model_data$pars_cal_names, 
-                                                    samples_kde = samp_exact_theta, raster = TRUE, 
-                                                    samples_points = init_design_info$inputs, 
-                                                    bigger_is_better = FALSE, 
-                                                    point_coords = prior_grid_info$inputs[IVAR_lpost_grid_post_wt_best_idx,],
-                                                    main_title = "IVAR-lpost, Approx Posterior Weights", point_coords_col = "black")
-# IVAR_post_grid_post_wt_plot <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-#                                                    y = -IVAR_post_grid_post_wt, param_names = computer_model_data$pars_cal_names, 
-#                                                    samples_kde = samp_exact_theta, raster = TRUE, 
-#                                                    samples_points = init_design_info$inputs, 
-#                                                    bigger_is_better = FALSE, 
-#                                                    point_coords = prior_grid_info$inputs[IVAR_post_grid_post_wt_best_idx,],
-#                                                    main_title = "IVAR-post, Approx Posterior Weights", point_coords_col = "black")
-
-plot(IVAR_lpost_grid_post_wt_plot)
-# plot(IVAR_post_grid_post_wt_plot)
-
-```
-
-```{r}
-N_acq <- 5
-new_design_sel <- seq(nrow(init_design_info$inputs)+1, nrow(init_design_info$inputs)+N_acq)
-
-lpost_emulator_lpost_temp <- lpost_emulator
-plt_list <- vector(mode = "list", length = N_acq)
-
-for(i in seq_len(N_acq)) {
-  
-  # Evaluate Acquisition. 
-  acq_values <- acquisition_EIVAR_lpost(theta_vals = prior_grid_info$inputs_scaled, 
-                                        lpost_emulator = lpost_emulator_lpost_temp, 
-                                        theta_grid_integrate = support_point_info$inputs_scaled, 
-                                        verbose = FALSE, include_nugget = TRUE)
-  # Optimizer of acquisition. 
-  best_idx <- which.max(acq_values)
-  
-  # Generate plot. 
-  plt_list[[i]] <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                       y = -acq_values, param_names = computer_model_data$pars_cal_names, 
-                                       samples_kde = samp_exact_theta, raster = TRUE, 
-                                       samples_points = lpost_emulator_lpost_temp$inputs_lpost$inputs, 
-                                       bigger_is_better = FALSE, 
-                                       point_coords = prior_grid_info$inputs[best_idx,],
-                                       main_title = paste0("IVAR-lpost, Approx Posterior Weights, Iteration ", i), point_coords_col = "black")
-  
-  # Update emulator using true observation (but keep hyperparameters fixed). 
-  lpost_obs_new <- prior_grid_info$lpost[best_idx]
-  lpost_emulator_lpost_temp <- update_lpost_emulator(lpost_emulator = lpost_emulator_lpost_temp, 
-                                                     inputs_new_scaled = prior_grid_info$inputs_scaled[best_idx,, drop=FALSE], 
-                                                     inputs_new_unscaled = prior_grid_info$inputs[best_idx,, drop=FALSE], 
-                                                     outputs_lpost_new = lpost_obs_new)
-  
-}
-
-```
-
-
-```{r}
-# TODO: should do these plots with added approx round0 contours, as well as using predictive variance or mean as heatmap. 
-
-for(i in seq_len(N_acq)) plot(plt_list[[i]])
-
-```
-
-```{r}
-# First round of acquisition points. 
-
-plt_round1_acq <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names,
-                                      samples_points = lpost_emulator$inputs_lpost$inputs,raster = TRUE, bigger_is_better = TRUE, samples_points_size = 3)
-plt_round1_acq <- plt_round1_acq + geom_point(as.data.frame(lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]), 
-                                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8) + 
-                                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8)
-plt_round1_acq <- plt_round1_acq + theme(legend.position = "none", axis.text.x=element_blank(),
-                                         axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(),
-                                         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-                                         panel.border = element_blank(), panel.background = element_blank(),
-                                         plot.background = element_blank()) +
-                  ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
-plot(plt_round1_acq)
-ggsave(filename = file.path(base_dir, poster_figure_dir, "round1_acquisition_points.svg"), width = 5.0, height = 5.0, units = "in")
-
-
-```
-
-```{r}
-# Update GPs after round 1 acquisitions. 
-round1_acq_points_outputs <- get_computer_model_SSR(computer_model_data, 
-                                                    theta_vals = lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE], na.rm = TRUE)
-round1_design_info_list <- lpost_emulator_lpost_temp$design_info_list[c("inputs", "inputs_scaled", "input_bounds", "output_stats")]
-round1_design_info_list$outputs <- round1_acq_points_outputs
-round1_design_info_list$outputs_normalized <- normalize_output_data(round1_acq_points_outputs, output_stats = init_design_info$output_stats)
-round1_design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
-round1_design_info_list$round0_estimates$best_sig2_eps <-colMeans(samp_round0_sig_eps)
-
-gp_fits_round1 <- update_independent_GPs(emulator_info_list$gp_fits, gp_lib = emulator_info_list$settings$gp_lib,
-                                         X_new = lpost_emulator_lpost_temp$inputs_lpost$inputs_scaled[new_design_sel,,drop=FALSE],
-                                         update_hyperparameters = TRUE, Y_new = round1_design_info_list$outputs_normalized)
-emulator_info_list_round1 <- emulator_info_list
-emulator_info_list_round1$gp_fits <- gp_fits_round1 
-  
-lpost_emualtor_round1 <- get_lpost_emulator_obj(emulator_info_list_round1, round1_design_info_list, computer_model_data, 
-                                                sig2_eps = round1_design_info_list$round0_estimates$best_sig2_eps, 
-                                                theta_prior_params = theta_prior_params)
+plot(post_comparison_plts_baseline)
 ```
 
 
 ```{r}
 #
-# Round 1 approximate posterior sampling. 
+# GP-MCMC-Gibbs algorithm
 #
 
-mcmc_approx_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params, 
-                                            emulator_info = lpost_emualtor_round1$emulator_info_list,
-                                            theta_init = round1_design_info_list$round0_estimates$best_input, 
-                                            sig_eps_init = round1_design_info_list$round0_estimates$best_sig2_eps, 
-                                            learn_sig_eps = TRUE, 
-                                            sig_eps_prior_params = sig_eps_prior_params, 
-                                            N_mcmc = N_mcmc_approx)
+mcmc_approx_gibbs <- mcmc_calibrate_ind_GP_Gibbs(computer_model_data = computer_model_data, 
+                                                 theta_prior_params = theta_prior_params, 
+                                                 emulator_info = lpost_emulator$emulator_info_list,
+                                                 theta_init = init_design_info$init_estimates$best_input[1,], 
+                                                 sig2_eps_init = init_design_info$init_estimates$best_sig2_eps, 
+                                                 learn_sig_eps = TRUE, 
+                                                 sig_eps_prior_params = sig_eps_prior_params, 
+                                                 N_mcmc = N_mcmc_approx)
 ```
 
 ```{r}
 # Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_round1[c("theta", "sig_eps")], test_label = "round1")), 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_gibbs[c("theta", "sig_eps")], test_label = "gibbs")), 
                           use.names = TRUE)
 ```
 
-### Round 1 MCMC sampling diagnostics. 
 ```{r}
+# The issue here looks entirely with the predictive GP for LAI.
+# Need to look into how the baseline algorithm is robust to the poor LAI fit, while Gibbs algorithm is not. 
+# Is there some way to integrate truncated normal into Gibbs algorithm that prevents this? 
+# Should produce plots above looking at predictive mean/variance of each GP. 
+# Should also try re-running this with many more design points to see how behavior changes. 
 
-burn_ins <- c(burn_ins, round0 = 10000, round1 = 10000)
-
-mcmc_round1_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")
-mcmc_round1_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "sig_eps")
-
-grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_round1_trace_plts_sig_eps, nrow = 1))
+plot(1:1000, mcmc_approx_gibbs$theta[1:1000,2], type="l")
 ```
 
+
+### GP-MCMC-Gibbs sampling diagnostics. 
+```{r}
+
+burn_ins <- c(burn_ins, gibbs = 10000)
+
+mcmc_gibbs_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="theta")
+mcmc_gibbs_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="sig_eps")
+
+grid.arrange(arrangeGrob(grobs = mcmc_gibbs_trace_plts, nrow = 1))
+grid.arrange(arrangeGrob(grobs = mcmc_gibbs_trace_plts_sig_eps, nrow = 1))
+```
 
 ```{r}
 #
-# Store round 1 MCMC approximate posterior samples.
-#
-
-samp_round1_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "theta")[, .(param_name, sample)]
-samp_round1_theta <- as.matrix(unstack(samp_round1_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-
-samp_round1_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1", param_types = "sig_eps")[, .(param_name, sample)]
-samp_round1_sig_eps <- as.matrix(unstack(samp_round1_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
-```
-
-```{r}
-# Round 1 samples plot. 
-
-support_points_for_plot_round1 <- support::sp(n = N_support_points_plot, 
-                                              p = length(computer_model_data$theta_true), 
-                                              dist.samp = samp_round1_theta)$sp
-support_points_for_plot_round1 <- as.data.frame(support_points_for_plot_round1)
-colnames(support_points_for_plot_round1) <- c("LAR", "KEXT")
-
-
-plt_round1_samp <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
-                                       raster = TRUE, bigger_is_better = TRUE, samples_points_size = 3)
-
-plt_round1_samp <- plt_round1_samp + 
-                   geom_point(data =  support_points_for_plot_round1, mapping = aes(x = LAR, y = KEXT), size = 3, color = "purple", alpha = 0.3) + 
-                   geom_point(data = as.data.frame(init_design_info$inputs), mapping = aes(x = LAR, y = KEXT), color = "red", size = 3) + 
-                   geom_point(data = as.data.frame(lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]), 
-                              mapping = aes(x = LAR, y = KEXT), color = "red", size = 5, shape = 8) + 
-                   geom_density_2d(data = as.data.frame(samp_exact_theta), mapping = aes(x = LAR, y = KEXT), color = "blue", alpha = 0.8)
-  
-plt_round1_samp <- plt_round1_samp + theme(legend.position = "none", axis.text.x=element_blank(), 
-                                           axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-                                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-                                           panel.border = element_blank(), panel.background = element_blank(), 
-                                           plot.background = element_blank()) + 
-                   ggtitle(NULL) + xlab(NULL) + ylab(NULL) + xlim(plot_x_range) + ylim(plot_y_range)
-plot(plt_round1_samp)
-
-ggsave(filename = file.path(base_dir, poster_figure_dir, "round1_mcmc_samp.svg"), width = 5.0, height = 5.0, units = "in")
-
-
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-```{r}
-
-lpost_emulator_post_temp <- lpost_emulator
-post_plt_list <- vector(mode = "list", length = N_acq)
-
-for(i in seq_len(N_acq)) {
-  
-  # Evaluate Acquisition. 
-  acq_values <- acquisition_IVAR_post(theta_vals = prior_grid_info$inputs_scaled, 
-                                      lpost_emulator = lpost_emulator_post_temp, 
-                                      theta_grid_integrate = support_point_info$inputs_scaled, 
-                                      verbose = FALSE, include_nugget = TRUE)
-  # Optimizer of acquisition. 
-  best_idx <- which.max(acq_values)
-  
-  # Generate plot. 
-  post_plt_list[[i]] <- get_2d_heatmap_plot(X = prior_grid_info$inputs, 
-                                            y = -acq_values, param_names = computer_model_data$pars_cal_names, 
-                                            samples_kde = samp_exact_theta, raster = TRUE, 
-                                            samples_points = lpost_emulator_post_temp$inputs_lpost$inputs, 
-                                            bigger_is_better = FALSE, 
-                                            point_coords = prior_grid_info$inputs[best_idx,],
-                                            main_title = paste0("IVAR-post, Approx Posterior Weights, Iteration ", i), point_coords_col = "black")
-  
-  # Update emulator using true observation (but keep hyperparameters fixed). 
-  lpost_obs_new <- prior_grid_info$lpost[best_idx]
-  lpost_emulator_post_temp <- update_lpost_emulator(lpost_emulator = lpost_emulator_post_temp, 
-                                                    inputs_new_scaled = prior_grid_info$inputs_scaled[best_idx,, drop=FALSE], 
-                                                    inputs_new_unscaled = prior_grid_info$inputs[best_idx,, drop=FALSE], 
-                                                    outputs_lpost_new = lpost_obs_new)
-  
-}
-
-```
-
-
-```{r}
-
-for(i in seq_len(N_acq)) plot(post_plt_list[[i]])
-
-```
-
-```{r}
-# Plot numbered acquisitions. 
-
-new_design_sel <- seq(design_settings$N_design+1, nrow(lpost_emulator_post_temp$inputs_lpost$inputs))
-  
-post_numbered_plot <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
-                                                    lpost_vals = prior_grid_info$lpost,
-                                                    param_names = computer_model_data$pars_cal_names,
-                                                    samples_kde = samp_exact_theta, 
-                                                    init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                    sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                    raster = TRUE, 
-                                                    main_title = "IVAR-post Acquisitions; true post contours", bigger_is_better = TRUE)
-
-# Heatmap from true distribution, but contours from approx distribution. 
-# TODO: maybe want to overlay both true and approx contours. 
-# TODO: also would be interesting to run approx MCMC with fixed sig2_eps estimate to see how acquisitions (with this fixed estimate)
-#       align with approx posterior under fixed estimate. 
-post_numbered_plot_approx <- get_2d_Bayes_opt_heatmap_plot(theta_vals = prior_grid_info$inputs, 
-                                                           lpost_vals = prior_grid_info$lpost,
-                                                           param_names = computer_model_data$pars_cal_names,
-                                                           samples_kde = samp_round0_info$inputs, 
-                                                           init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                           sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                           raster = TRUE, 
-                                                           main_title = "IVAR-post Acquisitions; approx post contours", 
-                                                           bigger_is_better = TRUE)
-
-# Heatmap from approx distribution but contours from true distribution. 
-# TODO: change the argument `lpost_vals` to be more general (e.g. passing in predictive variance here).
-post_numbered_plot_approx_scatter <- get_2d_Bayes_opt_heatmap_plot(theta_vals = samp_round0_info$inputs, 
-                                                                   lpost_vals = lpost_emulator_pred_round0$var, # samp_round0_info$outputs,
-                                                                   param_names = computer_model_data$pars_cal_names,
-                                                                   samples_kde = samp_exact_theta, 
-                                                                   init_design_points = lpost_emulator$inputs_lpost$inputs, 
-                                                                   sequential_design_points=lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE],
-                                                                   raster = FALSE, 
-                                                                   main_title = "IVAR-post Acquisitions", 
-                                                                   legend_label = "lpost pred var",
-                                                                   bigger_is_better = TRUE)
-
-                                                      
-plot(post_numbered_plot)
-plot(post_numbered_plot_approx)
-
-# Seems like the complete opposite of IVAR-lpost. Acting almost like MaxVar, targeting regions on the 
-# edges of the approx posterior and then finally later on working its way to the center. My guess is 
-# that exponentiating the variance causes it to completely dominate the mean. 
-plot(post_numbered_plot_approx_scatter) 
-
-```
-
-## Re-fit kernel hyperparameters. 
-```{r, include = FALSE}
-# TODO: should have this functionality built into lpost_emulator object. Also should save the SSR vals as points are acquired to avoid 
-#       having to re-calculate here. 
-
-# # IVAR-lpost. 
-# inputs_IVAR_lpost_round1 <- lpost_emulator_lpost_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
-# SSR_lpost_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_lpost_round1, na.rm = TRUE)
-# gp_fits_IVAR_lpost_round1 <- update_independent_GPs(gp_fits = lpost_emulator_lpost_temp$emulator_info_list$gp_fits, 
-#                                                     gp_lib = lpost_emulator_lpost_temp$emulator_info_list$settings$gp_lib, 
-#                                                     X_new = inputs_IVAR_lpost_round1, Y_new = SSR_lpost_round1, 
-#                                                     update_hyperparameters = TRUE, 
-#                                                     input_bounds = lpost_emulator_lpost_temp$design_info_list$input_bounds, 
-#                                                     output_stats = lpost_emulator_lpost_temp$design_info_list$output_stats)
-# lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_lpost_round1 # Should also update design_info_list.
-# lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
-# lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
-# 
-# # IVAR-post.
-# inputs_IVAR_post_round1 <- lpost_emulator_post_temp$inputs_lpost$inputs[new_design_sel,,drop=FALSE]
-# SSR_post_round1 <- get_computer_model_SSR(computer_model_data, theta_vals = inputs_IVAR_post_round1, na.rm = TRUE)
-# gp_fits_IVAR_post_round1 <- update_independent_GPs(gp_fits = lpost_emulator_post_temp$emulator_info_list$gp_fits, 
-#                                                    gp_lib = lpost_emulator_post_temp$emulator_info_list$settings$gp_lib, 
-#                                                    X_new = inputs_IVAR_post_round1, Y_new = SSR_post_round1, 
-#                                                    update_hyperparameters = TRUE, 
-#                                                    input_bounds = lpost_emulator_post_temp$design_info_list$input_bounds, 
-#                                                    output_stats = lpost_emulator_post_temp$design_info_list$output_stats)
-# lpost_emulator_lpost_temp$emulator_info_list$gp_fits <- gp_fits_IVAR_post_round1
-# lpost_emulator_post_temp$design_info_list$round0_estimates$best_input <- colMeans(samp_round0_info$inputs)
-# lpost_emulator_post_temp$design_info_list$round0_estimates$best_sig2_eps <- colMeans(samp_round0_sig_eps)
-
-
-
-```
-
-
-# Round 1 approximate sampling. 
-
-```{r, include = FALSE}
-#
-# Round 1 approximate posterior sampling: IVAR-lpost
-#
-
-# mcmc_approx_IVAR_lpost_round1 <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-#                                                        theta_prior_params = theta_prior_params, 
-#                                                        emulator_info = lpost_emulator_lpost_temp$emulator_info_list,
-#                                                        theta_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_input, 
-#                                                        sig_eps_init = lpost_emulator_lpost_temp$design_info_list$round0_estimates$best_sig2_eps, 
-#                                                        learn_sig_eps = TRUE, 
-#                                                        sig_eps_prior_params = sig_eps_prior_params, 
-#                                                        N_mcmc = N_mcmc_approx)
-```
-
-```{r, include = FALSE}
-# # Combine with existing data.table of MCMC output. 
-# mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_IVAR_lpost_round1[c("theta", "sig_eps")], test_label = "round1_IVAR_lpost")), 
-#                           use.names = TRUE)
-```
-
-### Round 1 MCMC sampling diagnostics. 
-```{r, include = FALSE}
-
-# burn_ins <- c(burn_ins, round1_IVAR_post = 10000)
-# 
-# mcmc_round1_IVAR_lpost_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")
-# mcmc_round1_IVAR_lpost_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "sig_eps")
-# 
-# grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts, nrow = 1))
-# grid.arrange(arrangeGrob(grobs = mcmc_round1_IVAR_lpost_trace_plts_sig_eps, nrow = 1))
-```
-
-```{r, include = FALSE}
-# Store round1 IVAR-lpost MCMC output. 
-
-#
-# Store round 0 MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
+# Store baseline MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
 # as well as for plotting purposes. 
 #
 
-# samp_round1_IVAR_lpost_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "round1_IVAR_lpost", param_types = "theta")[, .(param_name, sample)]
-# samp_round1_IVAR_lpost_theta <- as.matrix(unstack(samp_round1_IVAR_lpost_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-# 
-# samp_round1_IVAR_lpost_sig_eps <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, 
-#                                                    test_labels = "round1_IVAR_lpost", param_types = "sig_eps")[, .(param_name, sample)]
-# samp_round1_IVAR_lpost_sig_eps <- as.matrix(unstack(samp_round1_IVAR_lpost_sig_eps, sample ~ param_name))[, computer_model_data$output_vars]
+samp_gibbs_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "gibbs", param_types = "theta")[, .(param_name, sample)]
+samp_gibbs_theta <- as.matrix(unstack(samp_gibbs_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
+
 ```
+
+```{r}
+# Contours of round 1 approximate posterior vs true contours. 
+# TODO: need to modify plot legend here. Also consider overlaying design points. 
+post_comparison_plts_gibbs <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_gibbs_theta, 
+                                                                   main_title = "GP MCMC: Gibbs")
+
+plot(post_comparison_plts_gibbs)
+```
+
+
+
 
 
 
