@@ -1847,6 +1847,7 @@ get_input_design <- function(N_points, theta_prior_params, design_method, scale_
     output_list[c("inputs_scaled", "input_bounds")] <- prep_GP_training_data(X = X_design, scale_X = TRUE)[c("X", "input_bounds")]
   } else if(scale_inputs && !is.null(param_ranges)) {
     output_list[["inputs_scaled"]] <- scale_input_data(X_design, param_ranges)
+    output_list[["input_bounds"]] <- param_ranges
   }
 
   return(output_list)
