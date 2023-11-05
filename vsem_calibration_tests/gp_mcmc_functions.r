@@ -242,7 +242,7 @@ mcmc_calibrate_ind_GP_Gibbs <- function(computer_model_data, theta_prior_params,
         theta_samp[itr,] <- theta_prop
         gp_pred_list_curr <- gp_pred_list_prop
         theta_scaled_curr <- theta_scaled_prop
-        lprior_theta_curr <- lpost_theta_prop
+        lprior_theta_curr <- lprior_theta_prop
         accept_count <- accept_count + 1 
       } else {
         theta_samp[itr,] <- theta_samp[itr-1,]
