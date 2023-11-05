@@ -412,7 +412,7 @@ calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds = FAL
   #                         bound_upper = upper truncation value). 
   #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
   #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 
-  #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
+  #                  exist there is no effect. Similarly, if the columns exist but some rows have NA values these rows 
   #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
   #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
   #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE. 
