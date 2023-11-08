@@ -126,12 +126,20 @@ pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled = prior_grid_i
 upper_CI <- qnorm(.99, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var))
 lower_CI <- qnorm(.01, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var)) 
 
+png(filename=file.path(poster_figure_dir, "lpost_GP_fit.png"))
 plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", ylim = c(min(lower_CI), max(upper_CI)),
      main = "lpost Initial GP Fit", xlab = "u", ylab = "Unnormalized log posterior")
-points(init_design_info$inputs, init_design_info$lpost, col = "black")
+# points(init_design_info$inputs, init_design_info$lpost, col = "black")
 lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
 lines(prior_grid_info$inputs, upper_CI, col = "gray")
 lines(prior_grid_info$inputs, lower_CI, col = "gray")
+lpost_true_mean <- linear_Gaussian_info$true_posterior$mean
+lpost_true_post_mean <- calc_lpost_theta_product_lik(computer_model_data, theta_vals=lpost_true_mean, 
+                                                     vars_obs=diag(computer_model_data$Sig_eps), na.rm=TRUE, 
+                                                     theta_prior_params=theta_prior_params )
+points(drop(lpost_true_mean), lpost_true_post_mean$lpost, pch=8)
+dev.off()
+
 
 ```
 
@@ -225,7 +233,7 @@ N_mcmc_approx <- 50000
 mcmc_approx_baseline <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
                                               theta_prior_params = theta_prior_params_trunc, 
                                               emulator_info = lpost_emulator$emulator_info_list,
-                                              theta_init = init_design_info$init_estimates$best_input, 
+                                              theta_init = 1.7, 
                                               sig_eps_init = lpost_emulator$sig2_eps, 
                                               learn_sig_eps = FALSE, 
                                               N_mcmc = N_mcmc_approx)
@@ -243,12 +251,14 @@ plot(baseline_trace_plt[[1]])
 
 ```{r}
 # Approximate vs. True Samples. 
-samp_approx_hist <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="baseline", param_types="theta")$sample, ncol=1)
+mcmc_samp_dt[test_label=="baseline", test_label := "pecan"]
+samp_approx_hist <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="pecan", param_types="theta")$sample, ncol=1)
 
-baseline_hist_plot <- get_hist_plot(list(samp_exact[1:N_mcmc_approx,,drop=FALSE], samp_approx_hist), bins=50, xlab="samples", ylab="density", 
-                                         main_title = "Histogram", data_names = c("exact", "baseline")) 
+baseline_hist_plot <- get_hist_plot(list(samp_exact[1:N_mcmc_approx,,drop=FALSE], samp_approx_hist), bins=50, xlab="u samples", ylab="density", 
+                                         main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "pecan")) 
 
 plot(baseline_hist_plot)
+ggsave(filename = file.path(poster_figure_dir, "approx_samples_pecan.png"), width = 5.0, height = 5.0, units = "in")
 
 ```
 
@@ -260,7 +270,7 @@ plot(baseline_hist_plot)
 mcmc_approx_gibbs <- mcmc_calibrate_ind_GP_Gibbs(computer_model_data = computer_model_data, 
                                                  theta_prior_params = theta_prior_params_trunc, 
                                                  emulator_info = lpost_emulator$emulator_info_list,
-                                                 theta_init = init_design_info$init_estimates$best_input, 
+                                                 theta_init = 1.7, 
                                                  sig2_eps_init = lpost_emulator$sig2_eps, 
                                                  learn_sig_eps = FALSE, 
                                                  N_mcmc = N_mcmc_approx, 
@@ -284,14 +294,17 @@ plot(seq_len(N_mcmc_approx-burn_ins["gibbs"]+1), mcmc_approx_gibbs$SSR[burn_ins[
 samp_approx_hist_gibbs <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="theta")$sample, ncol=1)
 
 gibbs_hist_plot <- get_hist_plot(list(samp_exact[1:nrow(samp_approx_hist_gibbs),,drop=FALSE], 
-                                      samp_approx_hist_gibbs), bins=50, xlab="samples", ylab="density", 
-                                      main_title = "Histogram", data_names = c("exact", "gibbs"))
-gibbs_hist_plot_2 <- get_hist_plot(list(samp_approx_hist_gibbs),
-                                   bins=50, xlab="samples", ylab="density", 
-                                   main_title = "Histogram", data_names = c("gibbs"))
+                                      samp_approx_hist_gibbs), bins=50, xlab="u samples", ylab="density", 
+                                      main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "gibbs"))
+# gibbs_hist_plot_2 <- get_hist_plot(list(samp_approx_hist_gibbs),
+#                                    bins=50, xlab="samples", ylab="density", 
+#                                    main_title = "Histogram", data_names = c("gibbs"))
 
 plot(gibbs_hist_plot)
-plot(gibbs_hist_plot_2)
+
+
+poster_figure_dir <- file.path(getwd(), "..", "..", "general-research", "images")
+ggsave(filename = file.path(poster_figure_dir, "approx_samples_gibbs.png"), width = 5.0, height = 5.0, units = "in")
 
 ```
 

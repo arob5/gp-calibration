@@ -131,7 +131,11 @@ p(\bphi | \bpar, \CovObs, \stateMat)
 &\propto \prod_{\objIdx=1}^{\Nobj} \exp\left\{-\frac{1}{2} \frac{(\indexObj{\phi} - \indexObj{a}(\bpar))^2}{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} \\
 &\propto \prod_{\objIdx=1}^{\Nobj} \Gaussian\left(\indexObj{\phi} | \indexObj{a}_{\Ndesign}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right)
 \end{align*}
-where $\indexObj{a}_{\Ndesign}(\bpar) := \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) - \frac{1}{2}\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{\sdObs^2_{\objIdx}}$. We thus see that 
+where 
+\begin{align}
+\indexObj{a}_{\Ndesign}(\bpar) := \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) - \frac{1}{2}\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{\sdObs^2_{\objIdx}}. \label{gp_gibbs_mean}
+\end{align}
+We therefore see that 
 the conditional distribution for $\bphi$ is given by another GP, with the same variance as before, but with the mean function decreased by an additive factor depending on the 
 ratio of the GP uncertainty $\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)$ and the data likelihood noise $\sdObs^2_{\objIdx}$. We note that, 
 \begin{align*}
@@ -212,8 +216,40 @@ p(\CovObs | \bpar, \bphi, \stateMat)
 \end{align*}
 
 
-% MCMC Algorithm: Marginal Likelihood Approach
-% \section{MCMC Algorithm: Marginal Likelihood Approach}
+% MCMC Algorithm: Marginalizing out the GP
+\section{MCMC Algorithm: Marginalizing out the GP}
+
+\subsection{Marginal Posterior}
+In this section we consider computing the marginal $p(\bpar, \CovObs|\stateMat)$. We start by integrating $\bphi$ out of the joint distribution: 
+\begin{align*}
+p(\bpar, \CovObs, \stateMat) 
+&= \int p(\bpar, \CovObs, \bphi, \stateMat) d\bphi \\
+&\propto \int \priorDens(\bpar) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) \priorDens(\sdObs^2_{\objIdx})\right] d\bphi \\
+&= \priorDens(\bpar) \priorDens(\CovObs) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \int \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) d\indexObj{\phi}\right]
+\end{align*}
+Focusing on the integral in the above expression, we recall the definition \ref{gp_gibbs_mean},
+\[
+\indexObj{a}_{\Ndesign}(\bpar) := \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) - \frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}},
+\]
+which was obtained by completing the square. We thus have 
+\begin{align*}
+&\int \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
+\Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) d\indexObj{\phi} = \\
+& \left[\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right]^{-1/2} \exp\left\{\frac{[\indexObj{a}_{\Ndesign}(\bpar)]^2- [\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)]^2}{2\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} \int \exp\left\{-\frac{[\indexObj{\phi} - \indexObj{a}_{\Ndesign}(\bpar)]^2}{2\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} d\indexObj{\phi} \\
+&= \left[\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right]^{-1/2} \exp\left\{\frac{[\indexObj{a}_{\Ndesign}(\bpar)]^2- [\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)]^2}{2\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} \left[2\pi\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right]^{-1/2} \\
+&\propto  \exp\left\{\frac{[\indexObj{a}_{\Ndesign}(\bpar)]^2- [\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)]^2}{2\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)} \right\} \\
+&= \exp\left\{\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} - \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}} \right\}.
+\end{align*}
+Plugging back in, we obtain 
+\begin{align*}
+p(\bpar, \CovObs, \stateMat) 
+&= \priorDens(\bpar) \priorDens(\CovObs) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2}\right]
+\exp\left\{\sum_{\objIdx=1}^{\Nobj} \left(\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} -
+ \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}}\right) \right\}
+\end{align*}
+
 
 % Numerical Experiments
 \section{Numerical Experiments}
