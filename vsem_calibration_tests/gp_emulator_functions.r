@@ -333,9 +333,9 @@ fit_emulator_design_list <- function(emulator_setting, design_list) {
 # TODO: 
 #    - Currently sd2_nug should not be trusted; e.g. it is not corrected in the case of truncation/rectification. Might just be easier to 
 #      drop this or combine it with the pointwise variance predictions. 
-predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
-                       output_stats = NULL, transformation_method = NA_character_, return_df = FALSE, 
-                       X_pred_2 = NULL) {
+predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat=FALSE, denormalize_predictions=FALSE,
+                       output_stats=NULL, transformation_method=NA_character_, return_df=FALSE, 
+                       X_pred_2=NULL, cov_includes_nug=TRUE) {
   # Calculate GP predictive mean, variance, and optionally covariance matrix at specified set of 
   # input points. 
   #
@@ -363,6 +363,8 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
   #    X_pred_2: matrix of dimension N_pred_2 x 2. A second set of input locations used to compute the predictive covariance 
   #              between  `X_pred` and `X_pred_2`. Only required if `include_cov_mat` is TRUE. To produce the predictive 
   #              covariance matrix at the inputs `X_pred`, then simply set this argument equal to `X_pred`. 
+  #    cov_includes_nug: logical(1), if TRUE, the nugget variance is added to the diagonal of the predicted covariance matrix. 
+  #                      This is only relevant if `include_cov_mat` is TRUE. 
   #
   # Returns:
   #    list, potentially with named elements "mean", "var", "cov". If no transformation is applied, will also contain elements 
@@ -398,7 +400,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
       X_prime <- NULL
     }
     
-    hetGP_pred <- predict(gp_obj, X_pred, xprime = X_prime)
+    hetGP_pred <- predict(gp_obj, X_pred, xprime=X_prime)
     pred_list[pred_list_names] <- hetGP_pred[c("mean", "sd2", "nugs", "cov")]
   }
   
@@ -414,11 +416,15 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
   
   # Sum predictive variance of latent function value and nugget to obtain combined variance. 
   pred_list[["var_comb"]] <- pred_list$var + pred_list$var_nug
-  
+  if(cov_includes_nug) diag(pred_list[["cov"]]) <- pred_list[["var_comb"]]
+ 
   # Apply transformation to GP predictions. 
   if(!is.na(transformation_method)) {
-    pred_list_transformed <- transform_GP_predictions(pred_list$mean, pred_list$var, transformation_method = transformation_method, gp_cov = pred_list$cov)
-    pred_list_transformed[["var_comb"]] <- transform_GP_predictions(pred_list$mean, pred_list$var_comb, transformation_method = transformation_method)$var
+    pred_list_transformed <- transform_GP_predictions(pred_list$mean, pred_list$var, 
+                                                      transformation_method=transformation_method, gp_cov=pred_list$cov)
+    pred_list_transformed[["var_comb"]] <- transform_GP_predictions(pred_list$mean, 
+                                                                    pred_list$var_comb, 
+                                                                    transformation_method=transformation_method)$var
     pred_list <- pred_list_transformed
   }
   
@@ -426,7 +432,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
     pred_df <- data.frame(mean = pred_list[["mean"]], 
                           var = pred_list[["var"]], 
                           var_comb = pred_list[["var_comb"]])
-    return(list(df = pred_df, cov = pred_list$cov))
+    return(list(df=pred_df, cov=pred_list$cov))
   }
   
   return(pred_list)
@@ -437,9 +443,9 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat = FALSE, denormal
 # TODO: 
 #    - should be able to return only mean or variance. 
 #    - update predict_GP so that it can return data.frame in wide or long format. 
-predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat = FALSE, denormalize_predictions = FALSE,
-                                    output_stats = NULL, transformation_method = NA_character_, return_df = FALSE, 
-                                    output_variables = NULL, X_pred_2 = NULL) {
+predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat=FALSE, denormalize_predictions=FALSE,
+                                    output_stats=NULL, transformation_method=NA_character_, return_df=FALSE, 
+                                    output_variables=NULL, X_pred_2=NULL, cov_includes_nug=TRUE) {
   # A wrapper function for predict_GP() that generalizes the latter to generating predictions for 
   # multi-output GP regression using independent GPs. 
   #
@@ -475,6 +481,8 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   #               matrix corresponding to a single output of a multi-output GP. 
   #    output_variables: character(p), vector of the p output variable names used to label the predictions. 
   #                      If NULL, will use labels "output1", ..., "outputp". 
+  #    cov_includes_nug: logical(1), if TRUE, the nugget variance is added to the diagonal of the 
+  #                      predicted covariance matrix. This is only relevant if `include_cov_mat` is TRUE. 
   # 
   # Returns:
   #    list, with length equal to the length of `gp_obj_list`. Each element of this list is itself a list, 
@@ -487,8 +495,8 @@ predict_independent_GPs <- function(X_pred, gp_obj_list, gp_lib, include_cov_mat
   }
   
   pred_list <- lapply(seq_along(gp_obj_list), function(j) predict_GP(X_pred, gp_obj_list[[j]], gp_lib, include_cov_mat, denormalize_predictions, 
-                                                                     output_stats[,j,drop=FALSE], transformation_method = transformation_method, 
-                                                                     return_df = return_df, X_pred_2 = X_pred_2))
+                                                                     output_stats[,j,drop=FALSE], transformation_method=transformation_method, 
+                                                                     return_df=return_df, X_pred_2=X_pred_2, cov_includes_nug=cov_includes_nug))
 
   if(return_df) {
     pred_df_list <- lapply(pred_list, function(l) l$df)
@@ -2147,8 +2155,7 @@ get_design_list_test_data <- function(N_test_points, N_test_sets, design_method,
 # Sampling GPs
 # ------------------------------------------------------------------------------
 
-
-sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_character_, idx_selector = NULL) {
+sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method=NA_character_, idx_selector=NULL) {
   # Draws a single n-dimensional sample from a GP (or transformation of a GP) at a set of n input locations. 
   # This sample does not consider correlation across input points, hence the "pointwise" in the function name. 
   #
@@ -2194,7 +2201,8 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method = NA_ch
 }
 
 
-sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods = NA_character_, idx_selector = NULL, include_nugget = TRUE) {
+sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_methods=NA_character_, 
+                                             idx_selector=NULL, include_nugget=TRUE) {
   # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
   # Allows for potentially different output transformations for each GP. 
   #
@@ -2230,12 +2238,95 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
     }
   }
   
-  gp_samples <- matrix(nrow = N_row, ncol = N_GPs)
+  gp_samples <- matrix(nrow=N_row, ncol=N_GPs)
   for(j in seq_len(N_GPs)) {
     if(include_nugget) vars <- gp_pred_list[[j]]$var_comb
     else vars <- gp_pred_list[[j]]$var
     
     gp_samples[,j] <- sample_GP_pointwise(gp_pred_list[[j]]$mean, vars, transformation_methods[j], idx_selector)
+  }
+  
+  return(gp_samples)
+  
+}
+
+
+sample_GP_corr <- function(gp_means, gp_cov, transformation_method=NA_character_) {
+  # Draws a single n-dimensional sample from a GP (or transformation of a GP) at a set of n input locations. 
+  # This sample takes into account correlation across input points. 
+  #
+  # Args:
+  #    gp_mean: numeric(), vector of means of Gaussian distributions (not the means of the transformed GPs). 
+  #    gp_cov: numeric(), GP covariance matrix at input points. 
+  #    transformation_method: character(1), if "truncated", will convert the GP distribution to truncated Gaussian distribution. 
+  #                           If "rectified", will instead transform to rectified Gaussian. If "LNP" will exponentiate the GP, resulting in a 
+  #                           log-normal process. The default is not to perform any transformation. 
+  #
+  # Returns:
+  #    numeric(), vector of length equal to length(gp_means) = length(gp_vars). The GP (or transformed GP) samples. 
+  
+  if(length(gp_means) != nrow(gp_cov)) stop("gp_means and gp_cov dimension mismatch.")
+  if(nrow(gp_cov) != ncol(gp_cov)) stop("gp_cov must be a square matrix.")
+
+  n <- length(gp_means)
+  
+  if(is.na(transformation_method)) {
+    sample <- gp_means + t(chol(gp_cov)) %*% matrix(rnorm(n), ncol=1)
+  } else if(transformation_method == "truncated") {
+    # TODO: need to implement
+    stop("Truncated option not yet implemented for `sample_GP_corr()` due to issues with package tmvtnorm.")
+  } else if(transformation_method == "rectified") {
+    sample <- pmax(0, gp_means + t(chol(gp_cov)) %*% matrix(rnorm(n), ncol=1))
+  } else if(transformation_method == "LNP") {
+    sample <- exp(gp_means + t(chol(gp_cov)) %*% matrix(rnorm(n), ncol=1)) # TODO: check this is right. 
+  } else {
+    stop("Invalid transformation method: ", transformation_method)
+  }
+  
+  if(any(is.na(sample)) || is.null(sample)) {
+    stop("GP sample is NA or NULL.")
+  }
+  
+  return(sample)
+  
+}
+
+
+sample_independent_GPs_corr <- function(gp_pred_list, transformation_methods=NA_character_, 
+                                        include_nugget=TRUE) {
+  # A generalization of `sample_GP_pointwise()` that allows samples to be drawn from multiple independent GPs. 
+  # Allows for potentially different output transformations for each GP. 
+  #
+  # Args:
+  #    gp_pred_list: list, with one element per GP. Each element must itself be a list with elements "mean" and "var"
+  #                  storing numeric vectors for the GP means and variances, respectively. These are always the means and variances
+  #                  of the GP, not the transformed GP. 
+  #    transformation_methods: either a numeric vector of equal length as `gp_pred_list` storing the transformation to apply to each 
+  #                            GP ("truncated", "rectified", "LNP", or NA_character_ for no transformation). If a single element, will 
+  #                            use the same method for all GPs. 
+  #    include_nugget: logical(1), if TRUE then the variance used in the sampling is the observation variance, which is the variance of the latent
+  #                    function values plug the "nugget" term. Otherwise, the nugget will not be added to the variance. 
+  # 
+  # Returns: 
+  #    matrix, of dimension N x length(gp_pred_list) where N is the number of input points. The matrix stores the samples for each GP in the 
+  #    columns of the matrix. This will work even if the number of input points differs per GP, but note that this will result in NAs for the 
+  #    GPs with fewer input points. 
+  
+  N_GPs <- length(gp_pred_list)
+  if(length(transformation_methods) == 1) {
+    transformation_methods <- rep(transformation_methods, N_GPs)
+  } 
+  
+  # Check if number of input locations is different across different GPs. 
+  N_inputs <- sapply(gp_pred_list, function(x) length(x$mean))
+  N_row <- max(N_inputs)
+  if(!all(N_inputs == N_row)) {
+    message("Returned matrix with samples will have NAs due to different numbers of input locations across GPs.")
+  }
+  
+  gp_samples <- matrix(nrow=N_row, ncol=N_GPs)
+  for(j in seq_len(N_GPs)) {
+    gp_samples[,j] <- sample_GP_corr(gp_pred_list[[j]]$mean, gp_pred_list[[j]]$cov, transformation_methods[j])
   }
   
   return(gp_samples)

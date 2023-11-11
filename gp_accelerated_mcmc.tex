@@ -64,7 +64,7 @@ We connect the observations to the model predictions via the (log) likelihood
 \begin{align}
 \llik(\bpar, \CovObs) 
 &:= \log p(\stateMat|\bpar, \CovObs) \\
-&= \log \prod_{\objIdx=1}^{\Nobj} \Gaussian(\indexObj{\bstate} | \indexObj{\fwd}(\bpar), \sdObs^2_{\objIdx}) \\
+&= \log \prod_{\objIdx=1}^{\Nobj} \Gaussian(\indexObj{\bstate} | \indexObj{\fwd}(\bpar), \sdObs^2_{\objIdx} \idMat_{\indexObj{\Ntime}}) \\
 &= -\frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \indexObj{\Ntime} \log(2\pi \sdObs^2_{\objIdx}) - \frac{1}{2} \sum_{\objIdx=1}^{\Nobj} \frac{\indexObj{\SSR}(\bpar)}{\sdObs^2_{\objIdx}}
 \end{align}
 where we denote the \textit{model-data misfit} by 
@@ -229,7 +229,7 @@ p(\bpar, \CovObs, \stateMat)
 &= \priorDens(\bpar) \priorDens(\CovObs) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2} \int \exp\left\{-\frac{\indexObj{\phi} }{2\sdObs^2_{\objIdx}} \right\} 
 \Gaussian\left(\indexObj{\phi}  | \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar), \GPKerPredOut{\Ndesign}{\objIdx}(\bpar)\right) d\indexObj{\phi}\right]
 \end{align*}
-Focusing on the integral in the above expression, we recall the definition \ref{gp_gibbs_mean},
+Focusing on the integral in the above expression, we recall definition \ref{gp_gibbs_mean},
 \[
 \indexObj{a}_{\Ndesign}(\bpar) := \GPMeanPredOut{\Ndesign}{\objIdx}(\bpar) - \frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}},
 \]
@@ -245,7 +245,7 @@ which was obtained by completing the square. We thus have
 Plugging back in, we obtain 
 \begin{align*}
 p(\bpar, \CovObs, \stateMat) 
-&= \priorDens(\bpar) \priorDens(\CovObs) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2}\right]
+&\propto \priorDens(\bpar) \priorDens(\CovObs) \prod_{\objIdx=1}^{\Nobj} \left[(\sdObs^2_{\objIdx})^{-\indexObj{\Ntime}/2}\right]
 \exp\left\{\sum_{\objIdx=1}^{\Nobj} \left(\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} -
  \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}}\right) \right\}
 \end{align*}

@@ -1583,8 +1583,8 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
   true_posterior <- list(mean = mean_post, Cov = Cov_post)
   
-  return(list(computer_model_data = computer_model_data, theta_prior_params = theta_prior_params, 
-              true_posterior = true_posterior))
+  return(list(computer_model_data=computer_model_data, theta_prior_params=theta_prior_params, 
+              true_posterior=true_posterior, random_seed=random_seed))
   
 }
 

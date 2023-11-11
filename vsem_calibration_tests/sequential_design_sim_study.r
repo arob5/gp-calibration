@@ -52,6 +52,206 @@ print(paste0(rep("-", 30), " Likelihood parameters priors ", rep("-", 30)))
 print(sig2_eps_prior_params)
 
 
+# -----------------------------------------------------------------------------
+# GP-Accelerated MCMC Helper Functions
+# -----------------------------------------------------------------------------
+
+get_1d_linear_Gaussian_approx_post_density <- function(data_seed, design_seed, G, sig2_eps, Sig0_theta, N_design,  
+                                                       emulator_settings, N_obs=100, design_method="LHS") {
+  
+  # List to store outputs. 
+  plot_list <- list()
+  
+  # -----------------------------
+  # Linear Gaussian Model Setup. 
+  # -----------------------------
+  
+  linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs=N_obs, 
+                                                             D=1, Sig_theta=Sig0_theta, 
+                                                             G=G, sig2_eps=sig2_eps)
+  computer_model_data <- linear_Gaussian_info$computer_model_data
+  theta_prior_params <- linear_Gaussian_info$theta_prior_params
+  linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
+                                                                    theta_vals=linear_Gaussian_info$true_posterior$mean, 
+                                                                    na.rm=TRUE)
+  
+  # Plot simulated data/ground truth from linear Gaussian model. 
+  sim_data <- as.data.frame(computer_model_data$data_obs)
+  sim_data$ref <- computer_model_data$data_ref
+  sim_data$time <- 1:N_obs
+  plot_list$sim_data <- ggplot(sim_data) + geom_point(mapping=aes(x=time, y=y)) + 
+                        geom_line(mapping=aes(x=time, y=ref), color="red") + 
+                        xlab("t") + ylab("output") + ggtitle("Ground Truth and Observed Data")
+                   
+  # -----------------------------------
+  # Design points and plot grid points  
+  # -----------------------------------
+  
+  # Define input bounds at 1st and 99th percentiles of Gaussian prior. Used for define grid bounds 
+  # for plotting, as well as to truncate the prior for the GP-accelerated MCMC algorithms. 
+  input_bounds <- matrix(c(min=qnorm(.01, theta_prior_params$param1, theta_prior_params$param2), 
+                           max=qnorm(.99, theta_prior_params$param1, theta_prior_params$param2)), ncol=1)
+  rownames(input_bounds) <- c("min", "max")
+  colnames(input_bounds) <- computer_model_data$pars_cal_names
+  
+  # The GP-accelerated MCMC algorithms utilize the truncated prior. 
+  theta_prior_params_trunc <- truncate_prior_theta(theta_prior_params, input_bounds)
+  
+  # Initial Design. 
+  design_settings <- data.frame(N_design=N_design, design_method=design_method, design_seed=design_seed)
+  init_design_info <- get_input_output_design(N_points = design_settings$N_design,
+                                              design_method = design_settings$design_method, 
+                                              scale_inputs = TRUE,
+                                              param_ranges = input_bounds,  
+                                              computer_model_data = computer_model_data, 
+                                              theta_prior_params = theta_prior_params)
+  init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                         theta_vals = init_design_info$inputs, 
+                                                         vars_obs = sig2_eps, 
+                                                         SSR = init_design_info$outputs,
+                                                         na.rm=TRUE, theta_prior_params=theta_prior_params, 
+                                                         return_list=FALSE)
+  
+  # Grid of points spread across prior (for plotting).  
+  prior_grid_info <- get_input_output_design(N_points = 1000,
+                                             design_method = "grid", 
+                                             scale_inputs = TRUE,
+                                             param_ranges = init_design_info$input_bounds,
+                                             computer_model_data = computer_model_data, 
+                                             theta_prior_params = theta_prior_params, 
+                                             design_seed = design_settings$design_seed)
+  prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
+                                                        theta_vals = prior_grid_info$inputs, 
+                                                        vars_obs = diag(computer_model_data$Sig_eps), 
+                                                        SSR = prior_grid_info$outputs,
+                                                        na.rm = TRUE, theta_prior_params=theta_prior_params, 
+                                                        return_list = FALSE)
+  
+  # Plot true posterior and design points. 
+  prior_grid_df <- data.frame(input=prior_grid_info$inputs[,1], lpost=prior_grid_info$lpost)
+  design_df <- data.frame(input=init_design_info$inputs[,1], lpost=init_design_info$lpost)
+  plot_list$true_post <- ggplot() + geom_line(aes(x=input, y=lpost), prior_grid_df, color="red") + 
+                         geom_point(aes(x=input, y=lpost), design_df) + 
+                         xlab("u") + ylab("Unnormalized log posterior") + 
+                         ggtitle("Prior Design and True lpost values")
+
+  
+  # -----------------------------------
+  # Fit Emulator   
+  # -----------------------------------
+  
+  # Fit emulators on initial design. 
+  gp_fits <- fit_independent_GPs(X_train=init_design_info$inputs_scaled, Y_train=init_design_info$outputs_normalized, 
+                                 gp_lib=emulator_settings$gp_lib, gp_kernel=emulator_settings$kernel)$fits
+  emulator_info_list <- list(gp_fits=gp_fits, input_bounds=init_design_info$input_bounds, 
+                             output_stats=init_design_info$output_stats, settings=emulator_settings)
+  
+  # Induced log joint density (i.e. log unnormalized posterior density) emulator. 
+  lpost_emulator <- get_lpost_emulator_obj(emulator_info_list=emulator_info_list, design_info_list=init_design_info, 
+                                           computer_model_data=computer_model_data, sig2_eps=sig2_eps, 
+                                           theta_prior_params=theta_prior_params_trunc, center_output=TRUE, scale_output=TRUE)
+  
+  # Plot initial emulator fit.
+  pred_grid <- predict_lpost_emulator(inputs_new_scaled=prior_grid_info$inputs_scaled, lpost_emulator=lpost_emulator, 
+                                      unscale=TRUE, uncenter=TRUE)
+  plot_list$gp_fit <- plot_gp_fit_1d(prior_grid_info$inputs, prior_grid_info$lpost, init_design_info$inputs,
+                                     init_design_info$lpost, pred_grid$mean, pred_grid$var, 
+                                     vertical_line=linear_Gaussian_info$true_posterior$mean,
+                                     xlab="u", ylab="Unnormalized log posterior", main_title="GP lpost Predictions", 
+                                     CI_prob=0.95)
+  
+  # ------------------------------------
+  # Approximate (log) posterior density    
+  # ------------------------------------
+  
+  # Joint (u, phi) posterior density. 
+  phi_grid <- seq(min(prior_grid_info$outputs), max(prior_grid_info$outputs), length.out=50)
+  u_phi_grid <- expand.grid(prior_grid_info$inputs, phi_grid)
+  colnames(u_phi_grid) <- c("u", "phi")
+  
+  lprior_u <- calc_lprior_theta(matrix(u_phi_grid$u, ncol=1), theta_prior_params_trunc)
+  gp_pred_list <- predict_independent_GPs(X_pred=prior_grid_info$inputs_scaled, gp_obj_list=emulator_info_list$gp_fits, 
+                                          gp_lib=emulator_settings$gp_lib, 
+                                          denormalize_predictions=TRUE, output_stats=emulator_info_list$output_stats)
+  gp_pred_means <- sapply(gp_pred_list, function(x) x$mean)
+  gp_pred_vars <- sapply(gp_pred_list, function(x) x$var_comb)
+  phi_pred_mean_grid <- expand.grid(gp_pred_means, phi_grid)
+  phi_pred_var_grid <- expand.grid(gp_pred_vars, phi_grid)
+  
+  u_phi_grid$gp_pred_mean <- phi_pred_mean_grid$Var1
+  u_phi_grid$gp_pred_var <- phi_pred_mean_grid$Var2
+  u_phi_grid$a <- u_phi_grid$gp_pred_mean - 0.5 * (u_phi_grid$gp_pred_var/sig2_eps)
+  
+  u_phi_grid$lpost_u_phi <- lprior_u - 0.5*log(u_phi_grid$gp_pred_var) - 0.5*u_phi_grid$gp_pred_mean^2/u_phi_grid$gp_pred_var + 
+                            0.5*u_phi_grid$a^2/u_phi_grid$gp_pred_var - 0.5*(u_phi_grid$phi-u_phi_grid$a)^2/u_phi_grid$gp_pred_var
+  
+  # Marginal u posterior density (phi marginalized out). 
+  a <- gp_pred_means - 0.5 * gp_pred_vars/sig2_eps
+  lpost_marg_u <- calc_lprior_theta(prior_grid_info$inputs, theta_prior_params_trunc) - 0.5*(gp_pred_means^2 - a^2)/gp_pred_vars
+  
+  # Plot the densities. 
+  plot_list$u_phi_lpost <- get_2d_heatmap_plot(X=u_phi_grid[,c("u","phi")], y=u_phi_grid$lpost_u_phi, raster=TRUE, 
+                                               param_names=c("u", "phi"), bigger_is_better=TRUE, main_title="(u,phi) posterior log density", 
+                                               legend="Log Post (u,phi) Density", 
+                                               point_coords=c(linear_Gaussian_info$true_posterior$mean, linear_Gaussian_info$true_posterior$SSR))
+  
+  u_marg_post_df <- data.frame(input=prior_grid_info$inputs[,1], lpost=lpost_marg_u[,1])
+  plot_list$u_marg_lpost <- ggplot(u_marg_post_df, aes(x=input, y=lpost)) + geom_line() + 
+                            xlab("u") + ylab("log E_{phi}[p(u|Sigma,Y)]") + ggtitle("Log Post u Marginal Density")
+  
+  # Collect objects to return. 
+  obj_list <-   list(computer_model_data=computer_model_data, linear_Gaussian_info=linear_Gaussian_info, 
+                     prior_params=theta_prior_params, prior_params_trunc=theta_prior_params_trunc, 
+                     init_design_info=init_design_info, prior_grid_info=prior_grid_info, 
+                     lpost_emulator=lpost_emulator, gp_pred_grid_list=gp_pred_list)
+  
+  return(list(obj=obj_list, plots=plot_list))
+
+}
+
+
+run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain=4, N_itr=2000, 
+                              burn_in=0.5*N_itr, learn_sig_eps=FALSE, ...) {
+  # Currently this assumed fixed sig2_eps. 
+  #
+  # Args:
+  #    computer_model_data: list, the computer model data list. 
+  #    lpost_emulator: list, the lpost emulator list. 
+  #    algs: character, vector of names of MCMC algorithms to run. Valid options 
+  #          are "ind_gp_gibbs", "ind_gp_marg", "ind_gp_joint", "ind_gp_trajectory". 
+  #    ...: other named arguments are passed to the MCMC functions (e.g. arguments
+  #         to control proposal covariance adaptation, etc.). 
+  #
+  
+  # Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
+  design_info_list <- lpost_emulator$design_info_list
+  best_idx <- which.max(design_info_list$lpost)
+  theta_init <- design_info_list$inputs[best_idx,]
+  
+  # Parameters whose samples will be returned. 
+  param_types <- "theta"
+  if(learn_sig_eps) param_types <- c(param_types, "sig_eps")
+
+  # Run MCMC algorithms.
+  for(j in seq_along(algs)) {
+    alg_name <- algs[j]
+    
+    mcmc_func <- get(paste0("mcmc_calibrate_", alg_name))
+    
+    mcmc_output <- mcmc_func(computer_model_data=computer_model_data, 
+                             theta_prior_params=lpost_emulator$theta_prior_params, 
+                             emulator_info_list=lpost_emulator$emulator_info_list,
+                             theta_init=theta_init, 
+                             sig2_eps_init=lpost_emulator$sig2_eps, 
+                             learn_sig_eps=learn_sig_eps, 
+                             N_mcmc=N_itr, ...)
+    
+    mcmc_samp_dt <- format_mcmc_output(samp_list=mcmc_output[c("theta")], test_label=alg_name)
+  }
+  
+  return(mcmc_samp_dt)
+  
+}
 
 
 

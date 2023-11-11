@@ -23,6 +23,7 @@ source("mcmc_calibration_functions.r")
 source("gp_emulator_functions.r")
 source("gp_mcmc_functions.r")
 source("sequential_design_optimization.r")
+source("sequential_design_sim_study.r")
 ```
 
 # 1D Linear Gaussian Model 
@@ -67,6 +68,57 @@ linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model
 plot(1:N_obs, computer_model_data$data_obs, main = "Ground Truth and Observed Data", xlab = "t")
 lines(1:N_obs, computer_model_data$data_ref, col = "red")
 ```
+
+
+```{r}
+data_seed <- 5
+design_seed <- 10
+sig2_eps <- 1
+N_design <- 4
+
+emulator_settings <- data.frame(gp_lib = c("hetGP"), 
+                                kernel = "Gaussian", 
+                                transformation_method = c("truncated"),
+                                emulator_target = "SSR",
+                                scale_X = TRUE, 
+                                normalize_y = TRUE)
+
+linear_Gaussian_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps, sig2_0, N_design,
+                                                        emulator_settings, N_obs, design_method="grid")
+for(plt in linear_Gaussian_list$plots) plot(plt)
+```
+```{r}
+plot_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps, sig2_0, N_design,
+                                                        emulator_settings, N_obs, design_method="LHS")
+for(plt in plot_list) plot(plt)
+```
+
+```{r}
+plot_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps=4, sig2_0, N_design=3,
+                                                        emulator_settings, N_obs, design_method="grid")
+for(plt in plot_list) plot(plt)
+```
+
+```{r}
+computer_model_data <- linear_Gaussian_list$obj$computer_model_data
+lpost_emulator <- linear_Gaussian_list$obj$lpost_emulator
+
+mcmc_algs <- "ind_gp_gibbs"
+
+mcmc_samp_dt <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
+                                  learn_sig_eps=FALSE)
+
+```
+
+```{r}
+
+burn_ins <- c(ind_gp_gibbs=25000)
+
+# Trace plot. 
+get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="ind_gp_gibbs", param_types="theta")
+```
+
+
 
 ```{r}
 # Initial design and grid of points for plotting purposes. 
@@ -146,7 +198,7 @@ lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list
                                          theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
 
 # Plot initial emulator fit.
-pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled = prior_grid_info$inputs_scaled, lpost_emulator = lpost_emulator)
+pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled=prior_grid_info$inputs_scaled, lpost_emulator=lpost_emulator)
 upper_CI <- qnorm(.99, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var))
 lower_CI <- qnorm(.01, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var)) 
 
