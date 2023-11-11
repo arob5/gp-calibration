@@ -2053,7 +2053,7 @@ format_mcmc_output <- function(samp_list, test_label) {
 }
 
 
-select_mcmc_samp <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL) {
   # Operates on the long data.table format, as returned by `format_mcmc_output()`. Selects rows corresponding to 
   # valid combinations of `test_labels`, `param_types`, `param_names`. Also removes iterations specified as "burn-in". 
   # See `burn_in_start` for details. 
@@ -2218,8 +2218,8 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
 # ------------------------------------------------------------------------------
 
 
-get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = NULL, xlab = "samples", ylab = "density", 
-                          main_title = "Histogram", data_names = NULL) {
+get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, xlab="samples", ylab="density", 
+                          main_title="Histogram", data_names=NULL) {
   # Generates a single plot with one or more histograms. The input data `samples_list` must be a list of matrices. 
   # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
   # second element a matrix of samples from an approximate distribution. This function will select one column from 
@@ -2269,7 +2269,15 @@ get_hist_plot <- function(samples_list, col_sel = 1, bins = 30, vertical_line = 
 }
 
 
-get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "theta1", ylab = "theta2", main_titles = NULL) {
+get_hist_plot_comparisons <- function(mcmc_samp_dt, col_sel=1, bins=30, vertical_line=NULL, xlab="samples", ylab="density", 
+                                      main_title="Histogram", data_names=NULL) {
+  
+  # TODO.
+  
+}
+
+
+get_2d_density_contour_plot <- function(samples_list, col_sel=c(1,2), xlab="theta1", ylab="theta2", main_titles=NULL) {
   # Plots the contours of a 2D kernel density estimate. If `samples_list` contains multiple elements, then one plot will be 
   # returned per element. Each element of `samples_list` is matrix of dimension N_samples x N_params. The vector `col_sel`
   # determines which 2 columns will be used for the 2D KDE plot in each matrix. 
@@ -2302,7 +2310,7 @@ get_2d_density_contour_plot <- function(samples_list, col_sel = c(1,2), xlab = "
 }
 
 
-get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, col_sel = c(1,2), main_title = NULL) {
+get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, col_sel=c(1,2), main_title=NULL) {
   # Plots the contours of 2D kernel density estimates for samples from two different distributions over 2D input spaces 
   # so that they may compared. The samples `samp_baseline` will be plotted with a "filled" KDE heatmap, while the
   # the contours for `samp_overlay` will be overlaid on top and not filled. The vector `col_sel`
@@ -2341,12 +2349,12 @@ get_overlaid_2d_density_contour_plot <- function(samp_baseline, samp_overlay, co
 }
 
 
-get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_points = NULL,  
-                                raster = FALSE, point_coords = NULL, main_title = "Heatmap", 
-                                bigger_is_better = TRUE, legend_label = "y", log_scale = FALSE, 
-                                point_coords_shape = 8, point_coords_col = "black", 
-                                samples_points_size = 1, point_coords_size = 3, 
-                                samples_kde_lab = "KDE", samples_points_lab = "samples_points", KDE_opacity = 1.0) {
+get_2d_heatmap_plot <- function(X, y, param_names, samples_kde=NULL, samples_points=NULL,  
+                                raster=FALSE, point_coords=NULL, main_title="Heatmap", 
+                                bigger_is_better=TRUE, legend_label="y", log_scale=FALSE, 
+                                point_coords_shape=8, point_coords_col="black", 
+                                samples_points_size=1, point_coords_size=3, 
+                                samples_kde_lab="KDE", samples_points_lab="samples_points", KDE_opacity=1.0) {
   # Plots a 2d heatmap of a scalar quantity `y`. Optionally overlays contours of a 2d 
   # kernel density estimate from `samples`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -2454,9 +2462,9 @@ get_2d_heatmap_plot <- function(X, y, param_names, samples_kde = NULL, samples_p
 }
 
 
-get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde = NULL, samples_points = NULL,  
-                                raster = FALSE, point_coords = NULL, main_title = NULL, 
-                                base_main_title = "Heatmap", bigger_is_better = TRUE, legend_label = "y") {
+get_2d_heatmap_plots <- function(X, Y, param_names, samples_kde=NULL, samples_points=NULL,  
+                                raster=FALSE, point_coords=NULL, main_title=NULL, 
+                                base_main_title="Heatmap", bigger_is_better=TRUE, legend_label="y") {
   # A wrapper function around `get_2d_headmap_plot()` that allows `Y` to be multivariate. 
   # Each column of `Y` is interpreted as the response variable for a different heatmap plot. 
   # Each column is fed to `get_2d_headmap_plot()` and a list of plots is returned. 
@@ -2776,7 +2784,7 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
 }
 
 
-get_trace_plots <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL) {
+get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL) {
   # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
   # MCMC trace plot per valid `param_name`-`param_type`-`test_label` combination. 
   #
@@ -2966,7 +2974,7 @@ select_mcmc_samp_wide <- function(mcmc_samp_df, burn_in_start = NULL, test_label
 }
 
 
-select_mcmc_samp_cols <- function(test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
+select_mcmc_samp_cols <- function(test_labels=NULL, param_types=NULL, param_names=NULL, col_names=NULL, ...) {
   # This function generates a vector of column names intended to select columns from a data.frame, in which each 
   # column of the data.frame stores a set of samples from a particular parameter. The assumed column name structure 
   # is "<test_label>_<parameter_label>_<parameter_types>", where <test_label> is used to identify different 

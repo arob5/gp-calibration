@@ -211,7 +211,7 @@ get_1d_linear_Gaussian_approx_post_density <- function(data_seed, design_seed, G
 
 
 run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain=4, N_itr=2000, 
-                              burn_in=0.5*N_itr, learn_sig_eps=FALSE, ...) {
+                              burn_ins=0.5*N_itr, learn_sig_eps=FALSE, ...) {
   # Currently this assumed fixed sig2_eps. 
   #
   # Args:
@@ -231,6 +231,10 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain
   # Parameters whose samples will be returned. 
   param_types <- "theta"
   if(learn_sig_eps) param_types <- c(param_types, "sig_eps")
+  
+  # Set burn-ins. 
+  if(length(burn_ins)==1) burn_ins <- rep(burn_ins, length(algs))
+  burn_ins <- setNames(burn_ins, algs)
 
   # Run MCMC algorithms.
   for(j in seq_along(algs)) {
@@ -246,10 +250,15 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain
                              learn_sig_eps=learn_sig_eps, 
                              N_mcmc=N_itr, ...)
     
-    mcmc_samp_dt <- format_mcmc_output(samp_list=mcmc_output[c("theta")], test_label=alg_name)
+    mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[c("theta")], test_label=alg_name)
+    mcmc_samp_dt_alg <- select_mcmc_samp(mcmc_samp_dt_alg, burn_in_start=burn_ins[alg_name])
+    
+    if(j == 1) mcmc_samp_dt <- copy(mcmc_samp_dt_alg)
+    else mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_alg), use.names = TRUE)
+                   
   }
   
-  return(mcmc_samp_dt)
+  return(list(mcmc_samp_dt=mcmc_samp_dt, burn_ins=burn_ins))
   
 }
 

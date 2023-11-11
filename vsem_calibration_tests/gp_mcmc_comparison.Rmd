@@ -103,20 +103,58 @@ for(plt in plot_list) plot(plt)
 computer_model_data <- linear_Gaussian_list$obj$computer_model_data
 lpost_emulator <- linear_Gaussian_list$obj$lpost_emulator
 
-mcmc_algs <- "ind_gp_trajectory"
+mcmc_algs <- c("ind_gp_gibbs", "ind_gp_trajectory")
 
-mcmc_samp_dt <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
-                                  learn_sig_eps=FALSE)
+mcmc_info_list <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
+                                    learn_sig_eps=FALSE)
+mcmc_samp_dt <- mcmc_info_list$mcmc_samp_dt
+burn_ins <- mcmc_info_list$burn_ins
 
 ```
 
 ```{r}
-
-burn_ins <- c(ind_gp_trajectory=25000)
-
-# Trace plot. 
-get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="ind_gp_trajectory", param_types="theta")
+trace_plots <- get_trace_plots(mcmc_samp_dt)
+for(plt in trace_plots) plot(plt)
 ```
+
+```{r}
+N_samp_exact <- 25000
+samp_exact <- matrix(rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
+                           sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov))), ncol=1)
+```
+
+
+```{r}
+
+# TODOs:
+#    1.) write histogram function to automate the production of these plots. 
+#    2.) look into why the trajectory alg posterior is multimodal, while the current PEcAn alg is not. 
+#    3.) look into adding second Phi sampling step in the trajectory algorithm. 
+
+# Approximate vs. True Samples. 
+samp_approx_hist_gibbs <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, 
+                                                     test_labels="ind_gp_gibbs", param_types="theta")$sample, ncol=1)
+
+samp_approx_hist_trajectory <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, 
+                                                          test_labels="ind_gp_trajectory", param_types="theta")$sample, ncol=1)
+
+
+gibbs_hist_plot <- get_hist_plot(list(samp_exact, samp_approx_hist_gibbs), bins=50, xlab="u samples", ylab="density", 
+                                      main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "gibbs"))
+trajectory_hist_plot <- get_hist_plot(list(samp_exact, samp_approx_hist_trajectory), bins=50, xlab="u samples", ylab="density", 
+                                           main_title = "True vs. Approximate Posterior Samples", 
+                                      data_names = c("exact", "trajectory"))
+
+plot(gibbs_hist_plot)
+plot(trajectory_hist_plot)
+
+```
+
+
+
+
+
+
 
 
 
