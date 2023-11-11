@@ -131,7 +131,7 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
 # Specific MCMC algorithms. 
 # -----------------------------------------------------------------------------
 
-# emulator_info: list with "gp_fits", "output_stats", "settings", and "input_bounds"
+# emulator_info_list: list with "gp_fits", "output_stats", "settings", and "input_bounds"
 # TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
 # on the correct scale (e.g. it should be on log scale for LNP).
 mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params, emulator_info_list,
@@ -173,7 +173,7 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
       sig2_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
     }
   } else {
-    if(is.null(sig2_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+    if(is.null(sig2_eps_init)) stop("Value for `sig2_eps_init` must be provided when `learn_sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
@@ -337,13 +337,13 @@ mcmc_calibrate_ind_GP_marg <- function(computer_model_data, theta_prior_params, 
       sig2_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
     }
   } else {
-    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+    if(is.null(sig2_eps_init)) stop("Value for `sig2_eps_init` must be provided when `learn_sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
   sig2_eps_samp[1,] <- sig2_eps_init
   
-  theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info$input_bounds)
+  theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info_list$input_bounds)
   gp_pred_list_curr <- predict_independent_GPs(X_pred=theta_scaled_curr, gp_obj_list=emulator_info_list$gp_fits, 
                                                gp_lib=emulator_info_list$settings$gp_lib, include_cov_mat=FALSE, 
                                                denormalize_predictions=TRUE, output_stats=emulator_info_list$output_stats)
@@ -353,7 +353,8 @@ mcmc_calibrate_ind_GP_marg <- function(computer_model_data, theta_prior_params, 
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance.
-  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
+  Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
   L_prop <- t(chol(Cov_prop))
   log_scale_prop <- 0
   accept_count <- 0
@@ -383,7 +384,7 @@ mcmc_calibrate_ind_GP_marg <- function(computer_model_data, theta_prior_params, 
       
       # Accept-Reject step. 
       lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
-      theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info$input_bounds)
+      theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info_list$input_bounds)
       gp_pred_list_prop <- predict_independent_GPs(X_pred = theta_scaled_prop, gp_obj_list = emulator_info_list$gp_fits, 
                                                    gp_lib = emulator_info_list$settings$gp_lib, include_cov_mat = FALSE, 
                                                    denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats)
@@ -423,7 +424,7 @@ mcmc_calibrate_ind_GP_marg <- function(computer_model_data, theta_prior_params, 
     # Gibbs step for phi. 
     #
     
-    SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", 
+    SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info_list, cond_type="post", 
                                      sig2_eps=sig2_eps_curr, gp_pred_list=gp_pred_list_curr) 
     
     # TODO: TEMP
@@ -444,7 +445,7 @@ mcmc_calibrate_ind_GP_marg <- function(computer_model_data, theta_prior_params, 
     # Second Gibbs step for phi. 
     #
     
-    # SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info, cond_type="post", 
+    # SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info_list, cond_type="post", 
     #                                  sig2_eps=sig2_eps_curr, gp_pred_list=gp_pred_list_curr) 
     
     
@@ -491,18 +492,19 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
       sig2_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
     }
   } else {
-    if(is.null(sig_eps_init)) stop("Value for `sig_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+    if(is.null(sig2_eps_init)) stop("Value for `sig2_eps_init` must be provided when `learn_sig_eps` is FALSE.")
   }
   
   theta_samp[1,] <- theta_init
   sig2_eps_samp[1,] <- sig2_eps_init
   
-  theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info$input_bounds)
+  theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info_list$input_bounds)
   sig2_eps_curr <- sig2_eps_init
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance.
-  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
+  Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
   L_prop <- t(chol(Cov_prop))
   log_scale_prop <- 0
   accept_count <- 0
@@ -518,7 +520,7 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
     theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Sample from GP at input locations corresponding to current and proposed parameter values. 
-    theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info$input_bounds)
+    theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info_list$input_bounds)
     gp_pred_list <- predict_independent_GPs(X_pred=rbind(theta_scaled_curr, theta_scaled_prop), 
                                             gp_obj_list=emulator_info_list$gp_fits, gp_lib=emulator_info_list$settings$gp_lib,
                                             include_cov_mat=use_gp_cov, denormalize_predictions=TRUE,
@@ -529,7 +531,7 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
                                                  include_nugget=TRUE)
     } else {
       SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, 
-                                                      transformation_methods=emulator_info$settings$transformation_method, 
+                                                      transformation_methods=emulator_info_list$settings$transformation_method, 
                                                       include_nugget=TRUE)
     }
     

@@ -103,7 +103,7 @@ for(plt in plot_list) plot(plt)
 computer_model_data <- linear_Gaussian_list$obj$computer_model_data
 lpost_emulator <- linear_Gaussian_list$obj$lpost_emulator
 
-mcmc_algs <- "ind_gp_gibbs"
+mcmc_algs <- "ind_gp_trajectory"
 
 mcmc_samp_dt <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
                                   learn_sig_eps=FALSE)
@@ -112,10 +112,10 @@ mcmc_samp_dt <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs
 
 ```{r}
 
-burn_ins <- c(ind_gp_gibbs=25000)
+burn_ins <- c(ind_gp_trajectory=25000)
 
 # Trace plot. 
-get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="ind_gp_gibbs", param_types="theta")
+get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="ind_gp_trajectory", param_types="theta")
 ```
 
 

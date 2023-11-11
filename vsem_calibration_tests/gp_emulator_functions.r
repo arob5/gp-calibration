@@ -362,7 +362,8 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat=FALSE, denormaliz
   #               `include_cov_mat` is FALSE). Default is FALSE (return list with named elements "mean", "var", "var_nug", "cov").
   #    X_pred_2: matrix of dimension N_pred_2 x 2. A second set of input locations used to compute the predictive covariance 
   #              between  `X_pred` and `X_pred_2`. Only required if `include_cov_mat` is TRUE. To produce the predictive 
-  #              covariance matrix at the inputs `X_pred`, then simply set this argument equal to `X_pred`. 
+  #              covariance matrix at the inputs `X_pred`, then simply set this argument equal to `X_pred`. This is automatically
+  #              done if `include_cov_mat` is TRUE, but `X_pred_2` is NULL. 
   #    cov_includes_nug: logical(1), if TRUE, the nugget variance is added to the diagonal of the predicted covariance matrix. 
   #                      This is only relevant if `include_cov_mat` is TRUE. 
   #
@@ -395,6 +396,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat=FALSE, denormaliz
   } else if(gp_lib == "hetGP") {
     # Second matrix for computing predictive covariance
     if(include_cov_mat) {
+      if(is.null(X_pred_2)) X_pred_2 <- X_pred
       X_prime <- X_pred_2
     } else {
       X_prime <- NULL
@@ -416,7 +418,7 @@ predict_GP <- function(X_pred, gp_obj, gp_lib, include_cov_mat=FALSE, denormaliz
   
   # Sum predictive variance of latent function value and nugget to obtain combined variance. 
   pred_list[["var_comb"]] <- pred_list$var + pred_list$var_nug
-  if(cov_includes_nug) diag(pred_list[["cov"]]) <- pred_list[["var_comb"]]
+  if(include_cov_mat && cov_includes_nug) diag(pred_list[["cov"]]) <- pred_list[["var_comb"]]
  
   # Apply transformation to GP predictions. 
   if(!is.na(transformation_method)) {
