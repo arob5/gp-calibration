@@ -2245,23 +2245,23 @@ get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, 
     N_max <- max(N_samp)
     for(j in seq_along(samples_list)) {
       if(nrow(samples_list[[j]]) < N_max) {
-        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow = N_max - nrow(samples_list[[j]]), ncol = ncol(samples_list[[j]])))
+        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow=N_max - nrow(samples_list[[j]]), ncol=ncol(samples_list[[j]])))
       }
     }
   }
   
   dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
   if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
-  dt <- melt(dt, measure.vars = colnames(dt), na.rm = TRUE)
+  dt <- melt(dt, measure.vars = colnames(dt), na.rm=TRUE)
   
-  plt <- ggplot(data = dt, aes(x = value, color = variable)) + 
-          geom_histogram(aes(y = ..density..), bins = bins, fill = "white", alpha = 0.2, position = "identity") + 
+  plt <- ggplot(data = dt, aes(x=value, color=variable)) + 
+          geom_histogram(aes(y=..density..), bins=bins, fill="white", alpha=0.2, position="identity") + 
           xlab(xlab) + 
           ylab(ylab) + 
           ggtitle(main_title)
   
   if(!is.null(vertical_line)) {
-    plt <- plt + geom_vline(xintercept = vertical_line, color = "red")
+    plt <- plt + geom_vline(xintercept=vertical_line, color="red")
   }
   
   return(plt)
@@ -2269,10 +2269,72 @@ get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, 
 }
 
 
-get_hist_plot_comparisons <- function(mcmc_samp_dt, col_sel=1, bins=30, vertical_line=NULL, xlab="samples", ylab="density", 
-                                      main_title="Histogram", data_names=NULL) {
+get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
+                                      test_label_baseline=NULL, xlab="samples", ylab="density", bins=30) {
+  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
+  # MCMC marginal histogram plot per valid `param_name`-`param_type`-`test_label` combination. If `test_label_baseline`
+  # is non-NULL, then each plot will include a second histogram corresponding to the specified test label; this is 
+  # useful if wanting to compare approximate samples against some sort of baseline, for example. 
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
+  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
+  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
+  #                   be a named vector with names set to valid test label values. This allows application of a different 
+  #                   burn-in start iteration for different test labels. 
+  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
+  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
+  #                                            value includes all values found in `samp_dt`. 
+  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a valid test label with associated 
+  #                         samples in `samp_dt`. In this case, the histograms corresponding to this baseline 
+  #                         test label will be overlaid on the plots for all other test labels. 
+  #    xlab, ylab, bins: ggplot arguments, all passed to `get_hist_plot()`. 
+  #
+  # Returns: 
+  #    list, each element being a ggplot object. 
+
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
+    test_labels <- c(test_labels, test_label_baseline)
+  }
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types=param_types, param_names=param_names)
+  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
   
-  # TODO.
+  # Separate out data to be used as the baseline for comparison in each plot, it provided. 
+  if(!is.null(test_label_baseline)) {
+    samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
+    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
+  }
+  
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    test_label_curr <- plt_id_vars[j, test_label]
+    param_type_curr <- plt_id_vars[j, param_type]
+    param_name_curr <- plt_id_vars[j, param_name]
+    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
+    samp <- samp_dt_subset[(test_label == test_label_curr) & 
+                           (param_type == param_type_curr) & 
+                           (param_name == param_name_curr), sample]
+    samp_list <- list()
+    samp_list[[1]] <- matrix(samp, ncol=1)
+    data_names <- test_label_curr
+    
+    if(!is.null(test_label_baseline)) {
+      samp_baseline <- samp_dt_baseline[(param_type == param_type_curr) & 
+                                        (param_name == param_name_curr), sample] 
+                                        
+      samp_list[[2]] <- matrix(samp_baseline, ncol=1)
+      data_names <- c(data_names, test_label_baseline)
+    }
+
+    plts[[j]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
+                               main_title=test_label_curr, data_names=data_names) 
+
+  }
+  
+  return(plts)
   
 }
 

@@ -119,44 +119,27 @@ for(plt in trace_plots) plot(plt)
 
 ```{r}
 N_samp_exact <- 25000
-samp_exact <- matrix(rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
-                           sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov))), ncol=1)
-```
+samp_exact <- rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
+                    sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov)))
+samp_exact_dt <- data.table(param_type="theta", 
+                            itr=seq_len(N_samp_exact), 
+                            param_name=computer_model_data$pars_cal_names, 
+                            sample=samp_exact,
+                            test_label="exact")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
 
+```
 
 ```{r}
-
-# TODOs:
-#    1.) write histogram function to automate the production of these plots. 
-#    2.) look into why the trajectory alg posterior is multimodal, while the current PEcAn alg is not. 
-#    3.) look into adding second Phi sampling step in the trajectory algorithm. 
-
-# Approximate vs. True Samples. 
-samp_approx_hist_gibbs <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, 
-                                                     test_labels="ind_gp_gibbs", param_types="theta")$sample, ncol=1)
-
-samp_approx_hist_trajectory <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, 
-                                                          test_labels="ind_gp_trajectory", param_types="theta")$sample, ncol=1)
+# TODO: 
+#    1.) look into why the trajectory alg posterior is multimodal, while the current PEcAn alg is not. 
+#    2.) look into adding second Phi sampling step in the trajectory algorithm. 
 
 
-gibbs_hist_plot <- get_hist_plot(list(samp_exact, samp_approx_hist_gibbs), bins=50, xlab="u samples", ylab="density", 
-                                      main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "gibbs"))
-trajectory_hist_plot <- get_hist_plot(list(samp_exact, samp_approx_hist_trajectory), bins=50, xlab="u samples", ylab="density", 
-                                           main_title = "True vs. Approximate Posterior Samples", 
-                                      data_names = c("exact", "trajectory"))
-
-plot(gibbs_hist_plot)
-plot(trajectory_hist_plot)
-
+hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, test_label_baseline="exact", xlab="samples", ylab="density",
+                                        bins=30)
+for(plt in hist_plots) plot(plt)
 ```
-
-
-
-
-
-
-
-
 
 ```{r}
 # Initial design and grid of points for plotting purposes. 
