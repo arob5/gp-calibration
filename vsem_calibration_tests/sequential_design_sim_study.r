@@ -29,27 +29,27 @@ source("sequential_design_optimization.r")
 #    - Set prior distributions for calibration and likelihood parameters. 
 # -----------------------------------------------------------------------------
 
-# Computer model and synthetic data generation. 
-computer_model_data <- generate_vsem_test_case(4)
-print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
-
-# Priors on calibration parameters. 
-theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
-theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
-theta_prior_params[,"param1"] <- c(1.3, 0.4) 
-theta_prior_params[,"param2"] <- c(1.7, 0.6)
-theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
-print(paste0(rep("-", 30), " Calibration parameters priors ", rep("-", 30)))
-print(theta_prior_params)
-
-# Priors on likelihood parameters. 
-sig2_eps_prior_info <- get_IG_priors_numerical_test(sig2_true = diag(computer_model_data$Sig_eps), 
-                                                    bias_frac = c(0.1, -0.15), bins = 50,
-                                                    coef_var = c(0.3, 0.5), return_prior_plots = TRUE, 
-                                                    output_variables = computer_model_data$output_vars)
-sig2_eps_prior_params <- sig2_eps_prior_info$prior
-print(paste0(rep("-", 30), " Likelihood parameters priors ", rep("-", 30)))
-print(sig2_eps_prior_params)
+# # Computer model and synthetic data generation. 
+# computer_model_data <- generate_vsem_test_case(4)
+# print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
+# 
+# # Priors on calibration parameters. 
+# theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
+# theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
+# theta_prior_params[,"param1"] <- c(1.3, 0.4) 
+# theta_prior_params[,"param2"] <- c(1.7, 0.6)
+# theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
+# print(paste0(rep("-", 30), " Calibration parameters priors ", rep("-", 30)))
+# print(theta_prior_params)
+# 
+# # Priors on likelihood parameters. 
+# sig2_eps_prior_info <- get_IG_priors_numerical_test(sig2_true = diag(computer_model_data$Sig_eps), 
+#                                                     bias_frac = c(0.1, -0.15), bins = 50,
+#                                                     coef_var = c(0.3, 0.5), return_prior_plots = TRUE, 
+#                                                     output_variables = computer_model_data$output_vars)
+# sig2_eps_prior_params <- sig2_eps_prior_info$prior
+# print(paste0(rep("-", 30), " Likelihood parameters priors ", rep("-", 30)))
+# print(sig2_eps_prior_params)
 
 
 # -----------------------------------------------------------------------------
@@ -211,7 +211,8 @@ get_1d_linear_Gaussian_approx_post_density <- function(data_seed, design_seed, G
 
 
 run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain=4, N_itr=2000, 
-                              burn_ins=0.5*N_itr, learn_sig_eps=FALSE, ...) {
+                              burn_ins=0.5*N_itr, learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, 
+                              return_SSR_samp=TRUE, ...) {
   # Currently this assumed fixed sig2_eps. 
   #
   # Args:
@@ -231,6 +232,8 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain
   # Parameters whose samples will be returned. 
   param_types <- "theta"
   if(learn_sig_eps) param_types <- c(param_types, "sig_eps")
+  if(return_cov_prop_scale) param_types <- c(param_types, "cov_prop_scale")
+  if(return_SSR_samp) param_types <- c(param_types, "SSR")
   
   # Set burn-ins. 
   if(length(burn_ins)==1) burn_ins <- rep(burn_ins, length(algs))
@@ -250,11 +253,12 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain
                              learn_sig_eps=learn_sig_eps, 
                              N_mcmc=N_itr, ...)
     
-    mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[c("theta")], test_label=alg_name)
+    col_sel <- intersect(param_types, names(mcmc_output))
+    mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=alg_name)
     mcmc_samp_dt_alg <- select_mcmc_samp(mcmc_samp_dt_alg, burn_in_start=burn_ins[alg_name])
     
     if(j == 1) mcmc_samp_dt <- copy(mcmc_samp_dt_alg)
-    else mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_alg), use.names = TRUE)
+    else mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_alg), use.names=TRUE)
                    
   }
   

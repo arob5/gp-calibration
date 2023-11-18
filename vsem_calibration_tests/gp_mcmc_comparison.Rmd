@@ -49,33 +49,47 @@ is the data-misfit.
 
 ```{r}
 # Linear Gaussian Model Setup. 
-linear_Gaussian_seed <- 72
 N_obs <- 100
 freq <- 1
-g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol = 1)
+g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol=1)
 sig2_eps <- 1
 sig2_0 <- matrix(1)
 mu0 <- 0
 
-linear_Gaussian_info <- generate_linear_Gaussian_test_data(linear_Gaussian_seed, N_obs = N_obs, 
-                                                           D = 1, Sig_theta = sig2_0, G = g, sig2_eps = sig2_eps)
-computer_model_data <- linear_Gaussian_info$computer_model_data
-theta_prior_params <- linear_Gaussian_info$theta_prior_params
-linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
-                                                                  theta_vals=linear_Gaussian_info$true_posterior$mean, 
-                                                                  na.rm=TRUE)
-
-plot(1:N_obs, computer_model_data$data_obs, main = "Ground Truth and Observed Data", xlab = "t")
-lines(1:N_obs, computer_model_data$data_ref, col = "red")
+# linear_Gaussian_info <- generate_linear_Gaussian_test_data(linear_Gaussian_seed, N_obs=N_obs, 
+#                                                            D=1, Sig_theta=sig2_0, G=g, sig2_eps=sig2_eps)
+# computer_model_data <- linear_Gaussian_info$computer_model_data
+# theta_prior_params <- linear_Gaussian_info$theta_prior_params
+# linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
+#                                                                   theta_vals=linear_Gaussian_info$true_posterior$mean, 
+#                                                                   na.rm=TRUE)
+# 
+# plot(1:N_obs, computer_model_data$data_obs, main = "Ground Truth and Observed Data", xlab = "t")
+# lines(1:N_obs, computer_model_data$data_ref, col = "red")
 ```
 
 
 ```{r}
+
+#
+# Observational Data, Forward Model, and Emulator Setup. 
+#
+
+# Random number generator seeds.
 data_seed <- 5
 design_seed <- 10
-sig2_eps <- 1
-N_design <- 4
 
+# Defining forward model.
+freq <- 1
+g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol=1)
+
+# Likelihood parameters and priors. 
+sig2_eps <- 1
+sig2_0 <- matrix(1)
+N_obs <- 100
+
+# Emulator settings. 
+N_design <- 4
 emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
                                 transformation_method = c("truncated"),
@@ -83,41 +97,31 @@ emulator_settings <- data.frame(gp_lib = c("hetGP"),
                                 scale_X = TRUE, 
                                 normalize_y = TRUE)
 
+# Generate data and fit emulator. 
 linear_Gaussian_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps, sig2_0, N_design,
-                                                        emulator_settings, N_obs, design_method="grid")
-for(plt in linear_Gaussian_list$plots) plot(plt)
-```
-```{r}
-plot_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps, sig2_0, N_design,
-                                                        emulator_settings, N_obs, design_method="LHS")
-for(plt in plot_list) plot(plt)
-```
-
-```{r}
-plot_list <- get_1d_linear_Gaussian_approx_post_density(data_seed, design_seed, g, sig2_eps=4, sig2_0, N_design=3,
-                                                        emulator_settings, N_obs, design_method="grid")
-for(plt in plot_list) plot(plt)
-```
-
-```{r}
+                                                                   emulator_settings, N_obs, design_method="grid")
 computer_model_data <- linear_Gaussian_list$obj$computer_model_data
 lpost_emulator <- linear_Gaussian_list$obj$lpost_emulator
+linear_Gaussian_info <- linear_Gaussian_list$obj$linear_Gaussian_info
 
+for(plt in linear_Gaussian_list$plots) plot(plt)
+```
+
+```{r}
+#
+# MCMC Setup. 
+#
+
+# Emulator-Accelerated MCMC algorithms. 
 mcmc_algs <- c("ind_gp_gibbs", "ind_gp_trajectory")
 
 mcmc_info_list <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
-                                    learn_sig_eps=FALSE)
+                                    learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, 
+                                    burn_ins=1)
 mcmc_samp_dt <- mcmc_info_list$mcmc_samp_dt
 burn_ins <- mcmc_info_list$burn_ins
 
-```
-
-```{r}
-trace_plots <- get_trace_plots(mcmc_samp_dt)
-for(plt in trace_plots) plot(plt)
-```
-
-```{r}
+# Append samples from exact posterior. 
 N_samp_exact <- 25000
 samp_exact <- rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
                     sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov)))
@@ -131,587 +135,22 @@ mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
 ```
 
 ```{r}
+trace_plots <- get_trace_plots(mcmc_samp_dt)
+for(plt in trace_plots) plot(plt)
+```
+
+```{r}
 # TODO: 
 #    1.) look into why the trajectory alg posterior is multimodal, while the current PEcAn alg is not. 
 #    2.) look into adding second Phi sampling step in the trajectory algorithm. 
-
+#    3.) return effective proposal variances (scale parameter times diag of proposal covariance) in mcmc_samp_dt. 
+#    4.) add option to exclude a param_type when selecting columns. 
+#    5.) Re-check math for the Gibbs alg.
+#    6.) Try out alternative proposal for Gibbs alg. 
+#    7.) Implement the marg algorithm to compare. 
 
 hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, test_label_baseline="exact", xlab="samples", ylab="density",
                                         bins=30)
 for(plt in hist_plots) plot(plt)
 ```
-
-```{r}
-# Initial design and grid of points for plotting purposes. 
-
-# Define input bounds at 1st and 99th percentiles of Gaussian prior. 
-input_bounds <- matrix(c(min=qnorm(.01, theta_prior_params$param1, theta_prior_params$param2), 
-                         max=qnorm(.99, theta_prior_params$param1, theta_prior_params$param2)), ncol=1)
-rownames(input_bounds) <- c("min", "max")
-colnames(input_bounds) <- computer_model_data$pars_cal_names
-
-# The GP-accelerated MCMC algorithms utilize the truncated prior. 
-theta_prior_params_trunc <- truncate_prior_theta(theta_prior_params, input_bounds)
-
-# Initial Design. 
-design_settings <- data.frame(N_design=4, design_method="LHS", design_seed=5)
-init_design_info <- get_input_output_design(N_points = design_settings$N_design,
-                                            design_method = design_settings$design_method, 
-                                            scale_inputs = TRUE,
-                                            param_ranges = input_bounds,  
-                                            computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params)
-init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                       theta_vals = init_design_info$inputs, 
-                                                       vars_obs = diag(computer_model_data$Sig_eps), 
-                                                       SSR = init_design_info$outputs,
-                                                       na.rm = TRUE, theta_prior_params = theta_prior_params, 
-                                                       return_list = FALSE)
-
-# Grid of points spread across prior (for plotting).  
-prior_grid_info <- get_input_output_design(N_points = 1000,
-                                           design_method = "grid", 
-                                           scale_inputs = TRUE,
-                                           param_ranges = init_design_info$input_bounds,
-                                           computer_model_data = computer_model_data, 
-                                           theta_prior_params = theta_prior_params, 
-                                           design_seed = design_settings$design_seed)
-prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                      theta_vals = prior_grid_info$inputs, 
-                                                      vars_obs = diag(computer_model_data$Sig_eps), 
-                                                      SSR = prior_grid_info$outputs,
-                                                      na.rm = TRUE, theta_prior_params=theta_prior_params, 
-                                                      return_list = FALSE)
-
-# lpost
-plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", 
-     main = "Prior Design and True lpost values", xlab = "u", ylab = "Unnormalized log posterior")
-points(init_design_info$inputs, init_design_info$lpost, col = "black")
-
-# SSR 
-plot(prior_grid_info$inputs, prior_grid_info$outputs, col = "red", type = "l", 
-     main = "Prior Design and True Data Misfit values", xlab = "u", ylab = "Data Misfit")
-points(init_design_info$inputs, init_design_info$outputs, col = "black")
-
-```
-
-## GP Fit on Initial Design 
-
-```{r}
-# Emulator settings
-emulator_settings <- data.frame(gp_lib = c("hetGP"), 
-                                kernel = "Gaussian", 
-                                transformation_method = c("truncated"),
-                                emulator_target = "SSR",
-                                scale_X = TRUE, 
-                                normalize_y = TRUE)
-print(emulator_settings)
-
-# Fit emulators on initial design. 
-gp_fits <- fit_independent_GPs(X_train = init_design_info$inputs_scaled, Y_train = init_design_info$outputs_normalized, 
-                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
-emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design_info$input_bounds, 
-                           output_stats = init_design_info$output_stats, settings = emulator_settings)
-
-# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
-lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
-                                         computer_model_data = computer_model_data, sig2_eps = sig2_eps, 
-                                         theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
-
-# Plot initial emulator fit.
-pred_grid_init_design <- predict_lpost_emulator(inputs_new_scaled=prior_grid_info$inputs_scaled, lpost_emulator=lpost_emulator)
-upper_CI <- qnorm(.99, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var))
-lower_CI <- qnorm(.01, pred_grid_init_design$mean, sqrt(pred_grid_init_design$var)) 
-
-plot(prior_grid_info$inputs, prior_grid_info$lpost, col = "red", type = "l", ylim = c(min(lower_CI), max(upper_CI)),
-     main = "lpost Initial GP Fit", xlab = "u", ylab = "Unnormalized log posterior")
-points(init_design_info$inputs, init_design_info$lpost, col = "black")
-lines(prior_grid_info$inputs, pred_grid_init_design$mean, col = "blue")
-lines(prior_grid_info$inputs, upper_CI, col = "gray")
-lines(prior_grid_info$inputs, lower_CI, col = "gray")
-lpost_true_mean <- linear_Gaussian_info$true_posterior$mean
-lpost_true_post_mean <- calc_lpost_theta_product_lik(computer_model_data, theta_vals=lpost_true_mean, 
-                                                     vars_obs=diag(computer_model_data$Sig_eps), na.rm=TRUE, 
-                                                     theta_prior_params=theta_prior_params )
-points(drop(lpost_true_mean), lpost_true_post_mean$lpost, pch=8)
-
-```
-
-## Heatmap of joint (u, phi) posterior, p(u, phi|Y) (Sigma considered fixed/known here).
-```{r}
-phi_grid <- seq(min(prior_grid_info$outputs), max(prior_grid_info$outputs), length.out=50)
-u_phi_grid <- expand.grid(prior_grid_info$inputs, phi_grid)
-colnames(u_phi_grid) <- c("u", "phi")
-
-lprior_u <- calc_lprior_theta(matrix(u_phi_grid$u, ncol=1), theta_prior_params_trunc)
-
-gp_pred_list <- predict_independent_GPs(X_pred=prior_grid_info$inputs_scaled, gp_obj_list=emulator_info_list$gp_fits, 
-                                        gp_lib=emulator_info_list$settings$gp_lib, 
-                                        denormalize_predictions=TRUE, output_stats=emulator_info_list$output_stats)
-gp_pred_means <- sapply(gp_pred_list, function(x) x$mean)
-gp_pred_vars <- sapply(gp_pred_list, function(x) x$var_comb)
-
-phi_pred_mean_grid <- expand.grid(gp_pred_means, phi_grid)
-phi_pred_var_grid <- expand.grid(gp_pred_vars, phi_grid)
-u_phi_grid$gp_pred_mean <- phi_pred_mean_grid$Var1
-u_phi_grid$gp_pred_var <- phi_pred_mean_grid$Var2
-u_phi_grid$a <- u_phi_grid$gp_pred_mean - 0.5 * (u_phi_grid$gp_pred_var/sig2_eps)
-
-u_phi_grid$lpost_u_phi <- lprior_u - 0.5*log(u_phi_grid$gp_pred_var) - 0.5*u_phi_grid$gp_pred_mean^2/u_phi_grid$gp_pred_var + 
-                          0.5*u_phi_grid$a^2/u_phi_grid$gp_pred_var - 0.5*(u_phi_grid$phi-u_phi_grid$a)^2/u_phi_grid$gp_pred_var
-
-```
-
-
-```{r}
-plt <- get_2d_heatmap_plot(X = u_phi_grid[,c("u","phi")], y = u_phi_grid$lpost_u_phi, raster = TRUE, 
-                           param_names=c("u", "phi"), bigger_is_better = TRUE, main_title = "(u,phi) posterior log density", 
-                           legend = "Log Post (u,phi) Density", 
-                           point_coords = c(linear_Gaussian_info$true_posterior$mean, linear_Gaussian_info$true_posterior$SSR))
-        
-plot(plt)
-```
-
-## Unnormalized log marginal posterior p(u|Sigma, Y)
-```{r}
-
-a <- gp_pred_means - 0.5 * gp_pred_vars/sig2_eps
-lpost_marg_u <- calc_lprior_theta(prior_grid_info$inputs, theta_prior_params_trunc) - 0.5*(gp_pred_means^2 - a^2)/gp_pred_vars
-
-plot(prior_grid_info$inputs, lpost_marg_u, type="l", main="log p(u|Sigma, Y)", 
-     xlab="u", ylab="log E[p(u|Sigma,Y)]") # , xlim = c(-1,1), ylim=c(-300,0))
-plot(prior_grid_info$inputs, prior_grid_info$lpost, type="l", col="red", main="True lpost", 
-     xlab="u", ylab="log p(u|Sigma,Y)")
-
-```
-
-## Exact Posterior Sampling 
-```{r}
-N_samp_exact <- 50000
-samp_exact <- matrix(rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
-                           sd = sqrt(drop(linear_Gaussian_info$true_posterior$Cov))), ncol = 1)
-```
-
-
-## Approximate Posterior Sampling 
-
-```{r}
-# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
-best_idx <- which.max(init_design_info$lpost)
-init_design_info$init_estimates$best_input_idx <- best_idx
-init_design_info$init_estimates$best_input <- init_design_info$inputs[best_idx,]
-```
-
-
-```{r}
-N_mcmc_approx <- 50000
-
-mcmc_approx_baseline <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                                              theta_prior_params = theta_prior_params_trunc, 
-                                              emulator_info = lpost_emulator$emulator_info_list,
-                                              theta_init = init_design_info$init_estimates$best_input, 
-                                              sig_eps_init = lpost_emulator$sig2_eps, 
-                                              learn_sig_eps = FALSE, 
-                                              N_mcmc = N_mcmc_approx)
-
-mcmc_samp_dt <- format_mcmc_output(samp_list=mcmc_approx_baseline[c("theta")], test_label="baseline")
-burn_ins <- c(baseline=10000)
-```
-
-```{r}
-# Trace plot. 
-baseline_trace_plt <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="baseline", param_types="theta")
-plot(baseline_trace_plt[[1]])
-```
-
-
-```{r}
-# Approximate vs. True Samples. 
-mcmc_samp_dt[test_label=="baseline", test_label := "pecan"]
-samp_approx_hist <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="pecan", param_types="theta")$sample, ncol=1)
-
-baseline_hist_plot <- get_hist_plot(list(samp_exact[1:N_mcmc_approx,,drop=FALSE], samp_approx_hist), bins=50, xlab="u samples", ylab="density", 
-                                         main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "pecan")) 
-
-plot(baseline_hist_plot)
-
-```
-
-```{r}
-#
-# GP-MCMC-Gibbs algorithm
-#
-
-mcmc_approx_gibbs <- mcmc_calibrate_ind_GP_Gibbs(computer_model_data = computer_model_data, 
-                                                 theta_prior_params = theta_prior_params_trunc, 
-                                                 emulator_info = lpost_emulator$emulator_info_list,
-                                                 theta_init = init_design_info$init_estimates$best_input, 
-                                                 sig2_eps_init = lpost_emulator$sig2_eps, 
-                                                 learn_sig_eps = FALSE, 
-                                                 N_mcmc = N_mcmc_approx, 
-                                                 proposal_scale_multiplier = 1, 
-                                                 proposal_scale_decay = 0.7)
-
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list=mcmc_approx_gibbs[c("theta")], test_label="gibbs")), 
-                          use.names = TRUE)
-
-burn_ins <- c(burn_ins, gibbs=10000)
-```
-
-```{r}
-# Trace plot. 
-gibbs_trace_plt <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="theta")
-
-plot(gibbs_trace_plt[[1]])
-plot(seq_len(N_mcmc_approx-burn_ins["gibbs"]+1), mcmc_approx_gibbs$SSR[burn_ins["gibbs"]:N_mcmc_approx])
-```
-
-```{r}
-# Approximate vs. True Samples. 
-samp_approx_hist_gibbs <- as.matrix(select_mcmc_samp(mcmc_samp_dt, burn_in_start=burn_ins, 
-                                                     test_labels="gibbs", param_types="theta")$sample, ncol=1)
-
-gibbs_hist_plot <- get_hist_plot(list(samp_exact[1:nrow(samp_approx_hist_gibbs),,drop=FALSE], 
-                                      samp_approx_hist_gibbs), bins=50, xlab="u samples", ylab="density", 
-                                      main_title = "True vs. Approximate Posterior Samples", data_names = c("exact", "gibbs"))
-gibbs_hist_plot_2 <- get_hist_plot(list(samp_approx_hist_gibbs),
-                                   bins=50, xlab="samples", ylab="density",
-                                   main_title = "Histogram", data_names = c("gibbs"))
-
-plot(gibbs_hist_plot)
-plot(gibbs_hist_plot_2)
-
-```
-
-
-
-
-
-
-
-
-
-
-# Computer Model and Data 
-
-```{r, include = FALSE}
-# Synthetic data generation
-computer_model_data <- generate_vsem_test_case(4)
-```
-
-```{r}
-print(computer_model_data$ref_pars[computer_model_data$pars_cal_sel,])
-```
-
-```{r echo = FALSE}
-for(output_var in computer_model_data$output_vars) {
- plotTimeSeries(observed = computer_model_data$data_obs[, output_var],
-                predicted = computer_model_data$data_ref[, output_var], main = output_var) 
-}
-```
-
-# Priors 
-
-## Calibration Parameters 
-```{r, echo = FALSE} 
-# Priors 
-theta_prior_params <- computer_model_data$ref_pars[computer_model_data$pars_cal_sel,]
-theta_prior_params[, "dist"] <- c("Uniform", "Uniform")
-theta_prior_params[,"param1"] <- c(1.4, 0.45) # theta_prior_params[,"lower"]
-theta_prior_params[,"param2"] <- c(1.6, 0.55)  # theta_prior_params[,"upper"]
-theta_prior_params <- theta_prior_params[, c("dist", "param1", "param2")]
-
-print(theta_prior_params)
-```
-
-
-## Likelihood Parameters 
-```{r}
-sig2_prior_info <- get_IG_priors_numerical_test(sig2_true = diag(computer_model_data$Sig_eps), 
-                                                bias_frac = c(0.1, -0.15), bins = 50,
-                                                coef_var = c(0.3, 0.5), return_prior_plots = TRUE, 
-                                                output_variables = computer_model_data$output_vars)
-sig_eps_prior_params <- sig2_prior_info$prior
-plts <- sig2_prior_info$plots
-
-grid.arrange(arrangeGrob(grobs = plts, nrow = 1))
-```
-
-# Exact MCMC Samples.
-
-## Exact MCMC. 
-```{r}
-N_mcmc_exact <- 50000
-
-time_start <- proc.time()
-mcmc_exact_list <- mcmc_calibrate_product_lik(computer_model_data = computer_model_data, 
-                                              theta_prior_params = theta_prior_params, 
-                                              learn_sig_eps = TRUE,
-                                              sig_eps_prior_params = sig_eps_prior_params,
-                                              N_mcmc = N_mcmc_exact)
-mcmc_exact_runtime <- (proc.time() - time_start)[["elapsed"]]
-print(paste0("Exact MCMC runtime: ", mcmc_exact_runtime, " seconds."))
-
-# Format MCMC samples. 
-mcmc_samp_dt <- format_mcmc_output(samp_list = mcmc_exact_list[c("theta", "sig_eps")], test_label = "exact")
-
-```
-
-```{r}
-# TODO: write function `get_mcmc_diagnostics()`. 
-burn_ins <- c(exact = 10000)
-
-mcmc_exact_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")
-mcmc_exact_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "sig_eps")
-
-grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_exact_trace_plts_sig_eps, nrow = 1))
-```
-
-```{r}
-# Store matrix of calibration parameter samples from exact MCMC for plotting purposes. 
-samp_exact_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "exact", param_types = "theta")[, .(param_name, sample)]
-samp_exact_theta <- as.matrix(unstack(samp_exact_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-```
-
-
-# Fit GP on space-filling design. 
-
-```{r, echo = FALSE}
-# Emulator settings
-emulator_settings <- data.frame(gp_lib = c("hetGP"), 
-                                kernel = "Gaussian", 
-                                transformation_method = c("truncated"),
-                                emulator_target = "SSR",
-                                scale_X = TRUE, 
-                                normalize_y = TRUE)
-print(emulator_settings)
-```
-
-```{r}
-# Initial design (round 0). 
-design_settings <- data.frame(N_design = 17, design_method = "LHS", design_seed = 1) # should test with 7 design points again. 
-init_design_info <- get_input_output_design(N_points = design_settings$N_design,
-                                            design_method = design_settings$design_method, 
-                                            scale_inputs = TRUE,
-                                            computer_model_data = computer_model_data, 
-                                            theta_prior_params = theta_prior_params, 
-                                            design_seed = design_settings$design_seed)
-
-# Grid of points spread across prior (for plotting).  
-prior_grid_info <- get_input_output_design(N_points = 51^2,
-                                           design_method = "grid", 
-                                           scale_inputs = TRUE,
-                                           # param_ranges = init_design_info$input_bounds,
-                                           computer_model_data = computer_model_data, 
-                                           theta_prior_params = theta_prior_params, 
-                                           design_seed = design_settings$design_seed)
-prior_grid_info$lpost <- calc_lpost_theta_product_lik(computer_model_data = computer_model_data, 
-                                                      theta_vals = prior_grid_info$inputs, 
-                                                      vars_obs = diag(computer_model_data$Sig_eps), 
-                                                      SSR = prior_grid_info$outputs,
-                                                      na.rm = TRUE, theta_prior_params = theta_prior_params, 
-                                                      return_list = FALSE)
-```
-
-
-```{r}
-# Plot initial design. 
-plt_init_design <- get_2d_heatmap_plot(X = prior_grid_info$inputs, y = prior_grid_info$lpost, param_names = computer_model_data$pars_cal_names, 
-                                       samples_kde = samp_exact_theta, samples_points = init_design_info$inputs, raster = TRUE, 
-                                       bigger_is_better = TRUE, main_title = "Initial Design and True Posterior", 
-                                       legend = "Log Post Density", samples_points_lab = "Initial Design", 
-                                       samples_kde_lab = "True Post KDE", samples_points_size = 3)
-# plt_init_design <- plt_init_design + theme_classic()
-
-# plt_init_design <- plt_init_design + theme(legend.position = "none", axis.text.x=element_blank(), 
-#                                            axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-#                                            panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-#                                            panel.border = element_blank(), panel.background = element_blank(), 
-#                                            plot.background = element_blank()) + 
-#                    ggtitle(NULL) + xlab(NULL) + ylab(NULL)
-plot(plt_init_design)
-
-#plot_x_range <- layer_scales(plt_init_design)$x$range$range
-#plot_y_range <- layer_scales(plt_init_design)$y$range$range
-
-```
-
-```{r}
-# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
-init_estimates <- get_init_param_estimates(init_design_info, computer_model_data, sig_eps_prior_params)
-init_design_info$init_estimates <- init_estimates
-print("Initial Estimates:")
-print(init_estimates)
-```
-
-
-```{r}
-# Fit emulators on initial design. 
-gp_fits <- fit_independent_GPs(X_train = init_design_info$inputs_scaled, Y_train = init_design_info$outputs_normalized, 
-                               gp_lib = emulator_settings$gp_lib, gp_kernel = emulator_settings$kernel)$fits
-emulator_info_list <- list(gp_fits = gp_fits, input_bounds = init_design_info$input_bounds, 
-                           output_stats = init_design_info$output_stats, settings = emulator_settings)
-
-# Induced log joint density (i.e. log unnormalized posterior density) emulator. 
-lpost_emulator <- get_lpost_emulator_obj(emulator_info_list = emulator_info_list, design_info_list = init_design_info, 
-                                         computer_model_data = computer_model_data, sig2_eps = init_design_info$init_estimates$best_sig2_eps, 
-                                         theta_prior_params = theta_prior_params, center_output = TRUE, scale_output = TRUE)
-```
-
-
-## Sample approximate posterior. 
-```{r}
-#
-# Baseline GP MCMC algorithm (sampling from GP)
-#
-
-N_mcmc_approx <- 50000
-
-mcmc_approx_baseline <- mcmc_calibrate_ind_GP(computer_model_data = computer_model_data, 
-                                              theta_prior_params = theta_prior_params, 
-                                              emulator_info = lpost_emulator$emulator_info_list,
-                                              theta_init = init_design_info$init_estimates$best_input[1,], 
-                                              sig_eps_init = init_design_info$init_estimates$best_sig2_eps, 
-                                              learn_sig_eps = TRUE, 
-                                              sig_eps_prior_params = sig_eps_prior_params, 
-                                              N_mcmc = N_mcmc_approx)
-```
-
-```{r}
-# Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_baseline[c("theta", "sig_eps")], test_label = "baseline")), 
-                          use.names = TRUE)
-```
-
-### GP-MCMC-Bsseline sampling diagnostics. 
-```{r}
-
-burn_ins <- c(burn_ins, baseline = 10000)
-
-mcmc_baseline_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "theta")
-mcmc_baseline_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "sig_eps")
-
-grid.arrange(arrangeGrob(grobs = mcmc_baseline_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_baseline_trace_plts_sig_eps, nrow = 1))
-```
-
-
-```{r}
-#
-# Store baseline MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
-# as well as for plotting purposes. 
-#
-
-samp_baseline_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "baseline", param_types = "theta")[, .(param_name, sample)]
-samp_baseline_theta <- as.matrix(unstack(samp_baseline_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-
-```
-
-
-```{r}
-# Compute "sample-based metrics"; that is, measures of error between the approximate and true posterior computed from the MCMC samples. 
-
-# round0_sample_metrics <- compute_mcmc_comparison_metrics(samp_dt = mcmc_samp_dt, burn_in_start = burn_ins, 
-#                                                          test_label_1 = "exact", test_label_2 = "round0", 
-#                                                          param_types = c("theta", "sig_eps"), 
-#                                                          metrics = c("mean", "cov"))
-# print(round0_sample_metrics$metrics_individual)
-# print(round0_sample_metrics$metrics_agg)
-```
-
-```{r}
-# Contours of round 1 approximate posterior vs true contours. 
-# TODO: need to modify plot legend here. Also consider overlaying design points. 
-post_comparison_plts_baseline <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_baseline_theta, 
-                                                                      main_title = "GP MCMC: Baseline")
-
-plot(post_comparison_plts_baseline)
-```
-
-
-```{r}
-#
-# GP-MCMC-Gibbs algorithm
-#
-
-mcmc_approx_gibbs <- mcmc_calibrate_ind_GP_Gibbs(computer_model_data = computer_model_data, 
-                                                 theta_prior_params = theta_prior_params, 
-                                                 emulator_info = lpost_emulator$emulator_info_list,
-                                                 theta_init = init_design_info$init_estimates$best_input[1,], 
-                                                 sig2_eps_init = init_design_info$init_estimates$best_sig2_eps, 
-                                                 learn_sig_eps = TRUE, 
-                                                 sig_eps_prior_params = sig_eps_prior_params, 
-                                                 N_mcmc = N_mcmc_approx, 
-                                                 proposal_scale_multiplier=2)
-```
-
-```{r}
-# Combine with existing data.table of MCMC output. 
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list = mcmc_approx_gibbs[c("theta", "sig_eps")], test_label = "gibbs")), 
-                          use.names = TRUE)
-```
-
-```{r}
-# The issue here looks entirely with the predictive GP for LAI.
-# Need to look into how the baseline algorithm is robust to the poor LAI fit, while Gibbs algorithm is not. 
-# Is there some way to integrate truncated normal into Gibbs algorithm that prevents this? 
-# Should produce plots above looking at predictive mean/variance of each GP. 
-# Should also try re-running this with many more design points to see how behavior changes. 
-
-# Other ideas:
-# - Heatmap of true posterior density; joint between calibration parameter and phi, with fixed variance. 
-# - Try fixing u or variance. 
-
-end <- 3000
-
-plot(1:end, mcmc_approx_gibbs$theta[1:end,1])
-plot(1:end, mcmc_approx_gibbs$sig_eps[1:end,2])
-plot(1:end, mcmc_approx_gibbs$SSR[1:end,2])
-plot(1:end, mcmc_approx_gibbs$cov_prop_scales[1:end])
-```
-
-
-### GP-MCMC-Gibbs sampling diagnostics. 
-```{r}
-
-burn_ins <- c(burn_ins, gibbs = 10000)
-
-mcmc_gibbs_trace_plts <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="theta")
-mcmc_gibbs_trace_plts_sig_eps <- get_trace_plots(mcmc_samp_dt, burn_in_start=burn_ins, test_labels="gibbs", param_types="sig_eps")
-
-grid.arrange(arrangeGrob(grobs = mcmc_gibbs_trace_plts, nrow = 1))
-grid.arrange(arrangeGrob(grobs = mcmc_gibbs_trace_plts_sig_eps, nrow = 1))
-```
-
-```{r}
-#
-# Store baseline MCMC approximate posterior samples. These are used as candidate/integration points for sequential design, 
-# as well as for plotting purposes. 
-#
-
-samp_gibbs_theta <- select_mcmc_samp(mcmc_samp_dt, burn_in_start = burn_ins, test_labels = "gibbs", param_types = "theta")[, .(param_name, sample)]
-samp_gibbs_theta <- as.matrix(unstack(samp_gibbs_theta, sample ~ param_name))[, computer_model_data$pars_cal_names]
-
-```
-
-```{r}
-# Contours of round 1 approximate posterior vs true contours. 
-# TODO: need to modify plot legend here. Also consider overlaying design points. 
-post_comparison_plts_gibbs <- get_overlaid_2d_density_contour_plot(samp_baseline = samp_exact_theta, samp_overlay = samp_gibbs_theta, 
-                                                                   main_title = "GP MCMC: Gibbs")
-
-plot(post_comparison_plts_gibbs)
-```
-
-
-
-
-
-
-
-
-
-
-
 

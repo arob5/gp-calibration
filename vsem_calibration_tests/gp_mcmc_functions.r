@@ -56,7 +56,7 @@ sample_emulator_cond <- function(input_scaled, emulator_info_list, cond_type, si
 # -----------------------------------------------------------------------------
 
 adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, MH_accept_prob, samp_mean, 
-                           adapt_frequency=1000, accept_rate_target=0.24,
+                           effective_log_scale, adapt_frequency=1000, accept_rate_target=0.24,
                            scale_update_decay=0.7, scale_update_mult=1.0, init_threshold=3) {
   # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form `scale * C`, where 
   # `scale` is a scaling factor. This function supports different algorithms to adapt C and to adapt `scale`, and the methods 
@@ -71,33 +71,38 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
   #
   # Args:
   #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
-  #    log_scale: numeric, the log of the scaling factor. 
   #    L: matrix, the lower triangular Cholesky factor of C. This is what is actually used to generate proposals. In general, this 
   #       can be "out of alignment" with C; for example, C can be updated every iteration, but the Cholesky factor can be updated 
   #       less frequently to save computation time. 
+  #    log_scale: numeric, the log of the scaling factor. 
   #    sample_history: matrix, itr_curr x p, where itr_curr is the current MCMC iteration. Note that this must be the entire 
   #                    sample history, even for methods like the AP algorithm, which only require a recent subset of the history. 
-  #    itr_curr: integer, the current MCMC iteration. 
-  #    adapt_cov_frequency: integer, number of iterations that specifies how often C or L will be updated. The AP algorithm 
-  #                         updates both C and L together; the AM algorithm updates C every iteration, but only updates L according 
-  #                         to `update_cov_frequency`. 
-  #    adapt_scale_frequency: integer, number of iterations that specifies how often log_scale will be updated. 
-  #    cov_method: character(1), currently either "AP" (Adaptive Proposal, Haario 1999) or "AM" (Adaptive Metropolis, Haario 2001). 
-  #    scale_method: character(1), currently either "pecan" (method currently used in PEcAn) or "MH_ratio" (based on Metropolis-Hastings 
-  #                  acceptance probability). Both methods rely on `accept_rate_target` as a target. 
-  #    accept_rate_target: numeric(1), the target acceptance rate.
-  #    min_scale: numeric(1), used as a floor for the scaling factor for the "pecan" method. 
-  #    accept_count: integer(1), the number of accepted MH proposals over the subset of the sample history that will be used in the updates (not the 
+  #    itr: integer, the current MCMC iteration. 
+  #    accept_count: integer(1), the number of accepted MH proposals over the subset of the sample history that 
+  #                  will be used in the updates (not the 
   #                  acceptance count over the whole history!). This is only used for the "AP" and "pecan" methods.
-  #    MH_accept_prob: numeric(1), the most recent Metropolis-Hastings acceptance probability. 
-  #    samp_mean: numeric(d), used only by "AM". This is the cumulative sample mean over the MCMC samples. It is updated every iteration. 
-  #    tau: numeric(1), used only by "MH_ratio". This is the extinction coefficient used to determine the rate at which the log_scale updating occurs. 
+  #    MH_accept_prob: numeric(1), the most recent Metropolis-Hastings acceptance probability.
+  #    samp_mean: numeric(d), used only by "AM". This is the cumulative sample mean over the MCMC samples. 
+  #               It is updated every iteration. 
+  #    effective_log_scale: numeric(d), the (log) current standard deviations used in the proposal distributions for 
+  #                              each parameter. These are obtained by multiplying the scale parameter (exp(log_scale))
+  #                              by the diagonal of the proposal covariance matrix (then taking the log).
+  #                              `effective_log_scale` should reflect  
+  #                              the current proposal actually being used (i.e. it should align with `L`, and may not 
+  #                              necessarily reflect the current value of `C`). 
+  #    adapt_frequency: integer, number of iterations that specifies how often C or L will be updated. The AP algorithm 
+  #                     updates both C and L together; the AM algorithm updates C every iteration, but only updates L according 
+  #                     to `update_cov_frequency`. 
+  #    accept_rate_target: numeric(1), the target acceptance rate.
+  #    scale_update_decay: the log scale update formula used the term `scale_update_mult / itr^scale_update_decay`. 
+  #    scale_update_mult: see `scale_update_decay`. 
+  #    itr_threshold: integer, the proposal covariance matrix is not updated before this iteration. 
   #
   # Returns:
-  #    list, with elements "C", "C_L", L", "log_sd2", and "samp_mean". The first three are as described above. The fourth is only used for the "AM" method 
-  #    and is the mean of the MCMC samples up through the current iteration. 
-  
-  accept_rate <- accept_count / adapt_frequency
+  #    list, with elements "C", "L", "log_scale", "samp_mean", "accept_count", and "effective_log_scale". 
+  #    The first three are as described above. "samp_mean" is the mean of the MCMC samples up through the 
+  #    current iteration. "accept_count" is the number of acceptences, which is reset at zero each time 
+  #    `L` is updated. `effective_prop_scale` is described in "Args". 
   
   # Adapt proposal covariance. 
   
@@ -117,12 +122,16 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
     L <- t(chol(C))
     # log_scale <- log_scale - log(sum(diag(C)))
     accept_count <- 0
+    effective_log_scale <- log_scale + 0.5*log(diag(C))
   } else {
     # Adapt scaling factor for proposal covariance matrix. 
+    effective_log_scale <- effective_log_scale - log_scale
     log_scale <- log_scale + (scale_update_mult / itr^scale_update_decay) * (MH_accept_prob - accept_rate_target)
+    effective_log_scale <- effective_log_scale + log_scale
   }
-    
-  return(list(C=C, L=L, log_scale=log_scale, samp_mean=samp_mean, accept_count=accept_count))
+
+  return(list(C=C, L=L, log_scale=log_scale, effective_log_scale=effective_log_scale, 
+              samp_mean=samp_mean, accept_count=accept_count))
   
 }
 
@@ -157,11 +166,10 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
   colnames(theta_samp) <- computer_model_data$pars_cal_names
   sig2_eps_samp <- matrix(nrow=N_mcmc, ncol=p)
   colnames(sig2_eps_samp) <- computer_model_data$output_vars
-  
-  # TODO: TEMP.
   SSR_samp <- matrix(nrow=N_mcmc, ncol=p)
   colnames(SSR_samp) <- computer_model_data$output_vars
-  cov_prop_scales <- vector(mode="numeric", length=N_mcmc)
+  cov_prop_scales <- matrix(nrow=N_mcmc, ncol=p)
+  colnames(cov_prop_scales) <- computer_model_data$output_vars
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -188,18 +196,17 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
   sig2_eps_curr <- sig2_eps_init
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info_list, cond_type="post", sig2_eps=sig2_eps_curr)
+  SSR_samp[1,] <- SSR_curr
   
   # Proposal covariance.
   if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
-  Cov_prop <- diag(Cov_prop_init_diag, nrow = d)
+  Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
   L_prop <- t(chol(Cov_prop))
   log_scale_prop <- 0
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
   accept_count <- 0
   samp_mean <- theta_init
-  
-  # TODO: TEMP
-  SSR_samp[1,] <- SSR_curr
-  cov_prop_scales[1] <- exp(log_scale_prop)
+  cov_prop_scales[1,] <- exp(effective_log_scale_prop)
   
   for(itr in seq(2, N_mcmc)) {
     
@@ -226,9 +233,9 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
       # Accept-Reject step. 
       lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
       theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info_list$input_bounds)
-      gp_pred_list_prop <- predict_independent_GPs(X_pred = theta_scaled_prop, gp_obj_list = emulator_info_list$gp_fits, 
-                                                   gp_lib = emulator_info_list$settings$gp_lib, include_cov_mat = FALSE, 
-                                                   denormalize_predictions = TRUE, output_stats = emulator_info_list$output_stats)
+      gp_pred_list_prop <- predict_independent_GPs(X_pred=theta_scaled_prop, gp_obj_list=emulator_info_list$gp_fits, 
+                                                   gp_lib=emulator_info_list$settings$gp_lib, include_cov_mat=FALSE, 
+                                                   denormalize_predictions=TRUE, output_stats=emulator_info_list$output_stats)
       gp_pred_means_prop <- sapply(gp_pred_list_prop, function(x) x$mean)
       gp_pred_vars_prop <- sapply(gp_pred_list_prop, function(x) x$var_comb)
       
@@ -251,18 +258,16 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
     
     # Adapt proposal covariance matrix and scaling term.
     adapt_list <- adapt_cov_prop(Cov_prop, L_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, 
-                                 adapt_frequency, accept_rate_target, proposal_scale_decay, proposal_scale_multiplier,
-                                 adapt_init_threshold)
-
+                                 effective_log_scale_prop, adapt_frequency, accept_rate_target, proposal_scale_decay, 
+                                 proposal_scale_multiplier, adapt_init_threshold)
+                                 
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
     log_scale_prop <- adapt_list$log_scale
+    effective_log_scale_prop <- adapt_list$effective_log_scale
     samp_mean <- adapt_list$samp_mean
     accept_count <- adapt_list$accept_count
-    
-    # TODO: TEMP
-    cov_prop_scales[itr] <- exp(log_scale_prop)
-    
+    cov_prop_scales[itr,] <- exp(effective_log_scale_prop)
     
     #
     # Gibbs step for phi. 
@@ -270,8 +275,6 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
     
     SSR_curr <- sample_emulator_cond(theta_scaled_curr, emulator_info_list, cond_type="post", 
                                      sig2_eps=sig2_eps_curr, gp_pred_list=gp_pred_list_curr) 
-    
-    # TODO: TEMP
     SSR_samp[itr,] <- SSR_curr
     
     #
@@ -296,7 +299,7 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
   }
   
   return(list(theta=theta_samp, sig_eps=sig2_eps_samp, Cov_prop=Cov_prop, 
-              scale_prop=exp(log_scale_prop), SSR=SSR_samp, cov_prop_scales=cov_prop_scales))
+              SSR=SSR_samp, cov_prop_scale=cov_prop_scales))
   
 }
 
@@ -481,6 +484,8 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
   colnames(theta_samp) <- computer_model_data$pars_cal_names
   sig2_eps_samp <- matrix(nrow=N_mcmc, ncol=p)
   colnames(sig2_eps_samp) <- computer_model_data$output_vars
+  cov_prop_scales <- matrix(nrow=N_mcmc, ncol=p)
+  colnames(cov_prop_scales) <- computer_model_data$output_vars
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -507,8 +512,10 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
   Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
   L_prop <- t(chol(Cov_prop))
   log_scale_prop <- 0
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
   accept_count <- 0
   samp_mean <- theta_init
+  cov_prop_scales[1,] <- exp(effective_log_scale_prop)
   
   for(itr in seq(2, N_mcmc)) {
     
@@ -567,14 +574,16 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
     
     # Adapt proposal covariance matrix and scaling term.
     adapt_list <- adapt_cov_prop(Cov_prop, L_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, 
-                                 adapt_frequency, accept_rate_target, proposal_scale_decay, proposal_scale_multiplier,
-                                 adapt_init_threshold)
-    
+                                 effective_log_scale_prop, adapt_frequency, accept_rate_target, proposal_scale_decay, 
+                                 proposal_scale_multiplier, adapt_init_threshold)
+                                 
     Cov_prop <- adapt_list$C
     L_prop <- adapt_list$L
     log_scale_prop <- adapt_list$log_scale
+    effective_log_scale_prop <- adapt_list$effective_log_scale
     samp_mean <- adapt_list$samp_mean
     accept_count <- adapt_list$accept_count
+    cov_prop_scales[itr,] <- exp(effective_log_scale_prop)
     
     #
     # Gibbs step for sig2_eps. 
@@ -590,7 +599,7 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
 
   }
   
-  return(list(theta=theta_samp, sig_eps=sig2_eps_samp, Cov_prop=Cov_prop, scale_prop=exp(log_scale_prop)))
+  return(list(theta=theta_samp, sig_eps=sig2_eps_samp, Cov_prop=Cov_prop, cov_prop_scale=cov_prop_scales))
   
 }
 
