@@ -249,6 +249,12 @@ p(\bpar, \CovObs, \stateMat)
 \exp\left\{\sum_{\objIdx=1}^{\Nobj} \left(\frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} -
  \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2\sdObs^2_{\objIdx}}\right) \right\}
 \end{align*}
+Note that the uncertainty inflation term involving the GP predictive variance breaks the conditional conjugacy for $\CovObs$. Indeed, the conditional posterior is now 
+\begin{align*}
+p(\CovObs|\bpar, \stateMat) 
+&\propto \exp\left\{\sum_{\objIdx=1}^{\Nobj} \frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} \right\}
+ \prod_{\objIdx=1}^{\Nobj} \mathcal{IG}\left(\sdObs^2_{\objIdx} \bigg| \indexObj{\IGShape}+\frac{\indexObj{\Ntime}}{2}, \indexObj{\IGScale} + \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2} \right).
+\end{align*}
 
 
 % Numerical Experiments
