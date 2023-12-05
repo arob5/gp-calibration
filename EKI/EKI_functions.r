@@ -106,22 +106,23 @@ run_multiscale_inversion <- function(computer_model_data, m0, Sig0, N_itr, time_
 
   y <- computer_model_data$data_obs
   u_samp <- matrix(nrow=N_itr, ncol=d)
+  u_samp[1,] <- drop(m0 + L0 %*% matrix(rnorm(d), ncol=1))
   
   for(itr in seq(2, N_itr)) {
     # Forward model evaluations. 
-    g <- run_computer_model(theta_vals=u_samp[itr,], computer_model_data)
-    G <- do.call(cbind, run_computer_model(theta_vals=fast_ensemble+sigma*u_samp[itr,], computer_model_data))
+    g <- run_computer_model(theta_vals=u_samp[itr-1,], computer_model_data)
+    G <- do.call(cbind, run_computer_model(theta_vals=t(u_samp[itr-1,] + sigma*fast_ensemble), computer_model_data))
     
     # u (distinguished particle) update.
-    C_hat <- cov(fast_ensemble)
-    u_samp[itr+1,] <- u_samp[itr,] - 
-                      time_step*drop(fast_ensemble %*% crossprod(G-g, g-y) / (N_ensemble*N_itr)) - 
-                      time_step*drop(C_hat %*% backsolve(t(L0), forwardsolve(L0, u_samp[itr,,drop=FALSE]-m0))) + 
-                      sqrt(2*time_step) * crossprod(chol(C_hat), matrix(rnorm(d)))
+    C_hat <- cov(t(fast_ensemble))
+    u_samp[itr,] <- u_samp[itr-1,] - 
+                    time_step*drop(fast_ensemble %*% crossprod(G-drop(g), g-y) / (N_ensemble*sigma)) - 
+                    time_step*drop(C_hat %*% backsolve(t(L0), forwardsolve(L0, u_samp[itr-1,]-drop(m0)))) + 
+                    sqrt(2*time_step) * drop(crossprod(chol(C_hat), matrix(rnorm(d))))
     
     # Fast particles update. 
-    fast_ensemble <- exp(-delta/sigma^2)*fast_ensemble + 
-                     sqrt(1-exp(-2*time_step/sigma^2))*matrix(rnorm(d*N_ensemble), nrow=d, ncol=N_ensemble)
+    fast_ensemble <- exp(-time_step/delta^2)*fast_ensemble + 
+                     sqrt(1-exp(-2*time_step/delta^2))*matrix(rnorm(d*N_ensemble), nrow=d, ncol=N_ensemble)
     
   }
   

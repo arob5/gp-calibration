@@ -74,16 +74,27 @@ plot(linear_Gaussian_data_plt)
 time_step <- .001
 sigma <- 0.01
 delta <- .0001
-N_ensemble <- 100
-N_itr <- 1000
+N_ensemble <- 90
+N_itr <- 5000
 
 u_samp <- run_multiscale_inversion(computer_model_data, m0, Sig0, N_itr, time_step,
                                    sigma, delta, N_ensemble)
 ```
 
+```{r}
+plot(u_samp[1000:5000,1], u_samp[1000:5000,2])
+```
 
+```{r}
+# Exact samples
+N_samp_exact <- 25000
+m_true <- linear_Gaussian_info$true_posterior$mean
+C_true <- linear_Gaussian_info$true_posterior$Cov
+L_C_true <- t(chol(C_true))
+samp_exact <- t(drop(m_true) + L_C_true %*% matrix(rnorm(N_samp_exact*d), nrow=d, ncol=N_samp_exact))
 
-
+plot(samp_exact[,1], samp_exact[,2])
+```
 
 
 
