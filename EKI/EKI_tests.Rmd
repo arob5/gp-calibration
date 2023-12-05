@@ -33,24 +33,54 @@ source(file.path(helper_func_dir, "sequential_design_optimization.r"))
 ```{r}
 # Linear Gaussian Model Setup. 
 data_seed <- 23
+d <- 2
 N_obs <- 100
-freq <- 1
-g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol=1)
+freqs <- c(1, 2) 
+G <- cbind(sin(2*pi*freqs[1]*seq(1, N_obs)/N_obs), sin(2*pi*freqs[2]*seq(1, N_obs)/N_obs))
+
 sig2_eps <- 1
-sig2_0 <- matrix(1)
-mu0 <- 0
+Sig0 <- diag(c(1, 4))
+m0 <- matrix(rep(0, d), ncol=1)
 ```
 
 ```{r}
 linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs=N_obs, 
-                                                           D=1, Sig_theta=Sig0_theta, 
-                                                           G=g, sig2_eps=sig2_eps)
+                                                           D=d, Sig_theta=Sig0, 
+                                                           G=G, sig2_eps=sig2_eps)
 computer_model_data <- linear_Gaussian_info$computer_model_data
 theta_prior_params <- linear_Gaussian_info$theta_prior_params
 linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
                                                                   theta_vals=linear_Gaussian_info$true_posterior$mean, 
                                                                   na.rm=TRUE)
+
 ```
+
+```{r}
+# Plot linear Gaussian data. 
+
+sim_data <- as.data.frame(computer_model_data$data_obs)
+sim_data$ref <- computer_model_data$data_ref
+sim_data$time <- 1:N_obs
+linear_Gaussian_data_plt <- ggplot(sim_data) + geom_point(mapping=aes(x=time, y=y)) + 
+                              geom_line(mapping=aes(x=time, y=ref), color="red") + 
+                              xlab("t") + ylab("output") + ggtitle("Ground Truth and Observed Data")
+
+plot(linear_Gaussian_data_plt)
+```
+
+```{r}
+# Multiscale algorithm test. 
+
+time_step <- .001
+sigma <- 0.01
+delta <- .0001
+N_ensemble <- 100
+N_itr <- 1000
+
+u_samp <- run_multiscale_inversion(computer_model_data, m0, Sig0, N_itr, time_step,
+                                   sigma, delta, N_ensemble)
+```
+
 
 
 
