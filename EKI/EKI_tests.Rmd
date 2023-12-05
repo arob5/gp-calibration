@@ -1,0 +1,62 @@
+---
+title: "EKI_tests"
+author: "Andrew Roberts"
+date: '2023-11-28'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(hetGP)
+library(mlegp)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(gridExtra)
+library(data.table)
+library(BayesianTools)
+
+base_dir <- "." # Should be EKI dir
+helper_func_dir <- file.path(base_dir, "..", "vsem_calibration_tests")
+
+source(file.path(helper_func_dir, "numerical_experiment_functions.r"))
+source(file.path(helper_func_dir, "mcmc_calibration_functions.r"))
+source(file.path(helper_func_dir, "gp_emulator_functions.r"))
+source(file.path(helper_func_dir, "gp_mcmc_functions.r"))
+source(file.path(helper_func_dir, "sequential_design_optimization.r"))
+```
+
+# Linear Gaussian Model
+
+```{r}
+# Linear Gaussian Model Setup. 
+data_seed <- 23
+N_obs <- 100
+freq <- 1
+g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol=1)
+sig2_eps <- 1
+sig2_0 <- matrix(1)
+mu0 <- 0
+```
+
+```{r}
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs=N_obs, 
+                                                           D=1, Sig_theta=Sig0_theta, 
+                                                           G=g, sig2_eps=sig2_eps)
+computer_model_data <- linear_Gaussian_info$computer_model_data
+theta_prior_params <- linear_Gaussian_info$theta_prior_params
+linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
+                                                                  theta_vals=linear_Gaussian_info$true_posterior$mean, 
+                                                                  na.rm=TRUE)
+```
+
+
+
+
+
+
+
+
+
