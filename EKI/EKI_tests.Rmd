@@ -31,35 +31,42 @@ source(file.path(helper_func_dir, "sequential_design_optimization.r"))
 # Linear Gaussian Model
 
 ```{r}
+seed <- 10
+set.seed(seed)
+
 # Linear Gaussian Model Setup. 
 data_seed <- 23
 d <- 2
 N_obs <- 100
-freqs <- c(1, 2) 
-G <- cbind(sin(2*pi*freqs[1]*seq(1, N_obs)/N_obs), sin(2*pi*freqs[2]*seq(1, N_obs)/N_obs))
+# freqs <- c(1, 2) 
+# G <- cbind(sin(2*pi*freqs[1]*seq(1, N_obs)/N_obs), sin(2*pi*freqs[2]*seq(1, N_obs)/N_obs))
 
-sig2_eps <- 1
-Sig0 <- diag(c(1, 4))
-m0 <- matrix(rep(0, d), ncol=1)
+G <- t(t(chol(matrix(c(1, 0.7, 0.7, 1), nrow=2))) %*% matrix(rnorm(N_obs*d), nrow=d, ncol=N_obs))
+
+Sig_eps <- 0.4 * diag(rep(1,N_obs))
+Sig0 <- matrix(c(1, 0, 0, 1), nrow=2)
+# Sig0 <- matrix(c(1, 1, 1, 4), nrow=2)
+mu0 <- matrix(rep(0, d), ncol=1)
+theta_true <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
+
+linear_Gaussian_info <- gen_linear_Gaussian_data(G, mu0, Sig0, Sig_eps, theta_true=theta_true)
+mu_true <- linear_Gaussian_info$theta_true
+Sig_true <- linear_Gaussian_info$Sig
+y_true <- linear_Gaussian_info$y_true
+y <- linear_Gaussian_info$y
+
+forward_model <- function(theta_vals) {
+  # Each column of `theta_vals` is a parameter value. 
+  G %*% theta_vals
+}
 ```
 
-```{r}
-linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs=N_obs, 
-                                                           D=d, Sig_theta=Sig0, 
-                                                           G=G, sig2_eps=sig2_eps)
-computer_model_data <- linear_Gaussian_info$computer_model_data
-theta_prior_params <- linear_Gaussian_info$theta_prior_params
-linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
-                                                                  theta_vals=linear_Gaussian_info$true_posterior$mean, 
-                                                                  na.rm=TRUE)
-
-```
 
 ```{r}
 # Plot linear Gaussian data. 
 
-sim_data <- as.data.frame(computer_model_data$data_obs)
-sim_data$ref <- computer_model_data$data_ref
+sim_data <- as.data.frame(y)
+sim_data$ref <- y_true
 sim_data$time <- 1:N_obs
 linear_Gaussian_data_plt <- ggplot(sim_data) + geom_point(mapping=aes(x=time, y=y)) + 
                               geom_line(mapping=aes(x=time, y=ref), color="red") + 
@@ -68,30 +75,44 @@ linear_Gaussian_data_plt <- ggplot(sim_data) + geom_point(mapping=aes(x=time, y=
 plot(linear_Gaussian_data_plt)
 ```
 
+
+
 ```{r}
 # Multiscale algorithm test. 
 
-time_step <- .001
-sigma <- 0.01
-delta <- .0001
-N_ensemble <- 90
+time_step_vals <- c(10^(-3), 10^(-4))
+sigma_vals <- c(10^(-2), 10^(10^-4))
+delta_vals <- c(10^(-4), 10^(-8))
+N_ensemble <- 8
 N_itr <- 5000
 
-u_samp <- run_multiscale_inversion(computer_model_data, m0, Sig0, N_itr, time_step,
+samp_results <- data.frame(time_step = numeric(N_itr), 
+                           sigma = numeric(N_itr), 
+                           delta = numeric(N_itr), 
+                           J = numeric(N_itr)) # Number of ensemble members. 
+
+for(time_step in time_step_vals) {
+  for(sigma in sigma_vals) {
+   for(delta in delta_vals) 
+  }
+}
+u_samp <- run_multiscale_inversion(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
                                    sigma, delta, N_ensemble)
+
+mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=alg_name)
+
 ```
 
 ```{r}
-plot(u_samp[1000:5000,1], u_samp[1000:5000,2])
+# plot(u_samp[1000:5000,1], u_samp[1000:5000,2])
+plot(u_samp[1000:N_itr,1], u_samp[1000:N_itr,2])
 ```
 
 ```{r}
 # Exact samples
 N_samp_exact <- 25000
-m_true <- linear_Gaussian_info$true_posterior$mean
-C_true <- linear_Gaussian_info$true_posterior$Cov
-L_C_true <- t(chol(C_true))
-samp_exact <- t(drop(m_true) + L_C_true %*% matrix(rnorm(N_samp_exact*d), nrow=d, ncol=N_samp_exact))
+L_Sig_true <- t(chol(Sig_true))
+samp_exact <- t(drop(mu_true) + L_Sig_true %*% matrix(rnorm(N_samp_exact*d), nrow=d, ncol=N_samp_exact))
 
 plot(samp_exact[,1], samp_exact[,2])
 ```

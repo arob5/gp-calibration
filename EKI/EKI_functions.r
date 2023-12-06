@@ -6,6 +6,40 @@
 # Andrew Roberts
 #
 
+# -----------------------------------------------------------------------------
+# Data Generation 
+# -----------------------------------------------------------------------------
+
+gen_linear_Gaussian_data <- function(G, mu0, Sig0, Sig_eps, theta_true=NULL) {
+  
+  # Parameter and data dimension. 
+  d <- ncol(G)
+  n <- nrow(G)
+  
+  # Cholesky factors and precision matrices. 
+  L0 <- t(chol(Sig0))
+  L_eps <- t(chol(Sig_eps))
+  Sig0_inv <- chol2inv(t(L0))
+  Sig_eps_inv <- chol2inv(t(L_eps))
+  
+  # Generate data. 
+  if(is.null(theta_true)) theta_true <- rep(0, d)
+  y_true <- G %*% theta_true
+  y <- y_true ++ L_eps %*% matrix(rnorm(n), ncol=1)
+  
+  # True posterior moments. 
+  Sig <- chol2inv(chol(crossprod(G, Sig_eps_inv %*% G) + Sig0_inv))
+  mu <- Sig %*% (crossprod(G, Sig_eps_inv %*% y) + Sig0_inv %*% mu0)
+  
+  return(list(theta_true=theta_true, y_true=y_true, y=y, mu=mu, Sig=Sig))
+  
+}
+
+
+# -----------------------------------------------------------------------------
+# EKI and Related Algorithms 
+# -----------------------------------------------------------------------------
+
 run_EKI_finite_time <- function(computer_model_data, theta_prior_params, Sig_eps, total_steps, 
                                 N_ensemble, L_eps=NULL, perturb_data=TRUE) {
   # Runs a version of Ensemble Kalman Sampling (EKI) that transforms prior 
@@ -67,8 +101,8 @@ run_EKI_one_step <- function(computer_model_data, total_steps, ensemble_mat,
 }
 
 
-run_multiscale_inversion <- function(computer_model_data, m0, Sig0, N_itr, time_step,
-                                     sigma, delta, N_ensemble) {
+run_multiscale_inversion <- function(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
+                                     sigma, delta, N_ensemble, theta_init=NULL) {
   # Implements the multiscale Bayesian inversion algorithm from the paper "Derivative-Free
   # Bayesian Inversion Using Multiscale Dynamics" (Pavliotis, Stuart, and Vaes). This 
   # algorithm discretizes a system of slow-fast SDEs to approximately sample from a 
@@ -94,24 +128,26 @@ run_multiscale_inversion <- function(computer_model_data, m0, Sig0, N_itr, time_
   # Returns:
   #    matrix of shape (N_itr, d). Each row is an approximate sample from the posterior. 
   #    Early samples should typically be dropped as burn-in. 
-  
-  if(length(computer_model_data$output_vars) > 1) {
-    stop("Multiscale inversion function currently only works with single output variable.")
-  }
-  
+
   L0 <- t(chol(Sig0))
-  d <- length(computer_model_data$pars_cal_names)
+  d <- nrow(Sig0)
   
   fast_ensemble <- matrix(rnorm(d*N_ensemble), nrow=d, ncol=N_ensemble)
-
-  y <- computer_model_data$data_obs
   u_samp <- matrix(nrow=N_itr, ncol=d)
-  u_samp[1,] <- drop(m0 + L0 %*% matrix(rnorm(d), ncol=1))
+  
+  # Set initial condition. 
+  if(is.null(theta_init)) {
+    theta_init <- m0 + L0 %*% matrix(rnorm(d), ncol=1)
+  }
+  u_samp[1,] <- drop(theta_init)
   
   for(itr in seq(2, N_itr)) {
     # Forward model evaluations. 
-    g <- run_computer_model(theta_vals=u_samp[itr-1,], computer_model_data)
-    G <- do.call(cbind, run_computer_model(theta_vals=t(u_samp[itr-1,] + sigma*fast_ensemble), computer_model_data))
+    g <- forward_model(matrix(u_samp[itr-1,], ncol=1))
+    G <- forward_model(u_samp[itr-1,] + sigma*fast_ensemble)
+    
+    # g <- run_computer_model(theta_vals=u_samp[itr-1,], computer_model_data)
+    # G <- do.call(cbind, run_computer_model(theta_vals=t(u_samp[itr-1,] + sigma*fast_ensemble), computer_model_data))
     
     # u (distinguished particle) update.
     C_hat <- cov(t(fast_ensemble))
@@ -131,13 +167,97 @@ run_multiscale_inversion <- function(computer_model_data, m0, Sig0, N_itr, time_
 }
 
 
+# -----------------------------------------------------------------------------
+# Baseline MCMC Algorithm for Comparison
+# -----------------------------------------------------------------------------
 
+rwmh_Gaussian <- function(computer_model_data, sig2_eps, m0, Sig0, theta_init=NULL, N_mcmc=50000, 
+                          adapt_frequency=1000, accept_rate_target=0.24, proposal_scale_decay=0.7,
+                          proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3) {
+  # MCMC random walk Metropolis-Hatings implementation for Bayesian inversion  
+  # of a potentially non-linear inverse with Gaussian likelihood and Gaussian prior. 
+  # Currently assumes a multiplicative Gaussian likelihood (single output), but should
+  # generalize this to Gaussian likelihood with general covariance structure. Also 
+  # currently assumes known noise variance; should also generalize this by adding 
+  # a Gibbs step. 
+  #
+  # Args:
+  #    computer_model_data: list, standard computer model data list.
+  #    m0: matrix of dimension (d,1) where d is the number of parameters. The prior mean. 
+  #    Sig0: matrix of dimension (d,d), the prior covariance. 
+  #
+  # Returns:
+  #    list, with named elements "theta" and "Cov_prop". The former is the matrix of samples;
+  #    the latter is the proposal covariance at the final iteration. 
+  
+  if(length(computer_model_data$output_vars) > 1) {
+    stop("rwmh_Gaussian() function currently only works with single output variable.")
+  }
+  
+  # Dimension of parameter space.
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow=N_mcmc, ncol=d)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
 
-
-
-
-
-
+  # Set initial condition. 
+  L0 <- t(chol(Sig0))
+  if(is.null(theta_init)) {
+    theta_init <- m0 + L0 %*% matrix(rnorm(d), ncol=1)
+  }
+  theta_samp[1,] <- theta_init
+  
+  # Proposal covariance setup. 
+  if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
+  Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
+  L_prop <- t(chol(Cov_prop))
+  log_scale_prop <- 0
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
+  accept_count <- 0
+  samp_mean <- theta_init
+  
+  # Variables to store partial computations. 
+  lprior_curr <- -0.5 * sum(forwardsolve(L0, theta_init-drop(m0))^2)
+  llik_curr <- llik_product_Gaussian(computer_model_data, vars_obs=sig2_eps, theta_vals=theta_init, 
+                                     normalize=FALSE, na.rm=TRUE)
+  lpost_curr <- lprior_curr + llik_curr
+  
+  for(itr in seq(2, N_mcmc)) {
+    # theta proposal.
+    theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
+    
+    # Calculate log_prior and log-likelihood for proposed theta.
+    llik_prop <- llik_product_Gaussian(computer_model_data, vars_obs=sig2_eps, theta_vals=theta_prop, 
+                                       normalize=FALSE, na.rm=TRUE)
+    lprior_prop <- -0.5 * sum(forwardsolve(L0, theta_prop-drop(m0))^2)
+    lpost_prop <- lprior_prop + llik_prop
+    
+    # Accept-Reject step. 
+    alpha <- min(1.0, exp(lpost_prop - lpost_curr))
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      lpost_curr <- lpost_prop 
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    adapt_list <- adapt_cov_prop(Cov_prop, L_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, 
+                                 effective_log_scale_prop, adapt_frequency, accept_rate_target, proposal_scale_decay, 
+                                 proposal_scale_multiplier, adapt_init_threshold)
+    Cov_prop <- adapt_list$C
+    L_prop <- adapt_list$L
+    log_scale_prop <- adapt_list$log_scale
+    effective_log_scale_prop <- adapt_list$effective_log_scale
+    samp_mean <- adapt_list$samp_mean
+    accept_count <- adapt_list$accept_count
+  }
+  
+  return(list(theta=theta_samp, Cov_prop=Cov_prop))
+  
+}
 
 
 
