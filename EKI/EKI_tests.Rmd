@@ -80,26 +80,51 @@ plot(linear_Gaussian_data_plt)
 ```{r}
 # Multiscale algorithm test. 
 
-time_step_vals <- c(10^(-3), 10^(-4))
-sigma_vals <- c(10^(-2), 10^(10^-4))
-delta_vals <- c(10^(-4), 10^(-8))
+time_step_vals <- 10^(-3) # c(10^(-3), 10^(-4))
+sigma_vals <- 10^(-2) # c(10^(-2), 10^(10^-4))
+delta_vals <- 10^(-4) # c(10^(-4), 10^(-8))
 N_ensemble <- 8
 N_itr <- 5000
 
-samp_results <- data.frame(time_step = numeric(N_itr), 
-                           sigma = numeric(N_itr), 
-                           delta = numeric(N_itr), 
-                           J = numeric(N_itr)) # Number of ensemble members. 
+samp_results <- data.table(time_step = numeric(), 
+                           sigma = numeric(), 
+                           delta = numeric(), 
+                           param_idx = integer(), 
+                           samp = numeric())  
+err_results <- data.frame(time_step = numeric(), 
+                          sigma = numeric(), 
+                          delta = numeric(), 
+                          KL_div = numeric()) 
+
+# Plan: build two data.frames with columns as above. Will be easier to compute the metrics 
+#       directly from the `run_multiscale_inversion()` output. Alternatively, I could do 
+#       KL divergence between the true and approx distribution. This will only be relevant 
+#       for the linear model case. 
 
 for(time_step in time_step_vals) {
   for(sigma in sigma_vals) {
-   for(delta in delta_vals) 
+   for(delta in delta_vals) {
+     # Samples from multiscale algorithm. 
+     u_samp <- run_multiscale_inversion(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
+                                        sigma, delta, N_ensemble)
+     
+     # Append samples to data.table. 
+     samp_results <- rbindlist(list(samp_results, data.table(time_step=time_step, 
+                                                             sigma=sigma, delta=delta, 
+                                                             param_idx=1, samp=u_samp[,1])), use.names=TRUE)
+     samp_results <- rbindlist(list(samp_results, data.table(time_step=time_step, 
+                                                             sigma=sigma, delta=delta, 
+                                                             param_idx=2, samp=u_samp[,2])), use.names=TRUE)
+     
+     # Compute error metrics. 
+     errs <- compute_running_err(u_samp, mu_true, Sig_true)
+     samp_results <- rbindlist(list(err_results, data.table(time_step=time_step, 
+                                    sigma=sigma, delta=delta, KL_div=errs$KL)), use.names=TRUE)
+                                    
+   }
   }
 }
-u_samp <- run_multiscale_inversion(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
-                                   sigma, delta, N_ensemble)
 
-mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=alg_name)
 
 ```
 

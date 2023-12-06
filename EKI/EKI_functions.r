@@ -7,7 +7,7 @@
 #
 
 # -----------------------------------------------------------------------------
-# Data Generation 
+# Data Generation and Helper Functions 
 # -----------------------------------------------------------------------------
 
 gen_linear_Gaussian_data <- function(G, mu0, Sig0, Sig_eps, theta_true=NULL) {
@@ -32,6 +32,55 @@ gen_linear_Gaussian_data <- function(G, mu0, Sig0, Sig_eps, theta_true=NULL) {
   mu <- Sig %*% (crossprod(G, Sig_eps_inv %*% y) + Sig0_inv %*% mu0)
   
   return(list(theta_true=theta_true, y_true=y_true, y=y, mu=mu, Sig=Sig))
+  
+}
+
+
+calc_KL_div_Gaussian <- function(m1, m2, C1, C2, L1=NULL, L2=NULL) {
+  # Computes the KL divergence between two Gaussians. `m1` and `C1` are taken to 
+  # be the mean vector and covariance matrix of the first entry in the KL 
+  # divergence (the one that the expectation is taken with respect to). 
+  
+  if(is.null(L1)) L1 <- t(chol(C1))
+  if(is.null(L2)) L2 <- t(chol(C2))
+  C2_inv <- chol2inv(t(L2))
+  d <- nrow(C1)
+  
+  term1 <- sum(log(diag(L2)) - log(diag(L1)))
+  term2 <- 0.5 * sum(forwardsolve(L2, m1-m2)^2)
+  term3 <- 0.5 * sum(C2_inv*C1)
+  
+  term1 + term2 + term3 - 0.5*d
+  
+}
+
+
+compute_running_err <- function(samp, mu_true, cov_true) {
+  
+  mean_err <- vector(mode="numeric", length=nrow(samp))
+  cov_err <- vector(mode="numeric", length=nrow(samp))
+  KL_div <- vector(mode="numeric", length=nrow(samp))
+  
+  mu_true <- drop(mu_true)
+  L_true <- t(chol(cov_true))
+  
+  mean_curr <- colMeans(samp[1:2,,drop=FALSE])
+  cov_curr <- cov(samp[1:2,,drop=FALSE])
+  
+  for(i in seq(3,nrow(samp))) {
+    
+    # Update mean and covariance. 
+    cov_curr <- tcrossprod(samp[i,]-mean_curr)/i + (i-2)/(i-1)*cov_curr
+    mean_curr <- samp[i,]/i + ((i-1)/i)*mean_curr
+
+    # Compute error measures. 
+    mean_err[i] <- sqrt(sum((mean_curr - mu_true)^2))
+    cov_err[i] <- sqrt(sum((cov_curr - cov_true)^2))
+    KL_div[i] <- calc_KL_div_Gaussian(mu_true, mean_curr, cov_true, cov_curr, L1=L_true)
+    
+  }
+  
+  return(list(mean=mean_err, cov=cov_err, KL=KL_div))
   
 }
 
