@@ -171,6 +171,15 @@ multiscale_samp_scatter <- samp_results[(time_step==1e-3) & (sigma==1e-4) & (del
 multiscale_samp_scatter <- multiscale_samp_scatter[(burn_in_end+1):nrow(multiscale_samp_scatter)]
 rwmh_samp_scatter <- rwmh_samp$theta[(burn_in_end+1):nrow(rwmh_samp$theta),]
 
+rng_x <- range(c(rwmh_samp_scatter[,1], multiscale_samp_scatter[param_idx==1, samp]))
+rng_y <- range(c(rwmh_samp_scatter[,2], multiscale_samp_scatter[param_idx==2, samp]))
+
+contour_grid_x <- seq(rng_x[1], rng_x[2], length.out=50)
+contour_grid_y <- seq(rng_y[1], rng_y[2], length.out=50)
+contour_grid <- cbind(contour_grid_x, contour_grid_y)
+
+
+
 ```
 
 
