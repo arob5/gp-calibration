@@ -20,6 +20,7 @@ library(BayesianTools)
 
 base_dir <- "." # Should be EKI dir
 helper_func_dir <- file.path(base_dir, "..", "vsem_calibration_tests")
+plot_dir <- file.path(base_dir, "../../", "typed-notes", "multiscale_paper_figures")
 
 source(file.path(helper_func_dir, "numerical_experiment_functions.r"))
 source(file.path(helper_func_dir, "mcmc_calibration_functions.r"))
@@ -47,7 +48,7 @@ Sig_eps <- 0.4 * diag(rep(1,N_obs))
 Sig0 <- matrix(c(1, 0, 0, 1), nrow=2)
 # Sig0 <- matrix(c(1, 1, 1, 4), nrow=2)
 mu0 <- matrix(rep(0, d), ncol=1)
-theta_true <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
+mu_ground_truth <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
 
 linear_Gaussian_info <- gen_linear_Gaussian_data(G, mu0, Sig0, Sig_eps, theta_true=theta_true)
 mu_true <- linear_Gaussian_info$theta_true
@@ -80,11 +81,13 @@ plot(linear_Gaussian_data_plt)
 ```{r}
 # Multiscale algorithm test. 
 
-time_step_vals <- 10^(-3) # c(10^(-3), 10^(-4))
-sigma_vals <- 10^(-2) # c(10^(-2), 10^(10^-4))
-delta_vals <- 10^(-4) # c(10^(-4), 10^(-8))
+time_step_vals <- c(10^(-3), 10^(-4))
+sigma_vals <- c(10^(-2), 10^(-4))
+delta_vals <- c(10^(-4), 10^(-8))
 N_ensemble <- 8
 N_itr <- 5000
+
+init_cond <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
 
 samp_results <- data.table(time_step = numeric(), 
                            sigma = numeric(), 
@@ -94,19 +97,15 @@ samp_results <- data.table(time_step = numeric(),
 err_results <- data.frame(time_step = numeric(), 
                           sigma = numeric(), 
                           delta = numeric(), 
+                          itr = integer(),
                           KL_div = numeric()) 
-
-# Plan: build two data.frames with columns as above. Will be easier to compute the metrics 
-#       directly from the `run_multiscale_inversion()` output. Alternatively, I could do 
-#       KL divergence between the true and approx distribution. This will only be relevant 
-#       for the linear model case. 
 
 for(time_step in time_step_vals) {
   for(sigma in sigma_vals) {
    for(delta in delta_vals) {
      # Samples from multiscale algorithm. 
      u_samp <- run_multiscale_inversion(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
-                                        sigma, delta, N_ensemble)
+                                        sigma, delta, N_ensemble, theta_init=init_cond)
      
      # Append samples to data.table. 
      samp_results <- rbindlist(list(samp_results, data.table(time_step=time_step, 
@@ -118,8 +117,8 @@ for(time_step in time_step_vals) {
      
      # Compute error metrics. 
      errs <- compute_running_err(u_samp, mu_true, Sig_true)
-     samp_results <- rbindlist(list(err_results, data.table(time_step=time_step, 
-                                    sigma=sigma, delta=delta, KL_div=errs$KL)), use.names=TRUE)
+     err_results <- rbindlist(list(err_results, data.table(time_step=time_step, sigma=sigma, 
+                                    delta=delta, itr=1:nrow(u_samp), KL_div=errs$KL)), use.names=TRUE)
                                     
    }
   }
@@ -127,6 +126,55 @@ for(time_step in time_step_vals) {
 
 
 ```
+
+```{r}
+# Adaptive RWMH 
+rwmh_samp <- rwmh_Gaussian(forward_model, y, Sig_eps, m0, Sig0, theta_init=NULL, N_mcmc=N_itr, 
+                           adapt_frequency=500, accept_rate_target=0.24, proposal_scale_decay=0.7,
+                           proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3)
+```
+
+```{r}
+# MCMC diagnostics. 
+plot(1:N_itr, rwmh_samp$theta[,1], type="l")
+plot(1:N_itr, rwmh_samp$theta[,2], type="l")
+plot(rwmh_samp$theta[,1], rwmh_samp$theta[,2])
+```
+
+```{r} 
+err_results[, comb := paste(time_step, sigma, delta, sep=", ")] 
+mcmc_errs <- compute_running_err(rwmh_samp$theta[2:N_itr,], mu_true, Sig_true)
+mcmc_errs_df <- data.table(itr=seq_along(mcmc_errs$KL), KL_div=mcmc_errs$KL)
+
+itr_threshold <- 100
+
+# KL Divergence. 
+ggplot(err_results[itr>itr_threshold], aes(itr, KL_div, color=comb)) + # color=interaction(time_step, sigma, delta, sep=':'))) +
+    geom_path() + 
+    geom_line(aes(itr, KL_div), mcmc_errs_df[itr>itr_threshold], color="black") + 
+    scale_y_continuous(trans="log10") + 
+    scale_x_continuous(trans="log10") + 
+    labs(color="Delta, sigma, delta") + 
+    xlab("Iteration") + 
+    ylab("KL Divergence") + 
+    theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+          panel.background=element_blank(), axis.line=element_line(colour="black"), 
+          text=element_text(size=20))
+
+ggsave(file.path(plot_dir, "lin_Gaus_KL.png"), width=10, height=7)
+```
+
+
+```{r}
+burn_in_end <- 1000
+multiscale_samp_scatter <- samp_results[(time_step==1e-3) & (sigma==1e-4) & (delta==1e-4)]
+multiscale_samp_scatter <- multiscale_samp_scatter[(burn_in_end+1):nrow(multiscale_samp_scatter)]
+rwmh_samp_scatter <- rwmh_samp$theta[(burn_in_end+1):nrow(rwmh_samp$theta),]
+
+```
+
+
+
 
 ```{r}
 # plot(u_samp[1000:5000,1], u_samp[1000:5000,2])

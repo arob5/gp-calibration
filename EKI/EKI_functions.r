@@ -220,7 +220,7 @@ run_multiscale_inversion <- function(forward_model, y, Sig_eps, m0, Sig0, N_itr,
 # Baseline MCMC Algorithm for Comparison
 # -----------------------------------------------------------------------------
 
-rwmh_Gaussian <- function(computer_model_data, sig2_eps, m0, Sig0, theta_init=NULL, N_mcmc=50000, 
+rwmh_Gaussian <- function(forward_model, y, Sig_eps, m0, Sig0, theta_init=NULL, N_mcmc=50000, 
                           adapt_frequency=1000, accept_rate_target=0.24, proposal_scale_decay=0.7,
                           proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3) {
   # MCMC random walk Metropolis-Hatings implementation for Bayesian inversion  
@@ -244,14 +244,17 @@ rwmh_Gaussian <- function(computer_model_data, sig2_eps, m0, Sig0, theta_init=NU
   }
   
   # Dimension of parameter space.
-  d <- length(computer_model_data$pars_cal_names)
+  d <- nrow(Sig0)
   
   # Objects to store samples.
   theta_samp <- matrix(nrow=N_mcmc, ncol=d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
 
-  # Set initial condition. 
+  # Cholesky factors for prior and likelihood covariance. 
   L0 <- t(chol(Sig0))
+  L <- t(chol(Sig_eps))
+  
+  # Set initial condition. 
   if(is.null(theta_init)) {
     theta_init <- m0 + L0 %*% matrix(rnorm(d), ncol=1)
   }
@@ -264,12 +267,12 @@ rwmh_Gaussian <- function(computer_model_data, sig2_eps, m0, Sig0, theta_init=NU
   log_scale_prop <- 0
   effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
   accept_count <- 0
-  samp_mean <- theta_init
+  samp_mean <- drop(theta_init)
   
   # Variables to store partial computations. 
   lprior_curr <- -0.5 * sum(forwardsolve(L0, theta_init-drop(m0))^2)
-  llik_curr <- llik_product_Gaussian(computer_model_data, vars_obs=sig2_eps, theta_vals=theta_init, 
-                                     normalize=FALSE, na.rm=TRUE)
+  g <- forward_model(matrix(theta_init, ncol=1))
+  llik_curr <- -0.5 * sum(forwardsolve(L, y-g)^2)
   lpost_curr <- lprior_curr + llik_curr
   
   for(itr in seq(2, N_mcmc)) {
@@ -277,8 +280,8 @@ rwmh_Gaussian <- function(computer_model_data, sig2_eps, m0, Sig0, theta_init=NU
     theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
     # Calculate log_prior and log-likelihood for proposed theta.
-    llik_prop <- llik_product_Gaussian(computer_model_data, vars_obs=sig2_eps, theta_vals=theta_prop, 
-                                       normalize=FALSE, na.rm=TRUE)
+    g <- forward_model(matrix(theta_prop, ncol=1))
+    llik_prop <- -0.5 * sum(forwardsolve(L, y-g)^2)
     lprior_prop <- -0.5 * sum(forwardsolve(L0, theta_prop-drop(m0))^2)
     lpost_prop <- lprior_prop + llik_prop
     
