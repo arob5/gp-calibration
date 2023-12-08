@@ -55,7 +55,7 @@ calc_KL_div_Gaussian <- function(m1, m2, C1, C2, L1=NULL, L2=NULL) {
 }
 
 
-compute_running_err <- function(samp, mu_true, cov_true) {
+compute_running_err <- function(samp, mu_true, cov_true, mean_curr=NULL, cov_curr=NULL) {
   
   mean_err <- vector(mode="numeric", length=nrow(samp))
   cov_err <- vector(mode="numeric", length=nrow(samp))
@@ -64,8 +64,8 @@ compute_running_err <- function(samp, mu_true, cov_true) {
   mu_true <- drop(mu_true)
   L_true <- t(chol(cov_true))
   
-  mean_curr <- colMeans(samp[1:2,,drop=FALSE])
-  cov_curr <- cov(samp[1:2,,drop=FALSE])
+  if(is.null(mean_curr)) mean_curr <- colMeans(samp[1:2,,drop=FALSE])
+  if(is.null(cov_curr)) cov_curr <- cov(samp[1:2,,drop=FALSE])
   
   for(i in seq(3,nrow(samp))) {
     
@@ -150,7 +150,7 @@ run_EKI_one_step <- function(computer_model_data, total_steps, ensemble_mat,
 }
 
 
-run_multiscale_inversion <- function(forward_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
+run_multiscale_inversion <- function(fwd_model, y, Sig_eps, m0, Sig0, N_itr, time_step,
                                      sigma, delta, N_ensemble, theta_init=NULL) {
   # Implements the multiscale Bayesian inversion algorithm from the paper "Derivative-Free
   # Bayesian Inversion Using Multiscale Dynamics" (Pavliotis, Stuart, and Vaes). This 
@@ -192,8 +192,8 @@ run_multiscale_inversion <- function(forward_model, y, Sig_eps, m0, Sig0, N_itr,
   
   for(itr in seq(2, N_itr)) {
     # Forward model evaluations. 
-    g <- forward_model(matrix(u_samp[itr-1,], ncol=1))
-    G <- forward_model(u_samp[itr-1,] + sigma*fast_ensemble)
+    g <- fwd_model(matrix(u_samp[itr-1,], ncol=1))
+    G <- fwd_model(u_samp[itr-1,] + sigma*fast_ensemble)
     
     # g <- run_computer_model(theta_vals=u_samp[itr-1,], computer_model_data)
     # G <- do.call(cbind, run_computer_model(theta_vals=t(u_samp[itr-1,] + sigma*fast_ensemble), computer_model_data))
@@ -239,16 +239,12 @@ rwmh_Gaussian <- function(forward_model, y, Sig_eps, m0, Sig0, theta_init=NULL, 
   #    list, with named elements "theta" and "Cov_prop". The former is the matrix of samples;
   #    the latter is the proposal covariance at the final iteration. 
   
-  if(length(computer_model_data$output_vars) > 1) {
-    stop("rwmh_Gaussian() function currently only works with single output variable.")
-  }
-  
   # Dimension of parameter space.
   d <- nrow(Sig0)
   
   # Objects to store samples.
   theta_samp <- matrix(nrow=N_mcmc, ncol=d)
-  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  colnames(theta_samp) <- paste0("theta", 1:d)
 
   # Cholesky factors for prior and likelihood covariance. 
   L0 <- t(chol(Sig0))

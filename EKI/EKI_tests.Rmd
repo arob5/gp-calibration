@@ -22,6 +22,7 @@ base_dir <- "." # Should be EKI dir
 helper_func_dir <- file.path(base_dir, "..", "vsem_calibration_tests")
 plot_dir <- file.path(base_dir, "../../", "typed-notes", "multiscale_paper_figures")
 
+source("EKI_functions.r")
 source(file.path(helper_func_dir, "numerical_experiment_functions.r"))
 source(file.path(helper_func_dir, "mcmc_calibration_functions.r"))
 source(file.path(helper_func_dir, "gp_emulator_functions.r"))
@@ -48,18 +49,18 @@ Sig_eps <- 0.4 * diag(rep(1,N_obs))
 Sig0 <- matrix(c(1, 0, 0, 1), nrow=2)
 # Sig0 <- matrix(c(1, 1, 1, 4), nrow=2)
 mu0 <- matrix(rep(0, d), ncol=1)
-mu_ground_truth <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
+u_ground_truth <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
 
-linear_Gaussian_info <- gen_linear_Gaussian_data(G, mu0, Sig0, Sig_eps, theta_true=theta_true)
+linear_Gaussian_info <- gen_linear_Gaussian_data(G, mu0, Sig0, Sig_eps, theta_true=u_ground_truth)
 mu_true <- linear_Gaussian_info$theta_true
 Sig_true <- linear_Gaussian_info$Sig
 y_true <- linear_Gaussian_info$y_true
 y <- linear_Gaussian_info$y
 
-forward_model <- function(theta_vals) {
-  # Each column of `theta_vals` is a parameter value. 
-  G %*% theta_vals
-}
+# forward_model <- function(theta_vals) {
+#   # Each column of `theta_vals` is a parameter value. 
+#   G %*% theta_vals
+# }
 ```
 
 
@@ -77,9 +78,8 @@ plot(linear_Gaussian_data_plt)
 ```
 
 
-
 ```{r}
-# Multiscale algorithm test. 
+# Settings
 
 time_step_vals <- c(10^(-3), 10^(-4))
 sigma_vals <- c(10^(-2), 10^(-4))
@@ -88,6 +88,12 @@ N_ensemble <- 8
 N_itr <- 5000
 
 init_cond <- mu0 + t(chol(Sig0)) %*% matrix(rnorm(d), ncol=1)
+
+```
+
+
+```{r}
+# Multiscale algorithm test. 
 
 samp_results <- data.table(time_step = numeric(), 
                            sigma = numeric(), 
@@ -168,36 +174,201 @@ ggsave(file.path(plot_dir, "lin_Gaus_KL.png"), width=10, height=7)
 ```{r}
 burn_in_end <- 1000
 multiscale_samp_scatter <- samp_results[(time_step==1e-3) & (sigma==1e-4) & (delta==1e-4)]
-multiscale_samp_scatter <- multiscale_samp_scatter[(burn_in_end+1):nrow(multiscale_samp_scatter)]
-rwmh_samp_scatter <- rwmh_samp$theta[(burn_in_end+1):nrow(rwmh_samp$theta),]
+end <- nrow(multiscale_samp_scatter)/2
+multiscale_samp_scatter_df <- data.frame(x=multiscale_samp_scatter[param_idx==1,samp][(burn_in_end+1):end], 
+                                         y=multiscale_samp_scatter[param_idx==2,samp][(burn_in_end+1):end])
+rwmh_samp_scatter <- as.data.frame(rwmh_samp$theta[(burn_in_end+1):nrow(rwmh_samp$theta),])
 
 rng_x <- range(c(rwmh_samp_scatter[,1], multiscale_samp_scatter[param_idx==1, samp]))
 rng_y <- range(c(rwmh_samp_scatter[,2], multiscale_samp_scatter[param_idx==2, samp]))
+rng_x <- rng_x + c(-1,1)
+rng_y <- rng_y + c(-1,1)
 
+# Compute contours of true posterior density. 
 contour_grid_x <- seq(rng_x[1], rng_x[2], length.out=50)
 contour_grid_y <- seq(rng_y[1], rng_y[2], length.out=50)
-contour_grid <- cbind(contour_grid_x, contour_grid_y)
+contour_grid <- expand.grid(contour_grid_x, contour_grid_y)
 
+L_post <- t(chol(Sig_true))
+true_dens_grid <- -0.5*colSums(forwardsolve(L_post, t(contour_grid)-drop(mu_true))^2)
+contour_grid_df <- data.frame(x=contour_grid[,1], y=contour_grid[,2], z=true_dens_grid)
+
+# Multiscale samples. 
+contour_plt_multiscale <- ggplot() + 
+                          geom_contour(aes(x=x, y=y, z=z), contour_grid_df, bins=20) + 
+                          geom_point(aes(x=x,y=y), data=multiscale_samp_scatter_df, color="gray") + 
+                          geom_point(aes(x=theta1,y=theta2), data=rwmh_samp_scatter, color="black") + 
+                          xlab("u1") + ylab("u2") +  
+                          theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+                                panel.background=element_blank(), axis.line=element_line(colour="black"), 
+                                text=element_text(size=20))
+contour_plt_multiscale
+
+
+
+ggsave(file.path(plot_dir, "lin_Gaus_contour_rwmh_vs_multiscale.png"), width=10, height=7)
+
+```
+
+
+# Part 2: Non-Linear Forward Model
+```{r}
+forward_model_nonlin <- function(theta_vals) {
+  # Each column of `theta_vals` is a parameter value. 
+  v <- rbind(0.5*theta_vals[1,], exp(-2*theta_vals[2,]))
+  G %*% v
+}
+
+y_nonlin <- forward_model_nonlin(u_ground_truth) + t(chol(Sig_eps)) %*% matrix(rnorm(nrow(Sig_eps)), ncol=1)
+```
+
+
+```{r}
+N_itr_baseline <- 100000
+
+# Adaptive RWMH 
+rwmh_samp_nonlin <- rwmh_Gaussian(forward_model_nonlin, y_nonlin, Sig_eps, mu0, Sig0, theta_init=NULL, N_mcmc=N_itr_baseline, 
+                                  adapt_frequency=500, accept_rate_target=0.24, proposal_scale_decay=0.7,
+                                  proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3)
+```
+
+```{r}
+plot_start_itr <- 50000
+
+# MCMC diagnostics. 
+plot(plot_start_itr:N_itr_baseline, rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,1], type="l")
+plot(plot_start_itr:N_itr_baseline, rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,2], type="l")
+plot(rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,1], rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,2])
+hist(rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,1])
+hist(rwmh_samp_nonlin$theta[plot_start_itr:N_itr_baseline,2])
+```
+```{r}
+rwmh_baseline_samp <- data.frame(rwmh_samp_nonlin$theta[plot_start_itr:N_itr,])
+mu_true_nonlin <- matrix(colMeans(rwmh_baseline_samp), ncol=1)
+Sig_true_nonlin <- cov(rwmh_baseline_samp)
+
+# Contours
+ggplot() + geom_density_2d(aes(x=theta1, y=theta2), rwmh_baseline_samp)
 
 
 ```
 
+```{r}
+# True post contours
+rng_x_nonlin <- c(0, 3)
+rng_y_nonlin <- c(0, 2)
+
+contour_grid_x_nonlin <- seq(rng_x_nonlin[1], rng_x_nonlin[2], length.out=50)
+contour_grid_y_nonlin <- seq(rng_y_nonlin[1], rng_y_nonlin[2], length.out=50)
+contour_grid_nonlin <- expand.grid(contour_grid_x_nonlin, contour_grid_y_nonlin)
+
+L_prior <- t(chol(Sig0))
+L_eps <- t(chol(Sig_eps))
+
+prior_dens_grid_nonlin <- -0.5*colSums(forwardsolve(L_prior, t(contour_grid_nonlin)-drop(mu0))^2)
+llik_dens_grid_nonlin <- -0.5*colSums(forwardsolve(L_eps,forward_model_nonlin(t(contour_grid_nonlin))-
+                                                     drop(y_nonlin))^2)
+lpost_dens_grid_nonlin <- data.frame(x=contour_grid_nonlin[,1], y=contour_grid_nonlin[,2], 
+                                     z=prior_dens_grid_nonlin + llik_dens_grid_nonlin)
+
+ggplot() + geom_contour(aes(x=x, y=y, z=z), lpost_dens_grid_nonlin, bins=20)
+                          
+
+
+```
 
 
 
 ```{r}
-# plot(u_samp[1000:5000,1], u_samp[1000:5000,2])
-plot(u_samp[1000:N_itr,1], u_samp[1000:N_itr,2])
+samp_results_nonlin <- data.table(time_step = numeric(), 
+                                  sigma = numeric(), 
+                                  delta = numeric(), 
+                                  param_idx = integer(), 
+                                  itr = integer(),
+                                  samp = numeric())  
+err_results_non_lin <- data.table(time_step = numeric(), 
+                                  sigma = numeric(), 
+                                  delta = numeric(), 
+                                  itr = integer(),
+                                  KL_div = numeric()) 
+
+for(time_step in time_step_vals) {
+  for(sigma in sigma_vals) {
+   for(delta in delta_vals) {
+     # Samples from multiscale algorithm. 
+     u_samp <- run_multiscale_inversion(forward_model_nonlin, y_nonlin, Sig_eps, mu0, Sig0, N_itr, time_step,
+                                        sigma, delta, N_ensemble, theta_init=init_cond)
+     
+     # Append samples to data.table. 
+     samp_results_nonlin <- rbindlist(list(samp_results_nonlin, data.table(time_step=time_step, 
+                                                             sigma=sigma, delta=delta, itr=1:nrow(u_samp),
+                                                             param_idx=1, samp=u_samp[,1])), use.names=TRUE)
+     samp_results_nonlin <- rbindlist(list(samp_results_nonlin, data.table(time_step=time_step, 
+                                                                           sigma=sigma, delta=delta, itr=1:nrow(u_samp),
+                                                                           param_idx=2, samp=u_samp[,2])), use.names=TRUE)
+     
+     # Compute error metrics. 
+     errs <- compute_running_err(u_samp, mu_true, Sig_true)
+     err_results_non_lin <- rbindlist(list(err_results_non_lin, data.table(time_step=time_step, sigma=sigma, 
+                                           delta=delta, itr=1:nrow(u_samp), KL_div=errs$KL)), use.names=TRUE)
+   }
+  }
+}
+
 ```
+
+
+```{r} 
+itr_threshold <- 100
+running_mean_curr <- colMeans(rwmh_samp_nonlin$theta[1:(itr_threshold-1),,drop=FALSE])
+running_cov_curr <- cov(rwmh_samp_nonlin$theta[1:(itr_threshold-1),,drop=FALSE])
+mcmc_errs_nonlin <- compute_running_err(rwmh_samp_nonlin$theta[itr_threshold:N_itr,], mu_true_nonlin, Sig_true_nonlin, 
+                                        mean_curr=running_mean_curr, cov_curr=running_cov_curr)
+mcmc_errs_df_nonlin <- data.table(itr=seq(itr_threshold, N_itr), KL_div=mcmc_errs_nonlin$KL)
+
+err_results_non_lin[, comb := paste(time_step, sigma, delta, sep=", ")] 
+
+
+# KL Divergence. 
+ggplot() + # color=interaction(time_step, sigma, delta, sep=':'))) +
+    geom_path(aes(itr, KL_div, color=comb), err_results_non_lin[itr>=itr_threshold+3]) + 
+    geom_line(aes(itr, KL_div), mcmc_errs_df_nonlin[itr>=itr_threshold+3], color="black") + 
+    scale_y_continuous(trans="log10") + 
+    scale_x_continuous(trans="log10") + 
+    labs(color="Delta, sigma, delta") + 
+    xlab("Iteration") + 
+    ylab("KL Divergence") + 
+    theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+          panel.background=element_blank(), axis.line=element_line(colour="black"), 
+          text=element_text(size=20))
+
+ggsave(file.path(plot_dir, "nonlin_KL.png"), width=10, height=7)
+```
+
 
 ```{r}
-# Exact samples
-N_samp_exact <- 25000
-L_Sig_true <- t(chol(Sig_true))
-samp_exact <- t(drop(mu_true) + L_Sig_true %*% matrix(rnorm(N_samp_exact*d), nrow=d, ncol=N_samp_exact))
 
-plot(samp_exact[,1], samp_exact[,2])
+burn_in_end <- 1000
+multiscale_samp_scatter_nonlin <- samp_results_nonlin[(time_step==1e-3) & (sigma==1e-4) & (delta==1e-4)]
+end <- nrow(multiscale_samp_scatter_nonlin)/2
+multiscale_samp_scatter_df_nonlin <- data.frame(x=multiscale_samp_scatter_nonlin[param_idx==1,samp][(burn_in_end+1):end],                                  y=multiscale_samp_scatter_nonlin[param_idx==2,samp][(burn_in_end+1):end])
+rwmh_samp_scatter_nonlin <- as.data.frame(rwmh_samp_nonlin$theta[(burn_in_end+1):N_itr,])
+
+
+contour_plt_nonlin <- ggplot() + 
+                          geom_contour(aes(x=x, y=y, z=z), lpost_dens_grid_nonlin, bins=20) + 
+                          geom_point(aes(x=x,y=y), data=multiscale_samp_scatter_df_nonlin, color="gray") + 
+                          geom_point(aes(x=theta1,y=theta2), data=rwmh_samp_scatter_nonlin, 
+                                     color="black") + 
+                          xlab("u1") + ylab("u2") +  
+                          theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+                                panel.background=element_blank(), axis.line=element_line(colour="black"), 
+                                text=element_text(size=20))
+contour_plt_nonlin
+
+ggsave(file.path(plot_dir, "nonlin_contour_plot.png"), width=10, height=7)
 ```
+
 
 
 
