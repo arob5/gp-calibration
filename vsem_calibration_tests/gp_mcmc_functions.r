@@ -160,7 +160,7 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
                                         sig_eps_prior_params=NULL, N_mcmc=50000, adapt_cov=TRUE, 
                                         adapt_scale=TRUE, adapt_frequency=1000,
                                         accept_rate_target=0.24, proposal_scale_decay=0.7,  
-                                        proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3) {
+                                        proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3, ...) {
   # `theta_prior_params` should already be truncated, if desired. 
   
   if(isTRUE(learn_sig_eps && sig_eps_prior_params$dist != "IG")) {
@@ -323,7 +323,7 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
                                              sig_eps_prior_params=NULL, N_mcmc=50000, adapt_frequency=1000,
                                              accept_rate_target=0.24, proposal_scale_decay=0.7,  
                                              proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3,
-                                             use_gp_cov=TRUE, second_gibbs_step=FALSE) {
+                                             use_gp_cov=TRUE, second_gibbs_step=FALSE, ...) {
   
   # `theta_prior_params` should already be truncated, if desired. 
   

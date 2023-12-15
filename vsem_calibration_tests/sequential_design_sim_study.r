@@ -210,14 +210,15 @@ get_1d_linear_Gaussian_approx_post_density <- function(data_seed, design_seed, G
 }
 
 
-run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, theta_init, N_chain=4, N_itr=2000, 
-                              burn_ins=0.5*N_itr, learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, 
-                              return_SSR_samp=TRUE, ...) {
+run_gp_mcmc_tests <- function(run_settings_list, computer_model_data=NULL, lpost_emulator=NULL,   
+                              theta_init=NULL, N_chain=4, N_itr=2000, burn_ins=0.5*N_itr,  
+                              learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, ...) {
   # Currently this assumed fixed sig2_eps. 
   #
   # Args:
   #    computer_model_data: list, the computer model data list. 
   #    lpost_emulator: list, the lpost emulator list. 
+  #    TODO: run_settings_list: list
   #    algs: character, vector of names of MCMC algorithms to run. Valid options 
   #          are "ind_gp_gibbs", "ind_gp_marg", "ind_gp_joint", "ind_gp_trajectory". 
   #    ...: other named arguments are passed to the MCMC functions (e.g. arguments
@@ -236,18 +237,14 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, theta_i
 
   # Run MCMC algorithms.
   for(j in seq_along(algs)) {
-    alg_name <- algs[j]
-    
+    alg_name <- run_settings_list[[j]]$alg
     mcmc_func <- get(paste0("mcmc_calibrate_", alg_name))
     
-    mcmc_output <- mcmc_func(computer_model_data=computer_model_data, 
-                             theta_prior_params=lpost_emulator$theta_prior_params, 
-                             emulator_info_list=lpost_emulator$emulator_info_list,
-                             theta_init=theta_init, 
-                             sig2_eps_init=lpost_emulator$sig2_eps, 
-                             learn_sig_eps=learn_sig_eps, 
-                             N_mcmc=N_itr, ...)
-    
+    mcmc_args <- get_mcmc_func_args_list(run_settings_list[[j]], computer_model_data, 
+                                         lpost_emulator$theta_prior_params, lpost_emulator$emulator_info_list, 
+                                         theta_init, N_itr, learn_sig_eps, sig2_eps_init)
+    mcmc_output <- do.call(mcmc_func, mcmc_args)
+
     col_sel <- intersect(param_types, names(mcmc_output))
     mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=alg_name)
     mcmc_samp_dt_alg <- select_mcmc_samp(mcmc_samp_dt_alg, burn_in_start=burn_ins[alg_name])
@@ -262,9 +259,29 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, theta_i
 }
 
 
-
-
-
+get_mcmc_func_args_list <- function(run_settings_list, computer_model_data=NULL, theta_prior_params=NULL, 
+                                    emulator_info_list=NULL, theta_init=NULL, N_itr=NULL, learn_sig_eps=NULL, 
+                                    sig2_eps_init=NULL) {
+  
+  # TODO: add checks that all required arguments are non-NULL. 
+  
+  # Set global arguments which have not been specified in the algorithm-specific settings. 
+  if(is.null(run_settings_list$computer_model_data)) run_settings_list$computer_model_data <- computer_model_data
+  if(is.null(run_settings_list$theta_prior_params)) run_settings_list$theta_prior_params <- theta_prior_params
+  if(is.null(run_settings_list$emulator_info_list)) run_settings_list$emulator_info_list <- emulator_info_list
+  if(is.null(run_settings_list$theta_init)) run_settings_list$theta_init <- theta_init
+  if(is.null(run_settings_list$N_itr)) run_settings_list$N_itr <- N_itr
+  if(is.null(run_settings_list$learn_sig_eps)) run_settings_list$learn_sig_eps <- learn_sig_eps
+  if(is.null(run_settings_list$sig2_eps_init)) run_settings_list$sig2_eps_init <- sig2_eps_init
+  
+  # Ensure required arguments are present. 
+  if(is.null(run_settings_list$computer_model_data)) stop("`run_settings_list` is missing `computer_model_data`")
+  if(is.null(run_settings_list$theta_prior_params)) stop("`run_settings_list` is missing `theta_prior_params`")
+  if(is.null(run_settings_list$emulator_info_list)) stop("`run_settings_list` is missing `emulator_info_list`")
+  
+  return(run_settings_list)
+  
+}
 
 
 

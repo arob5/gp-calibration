@@ -160,8 +160,41 @@ for(plt in hist_plots) plot(plt)
 
 ```
 
+```{r}
+# Set up list of MCMC algorithm settings and runs. 
 
+# General settings to apply to all runs. 
+N_mcmc <- 50000
+learn_sig_eps <- FALSE
+sig2_eps_init <- sig2_eps
 
+# Algorithm-specific settings list. 
+run_settings_list <- list()
+run_settings_list[["gibbs_adapt_cov"]] <- list(test_label="gibbs_adapt_cov", 
+                                               alg="ind_gp_gibbs",
+                                               adapt_cov=TRUE, 
+                                               adapt_scale=FALSE)
+run_settings_list[["gibbs_adapt_scale"]] <- list(test_label="gibbs_adapt_scalee", 
+                                                 alg="ind_gp_gibbs",
+                                                 adapt_cov=FALSE, 
+                                                 adapt_scale=TRUE)
+run_settings_list[["gibbs_adapt"]] <- list(test_label="gibbs_adapt", 
+                                                 alg="ind_gp_gibbs",
+                                                 adapt_cov=FALSE, 
+                                                 adapt_scale=TRUE)
+run_settings_list[["traj_gp_cov"]] <- list(test_label="traj_gp_cov", 
+                                           alg="ind_gp_trajectory",
+                                           use_gp_cov=TRUE, 
+                                           second_gibbs_step=FALSE)
+run_settings_list[["traj_gp_cov_gibbs"]] <- list(test_label="traj_gp_cov_gibbs", 
+                                                 alg="ind_gp_trajectory",
+                                                 use_gp_cov=TRUE, 
+                                                 second_gibbs_step=TRUE)
+run_settings_list[["traj_gp_pecan"]] <- list(test_label="traj_gp_pecan", 
+                                             alg="ind_gp_trajectory",
+                                             use_gp_cov=FALSE, 
+                                             second_gibbs_step=TRUE)
+```
 
 
 ```{r}
