@@ -91,11 +91,12 @@ prior density can be written,
 \exp\left\{-\frac{\indexObj{\IGScale}}{\sdObs^2_{\objIdx}} \right\}. \nonumber
 \end{align}
 
-% MCMC Algorithm
-\section{MCMC Algorithm}
-Replacing the true model-data misfits with the GP approximation $\indexDesign[\Ndesign]{\SSR} $ results in a method to approximately sample from the posterior 
+% MCMC Algorithm Extended State Space Approach
+\section{MCMC Algorithms: Extended State Space Approach}
+Replacing the true model-data misfits with the GP approximation $\indexDesign[\Ndesign]{\SSR}$ results in a method to approximately sample from the posterior 
 distribution $p(\bpar, \CovObs | \stateMat)$, while significantly accelerating the computation. Given that the emulator induces approximation error, we seek to 
-propagate the uncertainty in $\indexDesign[\Ndesign]{\SSR}$ in order to prevent overconfidence in the posterior samples. To this end, we treat $\indexDesign[\Ndesign]{\SSR}$
+propagate the uncertainty in $\indexDesign[\Ndesign]{\SSR}$ in order to prevent overconfidence in the posterior samples. 
+One approach to propagating emulator uncertainty is to treat $\indexDesign[\Ndesign]{\SSR}$
 as another variable to be explored in the parameter space; i.e. the posterior over this extended parameter space becomes 
 $p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}(\bpar) | \stateMat)$. The joint distribution over all unknowns is thus 
 \begin{align*}
@@ -255,6 +256,25 @@ p(\CovObs|\bpar, \stateMat)
 &\propto \exp\left\{\sum_{\objIdx=1}^{\Nobj} \frac{\GPKerPredOut{\Ndesign}{\objIdx}(\bpar)}{8\sdObs^4_{\objIdx}} \right\}
  \prod_{\objIdx=1}^{\Nobj} \mathcal{IG}\left(\sdObs^2_{\objIdx} \bigg| \indexObj{\IGShape}+\frac{\indexObj{\Ntime}}{2}, \indexObj{\IGScale} + \frac{\GPMeanPredOut{\Ndesign}{\objIdx}(\bpar)}{2} \right).
 \end{align*}
+
+
+% MCMC Algorithms: Sampling Trajectories
+\section{MCMC Algorithms: Sampling Trajectories}
+We note that the extended state space approach does not directly take into account the GP covariance structure (although the covariance can be used to design proposal
+mechanisms for the resulting algorithms). By contrast, we might extend the state space as $(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR})$, where $\indexDesign[\Ndesign]{\SSR})$
+is now treated formally as an infinite-dimensional parameter (a random function). At this point, all posterior manipulations below will be purely formal, in the sense that I have not rigorously 
+defined the infinite-dimensional setting. There is an established theory for MCMC in function space that might be helpful here. With this caveat, consider the following definition of the joint 
+distribution over these unknowns. We adopt the modular approach of conditioning the GP prior to the MCMC step, and have been using 
+$\indexDesign[\Ndesign]{\SSR} = \SSR | [\designMat[\Ndesign], \stateMat]$ to denote the GP posterior. Assuming $\bpar$, $\CovObs$, and $\indexDesign[\Ndesign]{\SSR} $ are a priori independent, 
+we then have 
+\begin{align*}
+&p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}, \stateMat) = 
+p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR})p(\indexDesign[\Ndesign]{\SSR}) \priorDens(\bpar) \priorDens(\CovObs).
+\end{align*}
+What feels a bit odd to me here is 
+\[
+p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}) = p(\stateMat | \bpar, \CovObs, (\SSR|\stateMat))
+\]
 
 
 % Numerical Experiments

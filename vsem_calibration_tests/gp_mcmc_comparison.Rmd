@@ -108,21 +108,104 @@ for(plt in linear_Gaussian_list$plots) plot(plt)
 ```
 
 ```{r}
+# TODO: TEMP - test
+
+inputs_temp <- matrix(c(-1.5, 0.8, 1.5), ncol=1)
+inputs_scaled_temp <- scale_input_data(inputs_temp, input_bounds=lpost_emulator$design_info_list$input_bounds)
+
+test_post <- matrix(nrow=3, ncol=1000)
+test_prior <- matrix(nrow=3, ncol=1000)
+
+for(i in 1:1000) {
+  test_post[,i] <- sample_emulator_cond(inputs_scaled_temp, lpost_emulator$emulator_info_list, "post", sig2_eps=sig2_eps, 
+                                        trunc_method="truncated", include_nugget=TRUE)
+  test_prior[,i] <- sample_emulator_cond(inputs_scaled_temp, lpost_emulator$emulator_info_list, "prior", sig2_eps=sig2_eps, 
+                                         trunc_method="truncated", include_nugget=TRUE)
+}
+
+j <- 3
+hist(test_post[j,], 30)
+hist(test_prior[j,], 30)
+
+
+```
+```{r}
+# TODO: TEMP - test
+
+# Gibbs test.
+mcmc_test <- mcmc_calibrate_ind_gp_gibbs(computer_model_data, lpost_emulator$theta_prior_params, 
+                                         lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
+                                         theta_init=theta_init, learn_sig_eps=FALSE, adapt=FALSE,
+                                         N_mcmc=N_mcmc, Cov_prop_init_diag=1)
+mcmc_test_dt <- format_mcmc_output(samp_list=mcmc_pecan[c("theta")], test_label="gibbs_test")
+
+# Exact samples.
+N_samp_exact <- 50000
+samp_exact <- rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
+                    sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov)))
+samp_exact_dt <- data.table(param_type="theta", 
+                            itr=seq_len(N_samp_exact), 
+                            param_name=computer_model_data$pars_cal_names, 
+                            sample=samp_exact,
+                            test_label="exact")
+mcmc_test_dt <- rbindlist(list(mcmc_test_dt, samp_exact_dt), use.names=TRUE)
+
+
+trace_plots <- get_trace_plots(mcmc_test_dt)
+for(plt in trace_plots) plot(plt)
+
+hist_plots <- get_hist_plot_comparisons(mcmc_test_dt, param_types="theta", test_label_baseline="exact", 
+                                        xlab="samples", ylab="density", bins=30)
+for(plt in hist_plots) plot(plt)
+
+```
+
+
+
+
+
+```{r}
 #
 # MCMC Setup. 
 #
 
+# MCMC settings
+N_mcmc <- 50000
+
+# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. All MCMC
+# algs will use this initialization. 
+design_info_list <- lpost_emulator$design_info_list
+best_idx <- which.max(design_info_list$lpost)
+theta_init <- design_info_list$inputs[best_idx,]
+
 # Emulator-Accelerated MCMC algorithms. 
 mcmc_algs <- c("ind_gp_gibbs", "ind_gp_trajectory")
 
-mcmc_info_list <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, N_chain=4, N_itr=50000, 
-                                    learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, 
-                                    burn_ins=1)
+mcmc_info_list <- run_gp_mcmc_tests(computer_model_data, lpost_emulator, mcmc_algs, theta_init, N_chain=4,  
+                                    N_itr=N_mcmc, learn_sig_eps=FALSE, return_cov_prop_scale=TRUE,  
+                                    return_SSR_samp=TRUE, burn_ins=1)
 mcmc_samp_dt <- mcmc_info_list$mcmc_samp_dt
 burn_ins <- mcmc_info_list$burn_ins
 
+# Add GP trajectory using PEcAn settings. 
+# TODO: should modify `run_gp_mcmc_tests()` to allow control over MCMC function arguments. 
+mcmc_pecan <- mcmc_calibrate_ind_gp_trajectory(computer_model_data, lpost_emulator$theta_prior_params, 
+                                               lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
+                                               theta_init=theta_init, learn_sig_eps=FALSE, 
+                                               N_mcmc=N_mcmc, use_gp_cov=FALSE, second_gibbs_step=TRUE)
+mcmc_pecan_dt <- format_mcmc_output(samp_list=mcmc_pecan[c("theta", "cov_prop_scale")], test_label="pecan")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_pecan_dt), use.names=TRUE)
+                                               
+# Add GP trajectory with both GP cov and second Gibbs step.  
+mcmc_pecan_cov <- mcmc_calibrate_ind_gp_trajectory(computer_model_data, lpost_emulator$theta_prior_params, 
+                                                   lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
+                                                   theta_init=theta_init, learn_sig_eps=FALSE, 
+                                                   N_mcmc=N_mcmc, use_gp_cov=TRUE, second_gibbs_step=TRUE)
+mcmc_pecan_cov_dt <- format_mcmc_output(samp_list=mcmc_pecan[c("theta", "cov_prop_scale")], test_label="pecan_cov")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_pecan_cov_dt), use.names=TRUE)
+
 # Append samples from exact posterior. 
-N_samp_exact <- 25000
+N_samp_exact <- 50000
 samp_exact <- rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
                     sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov)))
 samp_exact_dt <- data.table(param_type="theta", 
@@ -148,9 +231,10 @@ for(plt in trace_plots) plot(plt)
 #    5.) Re-check math for the Gibbs alg.
 #    6.) Try out alternative proposal for Gibbs alg. 
 #    7.) Implement the marg algorithm to compare. 
+#    8.) Add KDE estimate for plots. 
 
-hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, test_label_baseline="exact", xlab="samples", ylab="density",
-                                        bins=30)
+hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="theta", test_label_baseline="exact", 
+                                        xlab="samples", ylab="density", bins=30)
 for(plt in hist_plots) plot(plt)
 ```
 

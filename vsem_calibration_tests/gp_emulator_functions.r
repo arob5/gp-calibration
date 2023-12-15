@@ -2183,13 +2183,13 @@ sample_GP_pointwise <- function(gp_means, gp_vars, transformation_method=NA_char
   n <- length(gp_means)
   
   if(is.na(transformation_method)) {
-    sample <- gp_means + sqrt(gp_vars) * rnorm(n)
+    sample <- gp_means+sqrt(gp_vars)*rnorm(n)
   } else if(transformation_method == "truncated") {
-    sample <- rtruncnorm(1, a = 0, b = Inf, mean = gp_means, sd = sqrt(gp_vars))
+    sample <- rtruncnorm(1, a=0, b=Inf, mean=gp_means, sd=sqrt(gp_vars))
   } else if(transformation_method == "rectified") {
-    sample <- pmax(0, gp_means + sqrt(gp_vars) * rnorm(n))
-  } else if(transformation_method == "LNP") {
-    sample <- exp(gp_means + sqrt(gp_vars) * rnorm(n))
+    sample <- pmax(0, gp_means+sqrt(gp_vars)*rnorm(n))
+  } else if(transformation_method=="LNP") {
+    sample <- exp(gp_means+sqrt(gp_vars)*rnorm(n))
   } else {
     stop("Invalid transformation method: ", transformation_method)
   }
@@ -2209,7 +2209,7 @@ sample_independent_GPs_pointwise <- function(gp_pred_list, transformation_method
   # Allows for potentially different output transformations for each GP. 
   #
   # Args:
-  #    gp_pred_list: list, with one element per GP. Each element must itself be a list with elements "mean" and "var"
+  #    gp_pred_list: list, with one element per GP. Each element must itself be a list with elements "mean" and either "var" or "var_comb"
   #                  storing numeric vectors for the GP means and variances, respectively. These are always the means and variances
   #                  of the GP, not the transformed GP. 
   #    transformation_methods: either a numeric vector of equal length as `gp_pred_list` storing the transformation to apply to each 

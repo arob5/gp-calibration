@@ -428,7 +428,7 @@ calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds = FAL
 }
 
 
-calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_bounds = FALSE) {
+calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_bounds=FALSE) {
   # Evaluates the log prior density on calibration functions at specific values of the settings.  
   #
   # Args:
@@ -547,7 +547,7 @@ run_computer_model <- function(theta_vals, computer_model_data) {
   #    computer_model_data: the standard computer model data list. 
   #
   # Returns:
-  #    Either Nxp matrix of list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
+  #    Either Nxp matrix or list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
   #    See above description for details. 
   
   if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
@@ -1296,22 +1296,22 @@ sample_prior_theta <- function(theta_prior_params) {
   #                        "bound_lower" and "bound_upper". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper), 
-  #                        and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                        and "Truncated_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
   #                        bound_upper = upper truncation value).  
   #
   # Returns:
   #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
 
-  theta_samp <- vector(mode = "numeric", length = nrow(theta_prior_params))
+  theta_samp <- vector(mode = "numeric", length=nrow(theta_prior_params))
   
   for(i in seq_along(theta_samp)) {
-    if(theta_prior_params[i, "dist"] == "Gaussian") {
+    if(theta_prior_params[i, "dist"]=="Gaussian") {
       theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-    } else if(theta_prior_params[i, "dist"] == "Uniform") {
+    } else if(theta_prior_params[i, "dist"]=="Uniform") {
       theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") {
-      theta_samp[i] <- rtruncnorm(1, a = theta_prior_params[i, "bound_lower"], b = theta_prior_params[i, "bound_upper"], 
-                                  mean = theta_prior_params[i, "param1"], sd = theta_prior_params[i, "param2"])
+    } else if(theta_prior_params[i, "dist"]=="Truncated_Gaussian") {
+      theta_samp[i] <- rtruncnorm(1, a=theta_prior_params[i, "bound_lower"], b=theta_prior_params[i, "bound_upper"], 
+                                  mean=theta_prior_params[i, "param1"], sd=theta_prior_params[i, "param2"])
     } else {
       stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
     }
@@ -1467,12 +1467,14 @@ sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prio
 }
 
 
-generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta, G, sig2_eps = NULL, sig_eps_frac = 0.1, pars_cal_sel = NULL) {
+generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta, G, 
+                                               sig2_eps=NULL, sig_eps_frac=0.1, pars_cal_sel=NULL) {
   # Sets up a test example (including computer model data and prior distributions) in which the forward model is linear 
   # (represented by matrix `G`), the likelihood is Gaussian (with variance `sig2_eps`), and the prior on the calibration 
   # parameters is zero-mean Gaussian (with diagonal covariance matrix `Sig_theta`). Note that currently this function 
   # only creates an example with a single output variable (p = 1). Also, for the time being `Sig_theta` must be diagonal, 
-  # until the prior code is updated to allow for correlated priors. This linear Gaussian setup admits a closed form 
+  # until the prior code is updated to allow for correlated priors. Currently, a zero-mean prior is generated, which 
+  # should also be generalized in the future. This linear Gaussian setup admits a closed form 
   # posterior so is useful for validating MCMC schemes, etc. This function also returns the mean and covariance matrix 
   # of the true posterior. 
   #
@@ -1484,7 +1486,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   #       then D will be larger than the dimension of the parameter calibration space. 
   #    Sig_theta: matrix of dimension D x D. Note that if only a subset of parameters are calibrated, then the prior covariance on the 
   #               calibration parameters with be a sub-matrix of `Sig_theta`.
-  #    sig2_eps: numeric(1), the observation variance. If not provided, then the obsevation variance will be set using `coef_var`, or 
+  #    sig2_eps: numeric(1), the observation variance. If not provided, then the observation variance will be set using `coef_var`, or 
   #              if `coef_var`.
   #    sig_eps_frac: numeric(1), If `sig2_eps` is provided directly then `sig_eps_frac` will not be used.
   #                  Otherwise, the noise variance  will be set so that the standard deviation sqrt(sig2_eps) equals 
@@ -1500,8 +1502,12 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
     stop("Forward model G must be matrix of dimension N_obs x D.")
   }
   
+  diag_prior_cov <- TRUE
   if(!isTRUE(all.equal(Sig_theta, diag(diag(Sig_theta))))) {
-    stop("Code does not currently support correlated prior parameters. `Sig_theta` should be diagonal.")
+    diag_prior_cov <- FALSE
+    if(!is.null(pars_cal_sel)) {
+      stop("Currently linear Gaussian data function does not support factor fixing with non-diagonal prior covariance.")
+    }
   }
   
   # Sample from model to generate observed data. 
@@ -1553,10 +1559,14 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
                                                     row.names = pars_cal_names))
   
   # Prior Parameters. 
-  theta_prior_params <- data.frame(dist = rep("Gaussian", length(pars_cal_names)), 
-                                   param1 = rep(0, length(pars_cal_names)), 
-                                   param2 = sqrt(diag(Sig_theta)[pars_cal_sel]))
-  rownames(theta_prior_params) <- pars_cal_names
+  if(diag_prior_cov) {
+    theta_prior_params <- data.frame(dist = rep("Gaussian", length(pars_cal_names)), 
+                                     param1 = rep(0, length(pars_cal_names)), 
+                                     param2 = sqrt(diag(Sig_theta)[pars_cal_sel]))
+    rownames(theta_prior_params) <- pars_cal_names
+  } else {
+    theta_prior_params <- NULL
+  }
   
   # True posterior (note that we need to adjust for the case where only a subset of the parameters 
   # are calibrated). The posterior moments are computed using the SVD and Woodbury identity. This 
@@ -1567,10 +1577,10 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   Sig_theta_cal <- Sig_theta[pars_cal_sel, pars_cal_sel]
   
   if(length(pars_fixed_sel) == 0) {
-    G_fixed <- matrix(0, nrow = N_obs, ncol = 1)
+    G_fixed <- matrix(0, nrow=N_obs, ncol=1)
     theta_fixed <- 0
   } else {
-    G_fixed <- G[, pars_fixed_sel]
+    G_fixed <- G[,pars_fixed_sel]
     theta_fixed <- theta[pars_fixed_sel]
   }
   y_adjusted <- matrix(data_obs, ncol=1) - G_fixed %*% theta_fixed
@@ -1579,9 +1589,13 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   # svd_list <- svd(G_cal)
   # Cov_post <- Sig_theta_cal - Sig_theta_cal %*% diag(1 / (sig2_eps * (svd_list$d^(-2)) + diag(Sig_theta_cal))) %*% Sig_theta_cal
   
-  Cov_post <- sig2_eps * solve(crossprod(G_cal) + sig2_eps * diag(1/diag(Sig_theta_cal)))
+  # Cov_post <- sig2_eps * solve(crossprod(G_cal) + sig2_eps * diag(1/diag(Sig_theta_cal))) # old
+  
+  Sig_theta_cal_inv <- chol2inv(chol(Sig_theta_cal))
+  Cov_post <- chol2inv(chol(crossprod(G_cal)/sig2_eps + Sig_theta_cal_inv))
+  
   mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
-  true_posterior <- list(mean = mean_post, Cov = Cov_post)
+  true_posterior <- list(mean=mean_post, Cov=Cov_post)
   
   return(list(computer_model_data=computer_model_data, theta_prior_params=theta_prior_params, 
               true_posterior=true_posterior, random_seed=random_seed))

@@ -210,7 +210,7 @@ get_1d_linear_Gaussian_approx_post_density <- function(data_seed, design_seed, G
 }
 
 
-run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain=4, N_itr=2000, 
+run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, theta_init, N_chain=4, N_itr=2000, 
                               burn_ins=0.5*N_itr, learn_sig_eps=FALSE, return_cov_prop_scale=TRUE, 
                               return_SSR_samp=TRUE, ...) {
   # Currently this assumed fixed sig2_eps. 
@@ -223,11 +223,6 @@ run_gp_mcmc_tests <- function(computer_model_data, lpost_emulator, algs, N_chain
   #    ...: other named arguments are passed to the MCMC functions (e.g. arguments
   #         to control proposal covariance adaptation, etc.). 
   #
-  
-  # Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. 
-  design_info_list <- lpost_emulator$design_info_list
-  best_idx <- which.max(design_info_list$lpost)
-  theta_init <- design_info_list$inputs[best_idx,]
   
   # Parameters whose samples will be returned. 
   param_types <- "theta"
