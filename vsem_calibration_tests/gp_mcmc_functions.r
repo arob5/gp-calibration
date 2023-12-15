@@ -62,9 +62,9 @@ sample_emulator_cond <- function(inputs_scaled, emulator_info_list, cond_type, s
 # Adaptation Schemes
 # -----------------------------------------------------------------------------
 
-adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, MH_accept_prob, samp_mean, 
-                           effective_log_scale, adapt_frequency=1000, accept_rate_target=0.24,
-                           scale_update_decay=0.7, scale_update_mult=1.0, init_threshold=3) {
+adapt_cov_prop <- function(adapt_cov, adapt_scale, C, L, log_scale, sample_history, itr, accept_count,
+                           MH_accept_prob, samp_mean, effective_log_scale, adapt_frequency=1000, 
+                           accept_rate_target=0.24, scale_update_decay=0.7, scale_update_mult=1.0, init_threshold=3) {
   # Returns an adapted proposal covariance matrix. The covariance matrix is assumed to be of the form `scale * C`, where 
   # `scale` is a scaling factor. This function supports different algorithms to adapt C and to adapt `scale`, and the methods 
   # can be mixed and matched. Only a portion of the function arguments are needed for certain methods, so take care 
@@ -77,6 +77,8 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
   # can help prevent singular proposal covariances. 
   #
   # Args:
+  #    adapt_cov: logical(1), if TRUE adapts the covariance matrix `C`. Otherwise, `C` is left unchanged. 
+  #    adapt_scale: logical(1), if TRUE adapts the log scale `log_scale`; otherwise, it is left unchanged.
   #    C: matrix, the current d x d positive definite covariance matrix (not multiplied by the scaling factor). 
   #    L: matrix, the lower triangular Cholesky factor of C. This is what is actually used to generate proposals. In general, this 
   #       can be "out of alignment" with C; for example, C can be updated every iteration, but the Cholesky factor can be updated 
@@ -112,29 +114,32 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
   #    `L` is updated. `effective_prop_scale` is described in "Args". 
   
   # Adapt proposal covariance. 
-  
-  samp_mean <- samp_mean + (1 / itr) * (sample_history[itr,] - samp_mean)
-    
-  if(itr==3) { # Sample covariance from first 3 samples. 
-    samp_centered <- t(sample_history[1:3,]) - samp_mean
-    C <- 0.5 * tcrossprod(samp_centered)
-  } else if(itr > 3) { # Begin covariance updates every iteration. 
-    samp_centered <- sample_history[itr,] - samp_mean
-    w <- 1/(itr-1)
-    C <- C + w * (itr*w*outer(samp_centered, samp_centered) - C)
+  if(adapt_cov) {
+    samp_mean <- samp_mean + (1 / itr) * (sample_history[itr,] - samp_mean)
+      
+    if(itr==3) { # Sample covariance from first 3 samples. 
+      samp_centered <- t(sample_history[1:3,]) - samp_mean
+      C <- 0.5 * tcrossprod(samp_centered)
+    } else if(itr > 3) { # Begin covariance updates every iteration. 
+      samp_centered <- sample_history[itr,] - samp_mean
+      w <- 1/(itr-1)
+      C <- C + w * (itr*w*outer(samp_centered, samp_centered) - C)
+    }
   }
   
   # Update Cholesky factor of covariance matrix (what is actually used for proposals).
-  if((itr >= init_threshold) && (itr %% adapt_frequency == 0)) {
-    L <- t(chol(C))
+  if((itr >= init_threshold) && (itr %% adapt_frequency==0)) {
+    if(adapt_cov) L <- t(chol(C))
     # log_scale <- log_scale - log(sum(diag(C)))
     accept_count <- 0
     effective_log_scale <- log_scale + 0.5*log(diag(C))
   } else {
-    # Adapt scaling factor for proposal covariance matrix. 
-    effective_log_scale <- effective_log_scale - log_scale
-    log_scale <- log_scale + (scale_update_mult / itr^scale_update_decay) * (MH_accept_prob - accept_rate_target)
-    effective_log_scale <- effective_log_scale + log_scale
+    # Adapt scaling factor for proposal covariance matrix.
+    if(adapt_scale) {
+      effective_log_scale <- effective_log_scale - log_scale
+      log_scale <- log_scale + (scale_update_mult / itr^scale_update_decay) * (MH_accept_prob - accept_rate_target)
+      effective_log_scale <- effective_log_scale + log_scale
+    }
   }
 
   return(list(C=C, L=L, log_scale=log_scale, effective_log_scale=effective_log_scale, 
@@ -152,7 +157,8 @@ adapt_cov_prop <- function(C, L, log_scale, sample_history, itr, accept_count, M
 # on the correct scale (e.g. it should be on log scale for LNP).
 mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params, emulator_info_list,
                                         theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
-                                        sig_eps_prior_params=NULL, N_mcmc=50000, adapt=TRUE, adapt_frequency=1000,
+                                        sig_eps_prior_params=NULL, N_mcmc=50000, adapt_cov=TRUE, 
+                                        adapt_scale=TRUE, adapt_frequency=1000,
                                         accept_rate_target=0.24, proposal_scale_decay=0.7,  
                                         proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3) {
   # `theta_prior_params` should already be truncated, if desired. 
@@ -264,10 +270,10 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    if(adapt) {
-      adapt_list <- adapt_cov_prop(Cov_prop, L_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, 
-                                   effective_log_scale_prop, adapt_frequency, accept_rate_target, proposal_scale_decay, 
-                                   proposal_scale_multiplier, adapt_init_threshold)
+    if(adapt_cov || adapt_scale) {
+      adapt_list <- adapt_cov_prop(adapt_cov, adapt_scale, Cov_prop, L_prop, log_scale_prop, theta_samp, itr,
+                                   accept_count, alpha, samp_mean, effective_log_scale_prop, adapt_frequency,
+                                   accept_rate_target, proposal_scale_decay, proposal_scale_multiplier, adapt_init_threshold)
       Cov_prop <- adapt_list$C
       L_prop <- adapt_list$L
       log_scale_prop <- adapt_list$log_scale

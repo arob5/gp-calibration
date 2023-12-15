@@ -1,4 +1,46 @@
 
+%  ---------------------------------------------------------------------------------------------------
+% GP Uncertainty Propagation
+%  ---------------------------------------------------------------------------------------------------
+
+% Emulate the likelihood. Propose a GP-accelerated MCMC scheme that tries to sample trajectories from the GP. 
+@article{LEBEL2019158,
+title = {Statistical inverse identification for nonlinear train dynamics using a surrogate model in a Bayesian framework},
+journal = {Journal of Sound and Vibration},
+volume = {458},
+pages = {158-176},
+year = {2019},
+issn = {0022-460X},
+doi = {https://doi.org/10.1016/j.jsv.2019.06.024},
+url = {https://www.sciencedirect.com/science/article/pii/S0022460X19303633},
+author = {D. Lebel and C. Soize and C. Fünfschilling and G. Perrin},
+keywords = {Statistical inverse problem, Bayesian calibration, Surrogate model, High-speed train dynamics, Uncertainty quantification},
+abstract = {This paper presents a Bayesian calibration method for a simulation-based model with stochastic functional input and output. The originality of the method lies in an adaptation involving the representation of the likelihood function by a Gaussian process surrogate model, to cope with the high computational cost of the simulation, while avoiding the surrogate modeling of the functional output. The adaptation focuses on taking into account the uncertainty introduced by the use of a surrogate model when estimating the parameters posterior probability distribution by MCMC. To this end, trajectories of the random surrogate model of the likelihood function are drawn and injected in the MCMC algorithm. An application on a train suspension monitoring case is presented.}
+}
+
+% Emulate unnormalized log posterior. Use delayed-acceptance HMC. GP only used for proposal, exact posterior used for acceptance ratio. Uses GP classifier
+% to find regions of parameter space where physical assumptions are violated. Adapt HMC parameters using BayesOpt. 
+@article{https://doi.org/10.1002/cnm.3421,
+author = {Paun, L. Mihaela and Husmeier, Dirk},
+title = {Markov chain Monte Carlo with Gaussian processes for fast parameter estimation and uncertainty quantification in a 1D fluid-dynamics model of the pulmonary circulation},
+journal = {International Journal for Numerical Methods in Biomedical Engineering},
+volume = {37},
+number = {2},
+pages = {e3421},
+keywords = {classification, emulation, Gaussian processes, MCMC, pulmonary circulation, uncertainty quantification},
+doi = {https://doi.org/10.1002/cnm.3421},
+url = {https://onlinelibrary.wiley.com/doi/abs/10.1002/cnm.3421},
+eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1002/cnm.3421},
+abstract = {Abstract The past few decades have witnessed an explosive synergy between physics and the life sciences. In particular, physical modelling in medicine and physiology is a topical research area. The present work focuses on parameter inference and uncertainty quantification in a 1D fluid-dynamics model for quantitative physiology: the pulmonary blood circulation. The practical challenge is the estimation of the patient-specific biophysical model parameters, which cannot be measured directly. In principle this can be achieved based on a comparison between measured and predicted data. However, predicting data requires solving a system of partial differential equations (PDEs), which usually have no closed-form solution, and repeated numerical integrations as part of an adaptive estimation procedure are computationally expensive. In the present article, we demonstrate how fast parameter estimation combined with sound uncertainty quantification can be achieved by a combination of statistical emulation and Markov chain Monte Carlo (MCMC) sampling. We compare a range of state-of-the-art MCMC algorithms and emulation strategies, and assess their performance in terms of their accuracy and computational efficiency. The long-term goal is to develop a method for reliable disease prognostication in real time, and our work is an important step towards an automatic clinical decision support system.},
+year = {2021}
+}
+
+
+
+
+
+
+
 % ---------------------------------------------------------------------------------------------------
 % Emulating dynamic simulators / simulators with high-dimensional output
 % ---------------------------------------------------------------------------------------------------
@@ -210,21 +252,6 @@ URL = {https://www.mdpi.com/2673-9984/3/1/11},
 ISSN = {2673-9984},
 ABSTRACT = {We present an approach to enhance the performance and flexibility of the Bayesian inference of model parameters based on observations of the measured data. Going beyond the usual surrogate-enhanced Monte-Carlo or optimization methods that focus on a scalar loss, we place emphasis on a function-valued output of a formally infinite dimension. For this purpose, the surrogate models are built on a combination of linear dimensionality reduction in an adaptive basis of principal components and Gaussian process regression for the map between reduced feature spaces. Since the decoded surrogate provides the full model output rather than only the loss, it is re-usable for multiple calibration measurements as well as different loss metrics and, consequently, allows for flexible marginalization over such quantities and applications to Bayesian hierarchical models. We evaluate the method&rsquo;s performance based on a case study of a toy model and a simple riverine diatom model for the Elbe river. As input data, this model uses six tunable scalar parameters as well as silica concentrations in the upper reach of the river together with the continuous time-series of temperature, radiation, and river discharge over a specific year. The output consists of continuous time-series data that are calibrated against corresponding measurements from the Geesthacht Weir station at the Elbe river. For this study, only two scalar inputs were considered together with a function-valued output and compared to an existing model calibration using direct simulation runs without a surrogate.},
 DOI = {10.3390/psf2021003011}
-}
-
-% Emulate the likelihood. Propose a GP-accelerated MCMC scheme that tries to sample trajectories from the GP. 
-@article{LEBEL2019158,
-title = {Statistical inverse identification for nonlinear train dynamics using a surrogate model in a Bayesian framework},
-journal = {Journal of Sound and Vibration},
-volume = {458},
-pages = {158-176},
-year = {2019},
-issn = {0022-460X},
-doi = {https://doi.org/10.1016/j.jsv.2019.06.024},
-url = {https://www.sciencedirect.com/science/article/pii/S0022460X19303633},
-author = {D. Lebel and C. Soize and C. Fünfschilling and G. Perrin},
-keywords = {Statistical inverse problem, Bayesian calibration, Surrogate model, High-speed train dynamics, Uncertainty quantification},
-abstract = {This paper presents a Bayesian calibration method for a simulation-based model with stochastic functional input and output. The originality of the method lies in an adaptation involving the representation of the likelihood function by a Gaussian process surrogate model, to cope with the high computational cost of the simulation, while avoiding the surrogate modeling of the functional output. The adaptation focuses on taking into account the uncertainty introduced by the use of a surrogate model when estimating the parameters posterior probability distribution by MCMC. To this end, trajectories of the random surrogate model of the likelihood function are drawn and injected in the MCMC algorithm. An application on a train suspension monitoring case is presented.}
 }
 
 

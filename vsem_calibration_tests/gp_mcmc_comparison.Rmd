@@ -135,7 +135,7 @@ hist(test_prior[j,], 30)
 # Gibbs test.
 mcmc_test <- mcmc_calibrate_ind_gp_gibbs(computer_model_data, lpost_emulator$theta_prior_params, 
                                          lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
-                                         theta_init=theta_init, learn_sig_eps=FALSE, adapt=FALSE,
+                                         theta_init=theta_init, learn_sig_eps=FALSE, adapt_cov=TRUE, adapt_scale=FALSE,
                                          N_mcmc=N_mcmc, Cov_prop_init_diag=1)
 mcmc_test_dt <- format_mcmc_output(samp_list=mcmc_pecan[c("theta")], test_label="gibbs_test")
 
@@ -150,7 +150,7 @@ samp_exact_dt <- data.table(param_type="theta",
                             test_label="exact")
 mcmc_test_dt <- rbindlist(list(mcmc_test_dt, samp_exact_dt), use.names=TRUE)
 
-
+# Plots
 trace_plots <- get_trace_plots(mcmc_test_dt)
 for(plt in trace_plots) plot(plt)
 
