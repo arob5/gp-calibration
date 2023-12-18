@@ -133,11 +133,12 @@ hist(test_prior[j,], 30)
 # TODO: TEMP - test
 
 # Gibbs test.
+theta_init <- 0.75
 mcmc_test <- mcmc_calibrate_ind_gp_gibbs(computer_model_data, lpost_emulator$theta_prior_params, 
                                          lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
-                                         theta_init=theta_init, learn_sig_eps=FALSE, adapt_cov=TRUE, adapt_scale=FALSE,
+                                         theta_init=theta_init, learn_sig_eps=FALSE, adapt_cov=FALSE, adapt_scale=FALSE,
                                          N_mcmc=N_mcmc, Cov_prop_init_diag=1)
-mcmc_test_dt <- format_mcmc_output(samp_list=mcmc_pecan[c("theta")], test_label="gibbs_test")
+mcmc_test_dt <- format_mcmc_output(samp_list=mcmc_test[c("theta")], test_label="gibbs_test")
 
 # Exact samples.
 N_samp_exact <- 50000
@@ -168,34 +169,61 @@ N_mcmc <- 50000
 learn_sig_eps <- FALSE
 sig2_eps_init <- sig2_eps
 
+# Fix pre-MCMC estimates of calibration and likelihood parameters based on design data. All MCMC
+# algs will use this initialization. 
+design_info_list <- lpost_emulator$design_info_list
+best_idx <- which.max(design_info_list$lpost)
+theta_init <- design_info_list$inputs[best_idx,]
+
 # Algorithm-specific settings list. 
 run_settings_list <- list()
 run_settings_list[["gibbs_adapt_cov"]] <- list(test_label="gibbs_adapt_cov", 
                                                alg="ind_gp_gibbs",
-                                               adapt_cov=TRUE, 
-                                               adapt_scale=FALSE)
-run_settings_list[["gibbs_adapt_scale"]] <- list(test_label="gibbs_adapt_scalee", 
-                                                 alg="ind_gp_gibbs",
-                                                 adapt_cov=FALSE, 
-                                                 adapt_scale=TRUE)
-run_settings_list[["gibbs_adapt"]] <- list(test_label="gibbs_adapt", 
-                                                 alg="ind_gp_gibbs",
-                                                 adapt_cov=FALSE, 
-                                                 adapt_scale=TRUE)
-run_settings_list[["traj_gp_cov"]] <- list(test_label="traj_gp_cov", 
-                                           alg="ind_gp_trajectory",
-                                           use_gp_cov=TRUE, 
-                                           second_gibbs_step=FALSE)
-run_settings_list[["traj_gp_cov_gibbs"]] <- list(test_label="traj_gp_cov_gibbs", 
-                                                 alg="ind_gp_trajectory",
-                                                 use_gp_cov=TRUE, 
-                                                 second_gibbs_step=TRUE)
-run_settings_list[["traj_gp_pecan"]] <- list(test_label="traj_gp_pecan", 
-                                             alg="ind_gp_trajectory",
-                                             use_gp_cov=FALSE, 
-                                             second_gibbs_step=TRUE)
+                                               adapt_cov=FALSE, 
+                                               adapt_scale=FALSE, 
+                                               Cov_prop_init_diag=1.0)
+# run_settings_list[["gibbs_adapt_scale"]] <- list(test_label="gibbs_adapt_scale", 
+#                                                  alg="ind_gp_gibbs",
+#                                                  adapt_cov=FALSE, 
+#                                                  adapt_scale=TRUE)
+# run_settings_list[["gibbs_adapt"]] <- list(test_label="gibbs_adapt", 
+#                                                  alg="ind_gp_gibbs",
+#                                                  adapt_cov=FALSE, 
+#                                                  adapt_scale=TRUE)
+# run_settings_list[["traj_gp_cov"]] <- list(test_label="traj_gp_cov", 
+#                                            alg="ind_gp_trajectory",
+#                                            use_gp_cov=TRUE, 
+#                                            second_gibbs_step=FALSE)
+# run_settings_list[["traj_gp_cov_gibbs"]] <- list(test_label="traj_gp_cov_gibbs", 
+#                                                  alg="ind_gp_trajectory",
+#                                                  use_gp_cov=TRUE, 
+#                                                  second_gibbs_step=TRUE)
+# run_settings_list[["traj_gp_pecan"]] <- list(test_label="traj_gp_pecan", 
+#                                              alg="ind_gp_trajectory",
+#                                              use_gp_cov=FALSE, 
+#                                              second_gibbs_step=TRUE)
 ```
 
+```{r}
+# Run GP-MCMC algorithms. 
+mcmc_test_info <- run_gp_mcmc_tests(run_settings_list, computer_model_data=computer_model_data, lpost_emulator=lpost_emulator,   
+                                    theta_init=theta_init, N_chain=4, N_itr=N_mcmc, burn_ins=NULL, learn_sig_eps=FALSE,
+                                    return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, sig2_eps_init=sig2_eps)
+mcmc_samp_dt <- mcmc_test_info$mcmc_samp_dt
+burn_ins <- mcmc_test_info$burn_ins
+
+# Append exact posterior samples. 
+N_samp_exact <- N_mcmc
+samp_exact <- rnorm(n=N_samp_exact, mean=drop(linear_Gaussian_info$true_posterior$mean), 
+                    sd=sqrt(drop(linear_Gaussian_info$true_posterior$Cov)))
+samp_exact_dt <- data.table(param_type="theta", 
+                            itr=seq_len(N_samp_exact), 
+                            param_name=computer_model_data$pars_cal_names, 
+                            sample=samp_exact,
+                            test_label="exact")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
+
+```
 
 ```{r}
 #

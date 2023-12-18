@@ -232,22 +232,29 @@ run_gp_mcmc_tests <- function(run_settings_list, computer_model_data=NULL, lpost
   if(return_SSR_samp) param_types <- c(param_types, "SSR")
   
   # Set burn-ins. 
-  if(length(burn_ins)==1) burn_ins <- rep(burn_ins, length(algs))
-  burn_ins <- setNames(burn_ins, algs)
+  test_labels <- sapply(run_settings_list, function(run) run$test_label)
+  if(is.null(burn_ins)) burn_ins <- rep(1, length(test_labels))
+  else if((length(burn_ins)==1) && length(test_labels)>1) burn_ins <- rep(burn_ins, length(test_labels))
+  burn_ins <- setNames(burn_ins, test_labels)
+
 
   # Run MCMC algorithms.
-  for(j in seq_along(algs)) {
+  for(j in seq_along(test_labels)) {
+    # Get MCMC function.
+    test_label <- test_labels[j]
     alg_name <- run_settings_list[[j]]$alg
     mcmc_func <- get(paste0("mcmc_calibrate_", alg_name))
     
+    # Get arguments to MCMC function. 
     mcmc_args <- get_mcmc_func_args_list(run_settings_list[[j]], computer_model_data, 
                                          lpost_emulator$theta_prior_params, lpost_emulator$emulator_info_list, 
                                          theta_init, N_itr, learn_sig_eps, sig2_eps_init)
     mcmc_output <- do.call(mcmc_func, mcmc_args)
 
+    # Format MCMC output. 
     col_sel <- intersect(param_types, names(mcmc_output))
-    mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=alg_name)
-    mcmc_samp_dt_alg <- select_mcmc_samp(mcmc_samp_dt_alg, burn_in_start=burn_ins[alg_name])
+    mcmc_samp_dt_alg <- format_mcmc_output(samp_list=mcmc_output[col_sel], test_label=test_label)
+    mcmc_samp_dt_alg <- select_mcmc_samp(mcmc_samp_dt_alg, burn_in_start=burn_ins[test_label])
     
     if(j == 1) mcmc_samp_dt <- copy(mcmc_samp_dt_alg)
     else mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_alg), use.names=TRUE)
@@ -262,8 +269,26 @@ run_gp_mcmc_tests <- function(run_settings_list, computer_model_data=NULL, lpost
 get_mcmc_func_args_list <- function(run_settings_list, computer_model_data=NULL, theta_prior_params=NULL, 
                                     emulator_info_list=NULL, theta_init=NULL, N_itr=NULL, learn_sig_eps=NULL, 
                                     sig2_eps_init=NULL) {
-  
-  # TODO: add checks that all required arguments are non-NULL. 
+  # A helper function to `run_gp_mcmc_tests()`, which returns a named list of MCMC function arguments 
+  # for a specific GP-MCMC run. The run-specific MCMC settings in `run_settings_list` take 
+  # precedent, but if a required argument is missing in this list, it then populated by one of the 
+  # other arguments of this function, e.g. `computer_model_data`. Required arguments for all 
+  # GP-MCMC functions are "computer_model_data", "theta_prior_params", "emulator_info_list". If 
+  # "learn_sig_eps" is FALSE, then "sig2_eps_init" is also required. Optional arguments that are 
+  # not provided here will just use the defaults for the GP-MCMC function in question. Certain 
+  # GP-MCMC functions have their own particular required arguments are well. Additional elements 
+  # of the list `run_settings_list` are allowed, and will be ignored by the GP-MCMC functions. 
+  #
+  # Args:
+  #    run_settings_list: list, containing run-specific settings and arguments for a MCMC run. 
+  #    Remaining arguments are used to populate settings in `run_settings_list` which are NULL. 
+  #    The main use case here envisions many different runs, each with their own specific settings. 
+  #    Settings that are fixed across all runs can then be provided in these additional arguments
+  #    so they don't need to be set for each specific run. 
+  #
+  # Returns:
+  #    list, a modified version of `run_settings_list`, where missing elements have been
+  #    populated by the other arguments passed to this function. 
   
   # Set global arguments which have not been specified in the algorithm-specific settings. 
   if(is.null(run_settings_list$computer_model_data)) run_settings_list$computer_model_data <- computer_model_data
@@ -278,11 +303,12 @@ get_mcmc_func_args_list <- function(run_settings_list, computer_model_data=NULL,
   if(is.null(run_settings_list$computer_model_data)) stop("`run_settings_list` is missing `computer_model_data`")
   if(is.null(run_settings_list$theta_prior_params)) stop("`run_settings_list` is missing `theta_prior_params`")
   if(is.null(run_settings_list$emulator_info_list)) stop("`run_settings_list` is missing `emulator_info_list`")
+  if(!isTRUE(run_settings_list$learn_sig_eps) && is.null(run_settings_list$sig2_eps_init))
+    stop("`run_settings_list` requires element `sig2_eps_init` when `learn_sig_eps` is not TRUE.")
   
   return(run_settings_list)
   
 }
-
 
 
 
