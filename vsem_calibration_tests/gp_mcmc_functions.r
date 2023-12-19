@@ -230,17 +230,12 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
     # theta proposals.
     theta_prop <- theta_samp[itr-1,] + (exp(log_scale_prop) * L_prop %*% matrix(rnorm(d), ncol = 1))[,1]
     
-    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0). If this occurs on the first 
-    # iteration we let the normal calculations proceed since we need to initialize `gp_pred_list`. In this case, the 
-    # calculations will still return an acceptance probability of 0. After the first iteration, there is no need to 
-    # waste computation if we know the acceptance probability will be 0. 
-    if((itr > 2) && 
-       (any(theta_prop < theta_prior_params[["bound_lower"]], na.rm = TRUE) ||
-        any(theta_prop > theta_prior_params[["bound_upper"]], na.rm = TRUE))) {
+    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0).
+    if(any(theta_prop < theta_prior_params[["bound_lower"]], na.rm=TRUE) ||
+       any(theta_prop > theta_prior_params[["bound_upper"]], na.rm=TRUE)) {
       
       theta_samp[itr,] <- theta_samp[itr-1,]
       alpha <- 0
-      
     } else {
 
       # Accept-Reject step. 
@@ -320,7 +315,8 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
 
 mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_params, emulator_info_list,
                                              theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
-                                             sig_eps_prior_params=NULL, N_mcmc=50000, adapt_frequency=1000,
+                                             sig_eps_prior_params=NULL, N_mcmc=50000, adapt_cov=TRUE, 
+                                             adapt_scale=TRUE, adapt_frequency=1000,
                                              accept_rate_target=0.24, proposal_scale_decay=0.7,  
                                              proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3,
                                              use_gp_cov=TRUE, second_gibbs_step=FALSE, ...) {
@@ -434,17 +430,19 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    adapt_list <- adapt_cov_prop(Cov_prop, L_prop, log_scale_prop, theta_samp, itr, accept_count, alpha, samp_mean, 
-                                 effective_log_scale_prop, adapt_frequency, accept_rate_target, proposal_scale_decay, 
-                                 proposal_scale_multiplier, adapt_init_threshold)
-                                 
-    Cov_prop <- adapt_list$C
-    L_prop <- adapt_list$L
-    log_scale_prop <- adapt_list$log_scale
-    effective_log_scale_prop <- adapt_list$effective_log_scale
-    samp_mean <- adapt_list$samp_mean
-    accept_count <- adapt_list$accept_count
-    cov_prop_scales[itr,] <- exp(effective_log_scale_prop)
+    if(adapt_cov || adapt_scale) {
+      adapt_list <- adapt_cov_prop(adapt_cov, adapt_scale, Cov_prop, L_prop, log_scale_prop, theta_samp, itr,  
+                                   accept_count, alpha, samp_mean, effective_log_scale_prop, adapt_frequency,  
+                                   accept_rate_target, proposal_scale_decay, proposal_scale_multiplier, adapt_init_threshold)
+                                   
+      Cov_prop <- adapt_list$C
+      L_prop <- adapt_list$L
+      log_scale_prop <- adapt_list$log_scale
+      effective_log_scale_prop <- adapt_list$effective_log_scale
+      samp_mean <- adapt_list$samp_mean
+      accept_count <- adapt_list$accept_count
+      cov_prop_scales[itr,] <- exp(effective_log_scale_prop)
+    }
     
     #
     # Gibbs step for sig2_eps. 

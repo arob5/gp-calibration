@@ -110,7 +110,7 @@ for(plt in linear_Gaussian_list$plots) plot(plt)
 ```{r}
 # TODO: TEMP - test
 
-inputs_temp <- matrix(c(-1.5, 0.8, 1.5), ncol=1)
+inputs_temp <- matrix(c(-1.5, 0.75, 1.5), ncol=1)
 inputs_scaled_temp <- scale_input_data(inputs_temp, input_bounds=lpost_emulator$design_info_list$input_bounds)
 
 test_post <- matrix(nrow=3, ncol=1000)
@@ -123,7 +123,7 @@ for(i in 1:1000) {
                                          trunc_method="truncated", include_nugget=TRUE)
 }
 
-j <- 3
+j <- 2
 hist(test_post[j,], 30)
 hist(test_prior[j,], 30)
 
@@ -137,7 +137,7 @@ theta_init <- 0.75
 mcmc_test <- mcmc_calibrate_ind_gp_gibbs(computer_model_data, lpost_emulator$theta_prior_params, 
                                          lpost_emulator$emulator_info_list, sig2_eps_init=lpost_emulator$sig2_eps,
                                          theta_init=theta_init, learn_sig_eps=FALSE, adapt_cov=FALSE, adapt_scale=FALSE,
-                                         N_mcmc=N_mcmc, Cov_prop_init_diag=1)
+                                         N_mcmc=N_mcmc, Cov_prop_init_diag=1.0, adapt_frequency=1000)
 mcmc_test_dt <- format_mcmc_output(samp_list=mcmc_test[c("theta")], test_label="gibbs_test")
 
 # Exact samples.
@@ -152,12 +152,72 @@ samp_exact_dt <- data.table(param_type="theta",
 mcmc_test_dt <- rbindlist(list(mcmc_test_dt, samp_exact_dt), use.names=TRUE)
 
 # Plots
-trace_plots <- get_trace_plots(mcmc_test_dt)
+trace_plots <- get_trace_plots(mcmc_test_dt[itr<=100])
 for(plt in trace_plots) plot(plt)
 
 hist_plots <- get_hist_plot_comparisons(mcmc_test_dt, param_types="theta", test_label_baseline="exact", 
                                         xlab="samples", ylab="density", bins=30)
 for(plt in hist_plots) plot(plt)
+
+
+# Conclusions: 
+#    - An adaptive scheme with more frequent tuning early on might be helpful. 
+#    - The algorithm seems to get stuck near the design point near 0.75. 
+#    - Example: With fixed step size 1.0 (no adaptation), the first 100 iterations 
+#               are rejections.
+#    - Might be helpful to plot p(theta|phi, Y) for values of phi around 114-115. 
+
+plot(1:100, mcmc_test$SSR[1:100,1], type="l")
+
+```
+
+```{r}
+# TEST: looking at p(u|Sigma, phi, Y)
+
+u_grid <- matrix(seq(-2, 2, length.out=101), ncol=1)
+SSR_test <- 114
+
+# No emulator. 
+u_cond_lpost_exact <- calc_lpost_theta_product_lik(computer_model_data, theta_vals=u_grid, 
+                                                   vars_obs=sig2_eps, na.rm=TRUE, 
+                                                   theta_prior_params=lpost_emulator$theta_prior_params, 
+                                                   return_list=FALSE)
+
+# p(u|Sigma, phi, Y)
+lprior_theta_test <- calc_lprior_theta(u_grid, lpost_emulator$theta_prior_params)
+u_grid_scaled <- scale_input_data(u_grid, lpost_emulator$design_info_list$input_bounds)
+gp_pred_list_test <- predict_independent_GPs(X_pred=u_grid_scaled, gp_obj_list=lpost_emulator$emulator_info_list$gp_fits, 
+                                             gp_lib=lpost_emulator$emulator_info_list$settings$gp_lib, include_cov_mat=FALSE, 
+                                             denormalize_predictions=TRUE, 
+                                             output_stats=lpost_emulator$emulator_info_list$output_stats)
+gp_pred_means_test <- sapply(gp_pred_list_test, function(x) x$mean)
+gp_pred_vars_test <- sapply(gp_pred_list_test, function(x) x$var_comb)
+u_cond_lpost_test <- lprior_theta_test + dnorm(SSR_test, drop(gp_pred_means_test), sqrt(drop(gp_pred_vars_test)), log=TRUE)
+u_cond_lpost_test_truc <- lprior_theta_test + log(dtruncnorm(SSR_test, 0, 
+                                                        mean=drop(gp_pred_means_test), 
+                                                        sd=sqrt(drop(gp_pred_vars_test))))
+CI_upper <- qnorm(0.99, gp_pred_means_test, sqrt(gp_pred_vars_test))
+CI_lower <- qnorm(0.01, gp_pred_means_test, sqrt(gp_pred_vars_test))
+CI_upper_trunc <- qtruncnorm(0.99, 0, mean=gp_pred_means_test, sd=sqrt(gp_pred_vars_test))
+CI_lower_trunc <- qtruncnorm(0.01, 0, mean=gp_pred_means_test, sd=sqrt(gp_pred_vars_test))
+trunc_moments <- transform_GP_predictions(gp_pred_means_test, gp_pred_vars_test, transformation_method="truncated")
+gp_pred_means_test_trunc <- trunc_moments$mean
+gp_pred_vars_test_trunc <- trunc_moments$var
+
+sel <- (drop(u_grid) >= -2) & (drop(u_grid) <= 2)
+plot(u_grid[sel,], exp(u_cond_lpost_exact[sel]), type="l")
+plot(u_grid[sel,], exp(u_cond_lpost_test[sel]), type="l")
+plot(u_grid[sel,], exp(u_cond_lpost_test_truc[sel]), type="l")
+
+plot(u_grid[sel,], gp_pred_means_test[sel,], type="l")
+lines(u_grid[sel,], CI_upper[sel], col="gray")
+lines(u_grid[sel,], CI_lower[sel], col="gray")
+points(0.7754493, 0, col="red")
+
+plot(u_grid[sel,], gp_pred_means_test_trunc[sel], type="l")
+lines(u_grid[sel,], CI_upper_trunc[sel], col="gray")
+lines(u_grid[sel,], CI_lower_trunc[sel], col="gray")
+points(0.7754493, 0, col="red")
 
 ```
 
