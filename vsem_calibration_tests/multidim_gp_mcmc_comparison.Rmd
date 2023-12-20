@@ -17,6 +17,7 @@ library(viridis)
 library(parallel)
 library(gridExtra)
 library(data.table)
+library(tmvtnorm)
 library(BayesianTools)
 
 source("numerical_experiment_functions.r")
@@ -31,12 +32,27 @@ source("sequential_design_sim_study.r")
 ```{r}
 # TODOs: 
 #    - Write plotting functions suitable for evaluating GP emulators with multivariate input space. Maybe plot y vs. y_hat. 
-#    - Update linear Gaussian data generation function: clean up code, improve comments, and allow for non-zero mean Gaussian prior. 
+#    - Update linear Gaussian data generation function: clean up code, improve comments, and allow for non-zero mean Gaussian prior.
+#    - Write function to generate linear Gaussian test example in higher dimensions. Include univariate and bivariate 
+#      histograms.
+#    - Write function analogous to MCMC histogram function that plots bivariate histograms. Will be helpful to get a sense of 
+#      how concentrated the true posterior is. 
+#    - Step through some MCMC steps to see why it's getting stuck. 
+#    - Maybe try putting this model into Stan and seeing how it handles it. 
+#    - Try an EKI update to see if this can concentrate in on the posterior in a single time step. 
+#    - Try sampling from exact posterior and see how well covariance adaptation does. 
+#    - Add MCMC timing information to test function. 
 ```
 
 
 ```{r}
-seed <- 23
+
+# Global seed.
+set.seed(15)
+
+# Local seeds. 
+data_seed <- 23
+design_seed <- 40
 ```
 
 
@@ -55,7 +71,7 @@ Sig0 <- diag(rlnorm(D, meanlog=0, sdlog=2))
 mu0 <- rnorm(D, mean=0, sd=4)
 
 # Get synthetic data. 
-linear_Gaussian_info <- generate_linear_Gaussian_test_data(seed, N_obs, D, Sig0, G, sig2_eps=sig2_eps)
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs, D, Sig0, G, sig2_eps=sig2_eps)
 computer_model_data <- linear_Gaussian_info$computer_model_data
 theta_prior_params <- linear_Gaussian_info$theta_prior_params
 
@@ -72,7 +88,7 @@ lines(1:N_obs, computer_model_data$data_ref, col="red")
 #
 
 # Emulator settings. 
-N_design <- 100
+N_design <- 50
 design_method <- "LHS"
 emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
@@ -95,7 +111,7 @@ init_design_info <- get_input_output_design(N_points=design_settings$N_design,
                                             scale_inputs=TRUE,
                                             param_ranges=input_bounds,  
                                             computer_model_data=computer_model_data, 
-                                            theta_prior_params=theta_prior_params)
+                                            theta_prior_params=theta_prior_params, design_seed=design_seed)
 init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data=computer_model_data, 
                                                        theta_vals=init_design_info$inputs, 
                                                        vars_obs=sig2_eps, 
@@ -113,6 +129,46 @@ for(fit in gp_fits) plot(fit)
 ```
 
 ```{r}
+# Evaluate emulators. 
+
+# TODO: 
+#    - Need to ensure validation sets are being sampled within input_bounds. 
+
+N_design_validate <- 5000
+
+# Validation design sampled from true posterior. 
+design_post <- t(drop(linear_Gaussian_info$true_posterior$mean) + 
+                  t(chol(linear_Gaussian_info$true_posterior$Cov)) %*% 
+                    matrix(rnorm(D*N_design_validate), nrow=D, ncol=N_design_validate))
+design_post_scaled <- scale_input_data(design_post, input_bounds)
+gp_pred_post <- predict_independent_GPs(design_post_scaled, emulator_info_list$gp_fits, emulator_settings$gp_lib, 
+                                        include_cov_mat=FALSE, denormalize_predictions=TRUE, 
+                                        output_stats=emulator_info_list$output_stats, return_df=TRUE)$df
+true_SSR_post <- get_computer_model_SSR(computer_model_data, theta_vals=design_post)                                            
+
+# Validation design sampled from prior. 
+design_validate_prior <- get_input_output_design(N_points=N_design_validate,
+                                                 design_method="LHS", 
+                                                 scale_inputs=TRUE,
+                                                 param_ranges=input_bounds,  
+                                                 computer_model_data=computer_model_data, 
+                                                 theta_prior_params=theta_prior_params)
+gp_pred_prior <- predict_independent_GPs(design_validate_prior$inputs_scaled, emulator_info_list$gp_fits,  
+                                         emulator_settings$gp_lib, include_cov_mat=FALSE, denormalize_predictions=TRUE, 
+                                         output_stats=emulator_info_list$output_stats, return_df=TRUE)$df
+
+plot(design_validate_prior$outputs, gp_pred_prior$mean_output1, xlab="true", ylab="pred", main="prior validation")
+points(design_validate_prior$outputs, gp_pred_prior$mean_output1-2*sqrt(gp_pred_prior$var_comb_output1), col="gray")
+points(design_validate_prior$outputs, gp_pred_prior$mean_output1+2*sqrt(gp_pred_prior$var_comb_output1), col="gray")
+
+plot(true_SSR_post, gp_pred_post$mean_output1, xlab="true", ylab="pred", main="posterior validation")
+points(true_SSR_post, gp_pred_post$mean_output1-2*sqrt(gp_pred_post$var_comb_output1), col="gray")
+points(true_SSR_post, gp_pred_post$mean_output1+2*sqrt(gp_pred_post$var_comb_output1), col="gray")
+
+```
+
+
+```{r}
 # Prepare GP-MCMC tests. 
 
 # General settings to apply to all runs. 
@@ -126,10 +182,11 @@ best_idx <- which.max(init_design_info$lpost)
 theta_init <- init_design_info$inputs[best_idx,]
 
 # TEMP
-theta_init <- computer_model_data$theta_true
+# theta_init <- computer_model_data$theta_true
 
 # Initialize proposal covariance using design. 
 cov_prop_init <- cov(init_design_info$inputs)
+# cov_prop_init <- diag(rep(1, D))
 
 # Algorithm-specific settings list. 
 run_settings_list <- list()
@@ -138,7 +195,7 @@ run_settings_list <- list()
 #                                                adapt_cov=TRUE, 
 #                                                adapt_scale=FALSE)
 run_settings_list[["gibbs_traj"]] <- list(test_label="gibbs_traj", 
-                                          alg="ind_gp_trajectory",
+                                          alg="ind_gp_trajectory_trunc_prop",
                                           adapt_cov=FALSE, 
                                           adapt_scale=FALSE,
                                           use_gp_cov=TRUE, 

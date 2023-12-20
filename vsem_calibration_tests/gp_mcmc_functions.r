@@ -399,8 +399,8 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
     }
     
     # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0).
-    if(any(theta_prop < theta_prior_params[["bound_lower"]], na.rm = TRUE) ||
-       any(theta_prop > theta_prior_params[["bound_upper"]], na.rm = TRUE)) {
+    if(any(theta_prop < theta_prior_params[["bound_lower"]], na.rm=TRUE) ||
+       any(theta_prop > theta_prior_params[["bound_upper"]], na.rm=TRUE)) {
       
       theta_samp[itr,] <- theta_samp[itr-1,]
       SSR_curr <- SSR_samples[1,,drop=FALSE]
@@ -469,7 +469,153 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
 }
 
 
+mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, theta_prior_params, emulator_info_list,
+                                                        theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
+                                                        sig_eps_prior_params=NULL, N_itr=50000, adapt_cov=TRUE, 
+                                                        adapt_scale=TRUE, adapt_frequency=1000,
+                                                        accept_rate_target=0.24, proposal_scale_decay=0.7,  
+                                                        proposal_scale_multiplier=1, cov_prop_init=NULL, adapt_init_threshold=3,
+                                                        use_gp_cov=TRUE, second_gibbs_step=FALSE, ...) {
+  
+  # `theta_prior_params` should already be truncated, if desired. 
+  
+  if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
+    stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
+  }
+  
+  # Number observations in time series, number output variables, and dimension of parameter space.
+  p <- length(computer_model_data$output_vars)
+  d <- length(computer_model_data$pars_cal_names)
+  
+  # Ensure parameters in `theta_prior_params` are sorted correctly based on ordering in `computer_model_data`. 
+  theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
+  
+  # Objects to store samples.
+  theta_samp <- matrix(nrow=N_itr, ncol=d)
+  colnames(theta_samp) <- computer_model_data$pars_cal_names
+  sig2_eps_samp <- matrix(nrow=N_itr, ncol=p)
+  colnames(sig2_eps_samp) <- computer_model_data$output_vars
+  cov_prop_scales <- matrix(nrow=N_itr, ncol=d)
+  colnames(cov_prop_scales) <- computer_model_data$pars_cal_names
+  
+  # Set initial conditions. 
+  if(is.null(theta_init)) {
+    theta_init <- sample_prior_theta(theta_prior_params)
+  }
+  
+  if(learn_sig_eps) {
+    if(is.null(sig2_eps_init)) {
+      sig2_eps_init <- sample_prior_Sig_eps(sig_eps_prior_params)
+    }
+  } else {
+    if(is.null(sig2_eps_init)) stop("Value for `sig2_eps_init` must be provided when `learn_sig_eps` is FALSE.")
+  }
+  
+  theta_samp[1,] <- theta_init
+  sig2_eps_samp[1,] <- sig2_eps_init
+  
+  theta_scaled_curr <- scale_input_data(theta_samp[1,,drop=FALSE], input_bounds=emulator_info_list$input_bounds)
+  sig2_eps_curr <- sig2_eps_init
+  lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
+  
+  # Proposal covariance.
+  if(is.null(cov_prop_init)) Cov_prop <- diag(rep(1,d))
+  else Cov_prop <- cov_prop_init
+  L_prop <- t(chol(Cov_prop))
+  log_scale_prop <- log(2.38) - 0.5*log(d)
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(diag(Cov_prop))
+  accept_count <- 0
+  samp_mean <- theta_init
+  cov_prop_scales[1,] <- exp(effective_log_scale_prop)
+  
+  for(itr in seq(2, N_itr)) {
+    
+    #
+    # Metropolis step for theta.
+    #
+    
+    # theta proposals.
+    theta_prop <- tmvtnorm::rtmvnorm(1, mean=theta_samp[itr-1,], sigma=exp(2*log_scale_prop)*Cov_prop, 
+                                     lower=emulator_info_list$input_bounds["min",], 
+                                     upper=emulator_info_list$input_bounds["max",])[1,]
+    
+    # Sample from GP at input locations corresponding to current and proposed parameter values. 
+    theta_scaled_prop <- scale_input_data(matrix(theta_prop, nrow=1), emulator_info_list$input_bounds)
+    gp_pred_list <- predict_independent_GPs(X_pred=rbind(theta_scaled_curr, theta_scaled_prop), 
+                                            gp_obj_list=emulator_info_list$gp_fits, gp_lib=emulator_info_list$settings$gp_lib,
+                                            include_cov_mat=use_gp_cov, denormalize_predictions=TRUE,
+                                            output_stats=emulator_info_list$output_stats, cov_includes_nug=TRUE)
+    
+    if(use_gp_cov) {
+      SSR_samples <- sample_independent_GPs_corr(gp_pred_list, transformation_methods="rectified", 
+                                                 include_nugget=TRUE)
+    } else {
+      SSR_samples <- sample_independent_GPs_pointwise(gp_pred_list, 
+                                                      transformation_methods=emulator_info_list$settings$transformation_method, 
+                                                      include_nugget=TRUE)
+    }
+    
+    # Accept-Reject step.
+    lprior_theta_prop <- calc_lprior_theta(theta_prop, theta_prior_params)
+    lpost_theta_vals <- calc_lpost_theta_product_lik(computer_model_data, lprior_vals=c(lprior_theta_curr,lprior_theta_prop), 
+                                                     SSR=SSR_samples, vars_obs=sig2_eps_curr, 
+                                                     normalize_lik=FALSE, na.rm=TRUE, return_list=FALSE)
+    q_curr_prop <- tmvtnorm::dtmvnorm(theta_prop, mean=theta_samp[itr-1,], sigma=exp(2*log_scale_prop)*Cov_prop,
+                                      lower=emulator_info_list$input_bounds[1,], upper=emulator_info_list$input_bounds[2,], log=TRUE)
+    q_prop_curr <- tmvtnorm::dtmvnorm(theta_samp[itr-1,], mean=theta_prop, sigma=exp(2*log_scale_prop)*Cov_prop,
+                                      lower=emulator_info_list$input_bounds[1,], upper=emulator_info_list$input_bounds[2,], log=TRUE)
+    alpha <- min(1.0, exp(lpost_theta_vals[2] - lpost_theta_vals[1] + q_prop_curr - q_curr_prop))
+      
+    if(runif(1) <= alpha) {
+      theta_samp[itr,] <- theta_prop
+      theta_scaled_curr <- theta_scaled_prop
+      lprior_theta_curr <- lprior_theta_prop
+      SSR_curr <- SSR_samples[2,,drop=FALSE]
+      pred_idx_curr <- 2
+      accept_count <- accept_count + 1 
+    } else {
+      theta_samp[itr,] <- theta_samp[itr-1,]
+      SSR_curr <- SSR_samples[1,,drop=FALSE]
+      pred_idx_curr <- 1
+    }
 
+    # Adapt proposal covariance matrix and scaling term.
+    if(adapt_cov || adapt_scale) {
+      adapt_list <- adapt_cov_prop(adapt_cov, adapt_scale, Cov_prop, L_prop, log_scale_prop, theta_samp, itr,  
+                                   accept_count, alpha, samp_mean, effective_log_scale_prop, adapt_frequency,  
+                                   accept_rate_target, proposal_scale_decay, proposal_scale_multiplier, adapt_init_threshold)
+      
+      Cov_prop <- adapt_list$C
+      L_prop <- adapt_list$L
+      log_scale_prop <- adapt_list$log_scale
+      effective_log_scale_prop <- adapt_list$effective_log_scale
+      samp_mean <- adapt_list$samp_mean
+      accept_count <- adapt_list$accept_count
+      cov_prop_scales[itr,] <- exp(effective_log_scale_prop)
+    }
+    
+    #
+    # Gibbs step for sig2_eps. 
+    #
+    
+    if(learn_sig_eps) {
+      if(second_gibbs_step) {
+        SSR_curr <- sample_independent_GPs_pointwise(gp_pred_list, transformation_methods=emulator_info$settings$transformation_method,
+                                                     idx_selector=pred_idx_curr, include_nugget=TRUE)
+      }
+      
+      sig2_eps_curr <- sample_cond_post_Sig_eps(SSR=SSR_curr, Sig_eps_prior_params=sig_eps_prior_params, 
+                                                n_obs=computer_model_data$n_obs)
+      sig2_eps_samp[itr,] <- sig2_eps_curr
+    } else {
+      sig2_eps_samp[itr,] <- sig2_eps_init
+    }
+    
+  }
+  
+  return(list(theta=theta_samp, sig_eps=sig2_eps_samp, Cov_prop=Cov_prop, cov_prop_scale=cov_prop_scales))
+  
+}
 
 
 

@@ -1498,6 +1498,8 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   # Returns:
   #    list with 3 elements: computer_model_data, theta_prior_params, and true_posterior. 
   
+  set.seed(random_seed)
+  
   if(!all.equal(dim(G), c(N_obs, D))) {
     stop("Forward model G must be matrix of dimension N_obs x D.")
   }
@@ -1515,7 +1517,6 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   theta <- L_theta %*% matrix(rnorm(D), ncol=1)
   data_ref <- G %*% theta
 
-  set.seed(random_seed)
   if(is.null(sig2_eps)) {
     sig2_eps <- (diff(range(data_ref)) * sig_eps_frac)^2
   }
