@@ -157,10 +157,10 @@ adapt_cov_prop <- function(adapt_cov, adapt_scale, C, L, log_scale, sample_histo
 # on the correct scale (e.g. it should be on log scale for LNP).
 mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params, emulator_info_list,
                                         theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
-                                        sig_eps_prior_params=NULL, N_mcmc=50000, adapt_cov=TRUE, 
+                                        sig_eps_prior_params=NULL, N_itr=50000, adapt_cov=TRUE, 
                                         adapt_scale=TRUE, adapt_frequency=1000,
                                         accept_rate_target=0.24, proposal_scale_decay=0.7,  
-                                        proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3, ...) {
+                                        proposal_scale_multiplier=1, cov_prop_init_=NULL, adapt_init_threshold=3, ...) {
   # `theta_prior_params` should already be truncated, if desired. 
   
   if(isTRUE(learn_sig_eps && sig_eps_prior_params$dist != "IG")) {
@@ -175,14 +175,14 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
   theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
   
   # Objects to store samples.
-  theta_samp <- matrix(nrow=N_mcmc, ncol=d)
+  theta_samp <- matrix(nrow=N_itr, ncol=d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  sig2_eps_samp <- matrix(nrow=N_mcmc, ncol=p)
+  sig2_eps_samp <- matrix(nrow=N_itr, ncol=p)
   colnames(sig2_eps_samp) <- computer_model_data$output_vars
-  SSR_samp <- matrix(nrow=N_mcmc, ncol=p)
+  SSR_samp <- matrix(nrow=N_itr, ncol=p)
   colnames(SSR_samp) <- computer_model_data$output_vars
-  cov_prop_scales <- matrix(nrow=N_mcmc, ncol=p)
-  colnames(cov_prop_scales) <- computer_model_data$output_vars
+  cov_prop_scales <- matrix(nrow=N_itr, ncol=d)
+  colnames(cov_prop_scales) <- computer_model_data$pars_cal_names
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -212,16 +212,17 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
   SSR_samp[1,] <- SSR_curr
   
   # Proposal covariance.
-  if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
+  if(is.null(cov_prop_init)) Cov_prop <- diag(rep(1,d))
+  else Cov_prop <- cov_prop_init
   Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
   L_prop <- t(chol(Cov_prop))
-  log_scale_prop <- 0
-  effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
+  log_scale_prop <- log(2.38) - 0.5*log(d)
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(diag(Cov_prop))
   accept_count <- 0
   samp_mean <- theta_init
   cov_prop_scales[1,] <- exp(effective_log_scale_prop)
   
-  for(itr in seq(2, N_mcmc)) {
+  for(itr in seq(2, N_itr)) {
     
     #
     # Metropolis step for theta.
@@ -315,10 +316,10 @@ mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params,
 
 mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_params, emulator_info_list,
                                              theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
-                                             sig_eps_prior_params=NULL, N_mcmc=50000, adapt_cov=TRUE, 
+                                             sig_eps_prior_params=NULL, N_itr=50000, adapt_cov=TRUE, 
                                              adapt_scale=TRUE, adapt_frequency=1000,
                                              accept_rate_target=0.24, proposal_scale_decay=0.7,  
-                                             proposal_scale_multiplier=1, Cov_prop_init_diag=NULL, adapt_init_threshold=3,
+                                             proposal_scale_multiplier=1, cov_prop_init=NULL, adapt_init_threshold=3,
                                              use_gp_cov=TRUE, second_gibbs_step=FALSE, ...) {
   
   # `theta_prior_params` should already be truncated, if desired. 
@@ -335,12 +336,12 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
   theta_prior_params <- theta_prior_params[computer_model_data$pars_cal_names,]
   
   # Objects to store samples.
-  theta_samp <- matrix(nrow=N_mcmc, ncol=d)
+  theta_samp <- matrix(nrow=N_itr, ncol=d)
   colnames(theta_samp) <- computer_model_data$pars_cal_names
-  sig2_eps_samp <- matrix(nrow=N_mcmc, ncol=p)
+  sig2_eps_samp <- matrix(nrow=N_itr, ncol=p)
   colnames(sig2_eps_samp) <- computer_model_data$output_vars
-  cov_prop_scales <- matrix(nrow=N_mcmc, ncol=p)
-  colnames(cov_prop_scales) <- computer_model_data$output_vars
+  cov_prop_scales <- matrix(nrow=N_itr, ncol=d)
+  colnames(cov_prop_scales) <- computer_model_data$pars_cal_names
   
   # Set initial conditions. 
   if(is.null(theta_init)) {
@@ -363,16 +364,16 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
   lprior_theta_curr <- calc_lprior_theta(theta_init, theta_prior_params)
   
   # Proposal covariance.
-  if(is.null(Cov_prop_init_diag)) Cov_prop_init_diag <- (2.4)^2 / d
-  Cov_prop <- diag(Cov_prop_init_diag, nrow=d)
+  if(is.null(cov_prop_init)) Cov_prop <- diag(rep(1,d))
+  else Cov_prop <- cov_prop_init
   L_prop <- t(chol(Cov_prop))
-  log_scale_prop <- 0
-  effective_log_scale_prop <- log_scale_prop + 0.5*log(Cov_prop_init_diag)
+  log_scale_prop <- log(2.38) - 0.5*log(d)
+  effective_log_scale_prop <- log_scale_prop + 0.5*log(diag(Cov_prop))
   accept_count <- 0
   samp_mean <- theta_init
   cov_prop_scales[1,] <- exp(effective_log_scale_prop)
   
-  for(itr in seq(2, N_mcmc)) {
+  for(itr in seq(2, N_itr)) {
     
     #
     # Metropolis step for theta.

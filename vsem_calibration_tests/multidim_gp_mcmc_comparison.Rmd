@@ -116,7 +116,7 @@ for(fit in gp_fits) plot(fit)
 # Prepare GP-MCMC tests. 
 
 # General settings to apply to all runs. 
-N_mcmc <- 50000
+N_mcmc <- 1000
 learn_sig_eps <- FALSE
 sig2_eps_init <- sig2_eps
 
@@ -125,8 +125,11 @@ sig2_eps_init <- sig2_eps
 best_idx <- which.max(init_design_info$lpost)
 theta_init <- init_design_info$inputs[best_idx,]
 
+# TEMP
+theta_init <- computer_model_data$theta_true
+
 # Initialize proposal covariance using design. 
-cov_prop_init_diag <- diag(cov(init_design_info$inputs))
+cov_prop_init <- cov(init_design_info$inputs)
 
 # Algorithm-specific settings list. 
 run_settings_list <- list()
@@ -136,11 +139,11 @@ run_settings_list <- list()
 #                                                adapt_scale=FALSE)
 run_settings_list[["gibbs_traj"]] <- list(test_label="gibbs_traj", 
                                           alg="ind_gp_trajectory",
-                                          adapt_cov=TRUE, 
-                                          adapt_scale=TRUE,
+                                          adapt_cov=FALSE, 
+                                          adapt_scale=FALSE,
                                           use_gp_cov=TRUE, 
                                           second_gibbs_step=FALSE, 
-                                          Cov_prop_init_diag=NULL)
+                                          cov_prop_init=NULL)
 ```
 
 
@@ -151,17 +154,34 @@ mcmc_test_info <- run_gp_mcmc_tests(run_settings_list, computer_model_data=compu
                                     emulator_info_list=emulator_info_list, theta_init=theta_init,
                                     N_chain=4, N_itr=N_mcmc, burn_ins=NULL, learn_sig_eps=FALSE,
                                     return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, sig2_eps_init=sig2_eps, 
-                                    cov_prop_init_diag=cov_prop_init_diag)
+                                    cov_prop_init=cov_prop_init)
 mcmc_samp_dt <- mcmc_test_info$mcmc_samp_dt
 burn_ins <- mcmc_test_info$burn_ins
 ```
 
 
+```{r}
+# Append exact posterior samples. 
+N_samp_exact <- N_mcmc
+samp_exact <- t(drop(linear_Gaussian_info$true_posterior$mean) + 
+                t(chol(linear_Gaussian_info$true_posterior$Cov)) %*% matrix(rnorm(D*N_samp_exact), nrow=D, ncol=N_samp_exact))
+samp_exact_dt <- as.data.table(samp_exact)
+colnames(samp_exact_dt) <- computer_model_data$pars_cal_names
+samp_exact_dt[, c("param_type", "itr", "test_label") := list("theta", 1:N_samp_exact, "exact")]
+samp_exact_dt <- melt.data.table(samp_exact_dt, id.vars=c("param_type", "itr", "test_label"), 
+                                 variable.name="param_name", value.name="sample")
 
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
+```
 
+```{r}
+trace_plots <- get_trace_plots(mcmc_samp_dt)
+hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="theta", test_label_baseline="exact", 
+                                        xlab="samples", ylab="density", bins=30)
 
-
-
+for(plt in trace_plots) plot(plt)
+for(plt in hist_plots) plot(plt)
+```
 
 
 
