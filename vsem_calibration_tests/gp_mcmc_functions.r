@@ -2,6 +2,58 @@
 # gp_mcmc_functions.r
 # MCMC algorithms utilizing a Gaussian process (GP) emulator to accelerate inference. 
 #
+# Andrew Roberts
+#
+
+# -----------------------------------------------------------------------------
+# Code Standards
+# -----------------------------------------------------------------------------
+
+# All GP-MCMC functions must satisfy the following requirements: 
+#    - Function name has format "mcmc_calibrate_<algorithm-name>".
+#    - Required arguments: "computer_model_data", "theta_prior_params", "emulator_info_list", "..."; 
+#                          the ellipses is required as it allows for different algorithms to have 
+#                          additional unique arguments not required by other algorithms. 
+#    - Optional arguments taken by all GP-MCMC functions: "theta_init", "sig2_eps_init", 
+#      "learn_sig_eps", "sig_eps_prior_params", "N_itr", "adapt_cov", "adapt_scale", 
+#      "adapt_frequency", "accept_rate_target", "proposal_scale_decay", "proposal_scale_multiplier", 
+#      "cov_prop_init", "adapt_init_threshold". 
+#    - GP-MCMC functions can also have additional arguments beyond the required ones above. 
+#    - Return type: list, with potential (not required) named elements "theta", "sig_eps", "Cov_prop", 
+#                   "SSR", "cov_prop_scale". 
+
+# Description of required arguments: 
+#    - computer_model_data: list, see file "inverse_problem_functions.r" for description. 
+#    - theta_prior_params: data.frame, see file "inverse_problem_functions.r" for description. Note 
+#                          that for the GP-MCMC algorithms, the prior is typically truncated to prevent
+#                          posterior exploration outside of the bounds determined by the design points. 
+#                          Thus, "theta_prior_params" will often be a truncated version of the original 
+#                          prior.
+#    - emulator_info_list: list, see file "gp_emulator_functions.r" for description. 
+#    - theta_init: numeric(D), the initial calibration parameter value for MCMC. 
+#    - sig2_eps_init: numeric(P), the initial value of the vector of observation variances for MCMC. 
+#                     If "learn_sig_eps" is FALSE, this is a required argument and its value is used 
+#                     as the fixed observation variance values. 
+#    - learn_sig_eps: logical, if TRUE "sig2_eps" is treated as an unknown parameter and MCMC samples
+#                     over the joint state space (theta, sig2_eps), with independent inverse Gamma 
+#                     priors placed on the variances. 
+#   - sig_eps_prior_params: list, see file "inverse_problem_functions.r" for description. 
+#   - N_itr: integer, the number of MCMC iterations. 
+#   - cov_prop_init: matrix of dimension (D,D), the initial proposal covariance matrix, which will also 
+#                    be scaled by a global scaling constant; see "adapt_cov_prop()". If not adaptation 
+#                    is performed, then this is the fixed proposal covariance. 
+#   - All arguments with prefix "adapt_" concern the adaptation of the covariance proposal. See function 
+#     "adapt_cov_prop()". 
+
+# Description of elements in returned list: 
+#    - theta: matrix of dimension (N_itr,D) containing the "theta" MCMC samples (one per row). 
+#    - sig_eps: matrix of dimension (N_itr,P) containing the "sig2_eps" MCMC samples (one per row). 
+#    - SSR: matrix of dimension (N_itr,P) containing the SSR (i.e. model-data misfit) MCMC samples.  
+#           Only relevant for some algorithms. 
+#    - cov_prop_scale: matrix of dimension (N_itr,D) containing the effective scale (see "adapt_cov_prop()")
+#                      of the proposal covariance matrix at each iteration. This is the square root of the 
+#                      diagonal of the proposal covariance times the square root of the global scaling factor. 
+
 
 # -----------------------------------------------------------------------------
 # Helper Functions. 
@@ -59,7 +111,7 @@ sample_emulator_cond <- function(inputs_scaled, emulator_info_list, cond_type, s
 
 
 # -----------------------------------------------------------------------------
-# Adaptation Schemes
+# Proposal Covariance Adaptation 
 # -----------------------------------------------------------------------------
 
 adapt_cov_prop <- function(adapt_cov, adapt_scale, C, L, log_scale, sample_history, itr, accept_count,
@@ -152,16 +204,14 @@ adapt_cov_prop <- function(adapt_cov, adapt_scale, C, L, log_scale, sample_histo
 # Specific MCMC algorithms. 
 # -----------------------------------------------------------------------------
 
-# emulator_info_list: list with "gp_fits", "output_stats", "settings", and "input_bounds"
-# TODO: allow joint sampling, incorporating covariance between current and proposal. "output_stats" must be 
-# on the correct scale (e.g. it should be on log scale for LNP).
 mcmc_calibrate_ind_gp_gibbs <- function(computer_model_data, theta_prior_params, emulator_info_list,
                                         theta_init=NULL, sig2_eps_init=NULL, learn_sig_eps=FALSE, 
                                         sig_eps_prior_params=NULL, N_itr=50000, adapt_cov=TRUE, 
                                         adapt_scale=TRUE, adapt_frequency=1000,
                                         accept_rate_target=0.24, proposal_scale_decay=0.7,  
                                         proposal_scale_multiplier=1, cov_prop_init_=NULL, adapt_init_threshold=3, ...) {
-  # `theta_prior_params` should already be truncated, if desired. 
+  # Samples from the finite-dimensional GP emulator extended state space (theta, sig2_eps, phi), using 
+  # a Metropolis-within-Gibbs approach with separate steps for `theta`, `sig2_eps`, and `phi`. 
   
   if(isTRUE(learn_sig_eps && sig_eps_prior_params$dist != "IG")) {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
@@ -321,8 +371,16 @@ mcmc_calibrate_ind_gp_trajectory <- function(computer_model_data, theta_prior_pa
                                              accept_rate_target=0.24, proposal_scale_decay=0.7,  
                                              proposal_scale_multiplier=1, cov_prop_init=NULL, adapt_init_threshold=3,
                                              use_gp_cov=TRUE, second_gibbs_step=FALSE, ...) {
-  
-  # `theta_prior_params` should already be truncated, if desired. 
+  # A GP-MCMC trajectory type algorithm, with the GP being viewed as an infinite-dimensional parameter. 
+  # 
+  # Function specific arguments: 
+  #    - use_gp_cov: logical(1), if TRUE samples from the joint GP predictive distribution between 
+  #                  the the current and proposed theta values. If FALSE, samples independently from 
+  #                  the univariate predictive distributions (with the predictive covariance ignored). 
+  #    - second_gibbs_step: logical(1), if TRUE performs a second Gibbs step for "phi" before the 
+  #                         "sig2_eps" step. This second Gibbs step only requires sampling from the 
+  #                         univariate predictive distribution at the current theta value. If FALSE, 
+  #                         a second Gibbs step is not performed. 
   
   if(learn_sig_eps && sig_eps_prior_params$dist != "IG") {
     stop("`mcmc_calibrate_ind_GP()` requires inverse gamma priors on observation variances.")
