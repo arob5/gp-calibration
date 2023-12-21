@@ -98,8 +98,8 @@ emulator_settings <- data.frame(gp_lib = c("hetGP"),
                                 normalize_y = TRUE)
 
 # Generate design. 
-input_bounds <- matrix(c(min=qnorm(.01, theta_prior_params$param1, theta_prior_params$param2), 
-                         max=qnorm(.99, theta_prior_params$param1, theta_prior_params$param2)), ncol=D)
+input_bounds <- rbind(qnorm(.01, theta_prior_params$param1, theta_prior_params$param2), 
+                      qnorm(.99, theta_prior_params$param1, theta_prior_params$param2))
 rownames(input_bounds) <- c("min", "max")
 colnames(input_bounds) <- computer_model_data$pars_cal_names
 theta_prior_params_trunc <- truncate_prior_theta(theta_prior_params, input_bounds)
@@ -172,7 +172,7 @@ points(true_SSR_post, gp_pred_post$mean_output1+2*sqrt(gp_pred_post$var_comb_out
 # Prepare GP-MCMC tests. 
 
 # General settings to apply to all runs. 
-N_mcmc <- 1000
+N_mcmc <- 50000
 learn_sig_eps <- FALSE
 sig2_eps_init <- sig2_eps
 
@@ -195,10 +195,10 @@ run_settings_list <- list()
 #                                                adapt_cov=TRUE, 
 #                                                adapt_scale=FALSE)
 run_settings_list[["gibbs_traj"]] <- list(test_label="gibbs_traj", 
-                                          alg="ind_gp_trajectory_trunc_prop",
-                                          adapt_cov=FALSE, 
-                                          adapt_scale=FALSE,
-                                          use_gp_cov=TRUE, 
+                                          alg="ind_gp_trajectory",     # "ind_gp_trajectory_trunc_prop",
+                                          adapt_cov=TRUE, 
+                                          adapt_scale=TRUE,
+                                          use_gp_cov=FALSE, 
                                           second_gibbs_step=FALSE, 
                                           cov_prop_init=NULL)
 ```
