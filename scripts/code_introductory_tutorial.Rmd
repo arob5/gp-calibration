@@ -30,3 +30,35 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 source(file.path(src_dir, "sequential_design_optimization.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 ```
+
+# 1D Linear Gaussian Model 
+
+We begin we the simplest possible example, the one-dimensional linear Gaussian model 
+$$
+\begin{align*}
+\mathbf{y} &= \mathbf{g}u + \epsilon \\
+\epsilon &\sim \mathcal{N}(0, \sigma_\epsilon^2) \\
+u &\sim \mathcal{N}(\mu_0, \sigma^2_0),
+\end{align*}
+$$
+where $\mathbf{g}, \mathbf{y} \in \mathbb{R}^T$ and the noise variance $\sigma_\epsilon^2$ is assumed to be known. This results in an unnormalized log posterior density 
+$$
+\ell^\pi(u) \propto -\frac{1}{2} \log(2\pi\sigma_{\epsilon}^2) - \frac{\Phi(u)}{2\sigma^2_\epsilon} - \frac{1}{2\sigma^2_0}(u - \mu_0)^2,
+$$
+where 
+$$
+\Phi(u) := ||\mathbf{y} - \mathbf{g}u||_2^2
+$$
+is the model-data misfit.
+
+
+
+
+
+
+
+
+
+
+
+

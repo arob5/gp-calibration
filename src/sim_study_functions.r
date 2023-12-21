@@ -1,10 +1,11 @@
 # ---------------------------------------------------------------------------------------------------
 # sequential_design_sim_study.r
 # Simulation study for comparing different approaches to (batch) sequential design with GP emulator. 
+# Dependencies: mcmc_calibration_functions.r, gp_emulator_functions.r, 
+#               sequential_design_optimiation.r
 #
 # Andrew Roberts
 # ---------------------------------------------------------------------------------------------------
-
 
 library(lhs)
 library(hetGP)
@@ -14,12 +15,6 @@ library(viridis)
 library(gridExtra)
 library(data.table)
 library(BayesianTools)
-
-source("numerical_experiment_functions.r")
-source("mcmc_calibration_functions.r")
-source("gp_emulator_functions.r")
-source("sequential_design_optimization.r")
-
 
 # -----------------------------------------------------------------------------
 # Setup:
