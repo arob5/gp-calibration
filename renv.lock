@@ -538,10 +538,10 @@
     },
     "gmm": {
       "Package": "gmm",
-      "Version": "1.7",
+      "Version": "1.8",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "cd3eb51c5334b4e73df05d6de8e00a13",
+      "Hash": "3ffb863ccab67ccd2f1e8e804018ebc0",
       "Requirements": [
         "sandwich"
       ]
