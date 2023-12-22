@@ -47,25 +47,67 @@ $$
 is the data-misfit.
 
 
+Recently Ive been setting a "global" random seed at the beginning of these documents, but also 
+defining some "local" seeds that gives me a bit more control of the random number generator 
+for certain portions of the analysis pipeline. 
 ```{r}
-# Linear Gaussian Model Setup. 
+# Global seed.
+set.seed(15)
+
+# Local seeds. 
+data_seed <- 23
+design_seed <- 40
+```
+
+
+Here we generate synthetic data corresponding to the linear Gaussian inverse problem outlined above. 
+This is a common test case (it is convenient for testing since the posterior distribution of the linear  
+Gaussian model is known is closed-form) so I have written a function that does most of the work in setting 
+up the example. 
+```{r}
+#
+# Linear Gaussian Model Setup.
+#
+
+# Number of observations (i.e. N, the dimensionality of the vector y).
 N_obs <- 100
+
+# Define the linear forward model "g". In this case I'm just defining g to 
+# make the forward model a linear combination of some periodic basis functions. 
+# "sig2_eps" is the observation variance (the variance parameter in the 
+# Gaussian likelihood). "Sig0" is the variance of the Gaussian prior on 
+# the calibration parameter "u" (in the case where "u" is more than 
+# one-dimensional this would be the prior covariance matrix). 
 freq <- 1
 g <- matrix(sin(2*pi*freq*seq(1, N_obs)/N_obs), ncol=1)
 sig2_eps <- 1
 sig2_0 <- matrix(1)
 mu0 <- 0
+```
 
-# linear_Gaussian_info <- generate_linear_Gaussian_test_data(linear_Gaussian_seed, N_obs=N_obs, 
-#                                                            D=1, Sig_theta=sig2_0, G=g, sig2_eps=sig2_eps)
-# computer_model_data <- linear_Gaussian_info$computer_model_data
-# theta_prior_params <- linear_Gaussian_info$theta_prior_params
-# linear_Gaussian_info$true_posterior$SSR <- get_computer_model_SSR(computer_model_data, 
-#                                                                   theta_vals=linear_Gaussian_info$true_posterior$mean, 
-#                                                                   na.rm=TRUE)
-# 
-# plot(1:N_obs, computer_model_data$data_obs, main = "Ground Truth and Observed Data", xlab = "t")
-# lines(1:N_obs, computer_model_data$data_ref, col = "red")
+Now we pass in the above parameters to the function which generates the synthetic data from 
+the linear Gaussian model. Note that in the code I use "theta" often to mean the calibration 
+parameter ("u" in the notation above).
+```{r}
+
+# The function gives a list with the data and some other information. 
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs=N_obs, D=1,
+                                                           Sig_theta=sig2_0, G=g, sig2_eps=sig2_eps)
+
+# "computer_model_data" is a list that most importantly stores the forward model 
+# in the inverse problem (I use "forward model" and "computer model") interchangeably. 
+# The forward model is accessed via `computer_model_data$f`. This list also stores 
+# the observed data "y" accessed via `computer_model_data$data_obs`. I would eventually 
+# like to split the data into its own list separate from the forward model. 
+computer_model_data <- linear_Gaussian_info$computer_model_data
+
+# A data.frame containing information defining the prior distributions on the calibrations parameters. 
+theta_prior_params <- linear_Gaussian_info$theta_prior_params
+
+# Plot observed data and the ground truth (i.e. the signal without any noise). 
+plot(1:N_obs, computer_model_data$data_obs, main="Ground Truth and Observed Data", 
+     xlab="t", ylab="y")
+lines(1:N_obs, computer_model_data$data_ref, col="red")
 ```
 
 

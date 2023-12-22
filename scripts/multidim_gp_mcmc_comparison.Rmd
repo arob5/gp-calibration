@@ -46,7 +46,6 @@ source("sequential_design_sim_study.r")
 
 
 ```{r}
-
 # Global seed.
 set.seed(15)
 
