@@ -9,10 +9,18 @@ output: html_document
 knitr::opts_chunk$set(echo=TRUE, include=TRUE)
 ```
 
+
+```{r}
+# Should print the project directory "gp-calibration". If it doesn't, change the 
+# RStudio settings in Tools -> Global Options -> R Markdown -> Set "Evaluate
+# chunks in directory:" to "Project". 
+getwd()
+```
+
+
 ```{r, echo = FALSE, include = FALSE}
-# Working directory should be "pecan/scripts/".
 base_dir <- getwd()
-src_dir <- file.path(base_dir, "..", "src")
+src_dir <- file.path(base_dir, "src")
 
 library(lhs)
 library(hetGP)

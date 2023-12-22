@@ -9,13 +9,17 @@
 *.html
 output/
 images/
-renv/
 support_points/
 *.bbl
 *.blg
 .Rproj.user
 emulator_metrics_illustration_files/
 gp_emulator_error_metrics_files/
-.Rprofile
 *.svg
+*.git
+
+# Ignore everything in renv folder except for select files. 
+renv/*
+!renv/activate.R
+!renv/settings.dcf
 
