@@ -16,7 +16,6 @@ support_points/
 .Rproj.user
 emulator_metrics_illustration_files/
 gp_emulator_error_metrics_files/
-*.Rproj
 .Rprofile
 *.svg
 
