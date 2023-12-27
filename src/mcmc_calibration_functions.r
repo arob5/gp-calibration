@@ -398,7 +398,7 @@ run_VSEM_single_input_old <- function(par_val, ref_pars = NULL, pars_cal_sel = N
 }
 
 
-calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds = FALSE) {
+calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds=FALSE) {
   # A wrapper around `calc_lprior_theta_single_input()` that allows computation of the 
   # log prior density at multiple input values. 
   #
@@ -485,9 +485,9 @@ calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_boun
 }
 
 
-calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL, llik_vals = NULL, theta_vals = NULL, 
-                                         SSR = NULL, vars_obs = NULL, normalize_lik = TRUE, na.rm = FALSE,
-                                         theta_prior_params = NULL, return_list = TRUE) {
+calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals=NULL, llik_vals=NULL, theta_vals=NULL, 
+                                         SSR=NULL, vars_obs=NULL, normalize_lik=TRUE, na.rm=FALSE,
+                                         theta_prior_params=NULL, return_list=TRUE) {
   # Evaluates the exact log-posterior theta conditional density, up to the normalizing constant. Note that this is the theta density, conditional 
   # on the likelihood paramters, so the prior on the observation variances (Sigma) are included in the normaling constant, which is dropped. 
   # This functions provides the option to calculate the log prior and log likelihood from scratch, at the given parameter values `theta_vals` 
@@ -521,11 +521,11 @@ calc_lpost_theta_product_lik <- function(computer_model_data, lprior_vals = NULL
                                        sum_output_lliks = TRUE)
   }
   
-  if(!return_list) return(lprior_vals + llik_vals)
+  if(!return_list) return(lprior_vals+llik_vals)
   
-  return(list(lpost = lprior_vals + llik_vals, 
-              lprior = lprior_vals, 
-              llik = llik_vals))
+  return(list(lpost=lprior_vals+llik_vals, 
+              lprior=lprior_vals, 
+              llik=llik_vals))
   
 }
 
@@ -593,7 +593,7 @@ get_computer_model_errs <- function(theta_vals, computer_model_data) {
 }
 
 
-get_computer_model_SSR <- function(computer_model_data, model_outputs_list = NULL, theta_vals = NULL, na.rm = TRUE) {
+get_computer_model_SSR <- function(computer_model_data, model_outputs_list=NULL, theta_vals=NULL, na.rm=TRUE) {
   # Computes the sum of squared residuals (SSR) between model runs and observed 
   # data on a per-output basis. Can handle multiple model runs (e.g. one per 
   # design point for emulation) or outputs from single model run (e.g. as required
@@ -1376,7 +1376,7 @@ truncate_prior_theta <- function(theta_prior_params, input_bounds) {
 }
 
 
-sample_prior_Sig_eps <- function(Sig_eps_prior_params, return_matrix = FALSE) {
+sample_prior_Sig_eps <- function(Sig_eps_prior_params, return_matrix=FALSE) {
   # Returns sample from prior distribution on the p x p observation covariance matrix Sig_eps.
   #
   # Args:
@@ -1412,7 +1412,7 @@ sample_prior_Sig_eps <- function(Sig_eps_prior_params, return_matrix = FALSE) {
 }
 
 
-sample_cond_post_Sig_eps <- function(model_errs = NULL, SSR = NULL, Sig_eps_prior_params, n_obs, return_matrix = FALSE) {
+sample_cond_post_Sig_eps <- function(model_errs=NULL, SSR=NULL, Sig_eps_prior_params, n_obs, return_matrix=FALSE) {
   # Return sample of the observation covariance matrix Sig_eps, drawn from the conditional  
   # posterior p(Sig_eps|theta, Y). Under the model assumptions, this conditional posterior 
   # has an inverse Wishart or Inverse Gamma product distribution. This function does not explicitly take theta as an 
@@ -1967,8 +1967,8 @@ get_gp_approx_posterior_LNP_params<- function(sig2_outputs, lprior_theta, gp_mea
 }
 
 
-gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs = NULL, lprior_theta = NULL, gp_mean_pred = NULL, gp_var_pred = NULL, n_obs = NULL, 
-                                                 lnorm_log_mean = NULL, lnorm_log_var = NULL) {
+gp_approx_posterior_pred_log_density <- function(log_vals, sig2_outputs=NULL, lprior_theta=NULL, gp_mean_pred=NULL, gp_var_pred=NULL, n_obs=NULL, 
+                                                 lnorm_log_mean=NULL, lnorm_log_var=NULL) {
   # This function assumes a product Gaussian likelihood, where independent GPs have been used to emulate
   # the sum of squared errors for each output. The density evaluated is the predictive density of the posterior 
   # approximation ("pi star"). Under the stated assumptions, this is a log-normal density. Either the two parameters 
@@ -2113,8 +2113,8 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
 }
 
 
-compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels = NULL, 
-                                     param_types = NULL, param_names = NULL, subset_samp = TRUE) {
+compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, 
+                                     param_types=NULL, param_names=NULL, subset_samp=TRUE) {
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
   #
   # Args:
@@ -2128,20 +2128,20 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start = NULL, test_labels 
                                      
   # Select rows and columns `samp_dt` required for computing metrics. 
   if(subset_samp) {
-    samp_dt <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                param_types = param_types, param_names = param_names)
+    samp_dt <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                param_types=param_types, param_names=param_names)
   }
   
   # Compute statistics. 
-  mcmc_param_stats <- samp_dt[, .(samp_mean = mean(sample), samp_var = var(sample)), by = .(test_label, param_type, param_name)]
+  mcmc_param_stats <- samp_dt[, .(samp_mean=mean(sample), samp_var=var(sample)), by=.(test_label, param_type, param_name)]
   
   return(mcmc_param_stats)
   
 }
 
 
-compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2, metrics, burn_in_start = NULL,
-                                            param_types = NULL, param_names = NULL) {
+compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2, metrics, burn_in_start=NULL,
+                                            param_types=NULL, param_names=NULL) {
   # Computes metrics that quantify the difference between two distributions, given samples from the two distributions. 
   # The samples from the distributions are assumed to both be stored in `samp_dt`, with the column "test_label" 
   # identifying the two distributions. The distribution associated with the label `test_label_1` is assumed to be 
@@ -2217,13 +2217,74 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
       cov_diffs[, (test_label_2) := L2(C2)]
       cov_diffs[, diff := L2(C1 - C2)]
       cov_diffs[, diff_rel := diff / C1_frobenius]
-      metrics_agg <- rbindlist(list(metrics_agg, cov_diffs), use.names = TRUE)
+      metrics_agg <- rbindlist(list(metrics_agg, cov_diffs), use.names=TRUE)
     }
 
   }
   
+  return(list(metrics_individual=means, metrics_agg=metrics_agg))
   
-  return(list(metrics_individual = means, metrics_agg = metrics_agg))
+}
+
+
+compute_mcmc_running_err_multivariate <- function(samp_dt, test_labels=NULL, param_types=NULL, 
+                                                  param_names=NULL, burn_in_start=NULL, 
+                                                  init_running_err_using_burnin=TRUE) {
+  
+  for(test_label in test_labels) {
+    for(param_type in param_types) {
+      for(param_name in param_names) {
+        # TODO
+      }
+    }
+  }
+  
+}
+
+
+compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, 
+                                                  mean_curr=NULL, cov_curr=NULL) {
+  # Computes 1.) running L2 norm between running sample mean and a given true mean and 
+  # 2.) running Frobenius norm between running empirical covariance and a given true 
+  # covariance matrix. 
+  #
+  # Args:
+  #    samp: matrix, where the ith row is interpreted as the ith sample.  
+  #    mean_true: numeric or matrix with one row, the true mean. Dimension must 
+  #               agree with the number of columns of `samp`. 
+  #    cov_true: matrix of dimension (ncol(samp), ncol(samp)). The true covariance matrix. 
+  #    mean_curr: numeric or matrix with one row. Typically used when `samp` is excluding 
+  #               some earlier samples and one wants to intialize the running mean to the 
+  #               sample mean of these excluded samples. 
+  #    cov_curr: matrix of dimension (ncol(samp), ncol(samp)), analoglous to `mean_curr`. 
+  #              This is especially useful when early values of `samp` are excluded  
+  #              in order to prevent a singular covariance matrix (e.g. when the early 
+  #              iterations of MCMC are stuck at a single value). 
+  #
+  # Returns:
+  #    list, with named elements "mean" and "cov". Each are numeric vectors of length equal 
+  #    to the length of `samp` containing the running errors. 
+  
+  mean_err <- vector(mode="numeric", length=nrow(samp))
+  cov_err <- vector(mode="numeric", length=nrow(samp))
+  mean_true <- drop(mean_true)
+
+  if(is.null(mean_curr)) mean_curr <- colMeans(samp[1:2,,drop=FALSE])
+  else mean_curr <- drop(mean_curr)
+    
+  if(is.null(cov_curr)) cov_curr <- cov(samp[1:2,,drop=FALSE])
+  
+  for(i in seq(3,nrow(samp))) {
+    # Update mean and covariance. 
+    cov_curr <- tcrossprod(samp[i,]-mean_curr)/i + (i-2)/(i-1)*cov_curr
+    mean_curr <- samp[i,]/i + ((i-1)/i)*mean_curr
+    
+    # Compute error measures. 
+    mean_err[i] <- sqrt(sum((mean_curr - mean_true)^2))
+    cov_err[i] <- sqrt(sum((cov_curr - cov_true)^2))
+  }    
+  
+  return(list(mean=mean_err, cov=cov_err))
   
 }
 
