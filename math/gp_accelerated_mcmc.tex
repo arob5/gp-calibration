@@ -41,10 +41,12 @@
 \newtheorem{corollary}{Corollary}
 
 % Title and author
-\title{Gaussian Process Accelerated MCMC Algorithm}
+\title{Gaussian Process Accelerated MCMC Algorithms}
 \author{Andrew Roberts}
 
 \begin{document}
+
+\maketitle
 
 % Setup and Notation
 \section{Setup and Notation}
@@ -260,8 +262,10 @@ p(\CovObs|\bpar, \stateMat)
 
 % MCMC Algorithms: Sampling Trajectories
 \section{MCMC Algorithms: Sampling Trajectories}
+
+\subsection{Incorporating GP Predictive Covariance}
 We note that the extended state space approach does not directly take into account the GP covariance structure (although the covariance can be used to design proposal
-mechanisms for the resulting algorithms). By contrast, we might extend the state space as $(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR})$, where $\indexDesign[\Ndesign]{\SSR})$
+mechanisms for the resulting algorithms). By contrast, we might extend the state space as $(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR})$, where $\indexDesign[\Ndesign]{\SSR}$
 is now treated formally as an infinite-dimensional parameter (a random function). At this point, all posterior manipulations below will be purely formal, in the sense that I have not rigorously 
 defined the infinite-dimensional setting. There is an established theory for MCMC in function space that might be helpful here. With this caveat, consider the following definition of the joint 
 distribution over these unknowns. We adopt the modular approach of conditioning the GP prior to the MCMC step, and have been using 
@@ -270,11 +274,11 @@ we then have
 \begin{align*}
 &p(\bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}, \stateMat) = 
 p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR})p(\indexDesign[\Ndesign]{\SSR}) \priorDens(\bpar) \priorDens(\CovObs).
+\footnote{What feels a bit odd to me here is that
+$p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}) = p(\stateMat | \bpar, \CovObs, (\SSR|\stateMat))$.
+}
 \end{align*}
-What feels a bit odd to me here is 
-\[
-p(\stateMat | \bpar, \CovObs, \indexDesign[\Ndesign]{\SSR}) = p(\stateMat | \bpar, \CovObs, (\SSR|\stateMat))
-\]
+This leads to a Metropolis-within-Gibbs algorithm distinct from those discussed previously. In particular, 
 
 
 % Numerical Experiments

@@ -2113,6 +2113,45 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
 }
 
 
+select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, burn_in_start=NULL) {
+  # Converts MCMC samples from long to wide format. Wide format means that a 
+  # matrix is returned where each row is a sample. A `param_type` (e.g. "theta") must be selected so 
+  # that each row of the matrix is a valid parameter vector (e.g. each row is a sampled parameter 
+  # calibration vector). Alternatively, a subset of the parameters for a specific parameter type 
+  # can be returned by passing the `param_names` argument. It is recommended to pass this argument 
+  # even if all parameters of a specific type are to be returned, as passing `param_names` will 
+  # order to the columns according to `param_names`, which ensures that the ordering is correct. 
+  #
+  # Args:
+  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
+  #    test_label: character(1), the single test label to select. 
+  #    param_type: character(1), the single parameter type to select. Must be a type within the  
+  #                specified `test_label`. 
+  #    param_names: character, if provided then selects the specific parameter names provided, and 
+  #                also orders the columns of the returned matrix in the order they are provided
+  #                in this argument. The parameters specified here must be of the type specified 
+  #                by `param_type` and contained within the test label specified by `test_label`. 
+  #                If NULL, selects all parameters within the param type, and no explicit ordering 
+  #                is performed. 
+  #    burn_in_start: integer(1), the starting iteration to use for the samples from the test label. 
+  #                   If NULL, does not drop any burn-in. 
+  #
+  # Returns:
+  #    matrix, where each row is a sample from the selected parameters, with burn-in dropped if specified. 
+  
+  if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
+  
+  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name)
+  samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
+  samp_mat <- as.matrix(samp[, .SD, .SDcols=!"itr"])
+  
+  if(!is.null(param_names)) samp_mat <- samp_mat[,param_names, drop=FALSE]
+  
+  return(samp_mat)
+
+}
+
+
 compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, 
                                      param_types=NULL, param_names=NULL, subset_samp=TRUE) {
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
@@ -2234,7 +2273,7 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, test_labels=NULL, par
   for(test_label in test_labels) {
     for(param_type in param_types) {
       for(param_name in param_names) {
-        # TODO
+        select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name)
       }
     }
   }
@@ -2999,10 +3038,10 @@ get_trace_plots_wide <- function(samp_df, burn_in_start = 1, ...) {
 }
 
 
-get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1, bins = 30, vertical_lines = NULL, ...) {
+get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start=1, bins=30, vertical_lines=NULL, ...) {
   # Generates one plot per parameter name. 
   
-  samp_df_plot <- select_mcmc_samp(mcmc_samp_df = samp_df, param_names = param_names, burn_in_start = burn_in_start, ...)
+  samp_df_plot <- select_mcmc_samp(mcmc_samp_df=samp_df, param_names=param_names, burn_in_start=burn_in_start, ...)
   
   # Produce one plot per parameter name. 
   plts <- vector(mode = "list", length = length(param_names))
@@ -3072,7 +3111,8 @@ get_mcmc_marginal_hist_plot <- function(samp_df, param_names, burn_in_start = 1,
 #   
 # }
 
-select_mcmc_samp_wide <- function(mcmc_samp_df, burn_in_start = NULL, test_labels = NULL, param_types = NULL, param_names = NULL, col_names = NULL, ...) {
+select_mcmc_samp_wide <- function(mcmc_samp_df, burn_in_start=NULL, test_labels=NULL, 
+                                  param_types=NULL, param_names=NULL, col_names=NULL, ...) {
   # A convenience function to select the desired columns and rows of a data.frame of MCMC samples `mcmc_samp_df`. Column selection is 
   # performed by `select_mcmc_samp_cols()` while burn-in exclusion is handled by `get_mcmc_burn_in_start_itrs()`. The data.frame 
   # with selected columns and burn-in excluded is returned in long format with columns "variable" and "value" (the sample value). 
