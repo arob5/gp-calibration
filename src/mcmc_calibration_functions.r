@@ -1594,8 +1594,11 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   
   Sig_theta_cal_inv <- chol2inv(chol(Sig_theta_cal))
   Cov_post <- chol2inv(chol(crossprod(G_cal)/sig2_eps + Sig_theta_cal_inv))
-  
   mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
+  
+  colnames(mean_post) <- pars_cal_names
+  rownames(Cov_post) <- pars_cal_names
+  colnames(Cov_post) <- pars_cal_names
   true_posterior <- list(mean=mean_post, Cov=Cov_post)
   
   return(list(computer_model_data=computer_model_data, theta_prior_params=theta_prior_params, 
@@ -2138,12 +2141,15 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   #
   # Returns:
   #    matrix, where each row is a sample from the selected parameters, with burn-in dropped if specified. 
+  #    Rownames are set to the iteration numbers. 
   
   if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
   
   samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name)
   samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
+  itrs <- samp$itr
   samp_mat <- as.matrix(samp[, .SD, .SDcols=!"itr"])
+  rownames(samp_mat) <- itrs
   
   if(!is.null(param_names)) samp_mat <- samp_mat[,param_names, drop=FALSE]
   
@@ -2202,8 +2208,8 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
   
   # Select rows and columns `samp_dt` required for computing metrics. 
   test_labels <- c(test_label_1, test_label_2)
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                     param_types = param_types, param_names = param_names)
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types=param_types, param_names=param_names)
       
   # Compute univariate MCMC means and variance estimates.  
   mcmc_param_stats <- compute_mcmc_param_stats(samp_dt_subset, burn_in_start = burn_in_start, test_labels = test_labels, 
@@ -2266,32 +2272,84 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
 }
 
 
-compute_mcmc_running_err_multivariate <- function(samp_dt, test_labels=NULL, param_types=NULL, 
+compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true, 
+                                                  param_type, test_labels=NULL,
                                                   param_names=NULL, burn_in_start=NULL, 
                                                   init_running_err_using_burnin=TRUE) {
+  # A wrapper around `compute_samp_running_err_multivariate()` which computes the running mean
+  # and covariance error (with respect to the baseline provided in `true_mean_list` and 
+  # `true_cov_list`) across different test labels (for a single param_type). One call to
+  # `compute_samp_running_err_multivariate()` is made for each test label. By default, 
+  # the error measures are computed using all parameters within the specified parameter
+  # type; however, `param_names` can also be specified to select a subset of parameters
+  # within the parameter type; the multivariate error measures will then be computed for 
+  # this subset. 
+  #
+  # Args:
+  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`.    
+  #    mean_true: numeric or matrix with one row, the true mean. If numeric vector, 
+  #               must have  names set to parameter names; if matrix, must have column 
+  #               names set to parameter names. If `param_names` is provided, `mean_true`
+  #               will be subsetted to select only the relevant parameters. 
+  #    cov_true: matrix of dimension (ncol(samp), ncol(samp)). The true covariance matrix. 
+  #              Must have row and column names set to parameter names. If `param_names` is 
+  #             provided, `cov_true` will be subsetted to select only the relevant parameters. 
+  #    param_type: character(1), the parameter type to select. 
+  #    test_labels: character, vector of test labels. If NULL uses all test labels in `samp_dt`. 
+  #    param_names: character, if non-NULL, selects a subset of parameters within the param 
+  #                 type. 
+  # TODO: finish argument comments. 
+  #
+  # Returns:
+  #    data.table, with columns "test_label", "param_type", "itr", "mean_err", "cov_err". See
+  #    `compute_samp_running_err_multivariate()` for details on the error measures. Note that
+  #    these error measures are computed with respect to the parameter vectors determined by 
+  #    `param_names`. 
   
-  for(test_label in test_labels) {
-    for(param_type in param_types) {
-      for(param_name in param_names) {
-        select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name)
-      }
-    }
+  err_dt <- data.table(test_label=character(), 
+                       itr=integer(),
+                       mean_err=numeric(),
+                       cov_err=numeric())
+  
+  samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, param_types=param_type, 
+                              param_names=param_names, burn_in_start=burn_in_start)
+  if(is.null(test_labels)) test_labels <- unique(samp_dt$test_label)
+  
+  mean_true <- drop(mean_true)
+  if(!is.null(param_names)) {
+    mean_true <- mean_true[param_names]
+    cov_true <- cov_true[param_names, param_names]
   }
   
+  for(test_label in test_labels) {
+    samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=test_label, param_type=param_type)
+    err_list <- compute_samp_running_err_multivariate(samp_mat, mean_true, cov_true)
+    dt_curr <- data.table(test_label=test_label, itr=err_list$itr, mean_err=err_list$mean, cov_err=err_list$cov)
+    err_dt <- rbindlist(list(err_dt, dt_curr), use.names=TRUE)               
+  }
+  
+  err_dt[, param_type := param_type]
+  return(err_dt)
+
 }
 
 
-compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, 
-                                                  mean_curr=NULL, cov_curr=NULL) {
+compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mean_curr=NULL, cov_curr=NULL) {
+                                                  
   # Computes 1.) running L2 norm between running sample mean and a given true mean and 
   # 2.) running Frobenius norm between running empirical covariance and a given true 
   # covariance matrix. 
   #
   # Args:
-  #    samp: matrix, where the ith row is interpreted as the ith sample.  
-  #    mean_true: numeric or matrix with one row, the true mean. Dimension must 
-  #               agree with the number of columns of `samp`. 
+  #    samp: matrix, with rows equal to samples, i.e. must be in the wide 
+  #          format as returned by `select_mcmc_samp_mat()`. Must have column names set to the 
+  #          parameter names and rownames set to the iteration numbers. 
+  #    mean_true: numeric or matrix with one row, the true mean. Dimension must agree
+  #               with the number of columns of `samp`. If numeric vector, must have 
+  #               names set to parameter names; if matrix, must have column names set to
+  #               parameter names. 
   #    cov_true: matrix of dimension (ncol(samp), ncol(samp)). The true covariance matrix. 
+  #              Must have row and column names set to parameter names. 
   #    mean_curr: numeric or matrix with one row. Typically used when `samp` is excluding 
   #               some earlier samples and one wants to intialize the running mean to the 
   #               sample mean of these excluded samples. 
@@ -2301,17 +2359,28 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true,
   #              iterations of MCMC are stuck at a single value). 
   #
   # Returns:
-  #    list, with named elements "mean" and "cov". Each are numeric vectors of length equal 
-  #    to the length of `samp` containing the running errors. 
+  #    list, with named elements "mean", "cov", and "itr" Each are numeric vectors of length  
+  #    equal to `length(samp)-2` containing the running errors. The errors are started on the 
+  #    third iteration in order to be able to compute the empirical covariance estimator. 
+  #    The "itr" element contains the integer vector of iterations corresponding to the 
+  #    respective error calculations. 
   
-  mean_err <- vector(mode="numeric", length=nrow(samp))
-  cov_err <- vector(mode="numeric", length=nrow(samp))
+  N_samp <- nrow(samp)
+  mean_err <- vector(mode="numeric", length=N_samp)
+  cov_err <- vector(mode="numeric", length=N_samp)
   mean_true <- drop(mean_true)
-
+  if(is.null(names(mean_true))) stop("`mean_true` lacking parameter names in names attribute.")
+  if(is.null(colnames(cov_true))) stop("`cov_true` lacking parameter names in colnames attribute.")
+  
   if(is.null(mean_curr)) mean_curr <- colMeans(samp[1:2,,drop=FALSE])
   else mean_curr <- drop(mean_curr)
-    
+
   if(is.null(cov_curr)) cov_curr <- cov(samp[1:2,,drop=FALSE])
+  
+  # Ensure proper ordering. 
+  params_ordered <- names(mean_true)
+  cov_true <- cov_true[params_ordered, params_ordered, drop=FALSE]
+  samp <- samp[, params_ordered, drop=FALSE]
   
   for(i in seq(3,nrow(samp))) {
     # Update mean and covariance. 
@@ -2323,7 +2392,8 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true,
     cov_err[i] <- sqrt(sum((cov_curr - cov_true)^2))
   }    
   
-  return(list(mean=mean_err, cov=cov_err))
+  return(list(mean=mean_err[3:N_samp], cov=cov_err[3:N_samp], 
+              itr=as.integer(rownames(samp)[3:N_samp])))
   
 }
 
