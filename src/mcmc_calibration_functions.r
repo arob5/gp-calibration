@@ -2102,15 +2102,8 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
                             (param_name %in% param_names)]
   
   # Remove burn-in iterations; burn-in can differ by test label. 
-  if(!is.null(burn_in_start)) {
-    if(length(burn_in_start) == 1) {
-      samp_dt_subset <- samp_dt_subset[itr >= burn_in_start]
-    } else {
-      test_labels <- samp_dt_subset[, unique(test_label)]
-      for(lbl in test_labels) samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= burn_in_start[lbl])]
-    }
-  }
-  
+  samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start)
+
   return(samp_dt_subset)
   
 }
@@ -2155,6 +2148,60 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   
   return(samp_mat)
 
+}
+
+
+remove_mcmc_samp_burnin <- function(samp_dt, burn_in_start, return_burnin=FALSE) {
+  # Acts on a data.table in long format containing MCMC samples and either drops 
+  # burn-in iterations or returns only the burn-in iterations. Burn-in can either 
+  # differ by test label or a single burn-in cutoff can be applied to all test 
+  # labels. 
+  #
+  # Args:
+  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
+  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1 AND unnamed, this is 
+  #                   interpreted as the starting iteration for all parameters - all earlier iterations
+  #                   are dropped. If a named vector, must  be a named vector with names set
+  #                   to valid test label values. This allows application of a different 
+  #                   burn-in start iteration for different test labels. If only some test labels are 
+  #                   specified by the vector, then the others will not be affected. 
+  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
+  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
+  #                   the burn-in, returning all iterations greater than or equal to the 
+  #                   burn_in_start values. 
+  #
+  # Returns:
+  #    data.table, a copy of `samp_dt` which is row subsetted to either drop the burn-in or 
+  #    non-burn-in iterations, depending on the value of `return_burnin`. 
+  
+  samp_dt_subset <- copy(samp_dt)
+  
+  # If `burn_in_start` is NULL, either returns entire data.table or empty data.table. 
+  if(is.null(burn_in_start)) {
+    if(return_burnin) return(samp_dt_subset[0])
+    return(samp_dt_subset)
+  }
+  
+  # If `burn_in_start` unnamed vector of length 1, apply to all test labels. 
+  if((length(burn_in_start) == 1) && is.null(names(burn_in_start))) {
+    if(return_burnin) return(samp_dt_subset[itr < burn_in_start]) 
+    else return(samp_dt_subset[itr >= burn_in_start]) 
+  }
+  
+  # If `burn_in_start` is named vector, apply burn-in values separately for each test label. 
+  test_labels <- samp_dt_subset[, unique(test_label)]
+  extra_labels <- setdiff(names(burn_in_start), test_labels)
+  missing_labels <- setdiff(test_labels, names(burn_in_start))
+  if(length(extra_labels) > 0) message("Extra labels not used: ", paste(extra_labels, collapse=", "))
+  if(length(missing_labels) > 0) message("Labels not affected: ", paste(missing_labels, collapse=", "))
+  test_labels <- setdiff(test_labels, missing_labels)
+  
+  for(lbl in test_labels) {
+    if(return_burnin) samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr < burn_in_start[lbl])]
+    else samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= burn_in_start[lbl])]
+  }
+  
+  return(samp_dt_subset)
 }
 
 
@@ -2321,6 +2368,10 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
     cov_true <- cov_true[param_names, param_names]
   }
   
+  if(init_running_err_using_burnin && !is.null(burn_in_start)) {
+    # mean_curr <- 
+  }
+  
   for(test_label in test_labels) {
     samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=test_label, param_type=param_type)
     err_list <- compute_samp_running_err_multivariate(samp_mat, mean_true, cov_true)
@@ -2335,7 +2386,6 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
 
 
 compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mean_curr=NULL, cov_curr=NULL) {
-                                                  
   # Computes 1.) running L2 norm between running sample mean and a given true mean and 
   # 2.) running Frobenius norm between running empirical covariance and a given true 
   # covariance matrix. 
