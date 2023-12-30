@@ -2344,6 +2344,20 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
   # within the parameter type; the multivariate error measures will then be computed for 
   # this subset. 
   #
+  # Details for `init_running_err_using_burnin`: 
+  # If no burn-in is specified (`burn_in_start` is NULL) then the running mean/covariance 
+  # caclulations will start from the third iteration, with the first two iterations used 
+  # to initialize the empirical mean and covariance estimates. If a burn-in is specified, 
+  # then there are two possible behaviors. 1.) If `init_running_err_using_burnin` is 
+  # TRUE, then the empirical mean and covariance will be initialized by computing the
+  # mean and covariance estimates from the burn-in. The running mean and covariance 
+  # estimates will be iteratively updated for the non-burn-in iterations. 2.) if 
+  # init_running_err_using_burnin` is FALSE, then the burn-in will be dropped and 
+  # the remaining iterations will be treated as in the NULL `burn_in_start` case 
+  # (the mean and covariance estimates are initialized using the first two non-burn-in
+  # iterations). However, the original iteration labels will still be used in the 
+  # returned data.table. 
+  #
   # Args:
   #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`.    
   #    mean_true: numeric or matrix with one row, the true mean. If numeric vector, 
@@ -2356,8 +2370,13 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
   #    param_type: character(1), the parameter type to select. 
   #    test_labels: character, vector of test labels. If NULL uses all test labels in `samp_dt`. 
   #    param_names: character, if non-NULL, selects a subset of parameters within the param 
-  #                 type. 
-  # TODO: finish argument comments. 
+  #                 type. Also used to order parameters. 
+  #    burn_in_start: integer, the burn-in vector; see remove_mcmc_samp_burnin() for details. 
+  #                   See above for details on how the burn-in specification affects the 
+  #                   running error calculations. 
+  #    init_running_err_using_burnin: logical(1), whether or not to use the burn-in iterations 
+  #                                   to initialize the running mean and covariance estimates. 
+  #                                   See above description for details. 
   #
   # Returns:
   #    data.table, with columns "test_label", "param_type", "itr", "mean_err", "cov_err". See
@@ -2386,10 +2405,11 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
     samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
                                      burn_in_start=burn_in_start)
 
-    # TODO: need to change this so it works with unnamed burn-in vector. 
-    if(init_running_err_using_burnin && isTRUE(burn_in_start[lbl] > 1)) {
+    burn_in_required <- isTRUE(burn_in_start[lbl] > 1) || 
+                        ((length(burn_in_start)==1) && burn_in_start > 1)
+    if(init_running_err_using_burnin && burn_in_required) {
       samp_burnin <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
-                                          burn_in_start=burn_in_start[lbl], return_burnin=TRUE)
+                                          burn_in_start=burn_in_start, return_burnin=TRUE)
       mean_init <- colMeans(samp_burnin)
       cov_init <- cov(samp_burnin)
     } else {
