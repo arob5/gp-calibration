@@ -2384,8 +2384,9 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
   
   for(lbl in test_labels) {
     samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
-                                     burn_in_start=burn_in_start[lbl])
+                                     burn_in_start=burn_in_start)
 
+    # TODO: need to change this so it works with unnamed burn-in vector. 
     if(init_running_err_using_burnin && isTRUE(burn_in_start[lbl] > 1)) {
       samp_burnin <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
                                           burn_in_start=burn_in_start[lbl], return_burnin=TRUE)
@@ -2431,41 +2432,57 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mea
   #              iterations of MCMC are stuck at a single value). 
   #
   # Returns:
-  #    list, with named elements "mean", "cov", and "itr" Each are numeric vectors of length  
-  #    equal to `length(samp)-2` containing the running errors. The errors are started on the 
-  #    third iteration in order to be able to compute the empirical covariance estimator. 
-  #    The "itr" element contains the integer vector of iterations corresponding to the 
-  #    respective error calculations. 
-  
+  #    list, with named elements "mean", "cov", and "itr". Each element is a vector and 
+  #    all are of the same length. The first two are numeric vectors storing the mean 
+  #    and covariance errors. The third is an integer vector storing the iteration number
+  #    associated with each respective error. If `mean_curr` and `cov_curr` are provided 
+  #    then these vectors will have length equal to `nrow(samp)`. If these arguments 
+  #    are NULL, then the vectors will have length equal to `nrow(samp)-2`, as the first 
+  #    2 iterations will be used to initialize the empirical covariance estimate. 
+
   N_samp <- nrow(samp)
-  mean_err <- vector(mode="numeric", length=N_samp)
+  mean_err <- vector(mode="numeric", length=N_samp) 
   cov_err <- vector(mode="numeric", length=N_samp)
   mean_true <- drop(mean_true)
   if(is.null(names(mean_true))) stop("`mean_true` lacking parameter names in names attribute.")
   if(is.null(colnames(cov_true))) stop("`cov_true` lacking parameter names in colnames attribute.")
-  
-  if(is.null(mean_curr)) mean_curr <- colMeans(samp[1:2,,drop=FALSE])
-  else mean_curr <- drop(mean_curr)
-
-  if(is.null(cov_curr)) cov_curr <- cov(samp[1:2,,drop=FALSE])
+  if(xor(is.null(mean_curr), is.null(cov_curr))) stop("`mean_curr` and `cov_curr` must be both NULL or both non-NULL.")
   
   # Ensure proper ordering. 
   params_ordered <- names(mean_true)
   cov_true <- cov_true[params_ordered, params_ordered, drop=FALSE]
   samp <- samp[, params_ordered, drop=FALSE]
   
-  for(i in seq(3,nrow(samp))) {
+  # If not provided, initialize mean and cov using first two samples. 
+  if(is.null(cov_curr)) {
+    mean_curr <- colMeans(samp[1:2,,drop=FALSE])
+    cov_curr <- cov(samp[1:2,,drop=FALSE])
+    idx_start <- 3
+    itrs <- seq(1, N_samp)
+    itr <- itrs[idx_start]
+  } else {
+    mean_curr <- drop(mean_curr)[params_ordered]
+    cov_curr <- cov_curr[params_ordered, params_ordered]
+    idx_start <- 1
+    itrs <- as.integer(rownames(samp))
+    itr <- itrs[1]
+  }
+  
+  for(i in seq(idx_start, nrow(samp))) {
     # Update mean and covariance. 
-    cov_curr <- tcrossprod(samp[i,]-mean_curr)/i + (i-2)/(i-1)*cov_curr
-    mean_curr <- samp[i,]/i + ((i-1)/i)*mean_curr
+    cov_curr <- tcrossprod(samp[i,]-mean_curr)/itr + (itr-2)/(itr-1)*cov_curr
+    mean_curr <- samp[i,]/itr + ((itr-1)/itr)*mean_curr
     
     # Compute error measures. 
     mean_err[i] <- sqrt(sum((mean_curr - mean_true)^2))
     cov_err[i] <- sqrt(sum((cov_curr - cov_true)^2))
+    
+    # Update iteration. 
+    itr <- itr + 1
   }    
   
-  return(list(mean=mean_err[3:N_samp], cov=cov_err[3:N_samp], 
-              itr=as.integer(rownames(samp)[3:N_samp])))
+  return(list(mean=mean_err[idx_start:N_samp], cov=cov_err[idx_start:N_samp], 
+              itr=as.integer(rownames(samp))[idx_start:N_samp]))
   
 }
 
