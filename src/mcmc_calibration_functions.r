@@ -2071,7 +2071,8 @@ format_mcmc_output <- function(samp_list, test_label) {
 }
 
 
-select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL) {
+select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
+                             return_burnin=FALSE) {
   # Operates on the long data.table format, as returned by `format_mcmc_output()`. Selects rows corresponding to 
   # valid combinations of `test_labels`, `param_types`, `param_names`. Also removes iterations specified as "burn-in". 
   # See `burn_in_start` for details. 
@@ -2085,6 +2086,10 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
   #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
   #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
   #                                            value includes all values found in `samp_dt`. 
+  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
+  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
+  #                   the burn-in, returning all iterations greater than or equal to the 
+  #                   burn_in_start values. 
   #
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
@@ -2101,15 +2106,16 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
                             (param_type %in% param_types) & 
                             (param_name %in% param_names)]
   
-  # Remove burn-in iterations; burn-in can differ by test label. 
-  samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start)
+  # Remove (or select) burn-in iterations; burn-in can differ by test label. 
+  samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start, return_burnin)
 
   return(samp_dt_subset)
   
 }
 
 
-select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, burn_in_start=NULL) {
+select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, burn_in_start=NULL, 
+                                 return_burnin=FALSE) {
   # Converts MCMC samples from long to wide format. Wide format means that a 
   # matrix is returned where each row is a sample. A `param_type` (e.g. "theta") must be selected so 
   # that each row of the matrix is a valid parameter vector (e.g. each row is a sampled parameter 
@@ -2131,14 +2137,20 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   #                is performed. 
   #    burn_in_start: integer(1), the starting iteration to use for the samples from the test label. 
   #                   If NULL, does not drop any burn-in. 
+  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
+  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
+  #                   the burn-in, returning all iterations greater than or equal to the 
+  #                   burn_in_start values. 
   #
   # Returns:
-  #    matrix, where each row is a sample from the selected parameters, with burn-in dropped if specified. 
-  #    Rownames are set to the iteration numbers. 
+  #    matrix, where each row is a sample from the selected parameters, with burn-in dropped or 
+  #    returned if specified. Rownames are set to the iteration numbers. 
   
   if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
   
-  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name)
+  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name, return_burnin)
+  if(nrow(samp)==0) stop("Cant convert zero length data.table to wide matrix format.")
+  
   samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
   itrs <- samp$itr
   samp_mat <- as.matrix(samp[, .SD, .SDcols=!"itr"])
@@ -2358,8 +2370,6 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
                        mean_err=numeric(),
                        cov_err=numeric())
   
-  samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, param_types=param_type, 
-                              param_names=param_names, burn_in_start=burn_in_start)
   if(is.null(test_labels)) test_labels <- unique(samp_dt$test_label)
   
   mean_true <- drop(mean_true)
@@ -2368,14 +2378,26 @@ compute_mcmc_running_err_multivariate <- function(samp_dt, mean_true, cov_true,
     cov_true <- cov_true[param_names, param_names]
   }
   
-  if(init_running_err_using_burnin && !is.null(burn_in_start)) {
-    # mean_curr <- 
-  }
+  # Don't exclude burn-in yet. 
+  samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, param_types=param_type, 
+                              param_names=param_names)
   
-  for(test_label in test_labels) {
-    samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=test_label, param_type=param_type)
-    err_list <- compute_samp_running_err_multivariate(samp_mat, mean_true, cov_true)
-    dt_curr <- data.table(test_label=test_label, itr=err_list$itr, mean_err=err_list$mean, cov_err=err_list$cov)
+  for(lbl in test_labels) {
+    samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
+                                     burn_in_start=burn_in_start[lbl])
+
+    if(init_running_err_using_burnin && isTRUE(burn_in_start[lbl] > 1)) {
+      samp_burnin <- select_mcmc_samp_mat(samp_dt, test_label=lbl, param_type=param_type,
+                                          burn_in_start=burn_in_start[lbl], return_burnin=TRUE)
+      mean_init <- colMeans(samp_burnin)
+      cov_init <- cov(samp_burnin)
+    } else {
+      mean_init <- NULL
+      cov_init <- NULL
+    }
+    
+    err_list <- compute_samp_running_err_multivariate(samp_mat, mean_true, cov_true, mean_init, cov_init)
+    dt_curr <- data.table(test_label=lbl, itr=err_list$itr, mean_err=err_list$mean, cov_err=err_list$cov)
     err_dt <- rbindlist(list(err_dt, dt_curr), use.names=TRUE)               
   }
   
