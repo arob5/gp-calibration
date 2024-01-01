@@ -1596,7 +1596,7 @@ generate_linear_Gaussian_test_data <- function(random_seed, N_obs, D, Sig_theta,
   Cov_post <- chol2inv(chol(crossprod(G_cal)/sig2_eps + Sig_theta_cal_inv))
   mean_post <- (1/sig2_eps) * tcrossprod(Cov_post, G) %*% y_adjusted
   
-  colnames(mean_post) <- pars_cal_names
+  rownames(mean_post) <- pars_cal_names
   rownames(Cov_post) <- pars_cal_names
   colnames(Cov_post) <- pars_cal_names
   true_posterior <- list(mean=mean_post, Cov=Cov_post)

@@ -20,12 +20,14 @@ library(data.table)
 library(tmvtnorm)
 library(BayesianTools)
 
-source("numerical_experiment_functions.r")
-source("mcmc_calibration_functions.r")
-source("gp_emulator_functions.r")
-source("gp_mcmc_functions.r")
-source("sequential_design_optimization.r")
-source("sequential_design_sim_study.r")
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+source(file.path(src_dir, "sequential_design_optimization.r"))
 ```
 
 
@@ -46,26 +48,53 @@ source("sequential_design_sim_study.r")
 
 
 ```{r}
-# Global seed.
-set.seed(15)
+# Settings: 
+#    - For reproducibility these are the only variables that should be modified in this file. 
+#    - `read_mode` controls whether existing run is loaded or new run is executed. 
 
-# Local seeds. 
-data_seed <- 23
-design_seed <- 40
+settings <- list()
+settings <- list(run_id="gp_traj_6d_lin_gaus", # General
+                 read_mode=FALSE,
+                 global_seed=15,
+                 data_seed=23,
+                 design_seed=40,
+                 N_obs=100,                    # Synthetic data generation
+                 sig2_eps=1, 
+                 N_design=50,                  # Design
+                 design_method="LHS", 
+                 N_mcmc=50000)                 # MCMC                  
+                 
+set.seed(settings$global_seed)
+
+
+# TODOs:
+#    1.) Get code working/saving output. 
+#    2.) Adjust to include sampling sig_eps. 
+#    3.) Adjust to turn GP validation code into function. 
+
 ```
 
+```{r}
+# Store global variables from settings. 
+run_id <- settings$run_id
+read_mode <- settings$read_mode
+data_seed <- settings$data_seed
+design_seed <- settings$design_seed
+N_obs <- settings$N_obs
+sig2_eps <- settings$sig2_eps
+N_design <- settings$N_design
+design_method <- settings$design_method
+N_mcmc <- settings$N_mcmc
+```
 
 ```{r}
 # Linear Gaussian Model Setup. 
-N_obs <- 100
-D <- 6
 freqs <- c(0.1, 1, 1.4, 2, 0.5, 1.1)
 G <- matrix(nrow=N_obs, ncol=D)
 for(d in 1:D) {
   G[,d] <- matrix(sin(2*pi*freqs[d]*seq(1, N_obs)/N_obs), ncol=1)
 }
 
-sig2_eps <- 1
 Sig0 <- diag(rlnorm(D, meanlog=0, sdlog=2))
 mu0 <- rnorm(D, mean=0, sd=4)
 
@@ -87,8 +116,6 @@ lines(1:N_obs, computer_model_data$data_ref, col="red")
 #
 
 # Emulator settings. 
-N_design <- 50
-design_method <- "LHS"
 emulator_settings <- data.frame(gp_lib = c("hetGP"), 
                                 kernel = "Gaussian", 
                                 transformation_method = c("truncated"),
@@ -131,7 +158,9 @@ for(fit in gp_fits) plot(fit)
 # Evaluate emulators. 
 
 # TODO: 
-#    - Need to ensure validation sets are being sampled within input_bounds. 
+#    - Need to ensure validation sets are being sampled within input_bounds.
+#    - Make this code into a function. 
+#    - Change so that the error bars are lines centered at the mean prediction (like to hetGP plot). 
 
 N_design_validate <- 5000
 
@@ -166,12 +195,13 @@ points(true_SSR_post, gp_pred_post$mean_output1+2*sqrt(gp_pred_post$var_comb_out
 
 ```
 
-
 ```{r}
-# Prepare GP-MCMC tests. 
+# Prepare GP-MCMC tests:
+#    - Testing the GP-trajectory appraoch. 
+#    - Varying two arguments: `use_gp_cov` and `second_gibbs_step`. 
+#    - The current PEcAn algorithm corresponds to `use_gp_cov==FALSE`, `second_gibbs_step==TRUE`. 
 
 # General settings to apply to all runs. 
-N_mcmc <- 50000
 learn_sig_eps <- FALSE
 sig2_eps_init <- sig2_eps
 
@@ -180,26 +210,34 @@ sig2_eps_init <- sig2_eps
 best_idx <- which.max(init_design_info$lpost)
 theta_init <- init_design_info$inputs[best_idx,]
 
-# TEMP
-# theta_init <- computer_model_data$theta_true
-
 # Initialize proposal covariance using design. 
-cov_prop_init <- cov(init_design_info$inputs)
-# cov_prop_init <- diag(rep(1, D))
+# TODO: 
+#    - Consider more numerically stable way to compute this. 
+#    - This is an estimate of the covariance of the true posterior; what we really want here 
+#      is an estimate of the covariance of the GP-approximated posterior. I can obtain 
+#      weights for the GP integrated out posterior, but not for the GP-trajectory posterior. 
+#      Maybe should just use the estimate for the former to initialize both algorithms. 
+cov_prop_init <- cov.wt(init_design_info$inputs, exp(init_design_info$lpost))$cov
+
 
 # Algorithm-specific settings list. 
 run_settings_list <- list()
-# run_settings_list[["gibbs_adapt_cov"]] <- list(test_label="gibbs_adapt_cov", 
-#                                                alg="ind_gp_gibbs",
-#                                                adapt_cov=TRUE, 
-#                                                adapt_scale=FALSE)
-run_settings_list[["gibbs_traj"]] <- list(test_label="gibbs_traj", 
-                                          alg="ind_gp_trajectory",     # "ind_gp_trajectory_trunc_prop",
-                                          adapt_cov=TRUE, 
-                                          adapt_scale=TRUE,
-                                          use_gp_cov=FALSE, 
-                                          second_gibbs_step=FALSE, 
-                                          cov_prop_init=NULL)
+run_settings_list[["cov_nogibbs2"]] <- list(test_label="cov_nogibbs2", 
+                                             alg="ind_gp_trajectory",    
+                                             use_gp_cov=TRUE, 
+                                             second_gibbs_step=FALSE)
+run_settings_list[["cov_gibbs2"]] <- list(test_label="cov_gibbs2", 
+                                             alg="ind_gp_trajectory",     
+                                             use_gp_cov=TRUE, 
+                                             second_gibbs_step=TRUE)
+run_settings_list[["nocov_gibbs2"]] <- list(test_label="nocov_gibbs2", 
+                                             alg="ind_gp_trajectory",     
+                                             use_gp_cov=FALSE, 
+                                             second_gibbs_step=TRUE)
+run_settings_list[["nocov_nogibbs2"]] <- list(test_label="nocov_nogibbs2", 
+                                              alg="ind_gp_trajectory",     
+                                              use_gp_cov=FALSE, 
+                                              second_gibbs_step=FALSE)
 ```
 
 
@@ -229,6 +267,7 @@ samp_exact_dt <- melt.data.table(samp_exact_dt, id.vars=c("param_type", "itr", "
 
 mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
 ```
+
 
 ```{r}
 trace_plots <- get_trace_plots(mcmc_samp_dt)
