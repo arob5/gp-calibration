@@ -311,6 +311,103 @@ get_mcmc_func_args_list <- function(run_settings_list, computer_model_data=NULL,
 
 
 # -----------------------------------------------------------------------------
+# Saving/loading tests results.  
+# -----------------------------------------------------------------------------
+
+create_mcmc_run <- function(settings, base_run_dir="output", set_global_variables=FALSE, set_seed=TRUE) {
+  # TODO: add argument checking to ensure all required arguments are present. 
+  
+  # Extract Git hash. 
+  settings$git_hash <- system("git rev-parse HEAD", intern=TRUE)
+  
+  # Validate settings. 
+  validate_mcmc_run_settings(settings)
+  
+  # Create directory. If the run ID already exists, throw error. 
+  run_id <- settings$run_id
+  if(is.null(run_id)) stop("`run_id` missing from settings.")
+  run_id_dir <- file.path(base_run_dir, run_id)
+  if(file.exists(run_id_dir)) stop("Run ID path ", run_id_dir, " already exists.")
+  dir.create(run_id_dir)
+  
+  # Save top-level settings as JSON file. 
+  settings_json <- toJSON(settings)
+  write(settings_json, file.path(run_id_dir, "settings.json"))
+  
+  # Optionally store settings as global variables. 
+  if(set_global_variables) convert_list_to_global_vars(settings)
+  
+}
+
+
+load_mcmc_run_data <- function(run_id, base_run_dir="output", set_global_variables=FALSE, set_seed=TRUE) {
+  # TODO: add argument checking to ensure all required arguments are present. 
+  
+  # Check that the run exists.
+  run_id_dir <- file.path(base_run_dir, run_id)
+  if(!file.exists(run_id_dir)) stop("Run ID ", run_id_dir, " not found.")
+  
+  # Check that top-level settings exists. If so load and convert to R list. 
+  settings_path <- file.path(run_id_dir, "settings.json")
+  if(!file.exists(settings_path)) stop("Settings for run ", run_id, " not found at path ", settings_path)
+  settings <- fromJSON(settings_path)
+  
+  # Check required settings are present. 
+  validate_mcmc_run_settings(settings)
+  
+  # Optionally set global seed. 
+  if(set_seed) set.seed(settings$global_seed)
+  
+  # Optionally store settings as global variables. 
+  if(set_global_variables) convert_list_to_global_vars(settings)
+  
+}
+
+
+convert_list_to_global_vars <- function(settings) {
+  
+  # Argument checks.
+  if(class(settings) != "list") stop("`settings` must be a list.")
+  var_names <- names(settings)
+  if(is.null(var_names) || any(var_names == "")) {
+    stop("`settings` missing names for some or all elements.")
+  }
+  
+  # Ensure no variables already exist in global environment. 
+  for(i in seq_along(settings)) {
+    var_name <- var_names[i]
+    if(exists(var_name, where=.GlobalEnv)) 
+      stop("Variable ", var_name, " already exists in `.GlobalEnv`. No global variables were created.")
+  }
+  
+  # Create global variables. 
+  for(i in seq_along(settings)) assign(var_names[i], settings[[i]], envir=.GlobalEnv)
+  
+}
+
+
+validate_mcmc_run_settings <- function(settings) {
+  
+  # Must be named list. 
+  if(class(settings) != "list") stop("`settings` must be a list.")
+  var_names <- names(settings)
+  if(is.null(var_names) || any(var_names == "")) {
+    stop("`settings` missing names for some or all elements.")
+  }
+  
+  # Must contain set of required settings. 
+  required_settings <- c("run_id", "global_seed", "data_seed", "design_seed", "N_obs", 
+                         "sig2_eps", "N_design", "design_method", "N_mcmc", "git_hash")
+  missing_settings <- setdiff(required_settings, var_names)
+  extra_settings <- setdiff(var_names, required_settings)
+  
+  if(length(extra_settings) > 1) message("Non-required settings found: ", paste(extra_settings, collapse=", "))
+  if(length(missing_settings) > 1) stop("Missing required settings: ", paste(missing_settings, collapse=", "))
+  
+}
+
+
+# -----------------------------------------------------------------------------
 # Other helper functions. 
 # -----------------------------------------------------------------------------
 

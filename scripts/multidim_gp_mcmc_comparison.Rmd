@@ -18,6 +18,7 @@ library(parallel)
 library(gridExtra)
 library(data.table)
 library(tmvtnorm)
+library(RJSONIO)
 library(BayesianTools)
 
 base_dir <- getwd()
@@ -50,14 +51,16 @@ source(file.path(src_dir, "sequential_design_optimization.r"))
 ```{r}
 # Settings: 
 #    - For reproducibility these are the only variables that should be modified in this file. 
-#    - `read_mode` controls whether existing run is loaded or new run is executed. 
+#    - `write_mode` controls whether existing run is loaded or new run is executed. 
+
+write_mode <- TRUE
 
 settings <- list()
 settings <- list(run_id="gp_traj_6d_lin_gaus", # General
-                 read_mode=FALSE,
                  global_seed=15,
                  data_seed=23,
                  design_seed=40,
+                 save_sample_data=FALSE, 
                  N_obs=100,                    # Synthetic data generation
                  sig2_eps=1, 
                  N_design=50,                  # Design
@@ -66,6 +69,12 @@ settings <- list(run_id="gp_traj_6d_lin_gaus", # General
                  
 set.seed(settings$global_seed)
 
+# Create test folder or load existing one. 
+if(write_mode) {
+  create_mcmc_run(settings, set_global_variables=TRUE)
+} else {
+  load_mcmc_run_data(settings$run_id, set_global_variables=TRUE)
+}
 
 # TODOs:
 #    1.) Get code working/saving output. 
@@ -85,6 +94,7 @@ sig2_eps <- settings$sig2_eps
 N_design <- settings$N_design
 design_method <- settings$design_method
 N_mcmc <- settings$N_mcmc
+save_sample_data <- settings$save_sample_data
 ```
 
 ```{r}
@@ -217,7 +227,7 @@ theta_init <- init_design_info$inputs[best_idx,]
 #      is an estimate of the covariance of the GP-approximated posterior. I can obtain 
 #      weights for the GP integrated out posterior, but not for the GP-trajectory posterior. 
 #      Maybe should just use the estimate for the former to initialize both algorithms. 
-cov_prop_init <- cov.wt(init_design_info$inputs, exp(init_design_info$lpost))$cov
+# cov_prop_init <- cov.wt(init_design_info$inputs, exp(init_design_info$lpost))$cov
 
 
 # Algorithm-specific settings list. 
@@ -255,6 +265,7 @@ burn_ins <- mcmc_test_info$burn_ins
 
 
 ```{r}
+
 # Append exact posterior samples. 
 N_samp_exact <- N_mcmc
 samp_exact <- t(drop(linear_Gaussian_info$true_posterior$mean) + 
@@ -278,5 +289,14 @@ for(plt in trace_plots) plot(plt)
 for(plt in hist_plots) plot(plt)
 ```
 
+
+```{r}
+# Write function to generate folder structure for MCMC run: 
+# main folder named with run label.
+#    -> save json with run settings. 
+#    -> save MCMC settings (either in same json or a different one).
+#    -> sub-folder "plots" .
+#    -> sub-folder "data" containing MCMC samples (optional) and MCMC error metrics. 
+```
 
 
