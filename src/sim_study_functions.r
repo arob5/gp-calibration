@@ -334,8 +334,17 @@ create_mcmc_run <- function(settings, base_run_dir="output", set_global_variable
   settings_json <- toJSON(settings)
   write(settings_json, file.path(run_id_dir, "settings.json"))
   
+  # Optionally set global seed. 
+  if(set_seed) {
+    set.seed(settings$global_seed)
+    print(paste0("Global seed set to ", settings$global_seed))
+  }
+  
   # Optionally store settings as global variables. 
-  if(set_global_variables) convert_list_to_global_vars(settings)
+  if(set_global_variables) {
+    convert_list_to_global_vars(settings)
+    print("`settings` elements stored as global variables.")
+  }
   
 }
 
@@ -356,10 +365,16 @@ load_mcmc_run_data <- function(run_id, base_run_dir="output", set_global_variabl
   validate_mcmc_run_settings(settings)
   
   # Optionally set global seed. 
-  if(set_seed) set.seed(settings$global_seed)
+  if(set_seed) {
+    set.seed(settings$global_seed)
+    cat("Global seed set to", settings$global_seed)
+  }
   
   # Optionally store settings as global variables. 
-  if(set_global_variables) convert_list_to_global_vars(settings)
+  if(set_global_variables) {
+    convert_list_to_global_vars(settings)
+    print("`settings` elements stored as global variables.")
+  }
   
 }
 
@@ -401,8 +416,8 @@ validate_mcmc_run_settings <- function(settings) {
   missing_settings <- setdiff(required_settings, var_names)
   extra_settings <- setdiff(var_names, required_settings)
   
-  if(length(extra_settings) > 1) message("Non-required settings found: ", paste(extra_settings, collapse=", "))
-  if(length(missing_settings) > 1) stop("Missing required settings: ", paste(missing_settings, collapse=", "))
+  if(length(extra_settings) > 0) message("Non-required settings found: ", paste(extra_settings, collapse=", "))
+  if(length(missing_settings) > 0) stop("Missing required settings: ", paste(missing_settings, collapse=", "))
   
 }
 

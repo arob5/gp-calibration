@@ -53,7 +53,7 @@ source(file.path(src_dir, "sequential_design_optimization.r"))
 #    - For reproducibility these are the only variables that should be modified in this file. 
 #    - `write_mode` controls whether existing run is loaded or new run is executed. 
 
-write_mode <- TRUE
+write_mode <- FALSE
 
 settings <- list()
 settings <- list(run_id="gp_traj_6d_lin_gaus", # General
@@ -67,8 +67,6 @@ settings <- list(run_id="gp_traj_6d_lin_gaus", # General
                  design_method="LHS", 
                  N_mcmc=50000)                 # MCMC                  
                  
-set.seed(settings$global_seed)
-
 # Create test folder or load existing one. 
 if(write_mode) {
   create_mcmc_run(settings, set_global_variables=TRUE)
