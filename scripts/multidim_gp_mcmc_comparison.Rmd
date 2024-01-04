@@ -53,7 +53,7 @@ source(file.path(src_dir, "sequential_design_optimization.r"))
 #    - For reproducibility these are the only variables that should be modified in this file. 
 #    - `write_mode` controls whether existing run is loaded or new run is executed. 
 
-write_mode <- FALSE
+write_mode <- TRUE
 
 settings <- list()
 settings <- list(run_id="gp_traj_6d_lin_gaus", # General
@@ -74,30 +74,16 @@ if(write_mode) {
   load_mcmc_run_data(settings$run_id, set_global_variables=TRUE)
 }
 
-# TODOs:
-#    1.) Get code working/saving output. 
-#    2.) Adjust to include sampling sig_eps. 
-#    3.) Adjust to turn GP validation code into function. 
+# TODO: add option to save raw MCMC sample data. 
+
 
 ```
 
-```{r}
-# Store global variables from settings. 
-run_id <- settings$run_id
-read_mode <- settings$read_mode
-data_seed <- settings$data_seed
-design_seed <- settings$design_seed
-N_obs <- settings$N_obs
-sig2_eps <- settings$sig2_eps
-N_design <- settings$N_design
-design_method <- settings$design_method
-N_mcmc <- settings$N_mcmc
-save_sample_data <- settings$save_sample_data
-```
 
 ```{r}
 # Linear Gaussian Model Setup. 
 freqs <- c(0.1, 1, 1.4, 2, 0.5, 1.1)
+D <- length(freqs)
 G <- matrix(nrow=N_obs, ncol=D)
 for(d in 1:D) {
   G[,d] <- matrix(sin(2*pi*freqs[d]*seq(1, N_obs)/N_obs), ncol=1)
@@ -193,13 +179,18 @@ gp_pred_prior <- predict_independent_GPs(design_validate_prior$inputs_scaled, em
                                          emulator_settings$gp_lib, include_cov_mat=FALSE, denormalize_predictions=TRUE, 
                                          output_stats=emulator_info_list$output_stats, return_df=TRUE)$df
 
+# Plots
+CI_lower_prior <- qnorm(0.025, gp_pred_prior$mean_output1, sqrt(gp_pred_prior$var_comb_output1))
+CI_upper_prior <- qnorm(0.975, gp_pred_prior$mean_output1, sqrt(gp_pred_prior$var_comb_output1))
 plot(design_validate_prior$outputs, gp_pred_prior$mean_output1, xlab="true", ylab="pred", main="prior validation")
-points(design_validate_prior$outputs, gp_pred_prior$mean_output1-2*sqrt(gp_pred_prior$var_comb_output1), col="gray")
-points(design_validate_prior$outputs, gp_pred_prior$mean_output1+2*sqrt(gp_pred_prior$var_comb_output1), col="gray")
+segments(x0=CI_lower_prior, y0=gp_pred_prior$mean_output1, 
+         x1=CI_upper_prior, y1=gp_pred_prior$mean_output1, col=rgb(red=0, green=0, blue=1, alpha=0.3))
 
+CI_lower_post <- qnorm(0.025, gp_pred_post$mean_output1, sqrt(gp_pred_post$var_comb_output1))
+CI_upper_post <- qnorm(0.975, gp_pred_post$mean_output1, sqrt(gp_pred_post$var_comb_output1))
 plot(true_SSR_post, gp_pred_post$mean_output1, xlab="true", ylab="pred", main="posterior validation")
-points(true_SSR_post, gp_pred_post$mean_output1-2*sqrt(gp_pred_post$var_comb_output1), col="gray")
-points(true_SSR_post, gp_pred_post$mean_output1+2*sqrt(gp_pred_post$var_comb_output1), col="gray")
+segments(x0=CI_lower_post, y0=gp_pred_post$mean_output1, 
+         x1=CI_upper_post, y1=gp_pred_post$mean_output1, col=rgb(red=0, green=0, blue=1, alpha=0.3))
 
 ```
 
@@ -208,6 +199,8 @@ points(true_SSR_post, gp_pred_post$mean_output1+2*sqrt(gp_pred_post$var_comb_out
 #    - Testing the GP-trajectory appraoch. 
 #    - Varying two arguments: `use_gp_cov` and `second_gibbs_step`. 
 #    - The current PEcAn algorithm corresponds to `use_gp_cov==FALSE`, `second_gibbs_step==TRUE`. 
+
+# TODO: need to save the MCMC run settings to the run dir. 
 
 # General settings to apply to all runs. 
 learn_sig_eps <- FALSE
@@ -226,7 +219,7 @@ theta_init <- init_design_info$inputs[best_idx,]
 #      weights for the GP integrated out posterior, but not for the GP-trajectory posterior. 
 #      Maybe should just use the estimate for the former to initialize both algorithms. 
 # cov_prop_init <- cov.wt(init_design_info$inputs, exp(init_design_info$lpost))$cov
-
+cov_prop_init <- diag(0.5*(input_bounds["max",] - input_bounds["min",])) 
 
 # Algorithm-specific settings list. 
 run_settings_list <- list()
@@ -234,17 +227,17 @@ run_settings_list[["cov_nogibbs2"]] <- list(test_label="cov_nogibbs2",
                                              alg="ind_gp_trajectory",    
                                              use_gp_cov=TRUE, 
                                              second_gibbs_step=FALSE)
-run_settings_list[["cov_gibbs2"]] <- list(test_label="cov_gibbs2", 
-                                             alg="ind_gp_trajectory",     
-                                             use_gp_cov=TRUE, 
+run_settings_list[["cov_gibbs2"]] <- list(test_label="cov_gibbs2",
+                                             alg="ind_gp_trajectory",
+                                             use_gp_cov=TRUE,
                                              second_gibbs_step=TRUE)
-run_settings_list[["nocov_gibbs2"]] <- list(test_label="nocov_gibbs2", 
-                                             alg="ind_gp_trajectory",     
-                                             use_gp_cov=FALSE, 
+run_settings_list[["nocov_gibbs2"]] <- list(test_label="nocov_gibbs2",
+                                             alg="ind_gp_trajectory",
+                                             use_gp_cov=FALSE,
                                              second_gibbs_step=TRUE)
-run_settings_list[["nocov_nogibbs2"]] <- list(test_label="nocov_nogibbs2", 
-                                              alg="ind_gp_trajectory",     
-                                              use_gp_cov=FALSE, 
+run_settings_list[["nocov_nogibbs2"]] <- list(test_label="nocov_nogibbs2",
+                                              alg="ind_gp_trajectory",
+                                              use_gp_cov=FALSE,
                                               second_gibbs_step=FALSE)
 ```
 
@@ -254,7 +247,7 @@ run_settings_list[["nocov_nogibbs2"]] <- list(test_label="nocov_nogibbs2",
 mcmc_test_info <- run_gp_mcmc_tests(run_settings_list, computer_model_data=computer_model_data, 
                                     theta_prior_params=theta_prior_params_trunc,
                                     emulator_info_list=emulator_info_list, theta_init=theta_init,
-                                    N_chain=4, N_itr=N_mcmc, burn_ins=NULL, learn_sig_eps=FALSE,
+                                    N_chain=4, N_itr=N_mcmc, burn_ins=NULL, learn_sig_eps=learn_sig_eps,
                                     return_cov_prop_scale=TRUE, return_SSR_samp=TRUE, sig2_eps_init=sig2_eps, 
                                     cov_prop_init=cov_prop_init)
 mcmc_samp_dt <- mcmc_test_info$mcmc_samp_dt
@@ -279,22 +272,57 @@ mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
 
 
 ```{r}
-trace_plots <- get_trace_plots(mcmc_samp_dt)
-hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="theta", test_label_baseline="exact", 
-                                        xlab="samples", ylab="density", bins=30)
+# TODO: 
+#    - add burn-in to plot titles. 
+#    - add ability to plot all histograms on same plot, not just 2. 
+
+if(write_mode) {
+  trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="theta", save_dir=plot_dir)
+  hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="theta", test_label_baseline="exact", 
+                                          xlab="samples", ylab="density", bins=30, save_dir=plot_dir,
+                                          burn_in_start=as.integer(0.5*N_mcmc))
+} else {
+}
 
 for(plt in trace_plots) plot(plt)
 for(plt in hist_plots) plot(plt)
 ```
 
+```{r}
+# Running error measures. 
+running_errs <- compute_mcmc_running_err_multivariate(mcmc_samp_dt, linear_Gaussian_info$true_posterior$mean, 
+                                                      linear_Gaussian_info$true_posterior$Cov, 
+                                                      param_type="theta", test_labels=NULL,
+                                                      burn_in_start=100, 
+                                                      init_running_err_using_burnin=TRUE) 
+
+fwrite(running_errs, file.path(analysis_dir, "running_errs.csv"))
+
+```
 
 ```{r}
-# Write function to generate folder structure for MCMC run: 
-# main folder named with run label.
-#    -> save json with run settings. 
-#    -> save MCMC settings (either in same json or a different one).
-#    -> sub-folder "plots" .
-#    -> sub-folder "data" containing MCMC samples (optional) and MCMC error metrics. 
+plt_mean_err <- ggplot(running_errs, aes(x=itr, y=mean_err, col=test_label)) + geom_line()
+plt_cov_err <- ggplot(running_errs, aes(x=itr, y=cov_err, col=test_label)) + geom_line()
+
+plot(plt_mean_err)
+plot(plt_cov_err)
+
+plts <- list(mean=plt_mean_err, cov=plt_cov_err)
+save_plots(plts, "run_err", plot_dir)
 ```
+
+```{r}
+lbl1 <- "cov_nogibbs2"
+lbl2 <- "nocov_nogibbs2"
+
+for(i in 1:6) {
+  param_name <- paste0("theta", i)
+  name1 <- paste(lbl1, "theta", param_name, sep="_")
+  name2 <- paste(lbl2, "theta", param_name, sep="_")
+
+  grid.arrange(hist_plots[[name1]], hist_plots[[name2]], ncol=2)
+}
+```
+
 
 

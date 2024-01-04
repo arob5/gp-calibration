@@ -330,6 +330,16 @@ create_mcmc_run <- function(settings, base_run_dir="output", set_global_variable
   if(file.exists(run_id_dir)) stop("Run ID path ", run_id_dir, " already exists.")
   dir.create(run_id_dir)
   
+  # Create sub-directories for plots and analysis. 
+  plot_dir <- file.path(run_id_dir, "plots")
+  analysis_dir <- file.path(run_id_dir, "analysis")
+  dir.create(plot_dir)
+  dir.create(analysis_dir)
+  
+  # Add paths to settings. 
+  settings$run_id_dir <- run_id_dir
+  settings$analysis_dir <- analysis_dir
+  
   # Save top-level settings as JSON file. 
   settings_json <- toJSON(settings)
   write(settings_json, file.path(run_id_dir, "settings.json"))
@@ -345,6 +355,8 @@ create_mcmc_run <- function(settings, base_run_dir="output", set_global_variable
     convert_list_to_global_vars(settings)
     print("`settings` elements stored as global variables.")
   }
+  
+  return(invisible(settings))
   
 }
 

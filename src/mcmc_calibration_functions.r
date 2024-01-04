@@ -2148,7 +2148,7 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   
   if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
   
-  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_name, return_burnin)
+  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_names, return_burnin)
   if(nrow(samp)==0) stop("Cant convert zero length data.table to wide matrix format.")
   
   samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
@@ -2564,7 +2564,7 @@ get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, 
 
 
 get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
-                                      test_label_baseline=NULL, xlab="samples", ylab="density", bins=30) {
+                                      test_label_baseline=NULL, xlab="samples", ylab="density", bins=30, save_dir=NULL) {
   # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
   # MCMC marginal histogram plot per valid `param_name`-`param_type`-`test_label` combination. If `test_label_baseline`
   # is non-NULL, then each plot will include a second histogram corresponding to the specified test label; this is 
@@ -2583,6 +2583,7 @@ get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=N
   #                         samples in `samp_dt`. In this case, the histograms corresponding to this baseline 
   #                         test label will be overlaid on the plots for all other test labels. 
   #    xlab, ylab, bins: ggplot arguments, all passed to `get_hist_plot()`. 
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
   #
   # Returns: 
   #    list, each element being a ggplot object. 
@@ -2623,10 +2624,12 @@ get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=N
       data_names <- c(data_names, test_label_baseline)
     }
 
-    plts[[j]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
-                               main_title=test_label_curr, data_names=data_names) 
+    plts[[plt_label]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
+                                       main_title=test_label_curr, data_names=data_names) 
 
   }
+  
+  if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
   
   return(plts)
   
@@ -3140,7 +3143,8 @@ get_2d_response_surface_plot_posterior <- function(theta_vals, computer_model_da
 }
 
 
-get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL) {
+get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, 
+                            param_names=NULL, save_dir=NULL) {
   # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
   # MCMC trace plot per valid `param_name`-`param_type`-`test_label` combination. 
   #
@@ -3153,6 +3157,7 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
   #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
   #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
   #                                            value includes all values found in `samp_dt`. 
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
   #
   # Returns:
   #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
@@ -3178,11 +3183,23 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
                           xlab("Iteration")
   }
   
+  if(!is.null(save_dir)) save_plots(plts, "trace", save_dir)
+  
   return(plts)
   
 }
 
-                                  
+
+save_plots <- function(plts, type, save_dir) {
+
+  for(i in seq_along(plts)) {
+    plt_name <- paste0(type, "_", names(plts)[i], ".png")
+    ggsave(filename=file.path(save_dir, plt_name), plot=plts[[i]])
+  }
+  
+}
+
+                                
 get_trace_plots_wide <- function(samp_df, burn_in_start = 1, ...) {
   # See `select_mcmc_samp_cols()` for details on how to specify columns which to plot. Operates on the 
   # wide MCMC data.frame format. 
