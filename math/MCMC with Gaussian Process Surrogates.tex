@@ -119,18 +119,66 @@ likelihood $\exp\left\{\llik_{\Ndesign}(\bpar)\right\}$ separately for each $\bp
 \begin{align}
 \hat{\postDens}(\bpar) 
 &:= \frac{\priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right]}{\int \priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right] d\bpar} \\
-&= \frac{\priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\}}{\int \priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\} d\bpar},
+&= \frac{\priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\}}{\int \priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\} d\bpar}, \label{point_estimate}
 \end{align}
-where the second line follows from the expectation formula for a log-normal random variable. 
+where the second line follows from the expectation formula for a log-normal random variable. The use of the posterior $\hat{\postDens}$ may be partially justified in at least two different ways. 
+First consider extending the joint distribution over $(\bpar, \dataOut)$ to $(\bpar, \dataOut, \ell) := (\bpar, \dataOut, \llik_{\Ndesign}(\bpar))$, defined by 
+\begin{align*}
+p(\bpar, \dataOut, \ell) 
+&:= p(\dataOut|\bpar, \ell) p(\ell|\bpar) \priorDens(\bpar) \\
+&= \exp(\ell) \Gaussian(\ell | \GPMeanPred(\bpar), \GPKerPred(\bpar)) \priorDens(\bpar).
+\end{align*}
+It is then natural to consider the marginal distribution $p(\bpar, \dataOut)$, which is given by 
+\begin{align}
+p(\bpar, \dataOut) &= \priorDens(\bpar) \E\left[\llik_{\Ndesign}(\bpar) \right].
+\end{align}
+We observe that the marginal posterior $p(\bpar|\dataOut)$ in this setting is thus equal to $\hat{\postDens}$. 
+
+Bayesian decision theory provides a second perspective. We might consider deriving a target density by solving 
+\begin{align}
+\text{argmin}_{\rho \in \mathcal{F}} \E_{\llik_{\Ndesign}} \norm{\postDens_{\Ndesign} - \rho}^2
+\end{align}  
+for some suitable normed space of densities $(\mathcal{F}, \norm{\cdot})$. The normalizing constant in \ref{ideal_point_estimate} again renders 
+this intractable. However, we might instead consider minimizing the averaged error in the \textit{unnormalized} density 
+\begin{align}
+\tilde{\postDens}_{\Ndesign}(\bpar) := \priorDens(\bpar) \llik_{\Ndesign}(\bpar). 
+\end{align}
+Taking $(\mathcal{F}, \norm{\cdot}) = L^2(\parSpace)$ then gives the optimization problem 
+\begin{align}
+\hat{\tilde{\postDens}}(\bpar) &= \text{argmin}_{\rho \in L^2(\parSpace)} \E_{\llik_{\Ndesign}} \norm{\tilde{\postDens}_{\Ndesign} - \rho}_2^2,
+\end{align} 
+which is solved by 
+\begin{align}
+\hat{\tilde{\postDens}}(\bpar) &= \priorDens(\bpar) \E\left[\llik_{\Ndesign} \right]. \label{unnormalized_optimum}
+\end{align}
+Normalizing \ref{unnormalized_optimum} again recovers $\hat{\postDens}$, as given in \ref{point_estimate}. We emphasize that the density 
+$\hat{\postDens}$ does not inherit the $L^2$ optimality from $\hat{\tilde{\postDens}}(\bpar)$. 
+
 
 % Noisy MCMC Approaches
 \subsection{Noisy MCMC Approaches}
 The previous approaches are attractive in that they target well-defined posterior distributions, but from an uncertainty quantification viewpoint it may
 be unsatisfying to reduce to a point estimate. Intuitively, one approach to propagate the GP uncertainty might be to draw a sample from the 
-distribution of $\postDens_{\Ndesign}(\bpar)$ for each iteration of an MCMC algorithm. Formally, we might consider the extended state space 
+distribution of $\postDens_{\Ndesign}$ for each iteration of an MCMC algorithm. Formally, we might consider the extended state space 
 $(\bpar, \llik_{\Ndesign})$, in which case the random posterior density sample would manifest as a Gibbs sampling step for $\llik_{\Ndesign}$. 
-Note that $\llik_{\Ndesign}$ is infinite-dimensional so that this notion is purely formal at this point. 
-
+Note that $\llik_{\Ndesign}$ is infinite-dimensional so that this notion is purely formal at this point. We now detail a family of algorithms that each 
+provide a different noisy approximation to the MCMC acceptance probability in a random walk Metropolis-Hastings (RWMH) algorithm. For 
+a current sample $\bpar$ and proposal $\bpar^\prime \sim \propDens(\bpar, \cdot)$ the exact acceptance probability is given by 
+\begin{align*}
+\accProbMH(\bpar, \bpar^\prime) 
+&:= \min\left\{1, \frac{\priorDens(\bpar^\prime) \llik(\bpar^\prime) \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \llik(\bpar) \propDens(\bpar, \bpar^\prime)} \right\}.
+\end{align*}
+We consider noisy MCMC algorithms which replace the exact acceptance probability with the noisy approximation 
+\begin{align*}
+\hat{\accProbMH}(\bpar, \bpar^\prime | \ell, \ell^\prime) 
+&:= \min\left\{1, \frac{\priorDens(\bpar^\prime) \ell^\prime \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \ell \propDens(\bpar, \bpar^\prime)} \right\},
+\end{align*}
+with the variations stemming from how $\ell$ and $\ell^\prime$ are sampled. We consider the three following options: 
+\begin{enumerate}
+\item $\ell \sim \Gaussian(\GPMeanPred(\bpar), \GPKerPred(\bpar))$, $\ell^\prime \sim \Gaussian(\GPMeanPred(\bpar^\prime), \GPKerPred(\bpar^\prime))$ sampled independently each iteration. 
+\item $\ell \sim \Gaussian(\GPMeanPred(\bpar), \GPKerPred(\bpar))$, and $\ell^\prime$ recycled from the previous iteration. 
+\item $(\ell, \ell^\prime) \sim \Gaussian(\GPMeanPred(\bpar, \bpar^\prime), \GPKerPred(\bpar, \bpar^\prime))$ sampled independently from the joint distribution each iteration. 
+\end{enumerate}
 
 \end{document}
 
