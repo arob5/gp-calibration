@@ -1,0 +1,141 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Local custom commands. 
+\include{local-defs}
+\newcommand{\bphi}{\boldsymbol{\phi}}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{MCMC with Gaussian Process Log-Likelihood Surrogates}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+
+% Problem Setting
+\section{Problem Setting}
+We study methods of approximate inference in Bayesian settings which combine a Gaussian process (GP) approximation of the log-likelihood 
+with Markov Chain Monte Carlo (MCMC) algorithms. Generically, the goal is to characterize a posterior distribution with (Lebesgue) density 
+given by 
+\begin{align}
+\postDens(\bpar) &= \frac{p(\dataOut|\bpar)\priorDens(\bpar)}{\int p(\dataOut|\bpar)\priorDens(\bpar) d\bpar}, \label{generic_posterior}
+\end{align}
+where $\bpar \in \parSpace \subseteq \R^{\Npar}$. We consider the setting where evaluation of the likelihood $p(\dataOut|\bpar)$ is very 
+computationally demanding, rendering standard MCMC algorithms intractable. This setting commonly occurs when \ref{generic_posterior} is the 
+posterior distribution for a Bayesian inverse problem with an expensive forward model; e.g. where the likelihood arises via the data-generating 
+process 
+\begin{align*}
+\dataOut &= \fwd(\bpar) + \boldsymbol{\epsilon},
+\end{align*}
+and evaluation of the forward model $\fwd(\bpar)$ requires a significant amount of time. A well-established solution to circumvent the intractability of standard MCMC is 
+to leverage a cheaper surrogate model (also called an \textit{emulator} or \textit{meta-model}), which is trained from a small number of forward model 
+runs, and then proceed to use the surrogate in place of the expensive model in subsequent inference algorithms. In the fields of computer modeling and 
+Bayesian inverse problems, the typical approach is to replace the forward model $\fwd$ with an emulator. We instead focus on the alternative 
+method of directly emulating the log-likelihood $\llik(\bpar) := \log p(\bpar|\dataOut)$. In particular, we assume uncertainty in the log-likelihood is represented by a Gaussian 
+process (GP), 
+\begin{align}
+\llik_{\Ndesign} \sim \GP(\GPMeanPred[\Ndesign], \GPKerPred[\Ndesign]),
+\end{align}
+corresponding to a GP prior $\llik \sim \GP(\GPMean, \GPKer)$ which has been conditioned on a dataset 
+$\designData := \{\designMat[], \designOutLik\}$ consisting of $\Ndesign$ \textit{design points} 
+$\bpar_1, \dots, \bpar_{\Ndesign}$ stacked in the rows of $\designMat[]$, and their corresponding outputs $\designOutLik_{\designIdx} = \llik(\bpar_{\designIdx})$. The 
+mean function $\GPMeanPred[\Ndesign]$ and kernel $\GPKerPred[\Ndesign]$ thus pertain to the GP predictive distribution and are given by 
+\begin{align*}
+\GPMeanPred[\Ndesign](\newInputMat) &= \GPMean(\newInputMat) + \GPKer(\newInputMat, \designMat[]) \KerMat[]^{-1} \left(\designOutLik - \GPMean(\designMat[]) \right) \\
+\GPKerPred[\Ndesign](\newInputMat) &= \GPKer(\newInputMat) - \GPKer(\newInputMat, \designMat[]) \KerMat[]^{-1} \GPKer(\designMat[], \newInputMat),
+\end{align*}
+where $\KerMat[] \in \R^{\Ndesign \times \Ndesign}$ is the \textit{kernel matrix} with entries $\KerMat[n,m] = \GPKer(\bpar_n, \bpar_m)$. 
+
+We investigate two questions: 
+\begin{enumerate}
+\item How should the GP emulator $\llik_{\Ndesign}$ be used to define a target posterior that approximates the true posterior, and which MCMC 
+strategies are effective for sampling from this target?
+\item What is an effective batch sequential design strategy for refining the emulator $\llik_{\Ndesign}$? 
+\end{enumerate}
+
+% Literature Review.
+\section{Literature Review}
+
+% Gaussian Process Posterior Approximations.
+\section{Gaussian Process Posterior Approximations}
+We now investigate different approaches for utilizing the emulator $\llik_{\Ndesign}$ to define an approximate inference scheme. Replacing the true log-likelihood 
+with the emulator results in a random posterior approximation 
+\begin{align}
+\postDens_{\Ndesign}(\bpar)
+&:= \frac{\priorDens(\bpar) \exp\left\{\llik_{\Ndesign}(\bpar) \right\}}{\int \priorDens(\bpar) \exp\left\{\llik_{\Ndesign}(\bpar) \right\} d\bpar}.
+\end{align}
+The randomness in $\postDens_{\Ndesign}(\bpar)$ results from the fact that the expression depends on the GP $\llik_{\Ndesign}(\bpar)$. We consider 
+two general classes of methods for turning this random quantity into a well-defined sampling algorithm: (i.) methods which select a single deterministic 
+posterior density from the distribution over all possible densities, and (ii.) methods which retain the randomness and result in noisy MCMC algorithms. 
+
+% Deriving a Deterministic Posterior Approximation.
+\subsection{Deriving a Deterministic Posterior Approximation}
+We now consider producing a point estimate of $\postDens_{\Ndesign}(\bpar)$ which ideally propagates the emulator uncertainty. An argument could 
+be made for the point estimator 
+\begin{align}
+\hat{\postDens}^*(\bpar) 
+&:= \E_{\llik_{\Ndesign} \sim \GP(\GPMeanPred[\Ndesign], \GPKerPred[\Ndesign])} \left[ \postDens_{\Ndesign} \right] \nonumber \\
+&= \E_{\llik_{\Ndesign} \sim \GP(\GPMeanPred[\Ndesign], \GPKerPred[\Ndesign])} \left[ \frac{\priorDens(\bpar) \exp\left\{\llik_{\Ndesign}(\bpar) \right\}}{\int \priorDens(\bpar) \exp\left\{\llik_{\Ndesign}(\bpar) \right\} d\bpar} \right] \label{ideal_point_estimate},
+\end{align}
+but the integral in the normalizing constant in \ref{ideal_point_estimate} renders this expectation intractable. Note that \ref{ideal_point_estimate} considers taking the 
+expectation with respect to the entire GP distribution. An alternative, computationally tractable, approach instead considers taking the expectation of the 
+likelihood $\exp\left\{\llik_{\Ndesign}(\bpar)\right\}$ separately for each $\bpar$, and then normalizing the result afterwords
+\begin{align}
+\hat{\postDens}(\bpar) 
+&:= \frac{\priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right]}{\int \priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right] d\bpar} \\
+&= \frac{\priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\}}{\int \priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar) + \frac{1}{2}\GPKerPred[\Ndesign](\bpar) \right\} d\bpar},
+\end{align}
+where the second line follows from the expectation formula for a log-normal random variable. 
+
+% Noisy MCMC Approaches
+\subsection{Noisy MCMC Approaches}
+The previous approaches are attractive in that they target well-defined posterior distributions, but from an uncertainty quantification viewpoint it may
+be unsatisfying to reduce to a point estimate. Intuitively, one approach to propagate the GP uncertainty might be to draw a sample from the 
+distribution of $\postDens_{\Ndesign}(\bpar)$ for each iteration of an MCMC algorithm. Formally, we might consider the extended state space 
+$(\bpar, \llik_{\Ndesign})$, in which case the random posterior density sample would manifest as a Gibbs sampling step for $\llik_{\Ndesign}$. 
+Note that $\llik_{\Ndesign}$ is infinite-dimensional so that this notion is purely formal at this point. 
+
+
+\end{document}
+
+
+
+
+
+

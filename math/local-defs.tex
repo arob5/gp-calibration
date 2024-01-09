@@ -47,6 +47,7 @@
 \newcommand{\spar}{u} % Parameter (scalar, non-bold)
 \newcommand{\bpar}{\mathbf{u}} % Parameter vector (bold)
 \newcommand{\parSpace}{\mathcal{U}} % Parameter space
+\newcommand{\dataOut}{\mathbf{y}} % Generic output data. 
 \newcommand{\fwd}{G} % Forward model
 \newcommand{\Npar}{D} % Dimension of parameter space
 \newcommand{\Nobj}{P} % Number of output variables/data constraints/objectives
@@ -56,7 +57,9 @@
 \newcommand{\objIdx}{p} % Primary index for indexing objective (i.e. data constraint or output variable) in multi-objective problems.
 \newcommand{\indexObj}[2][\objIdx]{{#2}^{(#1)}} % Adds objective index to a variable.
 \newcommand{\designMat}[1][\designIdx]{\mathbf{U}_{#1}} % Design matrix of input parameters (in rows) at which response is observed. 
+\newcommand{\designOutLik}{\boldsymbol{\ell}} % Vector of log-likelihood evaluations at design points. 
 \newcommand{\logUnPost}{\ell^{\postDens}} % Log unnormalized posterior density. 
+
 
 % Gaussian likelihood, Inverse Gamma prior model. 
 
@@ -84,6 +87,7 @@
 \newcommand{\GPMeanPred}[1][\designIdx]{\GPMean_{#1}} % GP predictive mean (conditioned on data).
 \newcommand{\GPKerPred}[1][\designIdx]{\GPKer_{#1}} % GP predictive covariance function (conditioned on data). 
 \newcommand{\KerMat}[1][\designIdx]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points.
+\newcommand{\newInputMat}{\mathbf{\tilde{U}}}
 
 \newcommand{\bbf}{\mathbf{f}} % Bold version of target function; e.g. to be used to denote a vector of function evaluations. 
 \newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 

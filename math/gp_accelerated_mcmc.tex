@@ -48,6 +48,31 @@
 
 \maketitle
 
+% Problem Setting
+\section{Problem Setting}
+We study methods of approximate inference in Bayesian settings which combine a Gaussian process (GP) approximation of the log-likelihood 
+with Markov Chain Monte Carlo (MCMC) algorithms. Generically, the goal is to characterize a posterior distribution with (Lebesgue) density 
+given by 
+\begin{align}
+\postDens(\bpar) &= \frac{p(\dataOut|\bpar)\priorDens(\bpar)}{\int p(\dataOut|\bpar)\priorDens(\bpar) d\bpar}, \label{generic_posterior}
+\end{align}
+where $\bpar \in \parSpace \subseteq \R^{\Npar}$. We consider the setting where evaluation of the likelihood $p(\dataOut|\bpar)$ is very 
+computationally demanding, rendering standard MCMC algorithms intractable. This setting commonly occurs when \ref{generic_posterior} is the 
+posterior distribution for a Bayesian inverse problem with an expensive forward model; e.g. where the likelihood arises via the data-generating 
+process 
+\begin{align*}
+\dataOut &= \fwd(\bpar) + \boldsymbol{\epsilon},
+\end{align*}
+and evaluation of the forward model $\fwd(\bpar)$ requires a significant amount of time. A well-established solution to circumvent the intractability of standard MCMC is 
+to leverage a cheaper surrogate model (also called an \textit{emulator} or \textit{meta-model}), which is trained from a small number of forward model 
+runs, and then proceed to use the surrogate in place of the expensive model in subsequent inference algorithms. In the fields of computer modeling and 
+Bayesian inverse problem, the typical approach is to replace the forward model $\fwd$ with an emulator. We instead focus on the alternative 
+method of directly emulating the log-likelihood $\llik(\bpar) := \log p(\bpar|\dataOut)$. In particular, we assume uncertainty in the log-likelihood is represented by a Gaussian 
+process (GP), 
+\begin{align}
+\llik \sim \GP(\GPMeanPred, \GPKerPred)
+\end{align}
+
 % Setup and Notation
 \section{Setup and Notation}
 We begin by briefly introducing the statistical calibration model for parameter calibration. Let 
