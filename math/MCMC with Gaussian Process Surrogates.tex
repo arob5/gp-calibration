@@ -130,7 +130,7 @@ p(\bpar, \dataOut, \ell)
 \end{align*}
 It is then natural to consider the marginal distribution $p(\bpar, \dataOut)$, which is given by 
 \begin{align}
-p(\bpar, \dataOut) &= \priorDens(\bpar) \E\left[\llik_{\Ndesign}(\bpar) \right].
+p(\bpar, \dataOut) &= \priorDens(\bpar) \E\left[\exp\left(\llik_{\Ndesign}(\bpar)\right) \right].
 \end{align}
 We observe that the marginal posterior $p(\bpar|\dataOut)$ in this setting is thus equal to $\hat{\postDens}$. 
 
@@ -141,7 +141,7 @@ Bayesian decision theory provides a second perspective. We might consider derivi
 for some suitable normed space of densities $(\mathcal{F}, \norm{\cdot})$. The normalizing constant in \ref{ideal_point_estimate} again renders 
 this intractable. However, we might instead consider minimizing the averaged error in the \textit{unnormalized} density 
 \begin{align}
-\tilde{\postDens}_{\Ndesign}(\bpar) := \priorDens(\bpar) \llik_{\Ndesign}(\bpar). 
+\tilde{\postDens}_{\Ndesign}(\bpar) := \priorDens(\bpar) \exp\left(\llik_{\Ndesign}(\bpar)\right). 
 \end{align}
 Taking $(\mathcal{F}, \norm{\cdot}) = L^2(\parSpace)$ then gives the optimization problem 
 \begin{align}
@@ -149,7 +149,7 @@ Taking $(\mathcal{F}, \norm{\cdot}) = L^2(\parSpace)$ then gives the optimizatio
 \end{align} 
 which is solved by 
 \begin{align}
-\hat{\tilde{\postDens}}(\bpar) &= \priorDens(\bpar) \E\left[\llik_{\Ndesign} \right]. \label{unnormalized_optimum}
+\hat{\tilde{\postDens}}(\bpar) &= \priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right]. \label{unnormalized_optimum}
 \end{align}
 Normalizing \ref{unnormalized_optimum} again recovers $\hat{\postDens}$, as given in \ref{point_estimate}. We emphasize that the density 
 $\hat{\postDens}$ does not inherit the $L^2$ optimality from $\hat{\tilde{\postDens}}(\bpar)$. 
@@ -166,19 +166,55 @@ provide a different noisy approximation to the MCMC acceptance probability in a 
 a current sample $\bpar$ and proposal $\bpar^\prime \sim \propDens(\bpar, \cdot)$ the exact acceptance probability is given by 
 \begin{align*}
 \accProbMH(\bpar, \bpar^\prime) 
-&:= \min\left\{1, \frac{\priorDens(\bpar^\prime) \llik(\bpar^\prime) \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \llik(\bpar) \propDens(\bpar, \bpar^\prime)} \right\}.
+&:= \min\left\{1, r(\bpar, \bpar^\prime) \right\}, && r(\bpar, \bpar^\prime) := 
+\frac{\priorDens(\bpar^\prime) \exp\left\{\llik(\bpar^\prime)\right\} \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \exp\left\{\llik(\bpar)\right\} \propDens(\bpar, \bpar^\prime)}.
 \end{align*}
 We consider noisy MCMC algorithms which replace the exact acceptance probability with the noisy approximation 
 \begin{align*}
-\hat{\accProbMH}(\bpar, \bpar^\prime | \ell, \ell^\prime) 
-&:= \min\left\{1, \frac{\priorDens(\bpar^\prime) \ell^\prime \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \ell \propDens(\bpar, \bpar^\prime)} \right\},
+\hat{\accProbMH}(\bpar, \bpar^\prime; \ell, \ell^\prime) 
+&:= \min\left\{1, \hat{r}(\bpar, \bpar^\prime|\ell, \ell^\prime) \right\}, && \hat{r}(\bpar, \bpar^\prime|\ell, \ell^\prime)  := 
+\frac{\priorDens(\bpar^\prime) \exp\left(\ell^\prime\right) \propDens(\bpar^\prime,\bpar)}{\priorDens(\bpar) \exp\left(\ell\right) \propDens(\bpar, \bpar^\prime)}
 \end{align*}
 with the variations stemming from how $\ell$ and $\ell^\prime$ are sampled. We consider the three following options: 
 \begin{enumerate}
-\item $\ell \sim \Gaussian(\GPMeanPred(\bpar), \GPKerPred(\bpar))$, $\ell^\prime \sim \Gaussian(\GPMeanPred(\bpar^\prime), \GPKerPred(\bpar^\prime))$ sampled independently each iteration. 
-\item $\ell \sim \Gaussian(\GPMeanPred(\bpar), \GPKerPred(\bpar))$, and $\ell^\prime$ recycled from the previous iteration. 
-\item $(\ell, \ell^\prime) \sim \Gaussian(\GPMeanPred(\bpar, \bpar^\prime), \GPKerPred(\bpar, \bpar^\prime))$ sampled independently from the joint distribution each iteration. 
+\item\label{gp-mcmc-pseudo-marginal} $\ell \sim \Gaussian(\GPMeanPred[\Ndesign](\bpar), \GPKerPred[\Ndesign](\bpar))$, with $\ell^\prime$ recycled from the previous iteration. 
+\item\label{gp-mcmc-noisy} $\ell \sim \Gaussian(\GPMeanPred[\Ndesign](\bpar), \GPKerPred[\Ndesign](\bpar))$, $\ell^\prime \sim 
+\Gaussian(\GPMeanPred[\Ndesign](\bpar^\prime), \GPKerPred[\Ndesign](\bpar^\prime))$ sampled independently each iteration. 
+\item\label{gp-mcmc-noisy-cov} $(\ell, \ell^\prime) \sim \Gaussian(\GPMeanPred[\Ndesign](\bpar, \bpar^\prime), \GPKerPred[\Ndesign](\bpar, \bpar^\prime))$ sampled independently from the joint distribution each iteration. 
 \end{enumerate}
+The first option can be viewed as a pseudo-marginal method targeting the posterior $\hat{\postDens}(\bpar) = \priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right]$, which is the same 
+posterior discussed in the previous section. The other two methods can be viewed generally as Monte Carlo within Metropolis (MCWM) algorithms. Seeing as $\ell, \ell^\prime$ 
+are sampled independently across iterations, the algorithms do produce valid Markov chains. However, it is not immediately clear whether these chains are ergodic and, if so, which 
+distribution they actually sample from. 
+
+% The Effect of Incorporating the GP Predictive Covariance
+\subsection{The Effect of Incorporating the GP Predictive Covariance}
+Out of the algorithms considered above, only the third noisy method considers the GP covariance structure. The remaining algorithms essentially view the emulator as providing 
+pointwise predictions independently for different $\bpar$. In this section we consider the impact of incorporating the GP covariance structure. The distribution of 
+$\hat{r}(\bpar, \bpar^\prime; \ell, \ell^\prime)$ when predictive covariance is included is given by 
+\begin{align*}
+\hat{r}(\bpar, \bpar^\prime; \ell, \ell^\prime) \sim \text{LN}\left(\log \frac{\priorDens(\bpar^\prime)\propDens(\bpar^\prime, \bpar)}{\priorDens(\bpar)\propDens(\bpar, \bpar^\prime)} 
++ \GPMeanPred[\Ndesign](\bpar^\prime) - \GPMeanPred[\Ndesign](\bpar), \GPKerPred[\Ndesign](\bpar) + \GPKerPred[\Ndesign](\bpar^\prime) - 2\GPKerPred[\Ndesign](\bpar, \bpar^\prime) \right).
+\end{align*}
+In particular, the expectation is 
+\begin{align*}
+\E_{\ell, \ell^\prime}\left[\hat{r}(\bpar, \bpar^\prime; \ell, \ell^\prime)\right]
+&= \frac{\priorDens(\bpar^\prime)\exp\left\{\GPMeanPred[\Ndesign](\bpar^\prime)\right\} \propDens(\bpar^\prime, \bpar)}{\priorDens(\bpar) \exp\left\{\GPMeanPred[\Ndesign](\bpar)\right\} \propDens(\bpar, \bpar^\prime)}
+\exp\left\{\frac{\GPKerPred[\Ndesign](\bpar) + \GPKerPred[\Ndesign](\bpar^\prime) - 2\GPKerPred[\Ndesign](\bpar, \bpar^\prime) }{2} \right\}.
+\end{align*}
+We observe that the first term is the acceptance ratio computed using the plug-in mean estimator of the GP, while the second term accounts for GP uncertainty. 
+In the case of the second algorithm, the covariance term $\GPKerPred[\Ndesign](\bpar, \bpar^\prime)$ is set to $0$. It is perhaps clearer to write this expectation as 
+\begin{align*}
+\E_{\ell, \ell^\prime}\left[\hat{r}(\bpar, \bpar^\prime; \ell, \ell^\prime)\right]
+&= \frac{\priorDens(\bpar^\prime)\exp\left\{\E\left[\llik_{\Ndesign}(\bpar^\prime)\right] \right\} \propDens(\bpar^\prime, \bpar)}{\priorDens(\bpar) \exp\left\{\E\left[\llik_{\Ndesign}(\bpar)\right]\right\} \propDens(\bpar, \bpar^\prime)}
+\exp\left\{\frac{1}{2}\Var\left[\llik_{\Ndesign}(\bpar^\prime) -  \llik_{\Ndesign}(\bpar) \right] \right\}.
+\end{align*}
+For the second algorithm, the variance in the exponential term is replaced by $\Var\left[\llik_{\Ndesign}(\bpar^\prime)\right] + \Var\left[\llik_{\Ndesign}(\bpar)\right]$. We observe 
+that the expected acceptance ratio for algorithm 3 is strictly less than that of algorithm 2 when $\GPKerPred[\Ndesign](\bpar, \bpar^\prime) > 0$ and vice versa. Including the covariance 
+accounts for the fact that even though $\llik_{\Ndesign}(\bpar^\prime)$ and $\llik_{\Ndesign}(\bpar)$ may be quite uncertain, their difference may have little uncertainty 
+if the correlation between the two is high. Given that the acceptance ratio only depends on their difference, intuitively we would expect accounting for the covariance to result 
+in a better estimator. Moreover, between the two algorithms, including the covariance results in larger acceptance probabilities when the predictive covariance is smaller, which tends 
+to be when $\bpar$ and $\bpar^\prime$ are farther apart, a property that appears desirable for good MCMC mixing.  
 
 \end{document}
 
