@@ -553,8 +553,10 @@ predict_lpost_GP_approx <- function(theta_vals_scaled = NULL, theta_vals_unscale
   #                 or variance is desired, or both. 
   #
   # Returns:
-  #    numeric, vector of length M containing the predictive variance evaluations at the M inputs. 
-  #
+  #    list, potentially with elements "mean", "var", "cov". The first two contain vectors of length M containing 
+  #    the predictive mean and variance evaluations at the M inputs. The "cov" element contains the predictive 
+  #    covariance between the inputs `theta_vals_scaled` and `theta_vals_scaled_2`, if requested (see 
+  #    `predict_independent_GPs()` for details). 
   
   if(is.null(theta_vals_scaled) && is.null(theta_vals_unscaled)) {
     stop("Either `theta_vals_scaled` or `theta_vals_unscaled` must be non-NULL.")
@@ -2848,7 +2850,6 @@ predict_lpost_emulator <- function(inputs_new_scaled, lpost_emulator, return_val
     }
     
     return_list$cov <- pred_cov
-    
   }
   
   # Optionally invert lpost normalization. 

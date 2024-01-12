@@ -59,6 +59,39 @@
 # Helper Functions. 
 # -----------------------------------------------------------------------------
 
+lpost_gp_integrated <- function(inputs_scaled, emulator_info_list, theta_prior_params, 
+                                include_nugget=TRUE, inputs_unscaled=NULL) {
+  # This function computes the approximate (unnormalized) posterior density defined by 
+  # taking the expectation of the  GP-approximate posterior wrt the GP. This is equivalent to 
+  # replacing the likelihood with  the expected likelihood. This is all conditional on fixed , 
+  # variance parameters `sig2_eps` so we are really considering the conditional posterior here.  
+  # If the log likelihood is represented by a GP(m(u), k(u)) then the unnormalized expected posterior 
+  # is pi_0(u) * exp{m(u) + 0.5*k(u)} where pi_0(u) is the prior density. This function returns 
+  # the log of this quantity, potentially for multiple values of `u`. Note that this is the 
+  # log expected unnormalized posterior, not the expected log unnormalized posterior. 
+  #
+  # Args:
+  #    inputs_scaled: matrix of dimension (M,D), with M the number of inputs at which to sample. Each row is an 
+  #                   input at which to sample. .
+  #    emulator_info_list: list, the emulator info list.
+  #    theta_prior_params: the data.frame containing prior distribution info. 
+  #    include_nugget: logical(1), whether or not to include the nugget variance in GP predictions. 
+  #    inputs_unscaled: Unscaled version of `inputs_scaled`; if not passed will have to be computed in order 
+  #                     to compute the prior. 
+  #
+  # Returns:
+  #    numeric, the log density evaluations, as described above. 
+  
+  lpost_gp_pred_list <- predict_lpost_GP_approx(theta_vals_scaled=inputs_scaled, theta_vals_unscaled=inputs_unscaled, 
+                                                emulator_info_list=emulator_info_list, sig2_eps=sig2_eps, 
+                                                theta_prior_params=theta_prior_params, N_obs=N_obs, 
+                                                return_vals=c("mean", "var"))
+  
+  return(lpost_gp_pred_list$mean + 0.5*lpost_gp_pred_list$var)
+  
+}
+
+
 sample_emulator_cond <- function(inputs_scaled, emulator_info_list, cond_type, sig2_eps=NULL, gp_pred_list=NULL, 
                                  trunc_method="truncated", include_nugget=TRUE) {
   # Draws a sample either from p(phi|u) or p(phi|u,Sigma,Y). The former is the GP predictive 

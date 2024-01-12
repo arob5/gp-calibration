@@ -76,10 +76,10 @@ corresponding to a GP prior $\llik \sim \GP(\GPMean, \GPKer)$ which has been con
 $\designData := \{\designMat[], \designOutLik\}$ consisting of $\Ndesign$ \textit{design points} 
 $\bpar_1, \dots, \bpar_{\Ndesign}$ stacked in the rows of $\designMat[]$, and their corresponding outputs $\designOutLik_{\designIdx} = \llik(\bpar_{\designIdx})$. The 
 mean function $\GPMeanPred[\Ndesign]$ and kernel $\GPKerPred[\Ndesign]$ thus pertain to the GP predictive distribution and are given by 
-\begin{align*}
-\GPMeanPred[\Ndesign](\newInputMat) &= \GPMean(\newInputMat) + \GPKer(\newInputMat, \designMat[]) \KerMat[]^{-1} \left(\designOutLik - \GPMean(\designMat[]) \right) \\
+\begin{align}
+\GPMeanPred[\Ndesign](\newInputMat) &= \GPMean(\newInputMat) + \GPKer(\newInputMat, \designMat[]) \KerMat[]^{-1} \left(\designOutLik - \GPMean(\designMat[]) \right) \label{kriging_eqns} \\
 \GPKerPred[\Ndesign](\newInputMat) &= \GPKer(\newInputMat) - \GPKer(\newInputMat, \designMat[]) \KerMat[]^{-1} \GPKer(\designMat[], \newInputMat),
-\end{align*}
+\end{align}
 where $\KerMat[] \in \R^{\Ndesign \times \Ndesign}$ is the \textit{kernel matrix} with entries $\KerMat[n,m] = \GPKer(\bpar_n, \bpar_m)$. 
 
 We investigate two questions: 
@@ -91,6 +91,16 @@ strategies are effective for sampling from this target?
 
 % Literature Review.
 \section{Literature Review}
+
+\subsection{Log-Likelihood Emulation}
+
+\subsection{Propagating GP Uncertainty}
+Stuart and Teckentrup posterior consistency paper, Aki Vehtari paper, train paper that approximates sampling GP trajectories, Emulate/Calibrate/Sample paper, 
+GP MCMC paper for MALA approximation; mention exact methods: Youssef work and delayed acceptance schemes 
+
+\subsection{Experimental Design}
+Original integrated variance paper (see Gramacy book for references), Youssef paper on integrated variance criteria, Vehtari paper, Stuart and Teckentrup experimental 
+design paper, sequential design GP paper that considers KL divergence, Stefan Wild paper, Sinsbeck and Nowak 
 
 % Gaussian Process Posterior Approximations.
 \section{Gaussian Process Posterior Approximations}
@@ -115,7 +125,7 @@ be made for the point estimator
 \end{align}
 but the integral in the normalizing constant in \ref{ideal_point_estimate} renders this expectation intractable. Note that \ref{ideal_point_estimate} considers taking the 
 expectation with respect to the entire GP distribution. An alternative, computationally tractable, approach instead considers taking the expectation of the 
-likelihood $\exp\left\{\llik_{\Ndesign}(\bpar)\right\}$ separately for each $\bpar$, and then normalizing the result afterwords
+likelihood $\exp\left\{\llik_{\Ndesign}(\bpar)\right\}$ separately for each $\bpar$, and then normalizing the result afterwards
 \begin{align}
 \hat{\postDens}(\bpar) 
 &:= \frac{\priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right]}{\int \priorDens(\bpar) \E\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\} \right] d\bpar} \\
@@ -215,6 +225,15 @@ accounts for the fact that even though $\llik_{\Ndesign}(\bpar^\prime)$ and $\ll
 if the correlation between the two is high. Given that the acceptance ratio only depends on their difference, intuitively we would expect accounting for the covariance to result 
 in a better estimator. Moreover, between the two algorithms, including the covariance results in larger acceptance probabilities when the predictive covariance is smaller, which tends 
 to be when $\bpar$ and $\bpar^\prime$ are farther apart, a property that appears desirable for good MCMC mixing.  
+
+% Sequential Design
+\section{Sequential Design}
+\textbf{TODO: add intro}
+
+We now investigate the uncertainty in the predictive equations \ref{kriging_eqns} when $\designOutLik$ is unknown and assumed to follow the current GP predictive distribution 
+$\designOutLik \sim \Gaussian(\GPMeanPred[\Ndesign](\newInputMat), \GPKerPred[\Ndesign](\newInputMat))$. 
+
+
 
 \end{document}
 
