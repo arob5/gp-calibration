@@ -230,9 +230,62 @@ to be when $\bpar$ and $\bpar^\prime$ are farther apart, a property that appears
 \section{Sequential Design}
 \textbf{TODO: add intro}
 
-We now investigate the uncertainty in the predictive equations \ref{kriging_eqns} when $\designOutLik$ is unknown and assumed to follow the current GP predictive distribution 
-$\designOutLik \sim \Gaussian(\GPMeanPred[\Ndesign](\newInputMat), \GPKerPred[\Ndesign](\newInputMat))$. 
+We now investigate the uncertainty in the predictive equations \ref{kriging_eqns} for the process $\llik_{\Ndesign + \Nbatch} := \llik_{\Ndesign}|(\inputMatBatch, \outputVecBatch)$
+when $\outputVecBatch$ is unknown and assumed to follow the current GP predictive distribution. 
+\begin{lemma}  \label{lemma_pred_uncertainty}
+Let $(\inputMatBatch, \outputVecBatch)$ be a new batch of $\Nbatch$ design points, with 
+$\outputVecBatch \sim \Gaussian(\GPMeanPred[\Ndesign](\inputMatBatch), \GPKerPred[\Ndesign](\inputMatBatch))$. Then for an arbitrary set of inputs 
+$\newInputMat$, the predictive mean $\GPMeanPred[\Ndesign+\Nbatch](\newInputMat)$ and $\GPKerPred[\Ndesign+\Nbatch](\newInputMat)$
+ (viewed as functions of the random quantity $\outputVecBatch$) satisfy 
+\begin{align}
+\GPMeanPred[\Ndesign+\Nbatch](\newInputMat) 
+&\sim \Gaussian\left(\E\left[\llik_{\Ndesign}(\newInputMat)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right], 
+\GPKerPred[\Ndesign](\newInputMat, \inputMatBatch) \GPKerPred[\Ndesign](\inputMatBatch)^{-1} \GPKerPred(\inputMatBatch, \newInputMat) \right)  \label{mean_batch_uncertainty} \\
+\GPKerPred[\Ndesign+\Nbatch](\newInputMat) 
+& \sim \delta_{\GPKer(\newInputMat) - \GPKer(\newInputMat, \inputMat[\Ndesign+\Nbatch]) \KerMat[\Ndesign+\Nbatch]^{-1} \GPKer(\inputMat[\Ndesign+\Nbatch], \newInputMat)}  \label{ker_batch_uncertainty}
+\end{align}
+\end{lemma}
+The predictive kernel \ref{ker_batch_uncertainty} has no uncertainty given that the GP predictive variance does not depend on the response. The predictive mean does depend 
+on the response and thus exhibits uncertainty; it's mean $\E\left[\llik_{\Ndesign}(\newInputMat)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right]$ is 
+equal to the mean of the GP resulting from conditioning on the data $(\inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch))$ (i.e. the current GP mean is treated as if it 
+were the observed data). It's variance can be re-written as 
+\begin{align*}
+\Var_{\outputVecBatch}\left[\GPMeanPred[\Ndesign+\Nbatch](\newInputMat) \right] 
+&= \Var\left[\llik_{\Ndesign}(\newInputMat)\right]  - \Var\left[\llik_{\Ndesign}(\newInputMat) | \inputMatBatch  \right],
+\end{align*}
+which is the change in GP variance due to the addition of the new input batch $\inputMatBatch$. A larger change in variance implies that 
+the batch $\inputMatBatch$ is more influential and hence the resulting GP mean $\GPMeanPred[\Ndesign+\Nbatch]$ will be more uncertain. 
 
+The above lemma is useful in deriving an integrated variance criterion targeting $\tilde{\postDens}_{\Ndesign}$, which we recall is a log-Gaussian process emulating the unnormalized 
+posterior density. The following lemma shows that the expected variance of $\tilde{\postDens}_{\Ndesign+\Nbatch}(\newInput)$, with respect to 
+$\outputVecBatch \sim \Gaussian(\GPMeanPred[\Ndesign](\inputMatBatch), \GPKerPred[\Ndesign](\inputMatBatch))$, is available in closed-form. 
+\begin{lemma}
+Under the same assumptions as lemma \ref{lemma_pred_uncertainty}, it follows that 
+\begin{align*}
+\E_{\outputVecBatch} \Var\left[\tilde{\postDens}_{\Ndesign+\Nbatch}(\newInput) \right]
+&= \Var\left[\tilde{\postDens}_{\Ndesign}(\newInput)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right] v(\newInput; \inputMatBatch),
+\end{align*}
+where 
+\begin{align*}
+v(\newInput; \inputMatBatch) &= \exp\left\{2\left(\Var[\llik_{\Ndesign}(\newInput)] - \Var[\llik_{\Ndesign}(\newInput)| \inputMatBatch] \right) \right\}
+\end{align*}
+\end{lemma}
+We observe that the first term is simply the variance of the log-GP $\tilde{\postDens}_{\Ndesign}(\newInput)$ conditioned on the additional data 
+$(\inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch))$ (treating the current GP mean as observed data). The second term 
+$v(\newInput; \inputMatBatch)$, which we refer to as the \textit{variance inflation factor}, accounts for the GP uncertainty. We note that 
+$v(\newInput; \inputMatBatch) \geq 1$ and that this term is larger when the input batch $\inputMatBatch$ is more influential. If 
+$\inputMatBatch$ is a subset of the current design, then $v(\newInput; \inputMatBatch) = 1$ (no variance inflation). The final integrated 
+variance criterion is defined by integrating the expected variance over the input space, weighted by some density $\rho$. 
+\begin{definition} 
+The integrated expected variance (IEVAR) design criterion (i.e. acquisition function) $\acq[\Ndesign]: \parSpace^{\Nbatch} \to [0, \infty]$
+for batches of size $\Nbatch$ is defined by 
+\begin{align*}
+\acq[\Ndesign](\inputMatBatch)
+&:= \E_{\newInput \sim \rho} \E_{\outputVecBatch} \Var\left[\tilde{\postDens}_{\Ndesign+\Nbatch}(\newInput) \right] \\
+&= \int_{\parSpace} \Var\left[\tilde{\postDens}_{\Ndesign}(\newInput)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right]
+v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
+\end{align*}
+\end{definition} 
 
 
 \end{document}

@@ -87,8 +87,9 @@
 \newcommand{\GPMeanPred}[1][\designIdx]{\GPMean_{#1}} % GP predictive mean (conditioned on data).
 \newcommand{\GPKerPred}[1][\designIdx]{\GPKer_{#1}} % GP predictive covariance function (conditioned on data). 
 \newcommand{\KerMat}[1][\designIdx]{\mathbf{K}_{#1}} % Generic kernel matrix, explicitly showing dependence on number of design points.
-\newcommand{\newInputMat}{\mathbf{\tilde{U}}}
-
+\newcommand{\newInputMat}{\mathbf{\tilde{U}}} % Typically use when considering arbitrary input points. 
+\newcommand{\newInput}{\tilde{\bpar}}
+\newcommand{\inputMat}[1][]{\mathbf{U}_{#1}} % Generic input matrix, with option of adding subscript. 
 \newcommand{\bbf}{\mathbf{f}} % Bold version of target function; e.g. to be used to denote a vector of function evaluations. 
 \newcommand{\GPMeanOut}[1]{\mu^{(#1)}} % Univariate GP prior mean function for specific output variable 
 \newcommand{\GPMeanPredOut}[2]{\mu_{#1}^{(#2)}} % Univariate GP mean, conditioned on data, for specific output variable
@@ -159,7 +160,9 @@
 \newcommand{\currParMax}[1]{\bpar_{#1}^{\text{max}}} % Value of design point (calibration parameter) that currently has highest posterior density
 \newcommand{\currMax}[1]{\postDens_{#1}^{\text{max}}} % Current max value of posterior density
 \newcommand{\acq}[1][]{\mathcal{A}_{#1}} % Acquisition function
-\newcommand{\batchMat}{\tilde{\mathbf{U}}} % Matrix of candidate points in batch acquisition. 
+\newcommand{\batchMat}{\tilde{\mathbf{U}}} % Matrix of candidate points in batch acquisition.  TODO: duplicate to below, need to remove this. 
+\newcommand{\inputMatBatch}{\mathbf{U}_{\Nbatch}} % Typically use when considering a batch of candidate input points
+\newcommand{\outputVecBatch}{\boldsymbol{\ell}_{\Nbatch}}
 
 % --------------------------------------------------------------------------------------------------
 % Markov Chain Monte Carlo. 
