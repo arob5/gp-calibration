@@ -270,11 +270,11 @@ where
 v(\newInput; \inputMatBatch) &= \exp\left\{2\left(\Var[\llik_{\Ndesign}(\newInput)] - \Var[\llik_{\Ndesign}(\newInput)| \inputMatBatch] \right) \right\}
 \end{align*}
 \end{lemma}
-We observe that the first term is simply the variance of the log-GP $\tilde{\postDens}_{\Ndesign}(\newInput)$ conditioned on the additional data 
+We observe that the first term is simply the variance of the LNP $\tilde{\postDens}_{\Ndesign}(\newInput)$ conditioned on the additional data 
 $(\inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch))$ (treating the current GP mean as observed data). The second term 
 $v(\newInput; \inputMatBatch)$, which we refer to as the \textit{variance inflation factor}, accounts for the GP uncertainty. We note that 
 $v(\newInput; \inputMatBatch) \geq 1$ and that this term is larger when the input batch $\inputMatBatch$ is more influential. If 
-$\inputMatBatch$ is a subset of the current design, then $v(\newInput; \inputMatBatch) = 1$ (no variance inflation). The final integrated 
+$\inputMatBatch$ is a subset of the current design, then $v(\newInput; \inputMatBatch) = 1$ (no variance inflation). The expected integrated 
 variance criterion is defined by integrating the expected variance over the input space, weighted by some density $\rho$. 
 \begin{definition} 
 The integrated expected variance (IEVAR) design criterion (i.e. acquisition function) $\acq[\Ndesign]: \parSpace^{\Nbatch} \to [0, \infty]$
