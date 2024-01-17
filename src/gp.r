@@ -25,36 +25,44 @@ gpWrapper <- setRefClass(
    fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
                  X_dim="integer", Y_dim="integer",
                  scale_input="logical", normalize_output="logical",
-                 input_bounds="matrix", Y_mean="numeric", Y_std="numeric",
+                 X_bounds="matrix", Y_mean="numeric", Y_std="numeric",
                  X_names="character", Y_names="character",
-                 X_std="matrix", Y_norm="matrix")
+                 X_train="matrix", Y_train="matrix")
 )
 
 gpWrapper$methods(
   
-  initialize = function(X, Y, scale_input=FALSE, normalize_output=FALSE, ...) {
-
-    initFields(X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
-               normalize_output=normalize_output)
+  initialize = function(X, Y, scale_input=FALSE, normalize_output=FALSE, 
+                        x_names=NULL, y_names=NULL, ...) {
     
-    print(.self$X_dim)
+    initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
+               normalize_output=normalize_output, X_bounds=apply(X, 2, range))
     
     if(normalize_output) {
       initFields(Y_mean=colMeans(Y), Y_std=apply(Y, 2, sd))
-      initFields(Y_norm=.self$normalize(Y))
+      initFields(Y_train=.self$normalize(Y))
+    } else {
+      initFields(Y_train=Y)
     }
     
-    initFields(X=X, Y=Y)
-    initFields(...)
+    if(scale_input) {
+      initFields(X_train=.self$scale(X))
+    } else {
+      initFields(X_train=X)
+    }
+    
+    if(is.null(x_names)) x_names <- paste0("x", 1:X_dim)
+    if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
+    initFields(X_names=x_names, Y_names=y_names, ...)
   },
   
   scale = function(Xnew, inverse=FALSE) {
     if(inverse) {
-      Xnew <- Xnew %*% diag(input_bounds[2,] - input_bounds[1,], X_dim) + 
-              matrix(input_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)
+      Xnew <- Xnew %*% diag(X_bounds[2,] - X_bounds[1,], X_dim) + 
+              matrix(X_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)
     } else {
-      Xnew <- (Xnew - matrix(input_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)) %*% 
-              diag(1/(input_bounds[2,] - input_bounds[1,]), X_dim)
+      Xnew <- (Xnew - matrix(X_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)) %*% 
+              diag(1/(X_bounds[2,] - X_bounds[1,]), X_dim)
     }
     
     return(Xnew)
@@ -129,16 +137,23 @@ gpWrapperHet$methods(
 #
 
 # Testing base class. 
-X <- matrix(seq(0,1,length.out=5), ncol=1)
+X <- matrix(seq(10,20,length.out=5), ncol=1)
 Y <- X^2 + 0.2*matrix(rnorm(nrow(X)), ncol=1)
 
-gp <- gpWrapper(X,Y, normalize_output=TRUE)
+gp <- gpWrapper(X,Y, normalize_output=TRUE, scale_input=TRUE)
 gp$field("lib")
-gp$field("X")
+gp$field("normalize_output")
+gp$field("scale_input")
+gp$field("X_names")
+gp$field("Y_names")
+
 gp$field("Y")
-gp$Y_mean
-gp$Y_std
-gp$Y_norm
+gp$field("Y_mean")
+gp$field("Y_std")
+gp$field("Y_train")
+gp$field("X")
+gp$field("X_bounds")
+gp$field("X_train")
 
 
 # Testing hetGP wrapper.
