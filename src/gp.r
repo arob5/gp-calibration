@@ -6,15 +6,25 @@
 # Andrew Roberts
 # 
 
+library(assertthat)
+
 # -----------------------------------------------------------------------------
-# gp: the base Gaussian Process (GP) class. 
+# gpWrapper: the base Gaussian Process (GP) wrapper class.
+#
+# This class represents a "wrapper" over around an GP implementation from a
+# different R package. It serves as an interface between these other GP 
+# packages and PEcAn code. The idea is to define a modular object with 
+# a standardized interface providing access to common GP functionality 
+# (fit, predict, sample, plot, etc.) that can then be plugged into downstream 
+# tasks. This allows different R packages to be swapped in without modifying 
+# the downstream code. 
 # -----------------------------------------------------------------------------
 
 gpWrapper <- setRefClass(
    Class = "gpWrapper", 
-   fields = list(gp_model="ANY", lib="character", X="matrix", Y="numeric", 
+   fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
                  X_dim="integer", Y_dim="integer",
-                 scale_input="logical", scale_output="logical",
+                 scale_input="logical", normalize_output="logical",
                  input_bounds="matrix", Y_mean="numeric", Y_std="numeric",
                  X_names="character", Y_names="character",
                  X_std="matrix", Y_norm="matrix")
@@ -22,7 +32,23 @@ gpWrapper <- setRefClass(
 
 gpWrapper$methods(
   
-  scale_input = function(Xnew, inverse=FALSE) {
+  initialize = function(X, Y, scale_input=FALSE, normalize_output=FALSE, ...) {
+
+    initFields(X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
+               normalize_output=normalize_output)
+    
+    print(.self$X_dim)
+    
+    if(normalize_output) {
+      initFields(Y_mean=colMeans(Y), Y_std=apply(Y, 2, sd))
+      initFields(Y_norm=.self$normalize(Y))
+    }
+    
+    initFields(X=X, Y=Y)
+    initFields(...)
+  },
+  
+  scale = function(Xnew, inverse=FALSE) {
     if(inverse) {
       Xnew <- Xnew %*% diag(input_bounds[2,] - input_bounds[1,], X_dim) + 
               matrix(input_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)
@@ -34,7 +60,7 @@ gpWrapper$methods(
     return(Xnew)
   }, 
   
-  scale_output = function(Ynew, inverse=FALSE) {
+  normalize = function(Ynew, inverse=FALSE) {
     if(inverse) {
       Ynew <- Ynew * matrix(Y_std, nrow=nrow(Ynew), ncol=Y_dim, byrow=TRUE) + 
               matrix(Y_mean, nrow=nrow(Ynew), ncol=Y_dim, byrow=TRUE)
@@ -47,9 +73,6 @@ gpWrapper$methods(
   }
   
 )
-
-
-
 
 
 # Methods to add: 
@@ -67,7 +90,7 @@ gpWrapper$methods(
 gpWrapperHet <- setRefClass(
   Class = "gpWrapperHet",
   contains = "gpWrapper",
-  fields = list(lib="character")
+  fields = list(lib="character", valid_kernels="character", valid_means="character")
 )
 
 gpWrapperHet$methods(
@@ -105,10 +128,24 @@ gpWrapperHet$methods(
 # TEST
 #
 
-gp <- gpWrapperHet()
+# Testing base class. 
+X <- matrix(seq(0,1,length.out=5), ncol=1)
+Y <- X^2 + 0.2*matrix(rnorm(nrow(X)), ncol=1)
 
+gp <- gpWrapper(X,Y, normalize_output=TRUE)
 gp$field("lib")
-gp$field("model")
+gp$field("X")
+gp$field("Y")
+gp$Y_mean
+gp$Y_std
+gp$Y_norm
+
+
+# Testing hetGP wrapper.
+gpHet <- gpWrapperHet()
+
+gpHet$field("lib")
+gpHet$field("model")
 
 
 
