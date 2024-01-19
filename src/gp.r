@@ -158,11 +158,19 @@ gpWrapperHet$methods(
                      paste0(valid_mean_funcs, collapse=", ")))
   },
   
-  map_fixed_pars = function(fixed_pars) {
-    # Valid element names for `fixed_pars`: "mean_func", "kernel", "nugget"
-  },
-  
-  fit_package = function(output_idx, kernel="Gaussian", mean="constant", fixed_pars=list(), ...) {
+  fit_package = function(output_idx, kernel="Gaussian", mean="constant", estimate_nugget=TRUE, 
+                         fixed_pars=list(), ...) {
+    
+    # Deal with noiseless case. 
+    if(estimate_nugget) {
+      assert_that(!("g" %in% names(fixed_pars)), 
+                  msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
+    } else {
+      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- nugget
+    }
+    
+    if(length(fixed_pars) == 0) fixed_pars <- NULL
+    
     gp_fits <- mleHomGP(X_train, Y_train[,output_idx], covtype=map_kernel_name(kernel), known=fixed_pars, ...)
   },
   
