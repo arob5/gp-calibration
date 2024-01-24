@@ -94,7 +94,7 @@ gpWrapper$methods(
     gp_model <<- fits_list
   }, 
   
-  raw_fit_parallel = function(kernel="Gaussian", mean_func="constant", fixed_pars=list(), ...) {
+  fit_parallel = function(kernel="Gaussian", mean_func="constant", fixed_pars=list(), ...) {
     .NotYetImplemented()
   },
   
@@ -105,15 +105,37 @@ gpWrapper$methods(
     stop(err_msg)
   }, 
   
-  predict = function(X_new, mean=TRUE, var=TRUE, cov=FALSE, X_cov=X_new, include_nugget=TRUE) {
+  predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
+    
+    # Scale inputs, if required. 
+    if(scale_input) {
+      X_new <- .self$scale(X_new)
+      if(return_cov && !is.null(X_cov)) X_cov <- .self$scale(X_cov)
+    }
+    
+    # If covariance is requested, default to computing cov at inputs `X_new`. 
+    if(return_cov && is.null(X_cov)) X_cov <- X_new
+    
+    # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(pred_list)) pred_list[[j]] <- predict_package(X_new, mean, var, cov, X_cov, include_nugget)
     names(pred_list) <- Y_names
+    mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
+    var_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
+    cov_pred_list <- lapply(pred_list, function(l) l$cov)
+    
+    # Return outputs to unnormalized scale. 
+    if(normalize_output) {
+      if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
+      if(return_var) var_pred <- var_pred %*% diag(Y_std^2)
+      if(return_cov) for(i in seq_along(cov_pred_list)) cov_pred_list[[i]] <- Y_std[i]^2 * cov_pred_list[[i]] 
+    }
       
-    return(pred_list)
+    return(list(mean=mean_pred, var=var_pred, cov=cov_pred_list))
   }, 
   
-  predict_parallel = function(X_new, mean=TRUE, var=TRUE, cov=FALSE, X_cov=X_new, include_nugget=TRUE) {
+  predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, 
+                              return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
     .NotYetImplemented()
   }
 
