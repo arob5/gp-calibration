@@ -7,6 +7,7 @@
 # 
 
 library(assertthat)
+library(abind)
 
 # -----------------------------------------------------------------------------
 # gpWrapper: the base Gaussian Process (GP) wrapper class.
@@ -27,7 +28,9 @@ gpWrapper <- setRefClass(
                  scale_input="logical", normalize_output="logical",
                  X_bounds="matrix", Y_mean="numeric", Y_std="numeric",
                  X_names="character", Y_names="character",
-                 X_train="matrix", Y_train="matrix", nugget="numeric")
+                 X_train="matrix", Y_train="matrix", nugget="numeric", 
+                 valid_kernels="character", valid_mean_funcs="character", 
+                 kernel_name_map="list", mean_func_name_map="list")
 )
 
 gpWrapper$methods(
@@ -36,11 +39,15 @@ gpWrapper$methods(
                         x_names=NULL, y_names=NULL, 
                         nugget=sqrt(.Machine$double.eps), ...) {
     
+    assert_that(!any(is.na(X)), msg="NAs found in X.")
+    if(any(is.na(Y))) message("NAs found in Y with be removed for each output variable separately.")
+    
     initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
                normalize_output=normalize_output, X_bounds=apply(X, 2, range))
     
     if(normalize_output) {
-      initFields(Y_mean=colMeans(Y), Y_std=apply(Y, 2, sd))
+      sd_rm_na <- function(x) sd(x, na.rm=TRUE)
+      initFields(Y_mean=colMeans(Y, na.rm=TRUE), Y_std=apply(Y, 2, sd_rm_na))
       initFields(Y_train=.self$normalize(Y))
     } else {
       initFields(Y_train=Y)
@@ -51,6 +58,9 @@ gpWrapper$methods(
     } else {
       initFields(X_train=X)
     }
+    
+    initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2"), 
+               valid_mean_funcs=c("constant", "linear", "quadratic"))
     
     if(is.null(x_names)) x_names <- paste0("x", 1:X_dim)
     if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
@@ -81,24 +91,24 @@ gpWrapper$methods(
     return(Ynew)
   },
   
-  fit_package = function(output_idx, kernel="Gaussian", mean_func="constant", fixed_pars=list(), ...) {
+  fit_package = function(output_idx, kernel_name="Gaussian", mean_func_name="constant", fixed_pars=list(), ...) {
     err_msg <- "A fit_package() method must be implemented for each class inheriting from 
                 gpWrapper. gpWrapper does not implement its own fit_package() method. The
                 fit() method should ultimately call fit_package()."
     stop(err_msg)
   },
   
-  fit = function(kernel="Gaussian", mean_func="constant", fixed_pars=list(), ...) {
+  fit = function(kernel_name="Gaussian", mean_func_name="constant", fixed_pars=list(), ...) {
     fits_list <- vector(mode="list", length=Y_dim)
-    for(i in seq_along(fits_list)) fits_list[[j]] <- fit_package(i, kernel, mean_func, fixed_pars, ...)
+    for(i in seq_along(fits_list)) fits_list[[j]] <- fit_package(i, kernel_name, mean_func_name, fixed_pars, ...)
     gp_model <<- fits_list
   }, 
   
-  fit_parallel = function(kernel="Gaussian", mean_func="constant", fixed_pars=list(), ...) {
+  fit_parallel = function(kernel_name="Gaussian", mean_func_name="constant", fixed_pars=list(), ...) {
     .NotYetImplemented()
   },
   
-  predict_package = function(X_new, mean=TRUE, var=TRUE, cov=FALSE, X_cov=X_new, include_nugget=TRUE) {
+  predict_package = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
     err_msg <- "A predict_package() method must be implemented for each class inheriting from 
                 gpWrapper. gpWrapper does not implement its own predict_package() method. The
                 predict() method should ultimately call predict_package()."
@@ -118,28 +128,94 @@ gpWrapper$methods(
     
     # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
-    for(i in seq_along(pred_list)) pred_list[[j]] <- predict_package(X_new, mean, var, cov, X_cov, include_nugget)
+    for(i in seq_along(pred_list)) pred_list[[j]] <- predict_package(X_new, return_mean, return_var, return_cov, X_cov, include_nugget)
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
-    cov_pred_list <- lapply(pred_list, function(l) l$cov)
+    cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
+    if(return_cov) cov_pred <- aperm(cov_pred_list, perm=c(3,1,2))
     
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2)
-      if(return_cov) for(i in seq_along(cov_pred_list)) cov_pred_list[[i]] <- Y_std[i]^2 * cov_pred_list[[i]] 
+      if(return_cov) for(i in 1:Y_dim) cov_pred[i,,] <- Y_std[i]^2 * cov_pred[i,,]
     }
       
-    return(list(mean=mean_pred, var=var_pred, cov=cov_pred_list))
+    return(list(mean=mean_pred, var=var_pred, cov=cov_pred))
   }, 
   
   predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, 
                               return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
     .NotYetImplemented()
+  },
+  
+  
+  sample = function(X_new, include_cov=FALSE, include_nugget=TRUE, include_nugget=TRUE, N_samp=1, pred_list=list()) {
+    
+    # TODO: need to finish. 
+    
+    if(include_cov) {
+      pred_list <- predict(X_new, return_mean=TRUE, return_var=FALSE, return_cov=TRUE, 
+                           X_cov=X_new, include_nugget=include_nugget)
+    }
+    require_mean <- !("mean" %in% names(pred_list))
+    
+    samp <- array(dim=c(Y_dim, ncol(X_new), N_samp))
+    for(i in 1:Y_dim) {
+      samp[i,,] <- sample_Gaussian_chol(pred_list$mean[,i], chol_list[[i]], N_samp)
+    }
+    
+    return(samp)
+    
+  },
+  
+  sample_Gaussian_chol = function(mu, C_chol_lower, N_samp=1) {
+    mu + C_chol_lower %*% matrix(rnorm(nrow(C_chol_lower)*N_samp), ncol=N_samp)
+  },
+  
+  map_kernel_name = function(kernel_name) {
+    return(kernel_name_map[[kernel_name]])
+  },
+  
+  map_mean_func_name = function(mean_func_name) {
+    return(mean_func_name_map[[mean_func_name]])
   }
 
 )
+
+
+#
+# Package-Specific Classes that Inherit from gpWrapper:
+# Each time a new R GP library is to be added to the framework, a new class 
+# must be defined for the package which inherits from the gpWrapper base 
+# class. 
+#
+# Attributes defined by gpWrapper but that must be specified in the package-specific
+# class:
+#    kernel_name_map: list, to be interpreted as a dictionary with the names
+#                     attribute equal to the dictionary keys, which should be 
+#                     valid kernel names (the valid kernel names are defined 
+#                     by the `valid_kernels` attribute of gpWrapper). The 
+#                     values of the dictionary are the corresponding name 
+#                     used by the specific GP package. 
+#    mean_func_name_map: list, the analog of `kernel_name_map` for the mean 
+#                        functions. Note that `valid_mean_funcs` in 
+#                        gpWrapper provides the set of valid names. 
+#    
+#
+# Required methods: 
+#    fit_package: Handles the translation from the GP fit interface defined 
+#                 in gpWrapper to the format required by the GP package. 
+#    predict_package: The analog to `fit_package` but for prediction. 
+#
+
+
+
+
+
+
+
 
 # Methods to add: 
 #    get_input_dim()
@@ -155,32 +231,25 @@ gpWrapper$methods(
 
 gpWrapperHet <- setRefClass(
   Class = "gpWrapperHet",
-  contains = "gpWrapper",
-  fields = list(lib="character", valid_kernels="character", valid_means="character")
+  contains = "gpWrapper"
 )
 
 gpWrapperHet$methods(
   
-  initialize = function(gp_model=NULL, ...) {
-    initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2"), 
-               valid_mean_funcs=c("constant"))
-    callSuper(lib="hetGP", gp_model=gp_model, ...)
+  initialize = function(X, Y, ...) {
+    initFields(kernel_name_map=list(Gaussian="Gaussian", Matern5_2="Matern5_2", Matern3_2="Matern3_2"), 
+               mean_func_name_map=list(constant="beta0"))
+    callSuper(X=X, Y=Y, lib="hetGP", ...)
+    
+    assert_that(all(names(kernel_name_map) %in% valid_kernels), 
+                msg=paste0("Some kernel names not found in base gpWrapper class: ", 
+                           paste(setdiff(names(kernel_name_map), valid_kernels), collapse=", ")))
+    assert_that(all(names(mean_func_name_map) %in% valid_mean_funcs), 
+                msg=paste0("Some mean function names not found in base gpWrapper class: ", 
+                           paste(setdiff(names(mean_func_name_map), valid_mean_funcs), collapse=", ")))
   }, 
   
-  map_kernel_name = function(kernel) {
-    if(kernel == "Gaussian") return(invisible("Gaussian"))
-    else if(kernel == "Matern5_2") return(invisible("Matern5_2"))
-    else if(kernel == "Matern3_2") return(invisible("Matern3_2"))
-    else stop(paste0("hetGP only supports kernels ",  paste0(valid_kernels, collapse=", ")))
-  },
-  
-  map_mean_func_name = function(mean_func) {
-    if(mean_func == "constant") return(invisible("beta0"))
-    else stop(paste0("hetGP only supports mean functions ",
-                     paste0(valid_mean_funcs, collapse=", ")))
-  },
-  
-  fit_package = function(output_idx, kernel="Gaussian", mean="constant", estimate_nugget=TRUE, 
+  fit_package = function(output_idx, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
                          fixed_pars=list(), ...) {
     
     # Deal with noiseless case. 
@@ -193,17 +262,14 @@ gpWrapperHet$methods(
     
     if(length(fixed_pars) == 0) fixed_pars <- NULL
     
-    gp_fits <- mleHomGP(X_train, Y_train[,output_idx], covtype=map_kernel_name(kernel), known=fixed_pars, ...)
+    gp_fits <- mleHomGP(X_train, Y_train[,output_idx], covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
   },
   
-  predict_package = function(X_new, mean=TRUE, var=TRUE, cov=FALSE, X_cov=X_new, include_nugget=TRUE) {
-    if(cov) {
-      X_prime <- X_cov
-    } else {
-      X_prime <- NULL
-    }
+  predict_package = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
     
-    pred <- predict(gp_model, X_new, xprime=X_prime)
+    if(!return_cov) X_cov <- NULL
+    
+    pred <- predict(gp_model, X_new, xprime=X_cov)
     return_list <- list()
     if(mean) return_list$mean <- pred$mean
     if(var) {
@@ -213,7 +279,7 @@ gpWrapperHet$methods(
     
     if(cov) {
       return_list$cov <- pred$cov
-      # TODO: need to check that this is the right. 
+      # TODO: need to check that this is right. 
       if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs 
     }
     
@@ -233,7 +299,7 @@ gpWrapperHet$methods(
 X <- matrix(seq(10,20,length.out=5), ncol=1)
 Y <- X^2 + 0.2*matrix(rnorm(nrow(X)), ncol=1)
 
-gp <- gpWrapper(X,Y, normalize_output=TRUE, scale_input=TRUE)
+gp <- gpWrapper(X, Y, normalize_output=TRUE, scale_input=TRUE)
 gp$field("lib")
 gp$field("normalize_output")
 gp$field("scale_input")
@@ -252,10 +318,23 @@ gp$fit()
 
 
 # Testing hetGP wrapper.
-gpHet <- gpWrapperHet()
+gpHet <- gpWrapperHet(X, Y, normalize_output=TRUE, scale_input=TRUE)
 
 gpHet$field("lib")
-gpHet$field("model")
+gpHet$field("normalize_output")
+gpHet$field("scale_input")
+gpHet$field("X_names")
+gpHet$field("Y_names")
+gpHet$field("Y")
+gpHet$field("Y_mean")
+gpHet$field("Y_std")
+gpHet$field("Y_train")
+gpHet$field("X")
+gpHet$field("X_bounds")
+gpHet$field("X_train")
+gpHet$mean_func_name_map
+gpHet$kernel_name_map
+gpHet$field("gp_model")
 
 
 
