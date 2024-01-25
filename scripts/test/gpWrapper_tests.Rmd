@@ -1,0 +1,24 @@
+---
+title: "Tests for gpWrapper and Classes which Inherit from gpWrapper"
+author: "Andrew Roberts"
+date: '2023-12-19'
+output: html_document
+---
+
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(data.table)
+
+library(hetGP)
+library(mlegp)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper"))
+```
