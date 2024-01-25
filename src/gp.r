@@ -115,7 +115,8 @@ gpWrapper$methods(
     stop(err_msg)
   }, 
   
-  predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
+  predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
+                     X_cov=NULL, include_nugget=TRUE) {
     
     # Scale inputs, if required. 
     if(scale_input) {
@@ -128,22 +129,23 @@ gpWrapper$methods(
     
     # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
-    for(i in seq_along(pred_list)) pred_list[[j]] <- predict_package(X_new, return_mean, return_var, return_cov, X_cov, include_nugget)
+    for(i in seq_along(pred_list)) pred_list[[j]] <- predict_package(X_new, return_mean, return_var, 
+                                                                     return_cov, X_cov, include_nugget)
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
-    if(return_cov) cov_pred <- aperm(cov_pred_list, perm=c(3,1,2))
     
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2)
-      if(return_cov) for(i in 1:Y_dim) cov_pred[i,,] <- Y_std[i]^2 * cov_pred[i,,]
+      if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
     }
       
     return(list(mean=mean_pred, var=var_pred, cov=cov_pred))
   }, 
+  
   
   predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, 
                               return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
@@ -151,19 +153,26 @@ gpWrapper$methods(
   },
   
   
-  sample = function(X_new, include_cov=FALSE, include_nugget=TRUE, include_nugget=TRUE, N_samp=1, pred_list=list()) {
+  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, include_nugget=TRUE, N_samp=1, pred_list=NULL) {
     
-    # TODO: need to finish. 
-    
-    if(include_cov) {
-      pred_list <- predict(X_new, return_mean=TRUE, return_var=FALSE, return_cov=TRUE, 
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
                            X_cov=X_new, include_nugget=include_nugget)
     }
-    require_mean <- !("mean" %in% names(pred_list))
     
-    samp <- array(dim=c(Y_dim, ncol(X_new), N_samp))
+    # Compute lower Cholesky factors of the predictive covariance matrices. 
+    # If not using predictive cov, Cholesky factors are diagonal with standard devs on diag. 
+    if(use_cov) {
+      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, 
+                                                                         function(i) t(chol(pred_list$cov[,,i]))), along=3)
+    } else {
+      pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
+    }
+    
+    samp <- array(dim=c(ncol(X_new), N_samp, Y_dim))
     for(i in 1:Y_dim) {
-      samp[i,,] <- sample_Gaussian_chol(pred_list$mean[,i], chol_list[[i]], N_samp)
+      samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i], pred_list$chol_cov[,,i], N_samp)
     }
     
     return(samp)
@@ -171,7 +180,7 @@ gpWrapper$methods(
   },
   
   sample_Gaussian_chol = function(mu, C_chol_lower, N_samp=1) {
-    mu + C_chol_lower %*% matrix(rnorm(nrow(C_chol_lower)*N_samp), ncol=N_samp)
+    drop(mu) + C_chol_lower %*% matrix(rnorm(nrow(C_chol_lower)*N_samp), ncol=N_samp)
   },
   
   map_kernel_name = function(kernel_name) {
