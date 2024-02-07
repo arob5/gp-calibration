@@ -1570,7 +1570,7 @@ get_GP_confidence_intervals <- function(CI_prob, gp_mean, gp_var, transformation
   #    list, with named elements "lower" and "upper". Each corresponds to a vector of length equal to the length of `gp_mean` and `gp_var` 
   #    containing the lower and upper 100*`CI_prob`% confidence bounds. 
   
-  CI_tail_prob <- 0.5 * (1 - CI_prob)
+  CI_tail_prob <- 0.5 * (1-CI_prob)
   gp_sd <- sqrt(gp_var)
   
   if(is.na(transformation_method)) {

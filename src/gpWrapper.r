@@ -144,8 +144,15 @@ gpWrapper$methods(
     
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
-    var_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
+    var_pred <- do.call(cbind, lapply(pred_list, function(l) l$var))
     cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
+    
+    # Set negative variances to 0. 
+    neg_var_idx <- (var_pred < 0)
+    if(any(neg_var_idx)) {
+      message("Thresholding negative variance predictions at 0.")
+      var_pred[neg_var_idx] <- 0
+    }
     
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
@@ -165,7 +172,6 @@ gpWrapper$methods(
   
   
   sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, pred_list=NULL) {
-    
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
@@ -181,12 +187,42 @@ gpWrapper$methods(
       pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
     }
     
-    samp <- array(dim=c(ncol(X_new), N_samp, Y_dim))
+    samp <- array(dim=c(nrow(X_new), N_samp, Y_dim))
     for(i in 1:Y_dim) {
       samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i], pred_list$chol_cov[,,i], N_samp)
     }
     
     return(samp)
+    
+  },
+  
+  plot_pred_1d = function(X_new, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL, Y_new=NULL) {
+  
+    assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- predict(X_new, return_mean=TRUE, return_var=TRUE, include_nugget=include_nugget)
+    }
+    
+    CI_tail_prob <- 0.5 * (1-CI_prob)
+    plts <- vector(mode="list", length=Y_dim)
+    for(i in 1:Y_dim) {
+      df_train <- data.frame(x=X[non_na_idx[,i],1], y=Y[non_na_idx[,i],i])
+      df_pred <- data.frame(x=X_new[,1], y_mean=pred_list$mean[,i], y_sd=sqrt(pred_list$var[,i]))
+      df_pred$CI_upper <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd)
+      df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, lower.tail=FALSE)
+      if(!is.null(Y_new)) df_pred$y <- Y_new[,i]
+      
+      plts[[i]] <- ggplot(df_pred) + 
+                   geom_line(aes(x, y_mean), color="blue") + 
+                   geom_line(aes(x, CI_upper), color="gray") + 
+                   geom_line(aes(x, CI_lower), color="gray") +
+                   geom_point(aes(x,y), df_train, color="red")
+      if(!is.null(Y_new)) plts[[i]] <- plts[[i]] + geom_line(aes(x,y), linetype="dotted")
+    }
+    
+    return(plts)
     
   },
   
