@@ -75,6 +75,21 @@ for(i in 1:gpHet1$Y_dim) {
 }
 ```
 
+# 2d validation. 
+
+## hetGP
+```{r}
+# Fit
+gpHet2 <- gpWrapperHet(X2, Y2, normalize_output=TRUE, scale_input=TRUE)
+gpHet2$fit("Matern3_2", "constant", estimate_nugget=FALSE)
+```
+
+
+
+
+
+
+
 
 
 

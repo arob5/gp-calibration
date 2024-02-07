@@ -45,7 +45,7 @@ gpWrapper$methods(
     
     initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
                normalize_output=normalize_output, X_bounds=apply(X, 2, range),
-               non_na_idx=!is.na(Y))
+               non_na_idx=!is.na(Y), nugget=nugget)
     
     if(normalize_output) {
       sd_rm_na <- function(x) sd(x, na.rm=TRUE)
