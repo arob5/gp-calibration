@@ -226,6 +226,37 @@ gpWrapper$methods(
     
   },
   
+  plot_pred = function(X_new, Y_new, include_CI=FALSE, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL) {
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- predict(X_new, return_mean=TRUE, return_var=include_CI, include_nugget=include_nugget)
+    }
+    
+    CI_tail_prob <- 0.5 * (1-CI_prob)
+    plts <- vector(mode="list", length=Y_dim)
+    
+    for(i in 1:Y_dim) {
+      # df_train <- data.frame(x=X[non_na_idx[,i],1], y=Y[non_na_idx[,i],i])
+      df_pred <- data.frame(y=Y_new[,i], y_mean=pred_list$mean[,i])
+      if(include_CI) {
+        df_pred$y_sd <- sqrt(pred_list$var[,i])
+        df_pred$CI_upper <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd)
+        df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, lower.tail=FALSE)
+      }
+      
+      plts[[i]] <- ggplot(df_pred) + 
+                   geom_point(aes(y, y_mean), color="black") + 
+                   geom_abline(slope=1, intercept=0, color="red") + 
+                   xlab("Observed") + ylab("Predicted")
+    }
+    
+    return(plts)
+  },
+  
+  plot_loocv = function() {
+    .NotYetImplemented()
+  },
+  
   sample_Gaussian_chol = function(mu, C_chol_lower, N_samp=1) {
     drop(mu) + C_chol_lower %*% matrix(rnorm(nrow(C_chol_lower)*N_samp), ncol=N_samp)
   },

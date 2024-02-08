@@ -40,11 +40,13 @@ X1_new <- matrix(seq(10,20, length.out=101), ncol=1)
 Y1_new_noiseless <- f1(X1_new)
 
 # 2D input, 1D output, noiseless observations. 
+f2 <- function(x) matrix(3*x[,1]^2 - 2*x[,2]^3, ncol=1)
 X2 <- randomLHS(25, 2)
-Y2 <- matrix(3*X2[,1]^2 - 2*X2[,2]^3, ncol=1)
+Y2 <- f2(X2)
 Y2[sample.int(nrow(Y2), 4),] <- NA_real_
-X2_new <- expand.grid(seq(0,1, length.out=51), 
-                      seq(0,1, length.out=51))
+X2_new <- as.matrix(expand.grid(seq(0,1, length.out=51), 
+                                seq(0,1, length.out=51)))
+Y2_new <- f2(X2_new)
 ```
 
 
@@ -84,10 +86,13 @@ gpHet2 <- gpWrapperHet(X2, Y2, normalize_output=TRUE, scale_input=TRUE)
 gpHet2$fit("Matern3_2", "constant", estimate_nugget=FALSE)
 ```
 
-
-
-
-
+```{r}
+# TODO: Add plot_pred_2d for 2d heatmap plots so I can validate this plot. 
+# TODO: Add prediction intervals. 
+# Predict and plot. 
+# gpHet2_pred <- gpHet2$predict(X2_new)
+gpHet2$plot_pred(X2_new, Y2_new)
+```
 
 
 
