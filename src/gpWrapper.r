@@ -382,6 +382,101 @@ gpWrapperHet$methods(
 )
 
 
+# -----------------------------------------------------------------------------
+# llikEmulator: Class encapsulating a (typically stochastic) approximation to 
+#               the log-likelihood. 
+# 
+# This is the base class for a log likelihood approximation. It is intentionally 
+# quite general and intended to be the parent class for more specialized 
+# log likelihood approximation classes (e.g. multiplicative Gaussian llik 
+# with sum of squares emulated by GPs). This class is primarily intended 
+# to encapsulate a stochastic approximation to the log-likelihood, but 
+# it can be set up to function with a deterministic approximation (or 
+# just the exact likelihood, which is useful for testing code). Given the 
+# generality, not all of the core methods may apply to all approximate 
+# likelihoods. For example, the `mean_lik()` method is intended to return 
+# the expectation of the likelihood (i.e. the expectation of the 
+# exponentiated log-likelihood). In certain cases, there may not be a closed
+# form for this expression and the user may just implement this method 
+# to return an error if it is called. Alternatively, the user may want to 
+# implement this function to return a numerical approximation of this 
+# quantity. The field `model` is intended to be a model object of some 
+# sort (e.g. a gpWrapper instance) which is used to define the llik 
+# approximation. `lik_par` is stores the likelihood parameters. These 
+# can be stored in advance if the likelihood parameters will be fixed
+# throughout an analysis; otherwise, this field can be left NULL. Note 
+# that the likelihood approximation may be a function of the likelihood 
+# parameters (e.g. the likelihood parameters are included as inputs to 
+# a GP emulator). 
+#
+# Implementing a deterministic approximation: 
+# There are different ways to approach this. One is to just have the 
+# methods `mean_log()`, `mean_lik()`, `sample()` all return the 
+# determistic approximation. It may make sense to implement 
+# `var_log()` and `var_lik()` to return 0 or throw an error, depending 
+# on the specific needs. Note that this same method could be used 
+# to implement the exact (not approximate) likelihood as well, which 
+# could then be used for testing purposes. 
+# -----------------------------------------------------------------------------
+
+llikEmulator <- setRefClass(
+  Class = "llikEmulator", 
+  fields = list(model="ANY", lik_par="ANY", lik_description="character", 
+                emulator_description="character")
+)
+
+llikEmulator$methods(
+  
+  initialize = function(lik_description, emulator_description, model=NULL, base_lik_par=NULL, ...) {
+    initFields(lik_description=lik_description, emulator_description=emulator_description,
+               model=model, base_lik_par=base_lik_par)
+  }, 
+  
+  sample = function(input, lik_par=NULL) {
+    stop("`sample()` method not implemented.")
+  }, 
+  
+  mean_log = function(input, lik_par=NULL) {
+    stop("`mean_log()` method not implemented.")
+  }, 
+  
+  var_log = function(input, lik_par=NULL) {
+    stop("`var_log()` method not implemented.")
+  }, 
+  
+  mean_lik = function(input, lik_par=NULL) {
+    stop("`mean_lik()` method not implemented.")
+  }, 
+  
+  var_lik = function(input, lik_par=NULL) {
+    stop("`var_lik()` method not implemented.")
+  }
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #
