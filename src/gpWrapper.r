@@ -409,6 +409,14 @@ gpWrapperHet$methods(
 # parameters (e.g. the likelihood parameters are included as inputs to 
 # a GP emulator). 
 #
+# This class organizes the pieces comprising the likelihood into 
+# (1) "inputs": the primary parameters of interest; e.g. the parameters 
+# characterizing the forward model in an inverse problem; (2) "lik_par", 
+# other likelihood parameters (e.g. variance parameters) that define 
+# the observation model, may be unknown, but are not of primary interest; 
+# and (3) "lik_components", which are fixed quantities such as a 
+# sample size. 
+# 
 # Implementing a deterministic approximation: 
 # There are different ways to approach this. One is to just have the 
 # methods `mean_log()`, `mean_lik()`, `sample()` all return the 
@@ -419,6 +427,15 @@ gpWrapperHet$methods(
 # could then be used for testing purposes. 
 # -----------------------------------------------------------------------------
 
+#
+# TODO: update this so that it is defined by default to be a CONDITIONAL likelihood, 
+# viewed as a function of `input` with `lik_par` being the other parameters being 
+# conditioned on, and `lik_component` being other fixed stuctural information (such 
+# as sample size, number of outputs, etc.). Thus, by default all functions should 
+# output unnormalized values, dropping terms that only depend on `lik_par`. Overriding 
+# the default would then include these terms. An alternative is to have a class 
+# attribute that stores the default behavior.
+
 llikEmulator <- setRefClass(
   Class = "llikEmulator", 
   fields = list(model="ANY", lik_par="ANY", lik_description="character", 
@@ -427,35 +444,95 @@ llikEmulator <- setRefClass(
 
 llikEmulator$methods(
   
-  initialize = function(lik_description, emulator_description, model=NULL, base_lik_par=NULL, ...) {
+  initialize = function(lik_description, emulator_description, model=NULL, fixed_lik_par=NULL, ...) {
     initFields(lik_description=lik_description, emulator_description=emulator_description,
-               model=model, base_lik_par=base_lik_par)
+               model=model, fixed_lik_par=fixed_lik_par)
   }, 
   
-  sample = function(input, lik_par=NULL) {
+  sample = function(input, normalize=FALSE, ...) {
     stop("`sample()` method not implemented.")
   }, 
   
-  mean_log = function(input, lik_par=NULL) {
+  mean_log = function(input, normalize=FALSE, ...) {
     stop("`mean_log()` method not implemented.")
   }, 
   
-  var_log = function(input, lik_par=NULL) {
+  var_log = function(input, normalize=FALSE, ...) {
     stop("`var_log()` method not implemented.")
   }, 
   
-  mean_lik = function(input, lik_par=NULL) {
+  mean_lik = function(input, normalize=FALSE, ...) {
     stop("`mean_lik()` method not implemented.")
   }, 
   
-  var_lik = function(input, lik_par=NULL) {
+  var_lik = function(input, normalize=FALSE, ...) {
     stop("`var_lik()` method not implemented.")
+  },
+  
+  log_norm_constant = function(...) {
+    stop("`log_norm_constant()` method not implemented.")
   }
 
 )
 
 
+# -----------------------------------------------------------------------------
+# llikEmulatorMultGausGP: Encapsulates an approximation of a multiplicative 
+# Gaussian likelihood where the "sum of squared error" functions have been 
+# approximated by independent GPs. In particular, considers log-likelihood 
+# of the form: 
+#   p(Y|u) = C - 0.5 * sum_{p=1}^{P} sum_{t=1}^{T_p} (Y_{tp} - G(u)_{tp})^2 / sig_p^2
+# where C is a constant and G a function. The mappings 
+#   Phi(u) := sum_{t=1}^{T_p} (Y_{tp} - G(u)_{tp})^2
+# are assumed to be emulated by independent GPs. Hence the `model` field of this 
+# class is required to inherit from the `gpWrapper` class. 
+# -----------------------------------------------------------------------------
 
+llikEmulatorMultGausGP <- setRefClass(
+  Class = "llikEmulatorMultGausGP", 
+  contains = "llikEmulator",
+)
+
+llikEmulatorMultGausGP$methods(
+  
+  initialize = function(gp_model, N_obs, N_output, sig2=NULL, ...) {
+    assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
+    assert_that(is.integer(N_output) && N_output>0, msg="`N_output` must be an integer greater than 0.")
+    assert_that(is.integer(N_obs) && (length(N_obs)==N_output), 
+                msg="`N_obs` must be integer vector of length equal to `N_output`.")
+    assert_that(gp_model$Y_dim==N_output, msg="Number of independent GP emulators must equal `N_output`.")
+    if(!is.null(sig2)) {
+      assert_that(is.numeric(sig2) && (length(sig2)==N_output) && all(sig2>0), 
+                  msg="`sig2` must be numeric vector (potentially with NAs) of length `N_output`.")
+    } else {
+      sig2 <- rep(NA_real_, N_output)
+    }
+
+    fixed_lik_par <- list(N_obs=N_obs, N_output=N_output, sig2=sig2)
+    callSuper(lik_description="Multiplicative Gaussian.",
+              emulator_description="Independent GPs emulating sum of squared error functions.",
+              model=gp_model, fixed_lik_par=fixed_lik_par, ...)
+  },
+  
+  fill_missing_sig2 = function(sig2) {
+    missing_sel <- is.na(sig2)
+    if(any(missing_sel)) {
+      sig2[missing_sel] <- fixed_lik_par$sig2[missing_sel]
+    }
+    
+    return(sig2)
+  },
+  
+  log_norm_constant = function(sig2=fixed_lik_par$sig2) {
+    sig2 <- fill_missing_sig2(sig2)
+    -0.5 * sum(fixed_lik_par$N_obs * log(2*pi*sig2))
+  },
+  
+  sample = function(input, lik_par=NULL) {
+    stop("`sample()` method not implemented.")
+  }
+  
+)
 
 
 
