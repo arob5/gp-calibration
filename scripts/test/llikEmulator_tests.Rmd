@@ -1,0 +1,102 @@
+---
+title: "Tests for llikEmulator and Classes which Inherit from llikEmulator"
+author: "Andrew Roberts"
+date: '2024-02-13'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+```
+
+```{r}
+set.seed(10)
+```
+
+
+```{r}
+#
+# Test datasets for code validation. 
+#
+
+# 1D input, 2D output, noisy observations. 
+f1 <- function(x) cbind(x^2, 3*x^3)
+X1 <- matrix(seq(10,20,length.out=5), ncol=1)
+Y1 <- f1(X1) + cbind(5*rnorm(nrow(X1)), 30*rnorm(nrow(X1)))
+Y1[sample.int(nrow(Y1), 1), 1] <- NA_real_
+X1_new <- matrix(seq(10,20, length.out=101), ncol=1)
+Y1_new_noiseless <- f1(X1_new)
+
+# 2D input, 1D output, noiseless observations. 
+f2 <- function(x) matrix(3*x[,1]^2 - 2*x[,2]^3, ncol=1)
+X2 <- randomLHS(25, 2)
+Y2 <- f2(X2)
+Y2[sample.int(nrow(Y2), 4),] <- NA_real_
+X2_new <- as.matrix(expand.grid(seq(0,1, length.out=51), 
+                                seq(0,1, length.out=51)))
+Y2_new <- f2(X2_new)
+```
+
+
+# 1d validation. 
+
+TODO: need to also add check for negative predictive variance in covariance matrix. 
+
+## hetGP
+```{r}
+# Fit
+gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpHet1$fit("Gaussian", "constant")
+```
+
+```{r}
+# Predict 
+gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
+gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
+```
+
+
+```{r}
+# Sample 
+gpHet1_samp <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred)
+for(i in 1:gpHet1$Y_dim) {
+  matplot(X1_new, gpHet1_samp[,,i],type="l")
+  lines(X1_new, Y1_new_noiseless[,i], col="red")
+}
+```
+
+# 2d validation. 
+
+## hetGP
+```{r}
+# Fit
+gpHet2 <- gpWrapperHet(X2, Y2, normalize_output=TRUE, scale_input=TRUE)
+gpHet2$fit("Matern3_2", "constant", estimate_nugget=FALSE)
+```
+
+```{r}
+# TODO: Add plot_pred_2d for 2d heatmap plots so I can validate this plot. 
+# TODO: Add prediction intervals. 
+# Predict and plot. 
+# gpHet2_pred <- gpHet2$predict(X2_new)
+gpHet2$plot_pred(X2_new, Y2_new)
+```
+
+
+
+
+
+
+
