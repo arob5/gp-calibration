@@ -438,15 +438,16 @@ gpWrapperHet$methods(
 
 llikEmulator <- setRefClass(
   Class = "llikEmulator", 
-  fields = list(model="ANY", lik_par="ANY", lik_description="character", 
-                emulator_description="character")
+  fields = list(emulator_model="ANY", lik_description="character", 
+                emulator_description="character", default_normalize="logical")
 )
 
 llikEmulator$methods(
   
-  initialize = function(lik_description, emulator_description, model=NULL, fixed_lik_par=NULL, ...) {
+  initialize = function(lik_description, emulator_description, emulator_model=NULL, 
+                        default_normalize=FALSE, ...) {
     initFields(lik_description=lik_description, emulator_description=emulator_description,
-               model=model, fixed_lik_par=fixed_lik_par)
+               emulator_model=emulator_model, default_normalize=default_normalize)
   }, 
   
   sample = function(input, normalize=FALSE, ...) {
@@ -481,21 +482,33 @@ llikEmulator$methods(
 # Gaussian likelihood where the "sum of squared error" functions have been 
 # approximated by independent GPs. In particular, considers log-likelihood 
 # of the form: 
-#   p(Y|u) = C - 0.5 * sum_{p=1}^{P} sum_{t=1}^{T_p} (Y_{tp} - G(u)_{tp})^2 / sig_p^2
+#   log p(Y|u, Sig) = C - 0.5 * sum_{p=1}^{P} sum_{t=1}^{T_p} (Y_{tp} - G(u)_{tp})^2 / sig2_p
 # where C is a constant and G a function. The mappings 
 #   Phi(u) := sum_{t=1}^{T_p} (Y_{tp} - G(u)_{tp})^2
 # are assumed to be emulated by independent GPs. Hence the `model` field of this 
-# class is required to inherit from the `gpWrapper` class. 
+# class is required to inherit from the `gpWrapper` class. This class interprets
+# the `input` argument as `u` (typically the forward model parameters, which 
+# are of primary interest). This class also requires a second argument `sig2` to its 
+# core functions, which is the vector of variance parameters. 
+#
+# By default, the class represents a "conditional" llik (meaning conditional 
+# on some current value of `sig2`), which practically means that setting 
+# `normalize=FALSE` will drop additive constants that depend on `sig2`. 
+# By setting `default_conditional=FALSE`, this behavior is reversed and 
+# terms involving `sig2` are no longer interpreted as normalizing constants. 
 # -----------------------------------------------------------------------------
 
 llikEmulatorMultGausGP <- setRefClass(
   Class = "llikEmulatorMultGausGP", 
   contains = "llikEmulator",
+  fields = list(N_obs="integer", N_output="integer", default_conditional="logical", 
+                default_normalize="logical", sum_obs="integer")
 )
 
 llikEmulatorMultGausGP$methods(
   
-  initialize = function(gp_model, N_obs, N_output, sig2=NULL, ...) {
+  initialize = function(gp_model, N_obs, N_output, sig2=NULL, default_conditional=TRUE, 
+                        default_normalize=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.integer(N_output) && N_output>0, msg="`N_output` must be an integer greater than 0.")
     assert_that(is.integer(N_obs) && (length(N_obs)==N_output), 
@@ -503,33 +516,29 @@ llikEmulatorMultGausGP$methods(
     assert_that(gp_model$Y_dim==N_output, msg="Number of independent GP emulators must equal `N_output`.")
     if(!is.null(sig2)) {
       assert_that(is.numeric(sig2) && (length(sig2)==N_output) && all(sig2>0), 
-                  msg="`sig2` must be numeric vector (potentially with NAs) of length `N_output`.")
-    } else {
-      sig2 <- rep(NA_real_, N_output)
-    }
-
-    fixed_lik_par <- list(N_obs=N_obs, N_output=N_output, sig2=sig2)
-    callSuper(lik_description="Multiplicative Gaussian.",
-              emulator_description="Independent GPs emulating sum of squared error functions.",
-              model=gp_model, fixed_lik_par=fixed_lik_par, ...)
-  },
-  
-  fill_missing_sig2 = function(sig2) {
-    missing_sel <- is.na(sig2)
-    if(any(missing_sel)) {
-      sig2[missing_sel] <- fixed_lik_par$sig2[missing_sel]
+                  msg="`sig2` must be NULL or numeric vector of length `N_output`.")
     }
     
-    return(sig2)
+    initFields(N_obs=N_obs, N_output=N_output, default_conditional=default_conditional, 
+               default_normalize=default_normalize, sum_obs=sum(N_obs))
+    callSuper(lik_description="Multiplicative Gaussian.",
+              emulator_description="Independent GPs emulating sum of squared error functions.",
+              emulator_model=gp_model, ...)
   },
   
-  log_norm_constant = function(sig2=fixed_lik_par$sig2) {
-    sig2 <- fill_missing_sig2(sig2)
-    -0.5 * sum(fixed_lik_par$N_obs * log(2*pi*sig2))
-  },
   
-  sample = function(input, lik_par=NULL) {
-    stop("`sample()` method not implemented.")
+  sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
+                    conditional=default_conditional, normalize=FALSE) {
+    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)
+                                  
+    for(j in 1:N_output) {
+      samp[,,j] <- -0.5 * samp[,,j] / sig2[j]
+      if(normalize || !conditional) samp[,,j] <- samp[,,j] - 0.5*N_obs[j]*log(sig2[j])
+    }
+    
+    if(normalize) samp <- samp - 0.5*sum_obs*log(2*pi)
+    if(sum_output_llik) return(rowSums(samp, dims=2))
+    return(samp)
   }
   
 )
