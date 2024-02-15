@@ -166,23 +166,9 @@ llikSumEmulator$methods(
                                                      conditional=conditional, normalize=normalize)
     }
     
-        
-  },
-  
-  
-  
-  sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
-                    conditional=default_conditional, normalize=FALSE, ...) {
-    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)
-    
-    for(j in 1:N_output) {
-      samp[,,j] <- -0.5 * samp[,,j] / sig2[j]
-      if(normalize || !conditional) samp[,,j] <- samp[,,j] - 0.5*N_obs[j]*log(sig2[j])
-    }
-    
-    if(normalize) samp <- samp - 0.5*sum_obs*log(2*pi)
-    if(sum_output_llik) return(rowSums(samp, dims=2))
+    if(sum_terms) return(rowSums(samp, dims=2))
     return(samp)
+    
   }
   
 )
