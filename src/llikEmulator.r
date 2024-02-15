@@ -67,39 +67,122 @@ library(abind)
 llikEmulator <- setRefClass(
   Class = "llikEmulator", 
   fields = list(emulator_model="ANY", lik_description="character", 
-                emulator_description="character", default_normalize="logical")
+                emulator_description="character", default_conditional="logical",
+                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY")
 )
 
 llikEmulator$methods(
   
   initialize = function(lik_description, emulator_description, emulator_model=NULL, 
-                        default_normalize=FALSE, ...) {
+                        default_conditional=FALSE, default_normalize=FALSE, 
+                        lik_par_fixed=FALSE, lik_par=NULL, ...) {
+    
+    if(lik_par_fixed && !is.null(lik_par)) lock("lik_par")
+    
     initFields(lik_description=lik_description, emulator_description=emulator_description,
-               emulator_model=emulator_model, default_normalize=default_normalize)
+               emulator_model=emulator_model, default_conditional=default_conditional,
+               default_normalize=default_normalize, lik_par_fixed=lik_par_fixed, lik_par=lik_par)
+    
+    if(lik_par_fixed && is.null(lik_par)) {
+      message("Fixed `lik_par` not passed. May be set once and then field will be locked.")
+    }
   }, 
   
-  sample = function(input, normalize=FALSE, ...) {
+  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
+                    normalize=default_normalize, ...) {
     stop("`sample()` method not implemented.")
-  }, 
+  },
   
-  mean_log = function(input, normalize=FALSE, ...) {
+  mean_log = function(input, lik_par=NULL, conditional=default_conditional, 
+                      normalize=default_normalize, ...) {
     stop("`mean_log()` method not implemented.")
   }, 
   
-  var_log = function(input, normalize=FALSE, ...) {
+  var_log = function(input, lik_par=NULL, conditional=default_conditional, 
+                     normalize=default_normalize, ...) {
     stop("`var_log()` method not implemented.")
   }, 
   
-  mean_lik = function(input, normalize=FALSE, ...) {
+  mean_lik = function(input, lik_par=NULL, conditional=default_conditional, 
+                      normalize=default_normalize, ...) {
     stop("`mean_lik()` method not implemented.")
   }, 
   
-  var_lik = function(input, normalize=FALSE, ...) {
+  var_lik = function(input, lik_par=NULL, conditional=default_conditional, 
+                     normalize=default_normalize, ...) {
     stop("`var_lik()` method not implemented.")
   },
   
-  log_norm_constant = function(...) {
+  log_norm_constant = function(lik_par=NULL, conditional=default_conditional, 
+                               normalize=default_normalize, ...) {
     stop("`log_norm_constant()` method not implemented.")
+  }
+  
+)
+
+
+# -----------------------------------------------------------------------------
+# llikSumEmulator Class 
+# -----------------------------------------------------------------------------
+
+llikSumEmulator <- setRefClass(
+  Class = "llikSumEmulator", 
+  contains = "llikEmulator",
+  fields = list(llik_emulator_terms="list", term_labels="character", N_terms="integer")
+)
+
+llikSumEmulator$methods(
+  
+  initialize = function(llik_emulator_list, default_conditional=TRUE, default_normalize=FALSE, 
+                        lik_description="Sum of llik terms.", emulator_description="", 
+                        llik_emulator_labels=NULL, ...) {
+    
+    assert_that(all(sapply(testlist, function(obj) inherits(obj, "llikEmulator"))), 
+                msg="`llikEmulator_list` must be a list of llikEmulator objects.")
+    assert_that(!is.null(llik_emulator_labels) || !is.null(names(llik_emulator_list)), 
+                msg="`llik_emulator_list` must be named list OR `llik_emulator_labels` must be passed.")
+    if(!is.null(llik_emulator_labels)) {
+      assert_that(is.character(llik_emulator_labels) && (length(llik_emulator_labels)==length(llik_emulator_list)), 
+                  msg="`llik_emulator_labels` must be character vector of equal length to `llik_emulator_list`.")
+    }
+    
+    if(is.null(llik_emulator_labels)) llik_emulator_labels <- names(llik_emulator_list)
+    initFields(llik_emulator_terms=llik_emulator_list, term_labels=llik_emulator_labels, 
+               N_terms=length(llik_emulator_list))
+    
+    callSuper(lik_description=lik_description, emulator_description=emulator_description,
+              emulator_model=NULL, default_conditional=default_conditional, 
+              default_normalize=default_normalize, 
+              lik_par_fixed=NULL, lik_par=NULL)
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
+                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, ...) {
+    
+    samp <- array(dim=c(nrow(input), N_samp, length(term_labels)))
+    for(i in seq_along(labels)) {
+      lbl <- labels[i]
+      samp[,,i] <- llik_emulator_terms[[lbl]]$sample(input, lik_par[[lbl]], N_samp=N_samp, 
+                                                     conditional=conditional, normalize=normalize)
+    }
+    
+        
+  },
+  
+  
+  
+  sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
+                    conditional=default_conditional, normalize=FALSE, ...) {
+    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)
+    
+    for(j in 1:N_output) {
+      samp[,,j] <- -0.5 * samp[,,j] / sig2[j]
+      if(normalize || !conditional) samp[,,j] <- samp[,,j] - 0.5*N_obs[j]*log(sig2[j])
+    }
+    
+    if(normalize) samp <- samp - 0.5*sum_obs*log(2*pi)
+    if(sum_output_llik) return(rowSums(samp, dims=2))
+    return(samp)
   }
   
 )
@@ -126,11 +209,15 @@ llikEmulator$methods(
 # terms involving `sig2` are no longer interpreted as normalizing constants. 
 # -----------------------------------------------------------------------------
 
+#
+# TODO: should probably also have method for computing the exact likelihood. i.e., 
+#       pass in either the sufficient statistic or model output and it will compute. 
+#
+
 llikEmulatorMultGausGP <- setRefClass(
   Class = "llikEmulatorMultGausGP", 
   contains = "llikEmulator",
-  fields = list(N_obs="integer", N_output="integer", default_conditional="logical", 
-                default_normalize="logical", sum_obs="integer")
+  fields = list(N_obs="integer", N_output="integer", sum_obs="integer")
 )
 
 llikEmulatorMultGausGP$methods(
@@ -156,7 +243,7 @@ llikEmulatorMultGausGP$methods(
   
   
   sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
-                    conditional=default_conditional, normalize=FALSE) {
+                    conditional=default_conditional, normalize=FALSE, ...) {
     samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)
     
     for(j in 1:N_output) {
@@ -170,3 +257,4 @@ llikEmulatorMultGausGP$methods(
   }
   
 )
+
