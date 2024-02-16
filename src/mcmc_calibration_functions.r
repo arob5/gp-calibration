@@ -550,10 +550,10 @@ run_computer_model <- function(theta_vals, computer_model_data) {
   #    Either Nxp matrix or list of Nxp matrices of length equal to the number of rows in `theta_vals`. 
   #    See above description for details. 
   
-  if(!is.matrix(theta_vals) || (nrow(theta_vals) == 1)) {
-    return(computer_model_data$f(theta_vals, computer_model_data = computer_model_data))
+  if(!is.matrix(theta_vals) || (nrow(theta_vals)==1)) {
+    return(computer_model_data$f(theta_vals, computer_model_data=computer_model_data))
   } else {
-    return(apply(theta_vals, 1, function(theta) computer_model_data$f(theta, computer_model_data = computer_model_data), simplify = FALSE))
+    return(apply(theta_vals, 1, function(theta) computer_model_data$f(theta, computer_model_data = computer_model_data), simplify=FALSE))
   }
   
 }
@@ -617,11 +617,11 @@ get_computer_model_SSR <- function(computer_model_data, model_outputs_list=NULL,
   #    for the jth output of the ith model run, i.e. ||Y_j - f(j, theta_i)||^2.
   
   # Observed data. 
-  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars, drop = FALSE]
+  data_obs <- computer_model_data$data_obs[, computer_model_data$output_vars, drop=FALSE]
   
   # Run forward model if it has not been run yet. 
   if(is.null(model_outputs_list)) {
-    model_outputs_list <- run_computer_model(theta_vals = theta_vals, computer_model_data = computer_model_data)
+    model_outputs_list <- run_computer_model(theta_vals=theta_vals, computer_model_data=computer_model_data)
   }
   
   # If model only run at single set of calibration parameter values. 
@@ -631,10 +631,10 @@ get_computer_model_SSR <- function(computer_model_data, model_outputs_list=NULL,
   
   N_param_runs <- length(model_outputs_list)
   N_outputs <- ncol(model_outputs_list[[1]])
-  SSR <- matrix(nrow = N_param_runs, ncol = N_outputs)
+  SSR <- matrix(nrow=N_param_runs, ncol=N_outputs)
   
   for(i in seq_along(model_outputs_list)) {
-    SSR[i,] <- colSums((data_obs - model_outputs_list[[i]])^2, na.rm = na.rm)
+    SSR[i,] <- colSums((data_obs - model_outputs_list[[i]])^2, na.rm=na.rm)
   }
   colnames(SSR) <- colnames(data_obs)
   

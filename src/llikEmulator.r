@@ -88,32 +88,39 @@ llikEmulator$methods(
     }
   }, 
   
-  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
+  get_lik_par = function (lik_par_val=NULL) {
+    
+    if(lik_par_fixed) return(lik_par)
+    return(lik_par_val)
+    
+  },
+  
+  sample = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     stop("`sample()` method not implemented.")
   },
   
-  mean_log = function(input, lik_par=NULL, conditional=default_conditional, 
+  mean_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
                       normalize=default_normalize, ...) {
     stop("`mean_log()` method not implemented.")
   }, 
   
-  var_log = function(input, lik_par=NULL, conditional=default_conditional, 
+  var_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
                      normalize=default_normalize, ...) {
     stop("`var_log()` method not implemented.")
   }, 
   
-  mean_lik = function(input, lik_par=NULL, conditional=default_conditional, 
+  mean_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
                       normalize=default_normalize, ...) {
     stop("`mean_lik()` method not implemented.")
   }, 
   
-  var_lik = function(input, lik_par=NULL, conditional=default_conditional, 
+  var_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
                      normalize=default_normalize, ...) {
     stop("`var_lik()` method not implemented.")
   },
   
-  log_norm_constant = function(lik_par=NULL, conditional=default_conditional, 
+  log_norm_constant = function(lik_par_val=NULL, conditional=default_conditional, 
                                normalize=default_normalize, ...) {
     stop("`log_norm_constant()` method not implemented.")
   }
@@ -133,7 +140,7 @@ llikSumEmulator <- setRefClass(
 
 llikSumEmulator$methods(
   
-  initialize = function(llik_emulator_list, default_conditional=TRUE, default_normalize=FALSE, 
+  initialize = function(llik_emulator_list, default_conditional=FALSE, default_normalize=FALSE, 
                         lik_description="Sum of llik terms.", emulator_description="", 
                         llik_emulator_labels=NULL, ...) {
     
@@ -175,6 +182,63 @@ llikSumEmulator$methods(
 
 
 # -----------------------------------------------------------------------------
+# llikEmulatorMultGausGP class
+# -----------------------------------------------------------------------------
+
+llikEmulatorMultGausGP <- setRefClass(
+  Class = "llikEmulatorMultGausGP", 
+  contains = "llikEmulator",
+  fields = list(N_obs="integer")
+)
+
+llikEmulatorMultGausGP$methods(
+  
+  initialize = function(gp_model, N_obs, sig2=NULL, default_conditional=FALSE, default_normalize=FALSE, 
+                        lik_par_fixed=FALSE, ...) {
+    assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
+    assert_that(is.integer(N_output) && N_output>0, msg="`N_output` must be an integer greater than 0.")
+    assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
+                msg="`N_obs` must be an integer greater than 0.")
+    assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
+    
+    if(!is.null(sig2)) {
+      assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
+    }
+    
+    initFields(N_obs=N_obs)
+    callSuper(lik_description="Multiplicative Gaussian.",
+              emulator_description="GP emulating sum of squared error function.",
+              default_conditional=default_conditional, default_normalize=default_normalize,
+              emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, ...)
+  }, 
+  
+  sample = function(input, sig2=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
+                    conditional=default_conditional, normalize=FALSE, ...) {
+    # Sample quadratic error.  
+    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)[,,1]
+    
+    # Set negative error samples to 0. 
+    if(any(samp < 0)) {
+      message("Warning: Setting negative GP quadratic error samples to 0.")
+      samp[samp < 0] <- 0
+    }
+    
+    # Fetch the variance parameter. 
+    sig2 <- get_lik_par(sig2)
+    
+    # Compute unnormalized or normalized log-likelihood. 
+    samp <- -0.5 * samp / sig2
+    if(normalize || !conditional) samp <- samp - 0.5*N_obs*log(sig2)
+    if(normalize) samp <- samp - 0.5*N_obs*log(2*pi)
+    
+    return(samp)
+  }
+
+)
+
+
+
+# -----------------------------------------------------------------------------
 # llikEmulatorMultGausGP: Encapsulates an approximation of a multiplicative 
 # Gaussian likelihood where the "sum of squared error" functions have been 
 # approximated by independent GPs. In particular, considers log-likelihood 
@@ -200,13 +264,13 @@ llikSumEmulator$methods(
 #       pass in either the sufficient statistic or model output and it will compute. 
 #
 
-llikEmulatorMultGausGP <- setRefClass(
-  Class = "llikEmulatorMultGausGP", 
+llikSumEmulatorMultGausGP <- setRefClass(
+  Class = "llikSumEmulatorMultGausGP", 
   contains = "llikEmulator",
   fields = list(N_obs="integer", N_output="integer", sum_obs="integer")
 )
 
-llikEmulatorMultGausGP$methods(
+llikSumEmulatorMultGausGP$methods(
   
   initialize = function(gp_model, N_obs, N_output, sig2=NULL, default_conditional=TRUE, 
                         default_normalize=FALSE, ...) {

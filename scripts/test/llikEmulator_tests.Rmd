@@ -19,6 +19,7 @@ src_dir <- file.path(base_dir, "src")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
 ```
@@ -39,31 +40,81 @@ set.seed(global_seed)
 N_obs <- 100
 N_missing_output1 <- 4
 N_missing_output2 <- 6
+u_bound_lower <- 0
+u_bound_upper <- 3
+u_prior <- data.frame(dist="Uniform", param1=u_bound_lower, param2=u_bound_upper)
 
-# 1D input, 2D output, some missing observations. 
+# 1D input, 2D output, some missing observations.
 G1_mat <- sin(2*pi*seq(1,N_obs)/N_obs)
 G2_mat <- cos(2*pi*3*seq(1,N_obs)/N_obs)
-G <- function(U) cbind(G1_mat %*% t(U), G2_mat %*% t(U))
-u_true <- matrix(rnorm(1, 0, 3), nrow=1)
+G <- function(U, ...) cbind(y1=G1_mat %*% t(U), y2=G2_mat %*% t(U))
+u_true <- matrix(runif(1, min=u_bound_lower, max=u_bound_upper), nrow=1)
 sig2_true <- c(1, 1.5)
 G_true <- G(u_true)
-Y <- G_true + cbind(rnorm(N_obs, 0, sqrt(sig2_true[1])), 
+Y <- G_true + cbind(rnorm(N_obs, 0, sqrt(sig2_true[1])),
                     rnorm(N_obs, 0, sqrt(sig2_true[2])))
 Y[sample.int(N_obs, N_missing_output1),1] <- NA_real_
 Y[sample.int(N_obs, N_missing_output2),2] <- NA_real_
+colnames(Y) <- c("y1", "y2")
+computer_model_data <- list(data_obs=Y, f=G, output_vars=c("y1", "y2"))
 
 for(p in 1:ncol(Y)) {
-  plot(1:N_obs, Y[,p], main=paste0("Ground Truth and Observed Data: Output ", p), 
-       xlab="t", ylab="y")
+  plot(1:N_obs, Y[,p], main=paste0("Ground Truth and Observed Data: Output ", p),
+       xlab="t", ylab=colnames(Y)[p])
   lines(1:N_obs, G_true[,p], col="red")
 }
 
 ```
 
+```{r}
+# 1D input, 1D output example. 
+G_1 <- function(U, ...) {cbind(y1=G1_mat %*% t(U))}
+sig2_true_1 <- sig2_true[1]
+G_true_1 <- G_true[,1,drop=FALSE]
+Y_1 <- Y[,"y1",drop=FALSE]
+computer_model_data_1 <- list(data_obs=Y_1, f=G_1, output_vars="y1")
 
-# 1d validation. 
+plot(1:N_obs, Y_1, main="Ground Truth and Observed Data: 1D Output Test",
+     xlab="t", ylab=colnames(Y_1))
+lines(1:N_obs, G_true_1, col="red")
+```
 
-TODO: need to also add check for negative predictive variance in covariance matrix. 
+```{r}
+# Generate design points in parameter space. 
+
+# Settings. 
+N_design <- 4
+
+# Bounds on parameter space.  
+input_bounds <- rbind(u_bound_lower, u_bound_upper)
+rownames(input_bounds) <- c("min", "max")
+
+# Generate latin hypercube design. 
+design_info <- get_input_output_design(N_points=N_design,
+                                       design_method="LHS", 
+                                       scale_inputs=FALSE,
+                                       normalize_response = FALSE,
+                                       param_ranges=input_bounds,  
+                                       computer_model_data=computer_model_data_1, 
+                                       theta_prior_params=u_prior)
+```
+
+
+
+
+
+
+
+# Testing llikEmulator Class using 1D output example. 
+
+```{r}
+# First fit GP. 
+```
+
+
+
+
+
 
 ## hetGP
 ```{r}
