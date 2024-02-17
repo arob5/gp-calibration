@@ -84,6 +84,7 @@ lines(1:N_obs, G_true_1, col="red")
 
 # Settings. 
 N_design <- 4
+N_test <- 51
 
 # Bounds on parameter space.  
 input_bounds <- rbind(u_bound_lower, u_bound_upper)
@@ -93,37 +94,38 @@ rownames(input_bounds) <- c("min", "max")
 design_info <- get_input_output_design(N_points=N_design,
                                        design_method="LHS", 
                                        scale_inputs=FALSE,
-                                       normalize_response = FALSE,
+                                       normalize_response=FALSE,
                                        param_ranges=input_bounds,  
                                        computer_model_data=computer_model_data_1, 
                                        theta_prior_params=u_prior)
+
+# Validation data. 
+test_info <- get_input_output_design(N_points=N_test,
+                                     design_method="grid", 
+                                     scale_inputs=FALSE,
+                                     normalize_response=FALSE,
+                                     param_ranges=input_bounds,  
+                                     computer_model_data=computer_model_data_1, 
+                                     theta_prior_params=u_prior)
 ```
-
-
-
-
-
 
 
 # Testing llikEmulator Class using 1D output example. 
 
 ```{r}
-# First fit GP. 
+# First fit GP emulator. 
+gp1 <- gpWrapperHet(design_info$inputs, design_info$outputs, normalize_output=TRUE, scale_input=TRUE)
+gp1$fit("Gaussian", "constant")
 ```
 
 
-
-
-
-
-## hetGP
 ```{r}
-# Fit
-gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-gpHet1$fit("Gaussian", "constant")
-```
+# TODO: check issue with Matern kernel. 
+# Predict. 
+gp1$plot_pred_1d(test_info$inputs, Y_new=test_info$outputs)
 
-```{r}
+test <- gp1$predict(test_info$inputs)
+
 # Predict 
 gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)

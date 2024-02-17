@@ -126,7 +126,6 @@ gpWrapper$methods(
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
                      X_cov=NULL, include_nugget=TRUE) {
-    
     # Scale inputs, if required. 
     if(scale_input) {
       X_new <- .self$scale(X_new)
@@ -157,7 +156,7 @@ gpWrapper$methods(
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
-      if(return_var) var_pred <- var_pred %*% diag(Y_std^2)
+      if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
       if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
     }
       
