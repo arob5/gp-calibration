@@ -196,7 +196,6 @@ llikEmulatorMultGausGP$methods(
   initialize = function(gp_model, N_obs, sig2=NULL, default_conditional=FALSE, default_normalize=FALSE, 
                         lik_par_fixed=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
-    assert_that(is.integer(N_output) && N_output>0, msg="`N_output` must be an integer greater than 0.")
     assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
                 msg="`N_obs` must be an integer greater than 0.")
     assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
@@ -212,8 +211,19 @@ llikEmulatorMultGausGP$methods(
               emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, ...)
   }, 
   
-  sample = function(input, sig2=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
-                    conditional=default_conditional, normalize=FALSE, ...) {
+  assemble_llik = function(SSR, sig2, conditional=default_conditional, normalize=default_normalize) {
+    # SSR should be N_input x N_samp. 
+    
+    llik <- -0.5 * SSR / sig2
+    if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
+    if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
+    
+    return(llik)
+    
+  },
+  
+  sample = function(input, sig2=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
+                    conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample quadratic error.  
     samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)[,,1]
     
@@ -227,11 +237,8 @@ llikEmulatorMultGausGP$methods(
     sig2 <- get_lik_par(sig2)
     
     # Compute unnormalized or normalized log-likelihood. 
-    samp <- -0.5 * samp / sig2
-    if(normalize || !conditional) samp <- samp - 0.5*N_obs*log(sig2)
-    if(normalize) samp <- samp - 0.5*N_obs*log(2*pi)
-    
-    return(samp)
+    assemble_llik(samp, sig2, conditional, normalize)
+
   }
 
 )

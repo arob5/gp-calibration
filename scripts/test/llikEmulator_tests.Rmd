@@ -109,6 +109,17 @@ test_info <- get_input_output_design(N_points=N_test,
                                      theta_prior_params=u_prior)
 ```
 
+```{r}
+# True likelihood for validation inputs. 
+llik1_true <- vector(mode="numeric", length=N_test)
+G_test_true_1 <- G_1(test_info$inputs)
+
+for(i in seq_along(llik1_true)) {
+  llik1_true[i] <- sum(dnorm(drop(Y_1), mean=G_test_true_1[,i], sd=sqrt(sig2_true_1), log=TRUE), na.rm=TRUE)
+}
+
+```
+
 
 # Testing llikEmulator Class using 1D output example. 
 
@@ -123,13 +134,41 @@ gp1$fit("Gaussian", "constant")
 # TODO: check issue with Matern kernel. 
 # Predict. 
 gp1$plot_pred_1d(test_info$inputs, Y_new=test_info$outputs)
-
-test <- gp1$predict(test_info$inputs)
-
-# Predict 
-gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
-gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```
+```{r}
+# Create llikEmulatorMultGausGP object. 
+llik_emulator1 <- llikEmulatorMultGausGP(gp1, N_obs=sum(!is.na(Y_1)), sig2=NULL, 
+                                         default_conditional=FALSE, default_normalize=FALSE, 
+                                         lik_par_fixed=FALSE)
+llik_design <- llik_emulator1$assemble_llik(design_info$outputs, sig2_true_1, normalize=TRUE)
+```
+
+```{r}
+# Sample llik emulator: not using cross-input covaraince. 
+llik_samples1 <- llik_emulator1$sample(test_info$inputs, sig2=sig2_true_1, N_samp=10, use_cov=FALSE, 
+                                       include_nugget=TRUE, normalize=TRUE)
+
+matplot(test_info$inputs, llik_samples1, type="l", col="gray", main="llik samples, no-cov")
+matlines(test_info$inputs, llik1_true, col="red")
+matpoints(design_info$inputs, llik_design, col="red", pch="o")
+
+# Sample llik_emulator: using cross-input covariance.
+llik_samples1 <- llik_emulator1$sample(test_info$inputs, sig2=sig2_true_1, N_samp=10, use_cov=TRUE, 
+                                       include_nugget=TRUE, normalize=TRUE)
+
+matplot(test_info$inputs, llik_samples1, type="l", col="gray", main="llik samples, cov")
+matlines(test_info$inputs, llik1_true, col="red")
+matpoints(design_info$inputs, llik_design, col="red", pch="o")
+
+```
+
+
+
+
+
+
+
+
 
 
 ```{r}
