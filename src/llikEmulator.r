@@ -77,7 +77,10 @@ llikEmulator$methods(
                         default_conditional=FALSE, default_normalize=FALSE, 
                         lik_par_fixed=FALSE, lik_par=NULL, ...) {
     
-    if(lik_par_fixed && !is.null(lik_par)) lock("lik_par")
+    if(lik_par_fixed && !is.null(lik_par)) {
+      message("`lik_par_fixed` currently does not formally lock the variable - it can be modified.")
+      # .self$lock("lik_par")
+    }
     
     initFields(lik_description=lik_description, emulator_description=emulator_description,
                emulator_model=emulator_model, default_conditional=default_conditional,
@@ -211,9 +214,13 @@ llikEmulatorMultGausGP$methods(
               emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, ...)
   }, 
   
-  assemble_llik = function(SSR, sig2, conditional=default_conditional, normalize=default_normalize) {
+  assemble_llik = function(SSR, sig2=NULL, conditional=default_conditional, normalize=default_normalize) {
     # SSR should be N_input x N_samp. 
     
+    # Fetch the variance parameter. 
+    sig2 <- get_lik_par(sig2)
+    
+    # Construct likelihood using the quadratic error. 
     llik <- -0.5 * SSR / sig2
     if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
@@ -232,9 +239,6 @@ llikEmulatorMultGausGP$methods(
       message("Warning: Setting negative GP quadratic error samples to 0.")
       samp[samp < 0] <- 0
     }
-    
-    # Fetch the variance parameter. 
-    sig2 <- get_lik_par(sig2)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, sig2, conditional, normalize)
