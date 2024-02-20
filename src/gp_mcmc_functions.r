@@ -709,6 +709,108 @@ mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, the
 }
 
 
+#
+# New functions (using new class structure). 
+#
+
+# Need to check that the llik_emulator is correct for this function. 
+# Infer which sig2 need to be learned by the `lik_par_fixed` attribute.
+# How to map `sig2_prior+_params` onto the proper parameters? 
+# TODO: need to have checking in llikSumEmulator to make sure the same input parameters are 
+# used for each term. 
+mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
+                          sig2_prior_params=NULL, N_itr=50000, adapt_C=TRUE,
+                          adapt_scale=TRUE, use_gp_cov=FALSE) {
+  
+  # Validation and setup for log-likelihood emulator. 
+  validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
+                              adapt_C, adapt_scale, use_gp_cov)
+  term_labels_learn_sig2 <- llik_emulator$term_labels[!llik_emulator$lik_par_fixed]
+  N_obs <- llik_emulator$get_llik_term_attr("N_obs", term_labels_learn_sig2)
+  
+  # Objects to store samples. 
+  d <- llik_emulator$dim_input
+  par_samp <- matrix(nrow=N_itr, ncol=d)
+  colnames(par_samp) <- llik_emulator$input_names
+  
+  # Set initial conditions. 
+  if(is.null(par_init)) {
+    theta_init <- sample_prior_theta(par_prior_params)
+  }
+  par_samp[1,] <- par_init
+  par_curr <- par_init
+  sig2_curr <- setNames(sig2_init, term_labels_learn_sig2)
+
+  # Proposal covariance.
+  cov_prop <- diag(rep(1,d))
+  L_cov_prop <- t(chol(cov_prop))
+  log_scale_prop <- log(2.38) - 0.5*log(d)
+
+  for(itr in 2:N_itr) {
+    #
+    # Metropolis step for calibration parameters.
+    #
+    
+    # Random walk proposal. 
+    par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
+
+    # Compute prior. 
+    lprior_prop <- calc_lprior_theta(par_prop, par_prior_params)
+    
+    # Sample log-likelihood emulator. 
+    emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), use_cov=use_gp_cov, 
+                                                        include_nugget=TRUE)  
+                                                       
+    llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
+                                             normalize=FALSE)
+
+    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0).
+    if(any(par_prop < theta_prior_params[["bound_lower"]], na.rm=TRUE) ||
+       any(par_prop > theta_prior_params[["bound_upper"]], na.rm=TRUE)) {
+      
+      par_samp[itr,] <- par_samp[itr-1,]
+      SSR_idx <- 1
+      alpha <- 0
+      
+    } else {
+      
+      # Accept-Reject step.
+      lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
+      lpost_par_curr <- lprior_par_curr + llik_samp[1,]
+      lpost_par_prop <- lprior_par_prop + llik_samp[2,]
+      alpha <- min(1.0, exp(lpost_par_prop - lpost_par_curr))
+
+      if(runif(1) <= alpha) {
+        par_samp[itr,] <- par_prop
+        lprior_par_curr <- lprior_par_prop
+        SSR_idx <- 2 
+        accept_count <- accept_count + 1 
+      } else {
+        par_samp[itr,] <- par_samp[itr-1,]
+        SSR_idx <- 2 
+      }
+      
+    }
+    
+    # Update sum of squared residuals (SSR) sample. 
+    SSR_curr <- sapply(term_labels_learn_sig2, function(lbl) emulator_samp_list[[lbl]][SSR_idx,])
+    
+    # Adapt proposal covariance matrix and scaling term.
+    # TODO
+    
+    #
+    # Gibbs step for sig2. 
+    #
+    
+    # TODO: how to deal with parameter ordering here? 
+    sig2_eps_curr <- sample_NIG_cond_post_sig2(SSR_curr, sig2_prior_info, N_obs)
+
+    
+    
+  }
+  
+  
+}
 
 
 

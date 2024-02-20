@@ -228,36 +228,3 @@ matpoints(design_info$inputs, llik_design_2, col="red", pch="o")
 
 
 
-
-```{r}
-# Sample 
-gpHet1_samp <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred)
-for(i in 1:gpHet1$Y_dim) {
-  matplot(X1_new, gpHet1_samp[,,i],type="l")
-  lines(X1_new, Y1_new_noiseless[,i], col="red")
-}
-```
-
-# 2d validation. 
-
-## hetGP
-```{r}
-# Fit
-gpHet2 <- gpWrapperHet(X2, Y2, normalize_output=TRUE, scale_input=TRUE)
-gpHet2$fit("Matern3_2", "constant", estimate_nugget=FALSE)
-```
-
-```{r}
-# TODO: Add plot_pred_2d for 2d heatmap plots so I can validate this plot. 
-# TODO: Add prediction intervals. 
-# Predict and plot. 
-# gpHet2_pred <- gpHet2$predict(X2_new)
-gpHet2$plot_pred(X2_new, Y2_new)
-```
-
-
-
-
-
-
-

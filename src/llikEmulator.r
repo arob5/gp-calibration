@@ -68,7 +68,8 @@ llikEmulator <- setRefClass(
   Class = "llikEmulator", 
   fields = list(emulator_model="ANY", lik_description="character", 
                 emulator_description="character", default_conditional="logical",
-                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY")
+                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY", 
+                input_names="character", lik_par_names="character")
 )
 
 llikEmulator$methods(
@@ -99,7 +100,7 @@ llikEmulator$methods(
   },
   
   sample = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                    normalize=default_normalize, ...) {
+                    normalize=default_normalize, return_list=FALSE, ...) {
     stop("`sample()` method not implemented.")
   },
   
@@ -163,22 +164,28 @@ llikSumEmulator$methods(
     callSuper(lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
               default_normalize=default_normalize, 
-              lik_par_fixed=NULL, lik_par=NULL)
+              lik_par_fixed=all(sapply(llik_emulator_list, function(x) x$lik_par_fixed)), lik_par=NULL)
   },
   
   sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
-                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, ...) {
+                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, 
+                    return_list=FALSE, ...) {
     
     samp <- array(dim=c(nrow(input), N_samp, length(term_labels)))
+    samp_emulator <- list()
+    
     for(i in seq_along(labels)) {
       lbl <- labels[i]
-      samp[,,i] <- llik_emulator_terms[[lbl]]$sample(input, lik_par[[lbl]], N_samp=N_samp, 
-                                                     conditional=conditional, normalize=normalize)
+      samp_term <- llik_emulator_terms[[lbl]]$sample(input, lik_par[[lbl]], N_samp=N_samp, 
+                                                     conditional=conditional, normalize=normalize, 
+                                                     return_list=TRUE)
+      samp[,,i] <- samp_term$llik
+      if(return_list) samp_emulator[[lbl]] <- samp_term$emulator
     }
     
-    if(sum_terms) return(rowSums(samp, dims=2))
+    if(sum_terms) samp <- rowSums(samp, dims=2)
+    if(return_list) return(list(llik=samp, emulator=samp_emulator))
     return(samp)
-    
   }
   
 )
@@ -230,7 +237,8 @@ llikEmulatorMultGausGP$methods(
   },
   
   sample = function(input, sig2=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
-                    conditional=default_conditional, normalize=default_normalize, ...) {
+                    conditional=default_conditional, normalize=default_normalize, 
+                    return_list=FALSE, ...) {
     # Sample quadratic error.  
     samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)[,,1]
     
@@ -241,7 +249,11 @@ llikEmulatorMultGausGP$methods(
     }
     
     # Compute unnormalized or normalized log-likelihood. 
-    assemble_llik(samp, sig2, conditional, normalize)
+    llik_samp <- assemble_llik(samp, sig2, conditional, normalize)
+    
+    # If `return_list` is TRUE, include emulator model samples as well. 
+    if(return_list) return(list(llik=llik_samp, emulator=samp))
+    return(llik_samp)
 
   }
 
