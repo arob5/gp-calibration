@@ -66,67 +66,89 @@ library(abind)
 
 llikEmulator <- setRefClass(
   Class = "llikEmulator", 
-  fields = list(emulator_model="ANY", lik_description="character", 
+  fields = list(emulator_model="ANY", lik_description="character", llik_label="character",
                 emulator_description="character", default_conditional="logical",
-                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY", 
-                input_names="character", lik_par_names="character")
+                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY",
+                input_names="character", lik_par_names="character", dim_input="integer")
+                 
 )
+
+llikEmulator$lock("llik_label")
 
 llikEmulator$methods(
   
-  initialize = function(lik_description, emulator_description, emulator_model=NULL, 
-                        default_conditional=FALSE, default_normalize=FALSE, 
-                        lik_par_fixed=FALSE, lik_par=NULL, ...) {
-    
+  initialize = function(llik_label, lik_description, emulator_description, emulator_model=NULL, 
+                        default_conditional=FALSE, default_normalize=FALSE,
+                        lik_par_fixed=FALSE, lik_par=NULL, dim_input=NULL, ...) {
+                        
     if(lik_par_fixed && !is.null(lik_par)) {
       message("`lik_par_fixed` currently does not formally lock the variable - it can be modified.")
       # .self$lock("lik_par")
     }
     
-    initFields(lik_description=lik_description, emulator_description=emulator_description,
-               emulator_model=emulator_model, default_conditional=default_conditional,
-               default_normalize=default_normalize, lik_par_fixed=lik_par_fixed, lik_par=lik_par)
+    initFields(input_names=input_names, lik_description=lik_description, 
+               emulator_description=emulator_description, emulator_model=emulator_model, 
+               default_conditional=default_conditional, default_normalize=default_normalize,  
+               lik_par_fixed=lik_par_fixed, lik_par=lik_par, llik_label=llik_label,
+               dim_input=dim_input)
     
     if(lik_par_fixed && is.null(lik_par)) {
       message("Fixed `lik_par` not passed. May be set once and then field will be locked.")
     }
   }, 
   
-  get_lik_par = function (lik_par_val=NULL) {
-    
+  get_lik_par = function(lik_par_val=NULL) {
     if(lik_par_fixed) return(lik_par)
-    return(lik_par_val)
+    assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
+    if(use_names) return(lik_par_val[lik_par_names])
     
+    return(lik_par_val)
+  },
+  
+  get_input = function(input) {
+    assert_that(is.matrix(input) && ncol(input)==dim_input, 
+                msg="`input` must be matrix with ncol equal to `dim_input`.")
+    
+    return(input[,input_names])
+  },
+  
+  sample_emulator = function(input, N_samp=1, ...) {
+    .NotYetImplemented()
+  },
+  
+  assemble_llik = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                           normalize=default_normalize, ...) {
+    .NotYetImplemented()
   },
   
   sample = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                    normalize=default_normalize, return_list=FALSE, ...) {
-    stop("`sample()` method not implemented.")
+                    normalize=default_normalize, ...) {
+    .NotYetImplemented()
   },
   
   mean_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
                       normalize=default_normalize, ...) {
-    stop("`mean_log()` method not implemented.")
+    .NotYetImplemented()
   }, 
   
   var_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
                      normalize=default_normalize, ...) {
-    stop("`var_log()` method not implemented.")
+    .NotYetImplemented()
   }, 
   
   mean_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
                       normalize=default_normalize, ...) {
-    stop("`mean_lik()` method not implemented.")
+    .NotYetImplemented()
   }, 
   
   var_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
                      normalize=default_normalize, ...) {
-    stop("`var_lik()` method not implemented.")
+    .NotYetImplemented()
   },
   
   log_norm_constant = function(lik_par_val=NULL, conditional=default_conditional, 
                                normalize=default_normalize, ...) {
-    stop("`log_norm_constant()` method not implemented.")
+    .NotYetImplemented()
   }
   
 )
@@ -145,47 +167,76 @@ llikSumEmulator <- setRefClass(
 llikSumEmulator$methods(
   
   initialize = function(llik_emulator_list, default_conditional=FALSE, default_normalize=FALSE, 
-                        lik_description="Sum of llik terms.", emulator_description="", 
-                        llik_emulator_labels=NULL, ...) {
+                        lik_description="Sum of llik terms.", emulator_description="", ...) {
     
-    assert_that(all(sapply(testlist, function(obj) inherits(obj, "llikEmulator"))), 
+    assert_that(all(sapply(llik_emulator_list, function(obj) inherits(obj, "llikEmulator"))), 
                 msg="`llikEmulator_list` must be a list of llikEmulator objects.")
-    assert_that(!is.null(llik_emulator_labels) || !is.null(names(llik_emulator_list)), 
-                msg="`llik_emulator_list` must be named list OR `llik_emulator_labels` must be passed.")
-    if(!is.null(llik_emulator_labels)) {
-      assert_that(is.character(llik_emulator_labels) && (length(llik_emulator_labels)==length(llik_emulator_list)), 
-                  msg="`llik_emulator_labels` must be character vector of equal length to `llik_emulator_list`.")
-    }
+    assert_that(length(unique(sapply(llik_emulator_list, function(obj) obj$dim_input)))==1, 
+                msg="Inputs of llik terms have differing dimensions.")
     
-    if(is.null(llik_emulator_labels)) llik_emulator_labels <- names(llik_emulator_list)
-    initFields(llik_emulator_terms=llik_emulator_list, term_labels=llik_emulator_labels, 
-               N_terms=length(llik_emulator_list))
-    
+    # Set labels for each llik emulator term, ensuring they are unique. The names attribute of 
+    # the list in the field `llik_emulator_terms` is also assigned the vector of labels, ensuring
+    # the order of the two is the same. 
+    term_lbls <- sapply(llik_emulator_list, function(obj) obj$llik_label)
+    assert_that(length(unique(term_lbls))==1, msg="Found duplicate `llik_label` attributes in `llik_emulator_list`.")
+    names(llik_emulator_list) <- term_lbls
+    initFields(llik_emulator_terms=llik_emulator_list, term_labels=term_lbls, N_terms=length(llik_emulator_list))
+  
     callSuper(lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
-              default_normalize=default_normalize, 
+              default_normalize=default_normalize,
+              dim_input=llik_emulator_list[[1]]$dim_input,
               lik_par_fixed=all(sapply(llik_emulator_list, function(x) x$lik_par_fixed)), lik_par=NULL)
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
-                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, 
-                    return_list=FALSE, ...) {
+  get_llik_term_attr = function(attr_name, labels=term_labels) {
     
-    samp <- array(dim=c(nrow(input), N_samp, length(term_labels)))
-    samp_emulator <- list()
+    attr_list <- vector(mode="list", length=length(labels))
+    for(i in seq_along(attr_list)) {
+      lbl <- labels[i]
+      attr_list[[lbl]] <- llik_emulator_terms[[lbl]]$field(attr_name)
+    }
+    
+    return(attr_list)
+    
+  },
+  
+  sample_emulator = function(input, N_samp=1, labels=term_labels, ...) {
+    
+    samp_list <- list()
     
     for(i in seq_along(labels)) {
       lbl <- labels[i]
-      samp_term <- llik_emulator_terms[[lbl]]$sample(input, lik_par[[lbl]], N_samp=N_samp, 
-                                                     conditional=conditional, normalize=normalize, 
-                                                     return_list=TRUE)
-      samp[,,i] <- samp_term$llik
-      if(return_list) samp_emulator[[lbl]] <- samp_term$emulator
+      samp_list[[lbl]] <- llik_emulator_terms[[lbl]]$sample_emulator(input, N_samp=N_samp, ...)
+    }   
+  
+    return(samp_list)
+  },
+  
+  assemble_llik = function(emulator_vals_list, lik_par=NULL, conditional=default_conditional, 
+                           normalize=default_normalize, sum_terms=TRUE, labels=names(emulator_vals_list), ...) {
+    
+    llik_list <- list()
+    
+    for(i in seq_along(labels)) {
+      lbl <- labels[i]
+      llik_list[[lbl]] <- llik_emulator_terms[[lbl]]$assemble_llik(emulator_vals_list[[lbl]], lik_par[[lbl]], 
+                                                                   conditional=conditional, normalize=normalize)
     }
     
-    if(sum_terms) samp <- rowSums(samp, dims=2)
-    if(return_list) return(list(llik=samp, emulator=samp_emulator))
-    return(samp)
+    # Combine into single array. Term label names assigned to third dimension. 
+    llik_vals <- abind(llik_list, along=3)
+    
+    if(sum_terms) llik_vals <- rowSums(llik_vals, dims=2)
+    return(llik_vals)
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
+                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, ...) {
+  
+    emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=term_labels, ...)
+    asemble_llik(emulator_samp_list, lik_par, conditional=conditional, normalize=normalize,
+                 sum_terms=sum_terms, labels=labels)
   }
   
 )
@@ -203,8 +254,8 @@ llikEmulatorMultGausGP <- setRefClass(
 
 llikEmulatorMultGausGP$methods(
   
-  initialize = function(gp_model, N_obs, sig2=NULL, default_conditional=FALSE, default_normalize=FALSE, 
-                        lik_par_fixed=FALSE, ...) {
+  initialize = function(gp_model, N_obs, input_names, lik_par_names, llik_lbl, sig2=NULL, default_conditional=FALSE, 
+                        default_normalize=FALSE, lik_par_fixed=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
                 msg="`N_obs` must be an integer greater than 0.")
@@ -218,16 +269,17 @@ llikEmulatorMultGausGP$methods(
     callSuper(lik_description="Multiplicative Gaussian.",
               emulator_description="GP emulating sum of squared error function.",
               default_conditional=default_conditional, default_normalize=default_normalize,
-              emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, ...)
+              emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, 
+              dim_input=gp_model$X_dim, ...)
   }, 
   
-  assemble_llik = function(SSR, sig2=NULL, conditional=default_conditional, normalize=default_normalize) {
+  assemble_llik = function(SSR, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
     # SSR should be N_input x N_samp. 
     
     # Fetch the variance parameter. 
-    sig2 <- get_lik_par(sig2)
+    sig2 <- get_lik_par(lik_par)
     
-    # Construct likelihood using the quadratic error. 
+    # Construct likelihood using SSR.  
     llik <- -0.5 * SSR / sig2
     if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
@@ -236,33 +288,50 @@ llikEmulatorMultGausGP$methods(
     
   },
   
-  sample = function(input, sig2=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
-                    conditional=default_conditional, normalize=default_normalize, 
-                    return_list=FALSE, ...) {
-    # Sample quadratic error.  
+  
+  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+                             
+    # Sample SSR. 
     samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)[,,1]
     
-    # Set negative error samples to 0. 
+    # Set negative samples to 0. 
     if(any(samp < 0)) {
       message("Warning: Setting negative GP quadratic error samples to 0.")
       samp[samp < 0] <- 0
     }
     
-    # Compute unnormalized or normalized log-likelihood. 
-    llik_samp <- assemble_llik(samp, sig2, conditional, normalize)
+    return(samp)
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
+                    conditional=default_conditional, normalize=default_normalize, ...) {
+    # Sample SSR. 
+    samp <- sample_emulator(input, N_samp, use_cov, include_nugget)
     
-    # If `return_list` is TRUE, include emulator model samples as well. 
-    if(return_list) return(list(llik=llik_samp, emulator=samp))
-    return(llik_samp)
-
+    # Compute unnormalized or normalized log-likelihood. 
+    assemble_llik(samp, lik_par, conditional, normalize)
   }
 
 )
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -----------------------------------------------------------------------------
-# llikEmulatorMultGausGP: Encapsulates an approximation of a multiplicative 
+# llikSumEmulatorMultGausGP: Encapsulates an approximation of a multiplicative 
 # Gaussian likelihood where the "sum of squared error" functions have been 
 # approximated by independent GPs. In particular, considers log-likelihood 
 # of the form: 

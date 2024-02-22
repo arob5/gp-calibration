@@ -725,7 +725,8 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   # Validation and setup for log-likelihood emulator. 
   validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
                               adapt_C, adapt_scale, use_gp_cov)
-  term_labels_learn_sig2 <- llik_emulator$term_labels[!llik_emulator$lik_par_fixed]
+  learn_sig2 <- llik_emulator$get_llik_term_attr("lik_par_fixed")
+  term_labels_learn_sig2 <- llik_emulator$term_labels[learn_sig2]
   N_obs <- llik_emulator$get_llik_term_attr("N_obs", term_labels_learn_sig2)
   
   # Objects to store samples. 
