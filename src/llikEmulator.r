@@ -89,13 +89,13 @@ llikEmulator$methods(
     if(use_fixed_lik_par && is.null(lik_par)) message("Fixed `lik_par` not yet passed.")
   }, 
   
-  get_lik_par = function(lik_par_val=NULL) {
+  get_lik_par = function(lik_par_val=NULL, ...) {
     if(use_fixed_lik_par) return(lik_par)
     assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
     return(lik_par_val)
   },
   
-  get_input = function(input) {
+  get_input = function(input, ...) {
     assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
     
@@ -168,7 +168,8 @@ llikSumEmulator$methods(
     # the list in the field `llik_emulator_terms` is also assigned the vector of labels, ensuring
     # the order of the two is the same. 
     term_lbls <- sapply(llik_emulator_list, function(obj) obj$llik_label)
-    assert_that(length(unique(term_lbls))==1, msg="Found duplicate `llik_label` attributes in `llik_emulator_list`.")
+    assert_that(length(unique(term_lbls))==length(llik_emulator_list), 
+                msg="Found duplicate `llik_label` attributes in `llik_emulator_list`.")
     names(llik_emulator_list) <- term_lbls
     initFields(llik_emulator_terms=llik_emulator_list, N_terms=length(llik_emulator_list))
     
@@ -195,6 +196,17 @@ llikSumEmulator$methods(
     
     return(attr_list)
     
+  },
+  
+  # TODO: fix creating of lists with names in other methods. 
+  get_lik_par = function(lik_par_val=NULL, labels=llik_label) {
+    lik_par_list <- setNames(vector(mode="list", length=length(labels)), labels)
+    for(i in seq_along(lik_par_list)) {
+      lbl <- labels[i]
+      lik_par_list[[lbl]] <- llik_emulator_list[[lbl]]$get_lik_par(lik_par_val[[lbl]])
+    }
+    
+    return(lik_par_list)
   },
   
   sample_emulator = function(input, N_samp=1, labels=llik_label, ...) {

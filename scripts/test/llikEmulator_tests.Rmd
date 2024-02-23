@@ -141,6 +141,8 @@ for(i in 1:N_output) {
                                                     default_normalize=TRUE, use_fixed_lik_par=FALSE)
 }
 
+llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FALSE, default_normalize=TRUE)
+
 ```
 
 
