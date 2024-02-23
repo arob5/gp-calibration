@@ -68,8 +68,8 @@ llikEmulator <- setRefClass(
   Class = "llikEmulator", 
   fields = list(emulator_model="ANY", lik_description="character", llik_label="character",
                 emulator_description="character", default_conditional="logical",
-                default_normalize="logical", lik_par_fixed="logical", lik_par="ANY",
-                input_names="character", lik_par_names="character", dim_input="integer")
+                default_normalize="logical", use_fixed_lik_par="logical", lik_par="ANY",
+                input_names="character", dim_input="integer")
                  
 )
 
@@ -77,31 +77,21 @@ llikEmulator$lock("llik_label")
 
 llikEmulator$methods(
   
-  initialize = function(llik_label, lik_description, emulator_description, emulator_model=NULL, 
-                        default_conditional=FALSE, default_normalize=FALSE,
-                        lik_par_fixed=FALSE, lik_par=NULL, dim_input=NULL, ...) {
-                        
-    if(lik_par_fixed && !is.null(lik_par)) {
-      message("`lik_par_fixed` currently does not formally lock the variable - it can be modified.")
-      # .self$lock("lik_par")
-    }
-    
-    initFields(input_names=input_names, lik_description=lik_description, 
-               emulator_description=emulator_description, emulator_model=emulator_model, 
-               default_conditional=default_conditional, default_normalize=default_normalize,  
-               lik_par_fixed=lik_par_fixed, lik_par=lik_par, llik_label=llik_label,
-               dim_input=dim_input)
-    
-    if(lik_par_fixed && is.null(lik_par)) {
-      message("Fixed `lik_par` not passed. May be set once and then field will be locked.")
-    }
+  initialize = function(llik_label, input_names, lik_description, emulator_description, dim_input,  
+                        emulator_model=NULL, default_conditional=FALSE, default_normalize=FALSE,
+                        use_fixed_lik_par=FALSE, lik_par=NULL, dim_input=NULL, ...) {
+
+    initFields(llik_label=llik_label, input_names=input_names, lik_description=lik_description, 
+               dim_input=dim_input, emulator_description=emulator_description,
+               emulator_model=emulator_model, default_conditional=default_conditional,
+               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, lik_par=lik_par)  
+        
+    if(lik_par_fixed && is.null(lik_par)) message("Fixed `lik_par` not yet passed.")
   }, 
   
   get_lik_par = function(lik_par_val=NULL) {
-    if(lik_par_fixed) return(lik_par)
     assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
-    if(use_names) return(lik_par_val[lik_par_names])
-    
+    if(use_fixed_lik_par) return(lik_par)
     return(lik_par_val)
   },
   
@@ -254,23 +244,22 @@ llikEmulatorMultGausGP <- setRefClass(
 
 llikEmulatorMultGausGP$methods(
   
-  initialize = function(gp_model, N_obs, input_names, lik_par_names, llik_lbl, sig2=NULL, default_conditional=FALSE, 
+  initialize = function(gp_model, llik_lbl, N_obs, sig2=NULL, default_conditional=FALSE, 
                         default_normalize=FALSE, lik_par_fixed=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
                 msg="`N_obs` must be an integer greater than 0.")
     assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
-    
-    if(!is.null(sig2)) {
-      assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
-    }
+    assert_that(!is.null(gp_model$x_names) && !any(is.na(gp_model$x_names)), 
+                msg="`llikEmulatorMultGausGP` requires that `gp_model` has `x_names` field set.")
+    if(!is.null(sig2)) assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
     
     initFields(N_obs=N_obs)
-    callSuper(lik_description="Multiplicative Gaussian.",
-              emulator_description="GP emulating sum of squared error function.",
-              default_conditional=default_conditional, default_normalize=default_normalize,
-              emulator_model=gp_model, lik_par=sig2, lik_par_fixed=lik_par_fixed, 
-              dim_input=gp_model$X_dim, ...)
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, input_names=gp_model$x_names,
+              dim_input=gp_model$X_dim, default_conditional=default_conditional, 
+              default_normalize=default_normalize, lik_par_fixed=lik_par_fixed, 
+              lik_description="Multiplicative Gaussian.",
+              emulator_description="GP emulating sum of squared error function.", ...)
   }, 
   
   assemble_llik = function(SSR, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
@@ -288,11 +277,11 @@ llikEmulatorMultGausGP$methods(
     
   },
   
-  
   sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
                              
     # Sample SSR. 
-    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)[,,1]
+    samp <- emulator_model$sample(input[,input_names], use_cov=use_cov, include_nugget=include_nugget, 
+                                  N_samp=N_samp)[,,1]
     
     # Set negative samples to 0. 
     if(any(samp < 0)) {
@@ -306,7 +295,7 @@ llikEmulatorMultGausGP$methods(
   sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
-    samp <- sample_emulator(input, N_samp, use_cov, include_nugget)
+    samp <- sample_emulator(input[,input_names], N_samp, use_cov, include_nugget)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par, conditional, normalize)
