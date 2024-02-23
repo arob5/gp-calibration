@@ -79,14 +79,14 @@ llikEmulator$methods(
   
   initialize = function(llik_label, input_names, lik_description, emulator_description, dim_input,  
                         emulator_model=NULL, default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, dim_input=NULL, ...) {
+                        use_fixed_lik_par=FALSE, lik_par=NULL, ...) {
 
     initFields(llik_label=llik_label, input_names=input_names, lik_description=lik_description, 
                dim_input=dim_input, emulator_description=emulator_description,
                emulator_model=emulator_model, default_conditional=default_conditional,
                default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, lik_par=lik_par)  
         
-    if(lik_par_fixed && is.null(lik_par)) message("Fixed `lik_par` not yet passed.")
+    if(use_fixed_lik_par && is.null(lik_par)) message("Fixed `lik_par` not yet passed.")
   }, 
   
   get_lik_par = function(lik_par_val=NULL) {
@@ -182,7 +182,7 @@ llikSumEmulator$methods(
               emulator_model=NULL, default_conditional=default_conditional, 
               default_normalize=default_normalize, dim_input=llik_emulator_list[[1]]$dim_input,
               input_names=llik_emulator_list[[1]]$input_names,
-              lik_par_fixed=all(sapply(llik_emulator_list, function(x) x$lik_par_fixed)), lik_par=NULL)
+              use_fixed_lik_par=all(sapply(llik_emulator_list, function(x) x$use_fixed_lik_par)), lik_par=NULL)
   },
   
   get_llik_term_attr = function(attr_name, labels=llik_label) {
@@ -251,19 +251,19 @@ llikEmulatorMultGausGP <- setRefClass(
 llikEmulatorMultGausGP$methods(
   
   initialize = function(gp_model, llik_lbl, N_obs, sig2=NULL, default_conditional=FALSE, 
-                        default_normalize=FALSE, lik_par_fixed=FALSE, ...) {
+                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
                 msg="`N_obs` must be an integer greater than 0.")
     assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
-    assert_that(!is.null(gp_model$x_names) && !any(is.na(gp_model$x_names)), 
-                msg="`llikEmulatorMultGausGP` requires that `gp_model` has `x_names` field set.")
+    assert_that(!is.null(gp_model$X_names) && noNA(gp_model$X_names), 
+                msg="`llikEmulatorMultGausGP` requires that `gp_model` has `X_names` field set.")
     if(!is.null(sig2)) assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
     
     initFields(N_obs=N_obs)
-    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, input_names=gp_model$x_names,
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, input_names=gp_model$X_names,
               dim_input=gp_model$X_dim, default_conditional=default_conditional, 
-              default_normalize=default_normalize, lik_par_fixed=lik_par_fixed, 
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Multiplicative Gaussian.",
               emulator_description="GP emulating sum of squared error function.", ...)
   }, 

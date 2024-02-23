@@ -37,6 +37,8 @@ set.seed(22)
 # Linear Gaussian Model to perform tests.  
 #
 
+# 1D input, 2D output, some missing observations.
+N_output <- 2
 N_obs <- 100
 N_missing_output1 <- 4
 N_missing_output2 <- 6
@@ -44,15 +46,20 @@ u_bound_lower <- 0
 u_bound_upper <- 3
 u_prior <- data.frame(dist="Uniform", param1=u_bound_lower, param2=u_bound_upper)
 
-# 1D input, 2D output, some missing observations.
+# Multi-output forward model. `G_old` satisfies the requirements of the `computer_model_list`
+# so the old design functions can be used, while `G` vectorizes over multiple 
+# inputs and returns a 3-dimensional array of shape Ntimestep x Ninput x Noutput. 
 G1_mat <- matrix(sin(2*pi*seq(1,N_obs)/N_obs), ncol=1)
 G2_mat <- matrix(cos(2*pi*3*seq(1,N_obs)/N_obs), ncol=1)
 G <- function(U, ...) abind(y1=G1_mat %*% t(U), y2=G2_mat %*% t(U), along=3)
 G_old <- function(u, ...) cbind(y1=u*G1_mat, y2=u*G2_mat)
 
+# Ground truth.  
 u_true <- matrix(runif(1, min=u_bound_lower, max=u_bound_upper), nrow=1)
 sig2_true <- c(1, 1.5)
 G_true <-  G(u_true)[,1,]
+
+# Simulate data, adding missing observations. 
 Y <- G_true + cbind(rnorm(N_obs, 0, sqrt(sig2_true[1])),
                     rnorm(N_obs, 0, sqrt(sig2_true[2])))
 Y[sample.int(N_obs, N_missing_output1),1] <- NA_real_
@@ -69,20 +76,9 @@ for(p in 1:ncol(Y)) {
 ```
 
 ```{r}
-# 1D input, 1D output example. 
-G_1 <- function(U, ...) {cbind(y1=G1_mat %*% t(U))}
-sig2_true_1 <- sig2_true[1]
-G_true_1 <- G_true[,1,drop=FALSE]
-Y_1 <- Y[,"y1",drop=FALSE]
-computer_model_data_1 <- list(data_obs=Y_1, f=G_1, output_vars="y1")
-
-plot(1:N_obs, Y_1, main="Ground Truth and Observed Data: 1D Output Test",
-     xlab="t", ylab=colnames(Y_1))
-lines(1:N_obs, G_true_1, col="red")
-```
-
-```{r}
+#
 # Generate design points in parameter space. 
+#
 
 # Settings. 
 N_design <- 4
@@ -100,36 +96,61 @@ design_info <- get_input_output_design(N_points=N_design,
                                        param_ranges=input_bounds,  
                                        computer_model_data=computer_model_data, 
                                        theta_prior_params=u_prior)
-design_info_1 <- design_info
-design_info_1$outputs <- design_info_1$outputs[,1,drop=FALSE]
 
 # Validation data. 
 test_info <- get_input_output_design(N_points=N_test,
-                                       design_method="grid", 
-                                       scale_inputs=FALSE,
-                                       normalize_response=FALSE,
-                                       param_ranges=input_bounds,  
-                                       computer_model_data=computer_model_data, 
-                                       theta_prior_params=u_prior)
-test_info_1 <- test_info
-test_info_1$outputs <- test_info_1$outputs[,1,drop=FALSE]
+                                     design_method="grid", 
+                                     scale_inputs=FALSE,
+                                     normalize_response=FALSE,
+                                     param_ranges=input_bounds,  
+                                     computer_model_data=computer_model_data, 
+                                     theta_prior_params=u_prior)
 ```
 
 ```{r}
+#
 # True likelihood for validation inputs. 
-llik_true <- matrix(nrow=N_test, ncol=2)
+#
+
+llik_true <- matrix(nrow=N_test, ncol=N_output)
 colnames(llik_true) <- c("y1", "y2")
 G_test_true <- G(test_info$inputs)
 
 for(i in 1:N_test) {
-  for(j in 1:2) {
+  for(j in 1:N_output) {
     llik_true[i,j] <- sum(dnorm(Y[,j], mean=G_test_true[,i,j], sd=sqrt(sig2_true[j]), log=TRUE), na.rm=TRUE)
   }
 }
+```
 
-llik_true_1 <- llik_true[,1,drop=FALSE]
+```{r}
+#
+# Fit GP emulators to SSR. 
+#
+
+llik_emulator_list <- vector(mode="list", length=N_output)
+names(llik_emulator_list) <- paste0("output", 1:N_output)
+
+for(i in 1:N_output) {
+  gp <- gpWrapperHet(design_info$inputs, design_info$outputs[,i,drop=FALSE], 
+                     normalize_output=TRUE, scale_input=TRUE)
+  gp$fit("Gaussian", "constant")
+  
+  llik_emulator_list[[i]] <- llikEmulatorMultGausGP(gp_model=gp, llik_lbl=names(llik_emulator_list)[i],
+                                                    N_obs=sum(!is.na(Y[,i])), default_conditional=FALSE, 
+                                                    default_normalize=TRUE, use_fixed_lik_par=FALSE)
+}
 
 ```
+
+
+
+
+
+
+
+
+
 
 
 # Testing llikEmulatorMultGausGP Class using 1D output example. 
