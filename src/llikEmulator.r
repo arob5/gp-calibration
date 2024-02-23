@@ -90,13 +90,13 @@ llikEmulator$methods(
   }, 
   
   get_lik_par = function(lik_par_val=NULL) {
-    assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
     if(use_fixed_lik_par) return(lik_par)
+    assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
     return(lik_par_val)
   },
   
   get_input = function(input) {
-    assert_that(is.matrix(input) && ncol(input)==dim_input, 
+    assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
     
     return(input[,input_names])
@@ -151,7 +151,7 @@ llikEmulator$methods(
 llikSumEmulator <- setRefClass(
   Class = "llikSumEmulator", 
   contains = "llikEmulator",
-  fields = list(llik_emulator_terms="list", term_labels="character", N_terms="integer")
+  fields = list(llik_emulator_terms="list", N_terms="integer")
 )
 
 llikSumEmulator$methods(
@@ -170,16 +170,22 @@ llikSumEmulator$methods(
     term_lbls <- sapply(llik_emulator_list, function(obj) obj$llik_label)
     assert_that(length(unique(term_lbls))==1, msg="Found duplicate `llik_label` attributes in `llik_emulator_list`.")
     names(llik_emulator_list) <- term_lbls
-    initFields(llik_emulator_terms=llik_emulator_list, term_labels=term_lbls, N_terms=length(llik_emulator_list))
+    initFields(llik_emulator_terms=llik_emulator_list, N_terms=length(llik_emulator_list))
+    
+    # Ensure that the `input_names` are the same for all llik terms. They are allowed 
+    # to be ordered differently for each term, but viewed as sets they must be equal. 
+    equal_set <- function(x,y) if(setequal(x,y)) x else FALSE
+    input_names_list <- lapply(llik_emulator_list, function(obj) obj$input_names)
+    assert_that(!isFALSE(Reduce(equal_set, input_names_list)), msg="Different `input_names` found for different llik terms.")
   
-    callSuper(lik_description=lik_description, emulator_description=emulator_description,
+    callSuper(llik_label=term_lbls, lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
-              default_normalize=default_normalize,
-              dim_input=llik_emulator_list[[1]]$dim_input,
+              default_normalize=default_normalize, dim_input=llik_emulator_list[[1]]$dim_input,
+              input_names=llik_emulator_list[[1]]$input_names,
               lik_par_fixed=all(sapply(llik_emulator_list, function(x) x$lik_par_fixed)), lik_par=NULL)
   },
   
-  get_llik_term_attr = function(attr_name, labels=term_labels) {
+  get_llik_term_attr = function(attr_name, labels=llik_label) {
     
     attr_list <- vector(mode="list", length=length(labels))
     for(i in seq_along(attr_list)) {
@@ -191,7 +197,7 @@ llikSumEmulator$methods(
     
   },
   
-  sample_emulator = function(input, N_samp=1, labels=term_labels, ...) {
+  sample_emulator = function(input, N_samp=1, labels=llik_label, ...) {
     
     samp_list <- list()
     
@@ -222,7 +228,7 @@ llikSumEmulator$methods(
   },
   
   sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
-                    normalize=default_normalize, sum_terms=TRUE, labels=term_labels, ...) {
+                    normalize=default_normalize, sum_terms=TRUE, labels=llik_label, ...) {
   
     emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=term_labels, ...)
     asemble_llik(emulator_samp_list, lik_par, conditional=conditional, normalize=normalize,
@@ -280,7 +286,7 @@ llikEmulatorMultGausGP$methods(
   sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
                              
     # Sample SSR. 
-    samp <- emulator_model$sample(input[,input_names], use_cov=use_cov, include_nugget=include_nugget, 
+    samp <- emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
                                   N_samp=N_samp)[,,1]
     
     # Set negative samples to 0. 
@@ -295,7 +301,7 @@ llikEmulatorMultGausGP$methods(
   sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
-    samp <- sample_emulator(input[,input_names], N_samp, use_cov, include_nugget)
+    samp <- sample_emulator(get_input(input), N_samp, use_cov, include_nugget)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par, conditional, normalize)
