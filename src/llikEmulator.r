@@ -286,6 +286,52 @@ llikSumEmulator$methods(
     emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=term_labels, ...)
     asemble_llik(emulator_samp_list, lik_par, conditional=conditional, normalize=normalize,
                  sum_terms=sum_terms, labels=labels)
+  }, 
+  
+  plot_llik_samp_1d = function(input_new, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                               normalize=default_normalize, true_llik_new=NULL, include_design=FALSE, 
+                               labels=llik_label, sum_terms=TRUE, ...) {
+    # `true_llik_new` should be a vector (or 1 col matrix) if `sum_terms` is TRUE. Otherwise should
+    # be a matrix with `N_terms` cols, with colnames set to llik labels. 
+    
+    assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
+    input_new <- get_input(input_new)
+    
+    if(sum_terms) {
+      .NotYetImplemented()
+    }
+    
+    plts <- list()
+    for(lbl in labels) {
+      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_samp_1d(input_new, lik_par_val[lbl], N_samp,
+                                                                  conditional, normalize, true_llik_new[,lbl],
+                                                                  include_design, ...)
+    }
+    
+    return(plts)
+    
+    
+    
+    # llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, ...)
+    # 
+    # plt <- ggmatplot(input_new, llik_samp, plot_type="line", color="gray") + 
+    #   theme(legend.position = "none") + 
+    #   ggtitle("Log Likelihood Samples") + 
+    #   xlab(input_names) + ylab(paste0("Log Likelihood: ", llik_label))
+    # 
+    # if(!is.null(true_llik_new)) {
+    #   df <- data.frame(x=input_new[,1], y=drop(true_llik_new))
+    #   plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
+    # }
+    # 
+    # if(include_design) {
+    #   design_df <- data.frame(x=drop(get_design_inputs()), 
+    #                           y=drop(get_design_llik(lik_par_val, conditional, normalize)))
+    #   plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color="red")
+    # }
+    # 
+    # return(plt)
+    
   }
   
 )
