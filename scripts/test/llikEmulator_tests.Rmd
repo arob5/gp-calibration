@@ -114,7 +114,7 @@ test_info <- get_input_output_design(N_points=N_test,
 #
 
 llik_true <- matrix(nrow=N_test, ncol=N_output)
-colnames(llik_true) <- c("y1", "y2")
+colnames(llik_true) <- output_names
 G_test_true <- G(test_info$inputs)
 
 for(i in 1:N_test) {
@@ -173,10 +173,12 @@ for(i in 1:llik_sum_emulator$N_terms) {
 # Plot llik samples: individual outputs and combined llik. 
 #
 
-test <- llik_sum_emulator$llik_emulator_terms$output1$sample(test_info$inputs, lik_par=sig2_true[1], N_samp=10)
-matplot(test_info$inputs, test, type="l", col="gray")
-matlines(test_info$input, llik_true[,1], col="red")
+llik_sum_emulator$llik_emulator_terms$output2$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true[2], 
+                                                                N_samp=50, use_cov=TRUE,
+                                                                true_llik_new=llik_true[,2], 
+                                                                include_design=TRUE)
 
+  
 ```
 
 
