@@ -146,10 +146,15 @@ llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FAL
 ```
 
 
-
-
-
-
+```{r}
+llik_sum_emulator$dim_input
+llik_sum_emulator$input_names
+llik_sum_emulator$llik_label
+llik_sum_emulator$N_terms
+llik_sum_emulator$use_fixed_lik_par
+llik_sum_emulator$get_lik_par(list(output1=1,output2=2L))
+llik_sum_emulator$get_llik_term_attr("N_obs")
+```
 
 
 

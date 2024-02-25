@@ -188,8 +188,8 @@ llikSumEmulator$methods(
   
   get_llik_term_attr = function(attr_name, labels=llik_label) {
     
-    attr_list <- vector(mode="list", length=length(labels))
-    for(i in seq_along(attr_list)) {
+    attr_list <- list()
+    for(i in seq_along(labels)) {
       lbl <- labels[i]
       attr_list[[lbl]] <- llik_emulator_terms[[lbl]]$field(attr_name)
     }
@@ -200,8 +200,8 @@ llikSumEmulator$methods(
   
   # TODO: fix creating of lists with names in other methods. 
   get_lik_par = function(lik_par_val=NULL, labels=llik_label) {
-    lik_par_list <- setNames(vector(mode="list", length=length(labels)), labels)
-    for(i in seq_along(lik_par_list)) {
+    lik_par_list <- list()
+    for(i in seq_along(labels)) {
       lbl <- labels[i]
       lik_par_list[[lbl]] <- llik_emulator_list[[lbl]]$get_lik_par(lik_par_val[[lbl]])
     }
@@ -212,7 +212,6 @@ llikSumEmulator$methods(
   sample_emulator = function(input, N_samp=1, labels=llik_label, ...) {
     
     samp_list <- list()
-    
     for(i in seq_along(labels)) {
       lbl <- labels[i]
       samp_list[[lbl]] <- llik_emulator_terms[[lbl]]$sample_emulator(input, N_samp=N_samp, ...)
@@ -225,7 +224,6 @@ llikSumEmulator$methods(
                            normalize=default_normalize, sum_terms=TRUE, labels=names(emulator_vals_list), ...) {
     
     llik_list <- list()
-    
     for(i in seq_along(labels)) {
       lbl <- labels[i]
       llik_list[[lbl]] <- llik_emulator_terms[[lbl]]$assemble_llik(emulator_vals_list[[lbl]], lik_par[[lbl]], 
