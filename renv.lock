@@ -154,6 +154,14 @@
         "Rcpp"
       ]
     },
+    "abind": {
+      "Package": "abind",
+      "Version": "1.4-5",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "4f57884290cc75ab22f4af9e9d4ca862",
+      "Requirements": []
+    },
     "ape": {
       "Package": "ape",
       "Version": "5.7-1",
@@ -540,6 +548,16 @@
       "Repository": "CRAN",
       "Hash": "15e9634c0fcd294799e9b2e929ed1b86",
       "Requirements": []
+    },
+    "ggmatplot": {
+      "Package": "ggmatplot",
+      "Version": "0.1.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "cbe85cd16b10bc4bb4d13b15f406b83b",
+      "Requirements": [
+        "ggplot2"
+      ]
     },
     "ggplot2": {
       "Package": "ggplot2",

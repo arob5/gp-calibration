@@ -45,6 +45,7 @@ N_missing_output2 <- 6
 u_bound_lower <- 0
 u_bound_upper <- 3
 u_prior <- data.frame(dist="Uniform", param1=u_bound_lower, param2=u_bound_upper)
+output_names <- paste0("output", 1:N_output)
 
 # Multi-output forward model. `G_old` satisfies the requirements of the `computer_model_list`
 # so the old design functions can be used, while `G` vectorizes over multiple 
@@ -64,8 +65,8 @@ Y <- G_true + cbind(rnorm(N_obs, 0, sqrt(sig2_true[1])),
                     rnorm(N_obs, 0, sqrt(sig2_true[2])))
 Y[sample.int(N_obs, N_missing_output1),1] <- NA_real_
 Y[sample.int(N_obs, N_missing_output2),2] <- NA_real_
-colnames(Y) <- c("y1", "y2")
-computer_model_data <- list(data_obs=Y, f=G_old, output_vars=c("y1", "y2"))
+colnames(Y) <- output_names
+computer_model_data <- list(data_obs=Y, f=G_old, output_vars=output_names)
 
 for(p in 1:ncol(Y)) {
   plot(1:N_obs, Y[,p], main=paste0("Ground Truth and Observed Data: Output ", p),
@@ -129,7 +130,7 @@ for(i in 1:N_test) {
 #
 
 llik_emulator_list <- vector(mode="list", length=N_output)
-names(llik_emulator_list) <- paste0("output", 1:N_output)
+names(llik_emulator_list) <- output_names
 
 for(i in 1:N_output) {
   gp <- gpWrapperHet(design_info$inputs, design_info$outputs[,i,drop=FALSE], 
@@ -142,9 +143,9 @@ for(i in 1:N_output) {
 }
 
 llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FALSE, default_normalize=TRUE)
-
+colnames(test_info$outputs) <- llik_sum_emulator$llik_label
+colnames(test_info$inputs) <- llik_sum_emulator$input_names
 ```
-
 
 ```{r}
 llik_sum_emulator$dim_input
@@ -156,7 +157,27 @@ llik_sum_emulator$get_lik_par(list(output1=1,output2=2L))
 llik_sum_emulator$get_llik_term_attr("N_obs")
 ```
 
+```{r}
+#
+# SSR Plots. 
+#
 
+for(i in 1:llik_sum_emulator$N_terms) {
+  print(llik_sum_emulator$llik_emulator_terms[[i]]$emulator_model$plot_pred_1d(test_info$inputs, 
+                                                                         Y_new=test_info$outputs[,i,drop=FALSE]))
+}
+```
+
+```{r}
+#
+# Plot llik samples: individual outputs and combined llik. 
+#
+
+test <- llik_sum_emulator$llik_emulator_terms$output1$sample(test_info$inputs, lik_par=sig2_true[1], N_samp=10)
+matplot(test_info$inputs, test, type="l", col="gray")
+matlines(test_info$input, llik_true[,1], col="red")
+
+```
 
 
 

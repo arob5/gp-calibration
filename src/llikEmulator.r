@@ -7,6 +7,7 @@
 # 
 
 library(assertthat)
+library(ggmatplot)
 library(abind)
 
 
@@ -99,7 +100,7 @@ llikEmulator$methods(
     assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
     
-    return(input[,input_names])
+    return(input[,input_names, drop=FALSE])
   },
   
   sample_emulator = function(input, N_samp=1, ...) {
@@ -114,6 +115,28 @@ llikEmulator$methods(
   sample = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     .NotYetImplemented()
+  },
+  
+  plot_llik_samp_1d = function(input_new, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                               normalize=default_normalize, true_llik_new=NULL, ...) {
+    
+    assert_that(input_dim==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", input_dim))
+    
+    input_new <- get_input(input_new)
+    llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, ...)
+    
+    matplot(input_new, llik_samp, type="l", col="gray", main="llik Samples", xlab=input_names, 
+            ylab=paste0("Log Likelihood: ", llik_label))
+    if(!is.null(true_llik_new)) matlines(input_new, true_llik_new, col="red")
+
+    return(plts)
+    
+  },
+  
+  plot_llik_samp = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                            normalize=default_normalize, ...) {
+    llik_samp <- .self$sample(input, lik_par_val=lik_par_val, N_samp=N_samp, 
+                              conditional=conditional, normalize=normalize, ...)
   },
   
   mean_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
