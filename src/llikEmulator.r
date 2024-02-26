@@ -121,7 +121,7 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  get_design_llik = function(conditional=default_conditional, normalize=default_normalize, ...) {
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
     .NotYetImplemented()
   },
   
@@ -241,7 +241,6 @@ llikSumEmulator$methods(
     
   },
   
-  # TODO: fix creating of lists with names in other methods. 
   get_lik_par = function(lik_par_val=NULL, labels=llik_label) {
     lik_par_list <- list()
     for(i in seq_along(labels)) {
@@ -250,6 +249,19 @@ llikSumEmulator$methods(
     }
     
     return(lik_par_list)
+  },
+  
+  input_designs_equal = function(labels=llik_label, design_input_list=NULL, ...) {
+    equal_design <- function(x,y) if(all.equal(x[,input_names,drop=FALSE], y[,input_names,drop=FALSE])) x else FALSE
+
+    if(is.null(design_input_list)) {
+      design_input_list <- list()
+      for(lbl in labels) {
+        design_input_list[[lbl]] <- llik_emulator_terms[[lbl]]$get_design_inputs(...)
+      }
+    }
+    
+    !isFALSE(Reduce(equal_design, design_input_list))
   },
   
   sample_emulator = function(input, N_samp=1, labels=llik_label, ...) {
@@ -267,8 +279,7 @@ llikSumEmulator$methods(
                            normalize=default_normalize, sum_terms=TRUE, labels=names(emulator_vals_list), ...) {
     
     llik_list <- list()
-    for(i in seq_along(labels)) {
-      lbl <- labels[i]
+    for(lbl in labels) {
       llik_list[[lbl]] <- llik_emulator_terms[[lbl]]$assemble_llik(emulator_vals_list[[lbl]], lik_par[[lbl]], 
                                                                    conditional=conditional, normalize=normalize)
     }
@@ -280,11 +291,46 @@ llikSumEmulator$methods(
     return(llik_vals)
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional, 
+  get_design_inputs = function(return_list=FALSE, labels=llik_label, ...) {
+    design_input_list <- list()
+    for(lbl in labels) {
+      design_input_list[[lbl]] <- llik_emulator_terms[[lbl]]$get_design_inputs(...)
+    }
+    
+    if(return_list) return(design_input_list)
+    
+    # If not returning list, then requires the design points to be the same across 
+    # all emulator terms. 
+    assert_that(input_designs_equal(design_input_list=design_input_list), 
+                msg="`return_list==FALSE` requires that the design input points are equal for each llik emulator term.")
+    
+    return(design_input_list[[1]][,input_names, drop=FALSE])
+
+  },
+  
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, 
+                             return_list=FALSE, labels=llik_label, ...) {
+    design_llik_list <- list()
+    for(lbl in labels) {
+      design_llik_list[[lbl]] <- llik_emulator_terms[[lbl]]$get_design_llik(lik_par_val=lik_par_val[[lbl]], 
+                                                                            conditional=conditional,
+                                                                            normalize=normalize, ...)
+    }
+    
+    if(return_list) return(design_llik_list)
+    
+    # If not returning list, then requires the design input points to be the same across 
+    # all emulator terms.
+    assert_that(input_designs_equal(labels=labels), 
+                msg="`return_list==FALSE` requires that the design input points are equal for each llik emulator term.")    
+    return(Reduce("+", design_llik_list))
+  },
+  
+  sample = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
                     normalize=default_normalize, sum_terms=TRUE, labels=llik_label, ...) {
   
-    emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=term_labels, ...)
-    asemble_llik(emulator_samp_list, lik_par, conditional=conditional, normalize=normalize,
+    emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=labels, ...)
+    assemble_llik(emulator_samp_list, lik_par_val, conditional=conditional, normalize=normalize,
                  sum_terms=sum_terms, labels=labels)
   }, 
   
@@ -298,40 +344,40 @@ llikSumEmulator$methods(
     input_new <- get_input(input_new)
     
     if(sum_terms) {
-      .NotYetImplemented()
+      llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, conditional=conditional,
+                                normalize=normalize, sum_terms=TRUE, labels=labels, ...)
+      plt <- ggmatplot(input_new, llik_samp, plot_type="line", color="gray") +
+              theme(legend.position = "none") +
+              ggtitle("Log Likelihood Samples") +
+              xlab(input_names) + ylab("Log Likelihood")
+
+      if(!is.null(true_llik_new)) {
+        true_llik_new <- drop(true_llik_new)
+        assert_that(is.numeric(true_llik_new) && length(true_llik_new)==nrow(input_new), 
+                    msg="With `sum_terms==TRUE`, `true_llik_new` must be vector of length `nrow(input_new)`.")
+        df <- data.frame(x=input_new[,1], y=true_llik_new)
+        plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
+      }
+      
+      if(include_design) {
+          design_df <- data.frame(x=drop(get_design_inputs(return_list=FALSE, labels=labels)),
+                                  y=drop(get_design_llik(lik_par_val, conditional, normalize, return_list=FALSE, labels=labels)))
+          plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color="red")
+      }
+      
+      return(plt)
     }
     
+    # If not summing terms, produce one plot per llik term. Simply call the plot function 
+    # for each llik emulator term. 
     plts <- list()
     for(lbl in labels) {
-      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_samp_1d(input_new, lik_par_val[lbl], N_samp,
+      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_samp_1d(input_new, lik_par_val[[lbl]], N_samp,
                                                                   conditional, normalize, true_llik_new[,lbl],
                                                                   include_design, ...)
     }
     
     return(plts)
-    
-    
-    
-    # llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, ...)
-    # 
-    # plt <- ggmatplot(input_new, llik_samp, plot_type="line", color="gray") + 
-    #   theme(legend.position = "none") + 
-    #   ggtitle("Log Likelihood Samples") + 
-    #   xlab(input_names) + ylab(paste0("Log Likelihood: ", llik_label))
-    # 
-    # if(!is.null(true_llik_new)) {
-    #   df <- data.frame(x=input_new[,1], y=drop(true_llik_new))
-    #   plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
-    # }
-    # 
-    # if(include_design) {
-    #   design_df <- data.frame(x=drop(get_design_inputs()), 
-    #                           y=drop(get_design_llik(lik_par_val, conditional, normalize)))
-    #   plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color="red")
-    # }
-    # 
-    # return(plt)
-    
   }
   
 )
@@ -382,12 +428,12 @@ llikEmulatorMultGausGP$methods(
     
   },
   
-  get_design_inputs = function() {
+  get_design_inputs = function(...) {
     emulator_model$X
   },
   
-  get_design_llik = function(lik_par=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
-    assemble_llik(emulator_model$Y, lik_par=lik_par, conditional=conditional, normalize=normalize)
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    assemble_llik(emulator_model$Y, lik_par=lik_par_val, conditional=conditional, normalize=normalize)
   },
   
   sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {

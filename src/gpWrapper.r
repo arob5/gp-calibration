@@ -40,12 +40,26 @@ gpWrapper$methods(
                         nugget=sqrt(.Machine$double.eps), ...) {
     
     # Handle missing values. 
+    assert_that(is.matrix(X) && is.matrix(Y), msg="X and Y must be matrices.")
     assert_that(!any(is.na(X)), msg="NAs found in X.")
     if(any(is.na(Y))) message("NAs found in Y will be removed (for each output variable separately).")
     
-    initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), scale_input=scale_input, 
+    if(is.null(x_names)) {
+      x_names <- colnames(X)
+      if(is.null(x_names)) x_names <- paste0("x", 1:X_dim)
+    }
+    
+    if(is.null(y_names)) {
+      y_names <- colnames(Y)
+      if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
+    }
+    
+    initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), X_names=x_names, 
+               Y_names=y_names, scale_input=scale_input, 
                normalize_output=normalize_output, X_bounds=apply(X, 2, range),
                non_na_idx=!is.na(Y), nugget=nugget)
+    colnames(X) <<- X_names
+    colnames(Y) <<- Y_names
     
     if(normalize_output) {
       sd_rm_na <- function(x) sd(x, na.rm=TRUE)
@@ -62,11 +76,7 @@ gpWrapper$methods(
     }
     
     initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2"), 
-               valid_mean_funcs=c("constant", "linear", "quadratic"))
-    
-    if(is.null(x_names)) x_names <- paste0("x", 1:X_dim)
-    if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
-    initFields(X_names=x_names, Y_names=y_names, ...)
+               valid_mean_funcs=c("constant", "linear", "quadratic"), ...)
   },
   
   scale = function(Xnew, inverse=FALSE) {

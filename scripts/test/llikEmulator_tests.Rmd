@@ -46,6 +46,7 @@ u_bound_lower <- 0
 u_bound_upper <- 3
 u_prior <- data.frame(dist="Uniform", param1=u_bound_lower, param2=u_bound_upper)
 output_names <- paste0("output", 1:N_output)
+par_names <- "par1"
 
 # Multi-output forward model. `G_old` satisfies the requirements of the `computer_model_list`
 # so the old design functions can be used, while `G` vectorizes over multiple 
@@ -97,6 +98,7 @@ design_info <- get_input_output_design(N_points=N_design,
                                        param_ranges=input_bounds,  
                                        computer_model_data=computer_model_data, 
                                        theta_prior_params=u_prior)
+colnames(design_info$inputs) <- par_names
 
 # Validation data. 
 test_info <- get_input_output_design(N_points=N_test,
@@ -173,18 +175,28 @@ for(i in 1:llik_sum_emulator$N_terms) {
 # Plot llik samples: individual outputs and combined llik. 
 #
 
+# Separate log likelihoods for each output. 
 llik_sum_emulator$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true, N_samp=50, 
                                     true_llik_new=llik_true, include_design=TRUE, sum_terms=FALSE,
                                     use_cov=TRUE)
 
-
-llik_sum_emulator$llik_emulator_terms$output2$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true[2], 
-                                                                N_samp=50, use_cov=TRUE,
-                                                                true_llik_new=llik_true[,2], 
-                                                                include_design=TRUE)
-
-  
+# Combined log likelihood. 
+llik_sum_emulator$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true, N_samp=50, 
+                                    true_llik_new=rowSums(llik_true), include_design=TRUE, sum_terms=TRUE,
+                                    use_cov=TRUE)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
