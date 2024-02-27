@@ -440,7 +440,7 @@ llikEmulatorMultGausGP$methods(
                              
     # Sample SSR. 
     samp <- emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                                  N_samp=N_samp)[,,1]
+                                  N_samp=N_samp)[,,1,drop=FALSE]
     
     # Set negative samples to 0. 
     if(any(samp < 0)) {

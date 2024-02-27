@@ -719,15 +719,18 @@ mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, the
 # TODO: need to have checking in llikSumEmulator to make sure the same input parameters are 
 # used for each term. 
 mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
-                          sig2_prior_params=NULL, N_itr=50000, adapt_C=TRUE,
-                          adapt_scale=TRUE, use_gp_cov=FALSE) {
+                          sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
+                          log_scale_prop=NULL, adapt_cov_prop=TRUE, adapt_scale=TRUE,
+                           use_gp_cov=FALSE) {
+  # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
+  
+  browser()
   
   # Validation and setup for log-likelihood emulator. 
-  validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
-                              adapt_C, adapt_scale, use_gp_cov)
-  learn_sig2 <- llik_emulator$get_llik_term_attr("lik_par_fixed")
-  term_labels_learn_sig2 <- llik_emulator$term_labels[learn_sig2]
-  N_obs <- llik_emulator$get_llik_term_attr("N_obs", term_labels_learn_sig2)
+  # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
+  # names of the outputs where sig2 must be learned. 
+  # validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
+  #                             cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
   
   # Objects to store samples. 
   d <- llik_emulator$dim_input
@@ -740,13 +743,25 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   }
   par_samp[1,] <- par_init
   par_curr <- par_init
-  sig2_curr <- setNames(sig2_init, term_labels_learn_sig2)
-
+  
+  # Setup for `sig2` (observation variances). 
+  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
+  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
+  N_obs <- llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2)
+  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params. 
+  if(length(sig2_curr) > 0) {
+    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
+    sig2_samp[1,] <- sig2_curr
+  } else {
+    sig2_samp <- NULL
+    sig2_curr <- NULL
+  }
+  
   # Proposal covariance.
-  cov_prop <- diag(rep(1,d))
+  if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
+  if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
   L_cov_prop <- t(chol(cov_prop))
-  log_scale_prop <- log(2.38) - 0.5*log(d)
-
+  
   for(itr in 2:N_itr) {
     #
     # Metropolis step for calibration parameters.
@@ -761,18 +776,15 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     # Sample log-likelihood emulator. 
     emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), use_cov=use_gp_cov, 
                                                         include_nugget=TRUE)  
-                                                       
     llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
                                              normalize=FALSE)
 
-    # Immediately reject if proposal is outside of prior bounds (i.e. prior density is 0).
-    if(any(par_prop < theta_prior_params[["bound_lower"]], na.rm=TRUE) ||
-       any(par_prop > theta_prior_params[["bound_upper"]], na.rm=TRUE)) {
-      
+    # Immediately reject if proposal has prior density zero (which will often happen when the 
+    # prior has been truncated to stay within the design bounds). 
+    if(is.infinite(lprior_prop)) {
       par_samp[itr,] <- par_samp[itr-1,]
       SSR_idx <- 1
       alpha <- 0
-      
     } else {
       
       # Accept-Reject step.

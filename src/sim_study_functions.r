@@ -10,6 +10,7 @@
 library(lhs)
 library(hetGP)
 library(mlegp)
+library(RJSONIO)
 library(ggplot2)
 library(viridis)
 library(gridExtra)

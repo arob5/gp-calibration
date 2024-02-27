@@ -1,0 +1,156 @@
+---
+title: "Tests for gp_mcmc_noisy() function"
+author: "Andrew Roberts"
+date: '2024-02-27'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+
+```{r}
+# Settings: 
+#    - For reproducibility these are the only variables that should be modified in this file. 
+#    - `write_mode` controls whether existing run is loaded or new run is executed. 
+
+write_mode <- TRUE
+
+settings <- list()
+settings <- list(run_id="mcmc_gp_noisy_validation", # General
+                 global_seed=15,
+                 data_seed=23,
+                 design_seed=40,
+                 save_sample_data=FALSE, 
+                 N_obs=100,                    # Synthetic data generation
+                 sig2_eps=1, 
+                 N_design=50,                  # Design
+                 design_method="LHS", 
+                 N_mcmc=50000)                 # MCMC                  
+                 
+# Create test folder or load existing one. 
+if(write_mode) {
+  create_mcmc_run(settings, set_global_variables=TRUE)
+} else {
+  load_mcmc_run_data(settings$run_id, set_global_variables=TRUE)
+}
+
+# TODO: add option to save raw MCMC sample data. 
+```
+
+
+```{r}
+# TODO: update this once the improved function `gen_lin_Gaus_NIW_test_data()` is written. This function 
+# will allow multi-output problems (without manually having to re-shape matrices), missing observations, 
+# and Inverse Wishart prior on the observation covariance matrix. 
+
+# Linear Gaussian Model Setup. 
+freqs <- c(0.1, 1, 1.4, 2, 0.5, 1.1)
+D <- length(freqs)
+G <- matrix(nrow=N_obs, ncol=D)
+for(d in 1:D) {
+  G[,d] <- matrix(sin(2*pi*freqs[d]*seq(1, N_obs)/N_obs), ncol=1)
+}
+
+Sig0 <- diag(rlnorm(D, meanlog=0, sdlog=2))
+mu0 <- rnorm(D, mean=0, sd=4)
+
+# Get synthetic data. 
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs, D, Sig0, G, sig2_eps=sig2_eps)
+computer_model_data <- linear_Gaussian_info$computer_model_data
+theta_prior_params <- linear_Gaussian_info$theta_prior_params
+
+plot(1:N_obs, computer_model_data$data_obs, main="Ground Truth and Observed Data", 
+     xlab="t", ylab="y")
+lines(1:N_obs, computer_model_data$data_ref, col="red")
+
+```
+
+```{r}
+
+#
+# Design for Training Emulator.   
+#
+
+# Bounds on parameter space
+input_bounds <- rbind(qnorm(.01, theta_prior_params$param1, theta_prior_params$param2), 
+                      qnorm(.99, theta_prior_params$param1, theta_prior_params$param2))
+rownames(input_bounds) <- c("min", "max")
+colnames(input_bounds) <- computer_model_data$pars_cal_names
+theta_prior_params_trunc <- truncate_prior_theta(theta_prior_params, input_bounds)
+
+# Initial Design. 
+design_settings <- data.frame(N_design=N_design, design_method=design_method)
+init_design_info <- get_input_output_design(N_points=design_settings$N_design,
+                                            design_method=design_settings$design_method, 
+                                            scale_inputs=FALSE, normalize_response=FALSE,
+                                            param_ranges=input_bounds,  
+                                            computer_model_data=computer_model_data, 
+                                            theta_prior_params=theta_prior_params, design_seed=design_seed)
+init_design_info$lpost <- calc_lpost_theta_product_lik(computer_model_data=computer_model_data, 
+                                                       theta_vals=init_design_info$inputs, 
+                                                       vars_obs=sig2_eps, 
+                                                       SSR=init_design_info$outputs,
+                                                       na.rm=TRUE, theta_prior_params=theta_prior_params, 
+                                                       return_list=FALSE)
+```
+
+```{r}
+#
+# Fit GP emulators to SSR and instantiate llikEmulator. 
+#
+
+# TODO: currently call to llikSumEmulator() causes warning `lik_par` not passed. Shouldn't be a warning since the 
+# lik pars are present in the llik terms. Think about how to change this so no warning is printed. 
+
+N_output <- 1
+llik_emulator_list <- vector(mode="list", length=N_output)
+names(llik_emulator_list) <- paste0("output", 1:N_output)
+
+for(i in 1:N_output) {
+  gp <- gpWrapperHet(init_design_info$inputs, init_design_info$outputs[,i,drop=FALSE], 
+                     normalize_output=TRUE, scale_input=TRUE)
+  gp$fit("Gaussian", "constant")
+  
+  llik_emulator_list[[i]] <- llikEmulatorMultGausGP(gp_model=gp, llik_lbl=names(llik_emulator_list)[i],
+                                                    N_obs=sum(!is.na(computer_model_data$data_obs[,i])), 
+                                                    use_fixed_lik_par=TRUE, sig2=sig2_eps)
+}
+
+llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FALSE, default_normalize=TRUE)
+```
+
+
+```{r}
+
+samp_list <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
+                           sig2_init=linear_Gaussian_info$true_posterior$Cov, 
+                           sig2_prior_params=NULL, N_itr=50000, adapt_C=FALSE,
+                           adapt_scale=FALSE, use_gp_cov=TRUE)
+
+```
+
+
+
+
+
+
+
+
