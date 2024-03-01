@@ -71,8 +71,20 @@ gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```{r}
 # Sample 
 gpHet1_samp <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred)
+gpHet1_samp_rectified <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred, adjustment="rectified")
+gpHet1_samp_truncated <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred, adjustment="truncated") # Stability issues when there is little noise. 
+
 for(i in 1:gpHet1$Y_dim) {
-  matplot(X1_new, gpHet1_samp[,,i],type="l")
+  # Gaussian.
+  matplot(X1_new, gpHet1_samp[,,i],type="l", main="Gaussian Predictive Samples.")
+  lines(X1_new, Y1_new_noiseless[,i], col="red")
+  
+  # Rectified Gaussian. 
+  matplot(X1_new, gpHet1_samp_rectified[,,i],type="l", main="Rectified Gaussian Predictive Samples.")
+  lines(X1_new, Y1_new_noiseless[,i], col="red")
+  
+  # Truncated Gaussian. 
+  matplot(X1_new, gpHet1_samp_rectified[,,i],type="l", main="Zero-Truncated Gaussian Predictive Samples.")
   lines(X1_new, Y1_new_noiseless[,i], col="red")
 }
 ```

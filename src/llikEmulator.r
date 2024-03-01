@@ -436,19 +436,9 @@ llikEmulatorMultGausGP$methods(
     assemble_llik(emulator_model$Y, lik_par=lik_par_val, conditional=conditional, normalize=normalize)
   },
   
-  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
-                             
-    # Sample SSR. 
-    samp <- emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                                  N_samp=N_samp)[,,1,drop=FALSE]
-    
-    # Set negative samples to 0. 
-    if(any(samp < 0)) {
-      message("Warning: Setting negative GP quadratic error samples to 0.")
-      samp[samp < 0] <- 0
-    }
-    
-    return(samp)
+  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, adjustment="rectified", ...) {
+    emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
+                          N_samp=N_samp, adjustment=adjustment)[,,1,drop=FALSE]             
   },
   
   sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,

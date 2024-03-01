@@ -147,6 +147,32 @@ sample_emulator_cond <- function(inputs_scaled, emulator_info_list, cond_type, s
 # Proposal Covariance Adaptation 
 # -----------------------------------------------------------------------------
 
+adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt_cov, adapt_scale, 
+                                  samp_interval, accept_rate, accept_rate_target=0.24,  
+                                  adapt_factor_exponent=0.8, adapt_factor_numerator=10) {
+
+  return_list <- list()
+  adapt_factor <- 1 / (times_adapted + 3)^adapt_factor_exponent
+  
+  if(adapt_cov) {
+    sample_cov_interval <- cov(samp_interval)
+    cov_prop <- cov_prop + adapt_factor * (sample_cov_interval - cov_prop)
+    L_cov_prop <- t(chol(cov_prop))
+    return_list$L_cov <- L_cov_prop
+  }
+  
+  if(adapt_scale) {
+    log_scale_factor <- adapt_factor_numerator * adapt_factor * (accept_rate - accept_rate_target)
+    log_scale_prop <- log_scale_prop + log_scale_factor
+  }
+  
+  return_list$cov <- cov_prop
+  return_list$log_scale <- log_scale_prop
+  
+  return(return_list)
+}
+
+
 adapt_cov_prop <- function(adapt_cov, adapt_scale, C, L, log_scale, sample_history, itr, accept_count,
                            MH_accept_prob, samp_mean, effective_log_scale, adapt_frequency=1000, 
                            accept_rate_target=0.24, scale_update_decay=0.7, scale_update_mult=1.0, init_threshold=3) {
@@ -720,11 +746,12 @@ mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, the
 # used for each term. 
 mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
                           sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
-                          log_scale_prop=NULL, adapt_cov_prop=TRUE, adapt_scale=TRUE,
-                           use_gp_cov=FALSE) {
+                          log_scale_prop=NULL, use_gp_cov=FALSE,
+                          SSR_sample_adjustment="rectified", 
+                          adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
+                          adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
+                          adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200) {
   # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
-  
-  browser()
   
   # Validation and setup for log-likelihood emulator. 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
@@ -743,13 +770,15 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   }
   par_samp[1,] <- par_init
   par_curr <- par_init
+  lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
   
   # Setup for `sig2` (observation variances). 
   learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
-  N_obs <- llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2)
+  N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params. 
-  if(length(sig2_curr) > 0) {
+  include_sig2_Gibbs_step <- (length(sig2_curr) > 0)
+  if(include_sig2_Gibbs_step) {
     sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
@@ -761,6 +790,8 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
   if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
   L_cov_prop <- t(chol(cov_prop))
+  accept_count <- 0
+  times_adapted <- 0
   
   for(itr in 2:N_itr) {
     #
@@ -771,24 +802,24 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
 
     # Compute prior. 
-    lprior_prop <- calc_lprior_theta(par_prop, par_prior_params)
+    lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
     
-    # Sample log-likelihood emulator. 
+    # Sample SSR. 
     emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), use_cov=use_gp_cov, 
-                                                        include_nugget=TRUE)  
-    llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
-                                             normalize=FALSE)
+                                                        include_nugget=TRUE, adjustment=SSR_sample_adjustment)  
 
     # Immediately reject if proposal has prior density zero (which will often happen when the 
     # prior has been truncated to stay within the design bounds). 
-    if(is.infinite(lprior_prop)) {
+    if(is.infinite(lprior_par_prop)) {
       par_samp[itr,] <- par_samp[itr-1,]
       SSR_idx <- 1
       alpha <- 0
     } else {
+      # Sample log-likelihood emulator. 
+      llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
+                                               normalize=FALSE)
       
       # Accept-Reject step.
-      lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
       lpost_par_curr <- lprior_par_curr + llik_samp[1,]
       lpost_par_prop <- lprior_par_prop + llik_samp[2,]
       alpha <- min(1.0, exp(lpost_par_prop - lpost_par_curr))
@@ -805,23 +836,38 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       
     }
     
-    # Update sum of squared residuals (SSR) sample. 
-    SSR_curr <- sapply(term_labels_learn_sig2, function(lbl) emulator_samp_list[[lbl]][SSR_idx,])
-    
     # Adapt proposal covariance matrix and scaling term.
-    # TODO
+    if(adapt && (((itr-1) %% adapt_inverval) == 0)) {
+      times_adapted <- times_adapted + 1
+      adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
+                                          times_adapted=times_adapted, 
+                                          adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
+                                          samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
+                                          accept_rate=accept_count/adapt_interval, accept_rate_target, 
+                                          adapt_factor_exponent, adapt_factor_numerator)
+      cov_prop <- adapt_list$cov
+      log_scale_prop <- adapt_list$log_scale
+      if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
+      accept_count <- 0
+    }
     
     #
     # Gibbs step for sig2. 
     #
     
-    # TODO: how to deal with parameter ordering here? 
-    sig2_eps_curr <- sample_NIG_cond_post_sig2(SSR_curr, sig2_prior_info, N_obs)
-
-    
+    if(include_sig2_Gibbs_step) {
+      # Update sum of squared residuals (SSR) sample. 
+      SSR_curr <- sapply(term_labels_learn_sig2, function(lbl) emulator_samp_list[[lbl]][SSR_idx,])
+      
+      # TODO: how to deal with parameter ordering here? 
+      # SSR_curr, sig2_prior_info, N_obs should all use llik labels. 
+      sig2_curr <- sample_NIG_cond_post_sig2(SSR_curr, sig2_prior_info, N_obs)
+      sig2_samp[itr,] <- sig2_curr
+    }
     
   }
   
+  return(list(par=par_samp, sig2=sig2_samp))
   
 }
 

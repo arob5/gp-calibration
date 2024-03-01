@@ -7,6 +7,7 @@
 # 
 
 library(assertthat)
+library(tmvtnorm)
 library(abind)
 
 # -----------------------------------------------------------------------------
@@ -28,7 +29,7 @@ gpWrapper <- setRefClass(
                  scale_input="logical", normalize_output="logical",
                  X_bounds="matrix", Y_mean="numeric", Y_std="numeric",
                  X_names="character", Y_names="character",
-                 X_train="matrix", Y_train="matrix", nugget="numeric", 
+                 X_train="matrix", Y_train="matrix", default_nugget="numeric", 
                  valid_kernels="character", valid_mean_funcs="character", 
                  kernel_name_map="list", mean_func_name_map="list")
 )
@@ -37,12 +38,13 @@ gpWrapper$methods(
   
   initialize = function(X, Y, scale_input=FALSE, normalize_output=FALSE, 
                         x_names=NULL, y_names=NULL, 
-                        nugget=sqrt(.Machine$double.eps), ...) {
+                        default_nugget=sqrt(.Machine$double.eps), ...) {
     
     # Handle missing values. 
     assert_that(is.matrix(X) && is.matrix(Y), msg="X and Y must be matrices.")
     assert_that(!any(is.na(X)), msg="NAs found in X.")
     if(any(is.na(Y))) message("NAs found in Y will be removed (for each output variable separately).")
+    initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y))
     
     if(is.null(x_names)) {
       x_names <- colnames(X)
@@ -54,10 +56,9 @@ gpWrapper$methods(
       if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
     }
     
-    initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y), X_names=x_names, 
-               Y_names=y_names, scale_input=scale_input, 
+    initFields(X_names=x_names, Y_names=y_names, scale_input=scale_input,
                normalize_output=normalize_output, X_bounds=apply(X, 2, range),
-               non_na_idx=!is.na(Y), nugget=nugget)
+               non_na_idx=!is.na(Y), default_nugget=default_nugget)
     colnames(X) <<- X_names
     colnames(Y) <<- Y_names
     
@@ -180,7 +181,9 @@ gpWrapper$methods(
   },
   
   
-  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, pred_list=NULL) {
+  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, pred_list=NULL, adjustment="none", ...) {
+    # If `pred_list` is passed, it should have all the required components. 
+    
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
@@ -189,16 +192,24 @@ gpWrapper$methods(
     
     # Compute lower Cholesky factors of the predictive covariance matrices. 
     # If not using predictive cov, Cholesky factors are diagonal with standard devs on diag. 
-    if(use_cov) {
+    # For truncated normal, `tmvnorm` doesn't accept Cholesky factor, so just pass covariance matrix. 
+    if((adjustment=="truncated") && !use_cov) {
+      pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i], nrow=nrow(X_new))), along=3)
+    } else if((adjustment != "truncated") && use_cov) {
       if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, 
                                                                          function(i) t(chol(pred_list$cov[,,i]))), along=3)
-    } else {
+    } else if(adjustment != "truncated") {
       pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
     }
     
     samp <- array(dim=c(nrow(X_new), N_samp, Y_dim))
     for(i in 1:Y_dim) {
-      samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i], pred_list$chol_cov[,,i], N_samp)
+      if(adjustment=="truncated") { # Zero left-truncated Gaussian. 
+        samp[,,i] <- t(rtmvnorm(N_samp, mean=pred_list$mean[,i], sigma=pred_list$cov[,,i], lower=rep(0, nrow(X_new))))
+      } else {
+        samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i], pred_list$chol_cov[,,i], N_samp)
+        if(adjustment=="rectified") samp[,,i] <- pmax(samp[,,i], 0)
+      }
     }
     
     return(samp)
@@ -358,7 +369,7 @@ gpWrapperHet$methods(
       assert_that(!("g" %in% names(fixed_pars)), 
                   msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
     } else {
-      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- nugget
+      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_nugget
     }
     
     if(length(fixed_pars) == 0) fixed_pars <- NULL

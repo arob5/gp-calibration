@@ -340,6 +340,7 @@ create_mcmc_run <- function(settings, base_run_dir="output", set_global_variable
   # Add paths to settings. 
   settings$run_id_dir <- run_id_dir
   settings$analysis_dir <- analysis_dir
+  settings$plot_dir <- plot_dir
   
   # Save top-level settings as JSON file. 
   settings_json <- toJSON(settings)
