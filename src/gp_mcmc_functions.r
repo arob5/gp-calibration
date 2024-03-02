@@ -837,7 +837,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     }
     
     # Adapt proposal covariance matrix and scaling term.
-    if(adapt && (((itr-1) %% adapt_inverval) == 0)) {
+    if(adapt && (((itr-1) %% adapt_interval) == 0)) {
       times_adapted <- times_adapted + 1
       adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
                                           times_adapted=times_adapted, 

@@ -96,6 +96,10 @@ llikEmulator$methods(
     return(lik_par_val)
   },
   
+  get_llik_term_attr = function(attr_name, ...) {
+    setNames(.self$field(attr_name), llik_label)
+  },
+  
   get_input = function(input, ...) {
     assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
@@ -453,19 +457,63 @@ llikEmulatorMultGausGP$methods(
 )
 
 
+# -----------------------------------------------------------------------------
+# llikEmulatorExactLinGaus class
+# This simply implements the exact likelihood corresponding to a linear 
+# Gaussian inverse problem: y|u ~ N(Gu, Sig). This is exact in the sense 
+# that there is no emulation here - the reason for implementing this as a 
+# llikEmulator class is to use it for algorithm testing; e.g. ensuring the 
+# correctness of an MCMC implementation. The `lik_par` here is defined to 
+# be the covariance matrix `Sig`. The definition of a Gaussian prior on `u`
+# completes the linear Gaussian setup and yields a Gaussian posterior (when 
+# Sig is fixed), a Normal Inverse Wishart posterior (when Sig is assigned
+# and inverse Wishart prior), or a Normal Inverse Gamma posterior (when 
+# Sig is specified to be diagonal with independent inverse gamma priors on 
+# the diagonal elements). 
+# -----------------------------------------------------------------------------
+
+llikEmulatorExactLinGaus <- setRefClass(
+  Class = "llikEmulatorExactLinGaus", 
+  contains = "llikEmulator",
+  fields = list(fwd_model="matrix", N_obs="integer", L_Cov="matrix", Cov_is_diag="logical")
+)
+
+emulator_model="ANY", lik_description="character", llik_label="character",
+emulator_description="character", default_conditional="logical",
+default_normalize="logical", use_fixed_lik_par="logical", lik_par="ANY",
+input_names="character", dim_input="integer"
 
 
+llikEmulatorExactLinGaus$methods(
+  
+  initialize = function(llik_lbl, fwd_model, Cov=NULL, Cov_is_diag=FALSE, default_conditional=FALSE, 
+                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
+    
+    assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
+    initFields(N_obs=nrow(fwd_model), dim_input=ncol(fwd_model), Cov_is_diag=Cov_is_diag)
+    
+    if(!is.null(rownames(fwd_model))) input_names_val <- rownames(fwd_model)
+    else input_names_val <- paste0("input", 1:dim_input)
 
-
-
-
-
-
-
-
-
-
-
+    if(!is.null(Cov)) {
+      if(Cov_is_diag) {
+        assert_that(is.matrix(Cov) && (nrow(Cov)==dim_input) && (ncol(Cov)==dim_input), 
+                    msg="`Cov` must be a positive definite matrix when `Cov_is_diag` is TRUE.")
+        initFields(L_Cov=t(chol(Cov)))
+      } else {
+        assert_that(is.numeric(Cov) && (length(Cov)==dim_input) && all(Cov > 0), 
+                    msg="`Cov` must be a vector of positive numbers when `Cov_is_diag` is FALSE.")
+        initFields(L_cov=diag(sqrt(Cov), nrow=dim_input))
+      }
+    }     
+    
+    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov,
+              default_conditional=default_conditional, 
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              lik_description="Exact linear Gaussian likelihood.",
+              emulator_description="No emulation.", ...)
+  }
+)
 
 
 # -----------------------------------------------------------------------------
