@@ -92,7 +92,8 @@ llikEmulator$methods(
   
   get_lik_par = function(lik_par_val=NULL, ...) {
     if(use_fixed_lik_par) return(lik_par)
-    assert_that(!is.null(lik_par_val), msg="`lik_par_val` arg and `lik_par` field are both NULL.")
+    assert_that(!is.null(lik_par_val), 
+                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
     return(lik_par_val)
   },
   
@@ -469,24 +470,22 @@ llikEmulatorMultGausGP$methods(
 # Sig is fixed), a Normal Inverse Wishart posterior (when Sig is assigned
 # and inverse Wishart prior), or a Normal Inverse Gamma posterior (when 
 # Sig is specified to be diagonal with independent inverse gamma priors on 
-# the diagonal elements). 
+# the diagonal elements).
+#
+# This class allows `lik_par` to be passed either as a numeric vector, which 
+# is interpreted as the diagonal of the covariance matrix, or the covariance 
+# matrix itself. 
 # -----------------------------------------------------------------------------
 
 llikEmulatorExactLinGaus <- setRefClass(
   Class = "llikEmulatorExactLinGaus", 
   contains = "llikEmulator",
-  fields = list(fwd_model="matrix", N_obs="integer", L_Cov="matrix", Cov_is_diag="logical")
+  fields = list(fwd_model="matrix", N_obs="integer", L_Cov="matrix")
 )
-
-emulator_model="ANY", lik_description="character", llik_label="character",
-emulator_description="character", default_conditional="logical",
-default_normalize="logical", use_fixed_lik_par="logical", lik_par="ANY",
-input_names="character", dim_input="integer"
-
 
 llikEmulatorExactLinGaus$methods(
   
-  initialize = function(llik_lbl, fwd_model, Cov=NULL, Cov_is_diag=FALSE, default_conditional=FALSE, 
+  initialize = function(llik_lbl, fwd_model, Cov=NULL, default_conditional=FALSE, 
                         default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
     
     assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
@@ -496,23 +495,46 @@ llikEmulatorExactLinGaus$methods(
     else input_names_val <- paste0("input", 1:dim_input)
 
     if(!is.null(Cov)) {
-      if(Cov_is_diag) {
-        assert_that(is.matrix(Cov) && (nrow(Cov)==dim_input) && (ncol(Cov)==dim_input), 
-                    msg="`Cov` must be a positive definite matrix when `Cov_is_diag` is TRUE.")
-        initFields(L_Cov=t(chol(Cov)))
-      } else {
-        assert_that(is.numeric(Cov) && (length(Cov)==dim_input) && all(Cov > 0), 
-                    msg="`Cov` must be a vector of positive numbers when `Cov_is_diag` is FALSE.")
-        initFields(L_cov=diag(sqrt(Cov), nrow=dim_input))
-      }
-    }     
-    
+      assert_that(is.matrix(Cov) && (nrow(Cov)==dim_input) && (ncol(Cov)==dim_input),
+                  msg="`Cov` must be a positive definite matrix.")
+      initFields(L_Cov=t(chol(Cov))) 
+    }
+
     callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov,
               default_conditional=default_conditional, 
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Exact linear Gaussian likelihood.",
               emulator_description="No emulation.", ...)
+  },
+  
+  get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
+    if(use_fixed_lik_par) {
+      if(return_chol) return(L_Cov)
+      else return(lik_par)
+    }
+      
+    assert_that(!is.null(lik_par_val), 
+                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+    if(return_chol) return(t(chol(lik_par_val)))
+    else return(lik_par_val)
+  },
+  
+  assemble_llik = function(input, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
+    # `input` should be N_input x N_samp. 
+    
+    # Fetch the lower triangular Cholesky factor of the covariance matrix.
+    sig2 <- get_lik_par(lik_par)
+    
+    # Construct likelihood using SSR.  
+    llik <- -0.5 * SSR / sig2
+    if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
+    if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
+    
+    return(llik)
+    
   }
+  
+  
 )
 
 
