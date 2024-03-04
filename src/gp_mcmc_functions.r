@@ -755,7 +755,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   
   # Validation and setup for log-likelihood emulator. 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
-  # names of the outputs where sig2 must be learned. 
+  # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
   # validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
   #                             cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
   
@@ -775,15 +775,15 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   # Setup for `sig2` (observation variances). 
   learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
-  N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
-  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params. 
-  include_sig2_Gibbs_step <- (length(sig2_curr) > 0)
+  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
+  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
+
   if(include_sig2_Gibbs_step) {
+    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
     sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
     sig2_samp <- NULL
-    sig2_curr <- NULL
   }
   
   # Proposal covariance.

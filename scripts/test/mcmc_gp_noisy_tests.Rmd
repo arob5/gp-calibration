@@ -149,6 +149,25 @@ llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FAL
 
 ```{r}
 #
+# Run noisy MCMC function with exact llik for validation. 
+#
+
+samp_list <- mcmc_gp_noisy(llik_exact_obj, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
+                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
+                           adapt_cov_prop=FALSE, adapt_scale_prop=FALSE, use_gp_cov=TRUE,
+                           cov_prop=linear_Gaussian_info$true_posterior$Cov)
+
+mcmc_samp_dt <- format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect_adapt")
+
+
+
+
+```
+
+
+
+```{r}
+#
 # Run noisy MCMC. 
 #
 # TODO: add option to `format_mcmc_output` that allows selected names from the `samp_list`. 
