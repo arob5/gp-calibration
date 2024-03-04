@@ -77,6 +77,15 @@ linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs, D, 
 computer_model_data <- linear_Gaussian_info$computer_model_data
 theta_prior_params <- linear_Gaussian_info$theta_prior_params
 
+# Create llik object. 
+colnames(G) <- computer_model_data$pars_cal_names
+llik_exact_obj <- llikEmulatorExactLinGausDiag(llik_lbl="exact", fwd_model=G, y_obs=computer_model_data$data_obs,
+                                               sig2=sig2_eps, use_fixed_lik_par=TRUE)
+
+# TODO: ensure the `par_curr` value in noisy MCMC GP has names attribute set. 
+
+
+# Plot synthetic data. 
 plot(1:N_obs, computer_model_data$data_obs, main="Ground Truth and Observed Data", 
      xlab="t", ylab="y")
 lines(1:N_obs, computer_model_data$data_ref, col="red")

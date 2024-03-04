@@ -104,7 +104,9 @@ llikEmulator$methods(
   get_input = function(input, ...) {
     assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
-    
+    assert_that(!is.null(colnames(input)) && all(is.element(colnames(input), input_names)),
+                msg="`input` must have colnames set to subset of `input_names`.")
+
     return(input[,input_names, drop=FALSE])
   },
   
@@ -472,36 +474,41 @@ llikEmulatorMultGausGP$methods(
 # Sig is specified to be diagonal with independent inverse gamma priors on 
 # the diagonal elements).
 #
-# This class allows `lik_par` to be passed either as a numeric vector, which 
-# is interpreted as the diagonal of the covariance matrix, or the covariance 
-# matrix itself. 
+# Note that the class llikEmulatorExactLinGausDiag should be used in the 
+# special case where `Sig` is constrained to be diagonal. 
 # -----------------------------------------------------------------------------
 
 llikEmulatorExactLinGaus <- setRefClass(
   Class = "llikEmulatorExactLinGaus", 
   contains = "llikEmulator",
-  fields = list(fwd_model="matrix", N_obs="integer", L_Cov="matrix")
+  fields = list(fwd_model="matrix", y="numeric", N_obs="integer", L_Cov="matrix")
 )
 
 llikEmulatorExactLinGaus$methods(
   
-  initialize = function(llik_lbl, fwd_model, Cov=NULL, default_conditional=FALSE, 
+  initialize = function(llik_lbl, fwd_model, y_obs, Cov=NULL, default_conditional=FALSE, 
                         default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
     
     assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
-    initFields(N_obs=nrow(fwd_model), dim_input=ncol(fwd_model), Cov_is_diag=Cov_is_diag)
+    initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
+    d <- ncol(fwd_model)
     
-    if(!is.null(rownames(fwd_model))) input_names_val <- rownames(fwd_model)
-    else input_names_val <- paste0("input", 1:dim_input)
+    if(!is.null(rownames(fwd_model))) input_names_val <- colnames(fwd_model)
+    else input_names_val <- paste0("input", 1:d)
 
     if(!is.null(Cov)) {
-      assert_that(is.matrix(Cov) && (nrow(Cov)==dim_input) && (ncol(Cov)==dim_input),
-                  msg="`Cov` must be a positive definite matrix.")
+      assert_that(is.matrix(Cov) && (nrow(Cov)==N_obs) && (ncol(Cov)==N_obs),
+                  msg="`Cov` must be a positive definite matrix with dim `N_obs` x `N_obs`")
       initFields(L_Cov=t(chol(Cov))) 
     }
-
-    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov,
-              default_conditional=default_conditional, 
+    
+    y_obs <- drop(y_obs)
+    assert_that(length(y_obs)==N_obs, 
+                msg="Number of observations implied by `y_obs` and `fwd_model` disagree.")
+    initFields(y=y_obs)
+    
+    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov, dim_input=d,
+              default_conditional=default_conditional, input_names=input_names_val,
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Exact linear Gaussian likelihood.",
               emulator_description="No emulation.", ...)
@@ -519,23 +526,143 @@ llikEmulatorExactLinGaus$methods(
     else return(lik_par_val)
   },
   
-  assemble_llik = function(input, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
+  assemble_llik = function(input, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
     # `input` should be N_input x N_samp. 
     
     # Fetch the lower triangular Cholesky factor of the covariance matrix.
-    sig2 <- get_lik_par(lik_par)
+    L <- get_lik_par(lik_par_val, return_chol=TRUE)
     
-    # Construct likelihood using SSR.  
-    llik <- -0.5 * SSR / sig2
-    if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
+    # Construct log likelihood. 
+    llik <- -0.5 * colSums(solve(L, y - fwd_model %*% t(input))^2, na.rm=TRUE)
+    if(normalize || conditional) llik <- llik - sum(diag(L))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
+
+    return(matrix(llik, ncol=1))
+  }, 
+  
+  sample_emulator = function(input, N_samp=1, ...) {
+    # No emulator to sample from, simply return input. 
+    input
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional,
+                    normalize=default_normalize, ...) {
     
-    return(llik)
-    
+    # Compute unnormalized or normalized log-likelihood (exact, deterministic 
+    # calculation - no sampling is actually performed). For consistency with 
+    # other classes, duplicates the exact likelihood calculation when `N_samp`>1.
+    matrix(assemble_llik(get_input(input), lik_par, conditional, normalize), 
+           nrow=nrow(input), ncol=N_samp)
   }
   
+)
+
+
+# -----------------------------------------------------------------------------
+# llikEmulatorExactLinGausDiag class.
+#    Identical to llikEmulatorExactLinGaus except that `Sig` is assumed to 
+#    be diagonal, so the `lik_par` for this class is defined to be the vector 
+#    corresponding to the diagonal of this covariance matrix.`lik_par` may 
+#    also be provided as a single value, which is interpreted as a 
+#    homoskedastic variance. 
+# -----------------------------------------------------------------------------
+
+llikEmulatorExactLinGausDiag <- setRefClass(
+  Class = "llikEmulatorExactLinGausDiag", 
+  contains = "llikEmulator",
+  fields = list(fwd_model="matrix", y="numeric", N_obs="integer")
+)
+
+llikEmulatorExactLinGausDiag$methods(
+  
+  initialize = function(llik_lbl, fwd_model, y_obs, sig2=NULL, default_conditional=FALSE, 
+                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
+    
+    assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
+    initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
+    d <- ncol(fwd_model)
+    
+    if(!is.null(rownames(fwd_model))) input_names_val <- colnames(fwd_model)
+    else input_names_val <- paste0("input", 1:d)
+    
+    if(!is.null(sig2)) {
+      assert_that(is.numeric(sig2) && ((length(sig2)==N_obs) || (length(sig2)==1)) && all(sig2>0),
+                  msg="`sig2` must be either vector of length `N_obs` or 1 containing positive numbers.")
+    }
+    
+    y_obs <- drop(y_obs)
+    assert_that(length(y_obs)==N_obs, 
+                msg="Number of observations implied by `y_obs` and `fwd_model` disagree.")
+    initFields(y=y_obs)
+    
+    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=sig2, dim_input=d,
+              default_conditional=default_conditional, input_names=input_names_val,
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              lik_description="Exact linear Gaussian likelihood, diagonal covariance structure.",
+              emulator_description="No emulation.", ...)
+  },
+  
+  get_lik_par = function(lik_par_val=NULL, ...) {
+    if(use_fixed_lik_par) lik_par_val <- lik_par
+    
+    assert_that(!is.null(lik_par_val), 
+                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+    
+    if(length(lik_par_val)==1) return(rep(lik_par_val, N_obs))
+    
+    assert_that(length(lik_par_val)==N_obs, msg="`lik_par_val` length not equal to 1 or `N_obs`.")
+    return(lik_par_val)
+  },
+  
+  assemble_llik = function(input, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    # `input` should be N_input x N_samp. 
+    
+    # Fetch the variance parameters. 
+    sig2_val <- get_lik_par(lik_par_val)
+    
+    # Construct log likelihood. 
+    llik <- -0.5 * colSums((y - fwd_model %*% t(input))^2 / sig2_val, na.rm=TRUE)
+    if(normalize || conditional) llik <- llik - 0.5 * sum(log(sig2_val))
+    if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
+
+    return(matrix(llik, ncol=1))
+  }, 
+  
+  sample_emulator = function(input, N_samp=1, ...) {
+    # No emulator to sample from, simply return input. 
+    input
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional,
+                    normalize=default_normalize, ...) {
+    
+    # Compute unnormalized or normalized log-likelihood (exact, deterministic 
+    # calculation - no sampling is actually performed). For consistency with 
+    # other classes, duplicates the exact likelihood calculation when `N_samp`>1.
+    matrix(assemble_llik(get_input(input), lik_par, conditional, normalize), 
+           nrow=nrow(input), ncol=N_samp)
+  }
   
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # -----------------------------------------------------------------------------
