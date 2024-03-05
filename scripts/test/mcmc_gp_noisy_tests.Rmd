@@ -85,6 +85,7 @@ llik_exact_obj <- llikEmulatorExactLinGausDiag(llik_lbl="exact", fwd_model=G, y_
 # TODO: Modify the exact Gaussian llikEmulator objects to function with a non-linear forward model. This should
 #       basically just require replacing the field `fwd_model` with a method `fwd_model`. 
 # TODO: Write function to generate autocorrelation plots. 
+# TODO: Write function to generate exact Normal Inverse Gamma/Wishart samples. 
 
 
 # Plot synthetic data. 
@@ -160,12 +161,15 @@ llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FAL
 #     we also draw exact iid samples from this known distribution. This is the 
 #     true baseline for comparison in this case. 
 
+mcmc_samp_dt <- data.table(param_type=character(), itr=integer(), param_name=character(),
+                           sample=numeric(), test_label=character())
+
 # 1.) MCMC with exact likelihood.
 samp_list <- mcmc_gp_noisy(llik_exact_obj, theta_prior_params, 
                            sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
-                           adapt_cov_prop=FALSE, adapt_scale_prop=FALSE,
-                           cov_prop=temp$Cov_prop, log_scale_prop=log(temp$scale_prop)) # linear_Gaussian_info$true_posterior$Cov)
-mcmc_samp_dt <- format_mcmc_output(samp_list["par"], test_label="mcmc_exact")
+                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE)
+mcmc_samp_exact_mcmc <- format_mcmc_output(samp_list["par"], test_label="mcmc_exact")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_exact_mcmc), use.names=TRUE)
 
 # 2.) Exact iid samples. 
 N_samp_exact <- N_mcmc
@@ -189,23 +193,6 @@ for(plt in trace_plots) plot(plt)
 ```
 
 ```{r}
-# TEMP: Test
-
-temp <- mcmc_calibrate_product_lik(computer_model_data, theta_prior_params,
-                           theta_init = NULL, sig_eps_init=sig2_eps, learn_sig_eps=FALSE, 
-                           N_mcmc=N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
-                           proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
-                           adapt_scale_method = "MH_ratio", adapt_init_threshold = 3)
-names(temp)[1] <- "par"
-mcmc_samp_dt_temp <- format_mcmc_output(temp["par"], test_label="old_mcmc_exact_test")
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_temp), use.names=TRUE)
-
-trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="par", test_labels="old_mcmc_exact_test", burn_in_start = 49900)
-for(plt in trace_plots) plot(plt)
-
-```
-
-```{r}
 #
 # Comparing exact MCMC vs. iid samples. 
 #
@@ -220,51 +207,40 @@ for(plt in hist_plots) plot(plt)
 
 ```{r}
 #
-# Run noisy MCMC. 
-#
+# Run noisy MCMC using the llikSumEmulator/llikEmulatorMultGausGP classes. 
+# 1.) First run with `use_gp_cov=TRUE`. 
+# 2.) Next run with `use_gp_cov=FALSE`.
+
 # TODO: add option to `format_mcmc_output` that allows selected names from the `samp_list`. 
+# TODO: write function "format_append_mcmc_output" which calls format then appends. 
+# TODO: write functions to (a) compare estimated covariance matrices; and (b) to plot bivariate dists. 
 
-samp_list <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
-                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
-                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, use_gp_cov=TRUE,
-                           cov_prop=linear_Gaussian_info$true_posterior$Cov, SSR_sample_adjustment="rectified")
+# 1.) Using GP covariance. 
+mcmc_gp_noisy_results_cov <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params_trunc, 
+                                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
+                                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, use_gp_cov=TRUE,
+                                           SSR_sample_adjustment="rectified")
+samp_formatted <- format_mcmc_output(mcmc_gp_noisy_results_cov["par"], test_label="mcmc_gp_noisy_cov")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_formatted), use.names=TRUE)
+                          
 
-mcmc_samp_dt <- format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect_adapt")
-```
-
-```{r}
-
-samp_list <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
-                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
-                           adapt_cov_prop=FALSE, adapt_scale=FALSE, use_gp_cov=TRUE,
-                           cov_prop=linear_Gaussian_info$true_posterior$Cov, SSR_sample_adjustment="rectified")
-
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect")), use.names=TRUE)
-```
-
-```{r}
-#
-# Run noisy MCMC: No Cov.  
-#
-# TODO: add option to `format_mcmc_output` that allows selected names from the `samp_list`. 
-
-samp_list <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
-                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
-                           adapt_cov_prop=FALSE, adapt_scale=FALSE, use_gp_cov=FALSE,
-                           cov_prop=linear_Gaussian_info$true_posterior$Cov, SSR_sample_adjustment="rectified")
-
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect_nocov")), use.names=TRUE)
+# 2.) Not using GP covariance. 
+mcmc_gp_noisy_results_nocov <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params_trunc, 
+                                             sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
+                                             adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, use_gp_cov=FALSE,
+                                             SSR_sample_adjustment="rectified")
+samp_formatted <- format_mcmc_output(mcmc_gp_noisy_results_nocov["par"], test_label="mcmc_gp_noisy_nocov")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_formatted), use.names=TRUE)
 ```
 
 
 ```{r}
-# Trace plots. 
-if(write_mode) {
-  trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="par", save_dir=plot_dir)
-  hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", test_label_baseline="exact", 
-                                          xlab="samples", ylab="density", bins=30, save_dir=plot_dir,
-                                          burn_in_start=as.integer(0.5*N_mcmc))
-}
+# Trace and histogram plots. 
+trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="par", test_labels=c("mcmc_gp_noisy_cov", "mcmc_gp_noisy_nocov"))
+hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", test_label_baseline="exact", 
+                                        test_labels=c("mcmc_gp_noisy_cov", "mcmc_gp_noisy_nocov"),
+                                        xlab="samples", ylab="density", bins=30,
+                                        burn_in_start=as.integer(0.5*N_mcmc))
 
 for(plt in trace_plots) plot(plt)
 for(plt in hist_plots) plot(plt)
@@ -272,38 +248,6 @@ for(plt in hist_plots) plot(plt)
 ```
 
 
-```{r}
-plt_test <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", 
-                          xlab="samples", ylab="density", bins=30,
-                          burn_in_start=as.integer(0.5*N_mcmc), test_labels="exact")
-
-for(plt in plt_test) plot(plt)
-```
-
-```{r}
-plt2_test <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", 
-                          xlab="samples", ylab="density", bins=30,
-                          burn_in_start=as.integer(0.5*N_mcmc), test_labels="mcmc_gp_noisy_cov_trunc")
-
-for(plt in plt2_test) plot(plt)
-```
-
-```{r}
-stdevs <- mcmc_samp_dt[itr>=as.integer(0.5*N_mcmc), sd(sample), by=c("param_name", "test_label")]
-setorder(stdevs, "param_name")
-stdevs
-```
-
-
-```{r}
-hist_plots2 <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", 
-                                         test_label_baseline="mcmc_gp_noisy_cov_trunc", 
-                                         xlab="samples", ylab="density", bins=30,
-                                         burn_in_start=as.integer(0.5*N_mcmc), 
-                                         test_labels = "mcmc_gp_noisy_cov_rect")
-
-for(plt in hist_plots2) plot(plt)
-```
 
 
 
