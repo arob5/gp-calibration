@@ -746,7 +746,7 @@ mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, the
 # used for each term. 
 mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
                           sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
-                          log_scale_prop=NULL, use_gp_cov=FALSE,
+                          log_scale_prop=NULL, mode="MCMH", use_gp_cov=FALSE,
                           SSR_sample_adjustment="rectified", 
                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
                           adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
@@ -765,14 +765,14 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   colnames(par_samp) <- llik_emulator$input_names
   
   # Set initial conditions. 
-  if(is.null(par_init)) {
-    theta_init <- sample_prior_theta(par_prior_params)
-  }
-  par_samp[1,] <- par_init
-  par_curr <- par_init
+  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
+  par_samp[1,] <- drop(par_init)
+  par_curr <- par_samp[1,]
   lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
   
-  # Setup for `sig2` (observation variances). 
+  # Setup for `sig2` (observation variances). Safe to assume that all of the 
+  # non-fixed likelihood parameters are `sig2` since this is verified by 
+  # `validate_args_mcmc_gp_noisy()` above. 
   learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
   include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
@@ -813,12 +813,11 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     if(is.infinite(lprior_par_prop)) {
       par_samp[itr,] <- par_samp[itr-1,]
       SSR_idx <- 1
-      alpha <- 0
     } else {
       # Sample log-likelihood emulator. 
       llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
                                                normalize=FALSE)
-      
+
       # Accept-Reject step.
       lpost_par_curr <- lprior_par_curr + llik_samp[1,]
       lpost_par_prop <- lprior_par_prop + llik_samp[2,]
@@ -826,12 +825,13 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
 
       if(runif(1) <= alpha) {
         par_samp[itr,] <- par_prop
+        par_curr <- par_prop
         lprior_par_curr <- lprior_par_prop
         SSR_idx <- 2 
         accept_count <- accept_count + 1 
       } else {
-        par_samp[itr,] <- par_samp[itr-1,]
-        SSR_idx <- 2 
+        par_samp[itr,] <- par_curr
+        SSR_idx <- 1
       }
       
     }

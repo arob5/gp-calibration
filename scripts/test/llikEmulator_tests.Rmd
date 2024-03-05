@@ -186,11 +186,53 @@ llik_sum_emulator$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true, N_s
                                     use_cov=TRUE)
 ```
 
+# Validating llikEmulatorExactLinGaus and llikEmulatorExactLinGausDiag
+```{r}
 
+# Linear Gaussian Model Setup. 
+freqs <- c(0.1, 1, 1.4, 2, 0.5, 1.1)
+D <- length(freqs)
+G <- matrix(nrow=N_obs, ncol=D)
+for(d in 1:D) {
+  G[,d] <- matrix(sin(2*pi*freqs[d]*seq(1, N_obs)/N_obs), ncol=1)
+}
 
+Sig0 <- diag(rlnorm(D, meanlog=0, sdlog=2))
+mu0 <- rnorm(D, mean=0, sd=4)
+sig2_eps <- 1
 
+# Get synthetic data. 
+linear_Gaussian_info <- generate_linear_Gaussian_test_data(data_seed, N_obs, D, Sig0, G, sig2_eps=sig2_eps)
+computer_model_data <- linear_Gaussian_info$computer_model_data
+par_prior_params <- linear_Gaussian_info$theta_prior_params
 
+# Create llik objects. 
+colnames(G) <- computer_model_data$pars_cal_names
+llik_exact_diag_obj <- llikEmulatorExactLinGausDiag(llik_lbl="exact_diag", fwd_model=G, y_obs=computer_model_data$data_obs,
+                                                    sig2=sig2_eps, use_fixed_lik_par=TRUE)
+llik_exact_obj <- llikEmulatorExactLinGaus(llik_lbl="exact", fwd_model=G, y_obs=computer_model_data$data_obs,
+                                           Cov=diag(sig2_eps, nrow=N_obs), use_fixed_lik_par=TRUE)
 
+# Test evaluation inputs. 
+test_design <- get_input_output_design(N_points=1000,
+                                       design_method="LHS", 
+                                       scale_inputs=FALSE, normalize_response=FALSE,
+                                       computer_model_data=computer_model_data, 
+                                       theta_prior_params=par_prior_params)
+
+# Validate Gaussian likelihood calculations. 
+llik_true <- llik_product_Gaussian(computer_model_data, sig2_eps, 
+                                   theta_vals=test_design$inputs, normalize=TRUE, na.rm=TRUE)
+llik_test1 <- drop(llik_exact_diag_obj$sample(test_design$inputs, normalize=TRUE))
+llik_test2 <- drop(llik_exact_obj$sample(test_design$inputs, normalize=TRUE))
+
+print("llikEmulatorExactLinGausDiag llik calculation is correct:")
+print(all.equal(llik_true, llik_test1))
+
+print("llikEmulatorExactLinGaus llik calculation is correct:")
+print(all.equal(llik_true, llik_test2))
+
+```
 
 
 

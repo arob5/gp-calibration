@@ -82,7 +82,9 @@ colnames(G) <- computer_model_data$pars_cal_names
 llik_exact_obj <- llikEmulatorExactLinGausDiag(llik_lbl="exact", fwd_model=G, y_obs=computer_model_data$data_obs,
                                                sig2=sig2_eps, use_fixed_lik_par=TRUE)
 
-# TODO: ensure the `par_curr` value in noisy MCMC GP has names attribute set. 
+# TODO: Modify the exact Gaussian llikEmulator objects to function with a non-linear forward model. This should
+#       basically just require replacing the field `fwd_model` with a method `fwd_model`. 
+# TODO: Write function to generate autocorrelation plots. 
 
 
 # Plot synthetic data. 
@@ -149,21 +151,71 @@ llik_sum_emulator <- llikSumEmulator(llik_emulator_list, default_conditional=FAL
 
 ```{r}
 #
-# Run noisy MCMC function with exact llik for validation. 
+# Running using "exact" likelihoods (no emulation) as a baseline for comparison.
+# This includes: 
+# 1.) Running `mcmc_gp_noisy()` with an `llikEmulatorExactLinGausDiag` object. This 
+#     object does not include any randomness or approximation of any kind, so is 
+#     intended as a baseline "exact" MCMC method. 
+# 2.) Since the linear Gaussian inverse problem admits a closed-form posterior, 
+#     we also draw exact iid samples from this known distribution. This is the 
+#     true baseline for comparison in this case. 
+
+# 1.) MCMC with exact likelihood.
+samp_list <- mcmc_gp_noisy(llik_exact_obj, theta_prior_params, 
+                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
+                           adapt_cov_prop=FALSE, adapt_scale_prop=FALSE,
+                           cov_prop=temp$Cov_prop, log_scale_prop=log(temp$scale_prop)) # linear_Gaussian_info$true_posterior$Cov)
+mcmc_samp_dt <- format_mcmc_output(samp_list["par"], test_label="mcmc_exact")
+
+# 2.) Exact iid samples. 
+N_samp_exact <- N_mcmc
+samp_exact <- t(drop(linear_Gaussian_info$true_posterior$mean) + 
+              t(chol(linear_Gaussian_info$true_posterior$Cov)) %*% matrix(rnorm(D*N_samp_exact), nrow=D, ncol=N_samp_exact))
+samp_exact_dt <- as.data.table(samp_exact)
+colnames(samp_exact_dt) <- computer_model_data$pars_cal_names
+samp_exact_dt[, c("param_type", "itr", "test_label") := list("par", 1:N_samp_exact, "exact")]
+samp_exact_dt <- melt.data.table(samp_exact_dt, id.vars=c("param_type", "itr", "test_label"), 
+                                 variable.name="param_name", value.name="sample")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
+```
+
+```{r}
+#
+# Trace plots for exact MCMC samples.  
 #
 
-samp_list <- mcmc_gp_noisy(llik_exact_obj, theta_prior_params, par_init=linear_Gaussian_info$true_posterior$mean[,1], 
-                           sig2_init=NULL, sig2_prior_params=NULL, N_itr=N_mcmc,
-                           adapt_cov_prop=FALSE, adapt_scale_prop=FALSE, use_gp_cov=TRUE,
-                           cov_prop=linear_Gaussian_info$true_posterior$Cov)
+trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="par", test_labels="mcmc_exact")
+for(plt in trace_plots) plot(plt)
+```
 
-mcmc_samp_dt <- format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect_adapt")
+```{r}
+# TEMP: Test
 
+temp <- mcmc_calibrate_product_lik(computer_model_data, theta_prior_params,
+                           theta_init = NULL, sig_eps_init=sig2_eps, learn_sig_eps=FALSE, 
+                           N_mcmc=N_mcmc, adapt_frequency = 1000, adapt_min_scale = 0.1, accept_rate_target = 0.24, 
+                           proposal_scale_decay = 0.7, Cov_prop_init_diag = 0.1, adapt_cov_method = "AM", 
+                           adapt_scale_method = "MH_ratio", adapt_init_threshold = 3)
+names(temp)[1] <- "par"
+mcmc_samp_dt_temp <- format_mcmc_output(temp["par"], test_label="old_mcmc_exact_test")
+mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_temp), use.names=TRUE)
 
-
+trace_plots <- get_trace_plots(mcmc_samp_dt, param_types="par", test_labels="old_mcmc_exact_test", burn_in_start = 49900)
+for(plt in trace_plots) plot(plt)
 
 ```
 
+```{r}
+#
+# Comparing exact MCMC vs. iid samples. 
+#
+
+hist_plots <- get_hist_plot_comparisons(mcmc_samp_dt, param_types="par", test_labels="mcmc_exact",  
+                                        test_label_baseline="exact", xlab="samples", ylab="density", 
+                                        bins=30, burn_in_start=as.integer(0.5*N_mcmc))
+for(plt in hist_plots) plot(plt)
+
+```
 
 
 ```{r}
@@ -202,21 +254,6 @@ samp_list <- mcmc_gp_noisy(llik_sum_emulator, theta_prior_params, par_init=linea
                            cov_prop=linear_Gaussian_info$true_posterior$Cov, SSR_sample_adjustment="rectified")
 
 mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, format_mcmc_output(samp_list["par"], test_label="mcmc_gp_noisy_cov_rect_nocov")), use.names=TRUE)
-```
-
-
-```{r}
-# Append exact posterior samples. 
-N_samp_exact <- N_mcmc
-samp_exact <- t(drop(linear_Gaussian_info$true_posterior$mean) + 
-                t(chol(linear_Gaussian_info$true_posterior$Cov)) %*% matrix(rnorm(D*N_samp_exact), nrow=D, ncol=N_samp_exact))
-samp_exact_dt <- as.data.table(samp_exact)
-colnames(samp_exact_dt) <- computer_model_data$pars_cal_names
-samp_exact_dt[, c("param_type", "itr", "test_label") := list("par", 1:N_samp_exact, "exact")]
-samp_exact_dt <- melt.data.table(samp_exact_dt, id.vars=c("param_type", "itr", "test_label"), 
-                                 variable.name="param_name", value.name="sample")
-
-mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, samp_exact_dt), use.names=TRUE)
 ```
 
 

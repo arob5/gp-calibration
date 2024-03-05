@@ -493,7 +493,7 @@ llikEmulatorExactLinGaus$methods(
     initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
     d <- ncol(fwd_model)
     
-    if(!is.null(rownames(fwd_model))) input_names_val <- colnames(fwd_model)
+    if(!is.null(colnames(fwd_model))) input_names_val <- colnames(fwd_model)
     else input_names_val <- paste0("input", 1:d)
 
     if(!is.null(Cov)) {
@@ -534,7 +534,7 @@ llikEmulatorExactLinGaus$methods(
     
     # Construct log likelihood. 
     llik <- -0.5 * colSums(solve(L, y - fwd_model %*% t(input))^2, na.rm=TRUE)
-    if(normalize || conditional) llik <- llik - sum(diag(L))
+    if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
     return(matrix(llik, ncol=1))
@@ -582,7 +582,7 @@ llikEmulatorExactLinGausDiag$methods(
     initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
     d <- ncol(fwd_model)
     
-    if(!is.null(rownames(fwd_model))) input_names_val <- colnames(fwd_model)
+    if(!is.null(colnames(fwd_model))) input_names_val <- colnames(fwd_model)
     else input_names_val <- paste0("input", 1:d)
     
     if(!is.null(sig2)) {
@@ -622,7 +622,7 @@ llikEmulatorExactLinGausDiag$methods(
     
     # Construct log likelihood. 
     llik <- -0.5 * colSums((y - fwd_model %*% t(input))^2 / sig2_val, na.rm=TRUE)
-    if(normalize || conditional) llik <- llik - 0.5 * sum(log(sig2_val))
+    if(normalize || !conditional) llik <- llik - 0.5 * sum(log(sig2_val))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
     return(matrix(llik, ncol=1))
