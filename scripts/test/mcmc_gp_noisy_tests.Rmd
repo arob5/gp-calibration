@@ -86,6 +86,8 @@ llik_exact_obj <- llikEmulatorExactLinGausDiag(llik_lbl="exact", fwd_model=G, y_
 #       basically just require replacing the field `fwd_model` with a method `fwd_model`. 
 # TODO: Write function to generate autocorrelation plots. 
 # TODO: Write function to generate exact Normal Inverse Gamma/Wishart samples. 
+# TODO: add prior sampling ability to gpWrapper and llikEmulator classes, which will be useful for 
+#       sampling SSR priors to ensure they are not putting too much mass on negative values. 
 
 
 # Plot synthetic data. 

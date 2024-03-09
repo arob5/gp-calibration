@@ -216,6 +216,25 @@ gpWrapper$methods(
     
   },
   
+  update = function(X_new, Y_new, update_hyperpar=FALSE, ...) {
+    N_design_curr <- nrow(X_train)
+    .self$augment_design(X_new, Y_new)
+    N_design_new <- nrow(X_train)
+    
+    for(i in 1:Y_dim) {
+      gp_model[[i]] <<- update_package(X_train[(N_design_curr+1):N_design_new,,drop=FALSE], 
+                                       Y_train[(N_design_curr+1):N_design_new, i], 
+                                       output_idx=i, update_hyperpar=update_hyperpar, ...)
+    }
+  },
+  
+  update_package = function(X_new, Y_new, update_hyperpar=FALSE, ...) {
+    err_msg <- "An update_package() method must be implemented for each class inheriting from 
+                gpWrapper. gpWrapper does not implement its own update_package() method. The
+                update() method should ultimately call update_package()."
+    stop(err_msg)
+  },
+  
   plot_pred_1d = function(X_new, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL, Y_new=NULL) {
   
     assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
@@ -287,6 +306,23 @@ gpWrapper$methods(
   
   map_mean_func_name = function(mean_func_name) {
     return(mean_func_name_map[[mean_func_name]])
+  }, 
+  
+  augment_design = function(X_new, Y_new) {
+    assert_that(is.matrix(X_new) && is.matrix(Y_new))
+    assert_that(!any(is.na(X_new)) && !any(is.na(Y_new)))
+    assert_that(nrow(X_new) == nrow(Y_new))
+    assert_that(ncol(X_new) == X_dim)
+    assert_that(ncol(Y_new) == Y_dim)
+    
+    X <<- rbind(X, X_new)
+    Y <<- rbind(Y, Y_new)
+    
+    if(scale_input) X_train <<- rbind(X_train, .self$scale(X_new))
+    else X_train <<- rbind(X_train, X_new)
+    
+    if(normalize_output) Y_train <<- rbind(Y_train, .self$normalize(Y_new))
+    else Y_train <<- rbind(Y_train, Y_new)
   }
 
 )
@@ -374,7 +410,7 @@ gpWrapperHet$methods(
     
     if(length(fixed_pars) == 0) fixed_pars <- NULL
     
-    gp_fits <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
+    gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
   },
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
@@ -397,6 +433,17 @@ gpWrapperHet$methods(
     }
     
     return(return_list)
+  }, 
+  
+  # TODO: I should be careful to ensure X_train is aligned with the data that the homGP 
+  # object stores. Currently these could become misaligned if X_train contains duplicates. 
+  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
+    
+    if(update_hyperpar) {
+      return(update(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, ...))
+    }
+    
+    return(update(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
   }
   
 )

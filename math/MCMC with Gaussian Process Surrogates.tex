@@ -246,7 +246,7 @@ $\newInputMat$, the predictive mean $\GPMeanPred[\Ndesign+\Nbatch](\newInputMat)
 \end{align}
 \end{lemma}
 The predictive kernel \ref{ker_batch_uncertainty} has no uncertainty given that the GP predictive variance does not depend on the response. The predictive mean does depend 
-on the response and thus exhibits uncertainty; it's mean $\E\left[\llik_{\Ndesign}(\newInputMat)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right]$ is 
+on the response and thus exhibits uncertainty; its mean $\E\left[\llik_{\Ndesign}(\newInputMat)| \inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch) \right]$ is 
 equal to the mean of the GP resulting from conditioning on the data $(\inputMatBatch, \GPMeanPred[\Ndesign](\inputMatBatch))$ (i.e. the current GP mean is treated as if it 
 were the observed data). It's variance can be re-written as 
 \begin{align*}
@@ -286,6 +286,13 @@ for batches of size $\Nbatch$ is defined by
 v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 \end{align*}
 \end{definition} 
+
+\section{TODOs}
+\begin{enumerate}
+\item Add section on dealing with likelihood parameters. 
+\item Consider incorporating GP predictive covariance into IEVAR criterion. Review derivation; why isn't predictive cov showing up already considering the 
+expectation with respect to $\ell_B$? 
+\end{enumerate}
 
 
 \end{document}
