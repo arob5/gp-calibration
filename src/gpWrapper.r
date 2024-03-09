@@ -25,7 +25,7 @@ library(abind)
 gpWrapper <- setRefClass(
    Class = "gpWrapper", 
    fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
-                 X_dim="integer", Y_dim="integer", non_na_idx="matrix",
+                 X_dim="integer", Y_dim="integer",
                  scale_input="logical", normalize_output="logical",
                  X_bounds="matrix", Y_mean="numeric", Y_std="numeric",
                  X_names="character", Y_names="character",
@@ -43,7 +43,7 @@ gpWrapper$methods(
     # Handle missing values. 
     assert_that(is.matrix(X) && is.matrix(Y), msg="X and Y must be matrices.")
     assert_that(!any(is.na(X)), msg="NAs found in X.")
-    if(any(is.na(Y))) message("NAs found in Y will be removed (for each output variable separately).")
+    assert_that(!any(is.na(Y)), msg="NAs found in Y.")
     initFields(X=X, Y=Y, X_dim=ncol(X), Y_dim=ncol(Y))
     
     if(is.null(x_names)) {
@@ -58,7 +58,7 @@ gpWrapper$methods(
     
     initFields(X_names=x_names, Y_names=y_names, scale_input=scale_input,
                normalize_output=normalize_output, X_bounds=apply(X, 2, range),
-               non_na_idx=!is.na(Y), default_nugget=default_nugget)
+               default_nugget=default_nugget)
     colnames(X) <<- X_names
     colnames(Y) <<- Y_names
     
@@ -111,13 +111,12 @@ gpWrapper$methods(
     stop(err_msg)
   },
   
-  
   fit = function(kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, fixed_pars=list(), ...) {
     fits_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(fits_list)) {
-      idx_sel <- non_na_idx[,i]
-      fits_list[[i]] <- fit_package(X_train[idx_sel,,drop=FALSE], Y_train[idx_sel, i], 
-                                    kernel_name, mean_func_name, estimate_nugget, fixed_pars, ...)
+      fits_list[[i]] <- fit_package(X_fit=X_train, y_fit=Y_train[,i], kernel_name=kernel_name, 
+                                    mean_func_name=mean_func_name, estimate_nugget=estimate_nugget, 
+                                    fixed_pars=fixed_pars, ...)
     }
 
     gp_model <<- fits_list
@@ -126,7 +125,6 @@ gpWrapper$methods(
   fit_parallel = function(kernel_name="Gaussian", mean_func_name="constant", fixed_pars=list(), ...) {
     .NotYetImplemented()
   },
-  
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
     err_msg <- "A predict_package() method must be implemented for each class inheriting from 
@@ -247,7 +245,7 @@ gpWrapper$methods(
     CI_tail_prob <- 0.5 * (1-CI_prob)
     plts <- vector(mode="list", length=Y_dim)
     for(i in 1:Y_dim) {
-      df_train <- data.frame(x=X[non_na_idx[,i],1], y=Y[non_na_idx[,i],i])
+      df_train <- data.frame(x=X[,1], y=Y[,i])
       df_pred <- data.frame(x=X_new[,1], y_mean=pred_list$mean[,i], y_sd=sqrt(pred_list$var[,i]))
       df_pred$CI_upper <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd)
       df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, lower.tail=FALSE)
@@ -275,7 +273,6 @@ gpWrapper$methods(
     plts <- vector(mode="list", length=Y_dim)
     
     for(i in 1:Y_dim) {
-      # df_train <- data.frame(x=X[non_na_idx[,i],1], y=Y[non_na_idx[,i],i])
       df_pred <- data.frame(y=Y_new[,i], y_mean=pred_list$mean[,i])
       if(include_CI) {
         df_pred$y_sd <- sqrt(pred_list$var[,i])
@@ -399,7 +396,6 @@ gpWrapperHet$methods(
   
   fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
                          fixed_pars=list(), ...) {
-    
     # Deal with noiseless case. 
     if(estimate_nugget) {
       assert_that(!("g" %in% names(fixed_pars)), 
@@ -440,10 +436,10 @@ gpWrapperHet$methods(
   update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
     
     if(update_hyperpar) {
-      return(update(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, ...))
+      return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, ...))
     }
     
-    return(update(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
+    return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
   }
   
 )

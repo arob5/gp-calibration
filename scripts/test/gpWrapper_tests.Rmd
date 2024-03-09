@@ -32,10 +32,10 @@ set.seed(10)
 #
 
 # 1D input, 2D output, noisy observations. 
+N_design1 <- 4
 f1 <- function(x) cbind(x^2, 3*x^3)
-X1 <- matrix(seq(10,20,length.out=5), ncol=1)
-Y1 <- f1(X1) + cbind(5*rnorm(nrow(X1)), 30*rnorm(nrow(X1)))
-Y1[sample.int(nrow(Y1), 1), 1] <- NA_real_
+X1 <- matrix(seq(10,20,length.out=N_design1), ncol=1)
+Y1 <- f1(X1) + cbind(15*rnorm(nrow(X1)), 30*rnorm(nrow(X1)))
 X1_new <- matrix(seq(10,20, length.out=101), ncol=1)
 Y1_new_noiseless <- f1(X1_new)
 
@@ -43,7 +43,6 @@ Y1_new_noiseless <- f1(X1_new)
 f2 <- function(x) matrix(3*x[,1]^2 - 2*x[,2]^3, ncol=1)
 X2 <- randomLHS(25, 2)
 Y2 <- f2(X2)
-Y2[sample.int(nrow(Y2), 4),] <- NA_real_
 X2_new <- as.matrix(expand.grid(seq(0,1, length.out=51), 
                                 seq(0,1, length.out=51)))
 Y2_new <- f2(X2_new)
@@ -88,6 +87,65 @@ for(i in 1:gpHet1$Y_dim) {
   lines(X1_new, Y1_new_noiseless[,i], col="red")
 }
 ```
+
+```{r}
+#
+# Test `update()` method: 
+# Construct the design in two stages and ensure the resulting design is 
+# equal to the one-shot design above. Note that the kernel hyperparameters will not be the 
+# same as above; the hyperparmeter estimation will only use the initial design. Note also 
+# that `X_train`, `Y_train` will not necessarily agree across the two methods since 
+# `X_bounds`, `Y_mean`, and `Y_std` are based on the initial design (they are not updated), 
+# so the scaling/normalization will be different. 
+#
+
+N_partial_design1 <- N_design1 - 1
+
+# Fit on partial design. 
+gpHet1_update <- gpWrapperHet(X1[1:N_partial_design1,,drop=FALSE], Y1[1:N_partial_design1,,drop=FALSE], 
+                              normalize_output=TRUE, scale_input=TRUE)
+gpHet1_update$fit("Gaussian", "constant")
+
+# Predictive plot for GPs pre-update. 
+gpHet1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
+
+# Now update design. 
+gpHet1_update$update(X1[(N_partial_design1+1):N_design1,,drop=FALSE], 
+                     Y1[(N_partial_design1+1):N_design1,,drop=FALSE],
+                     update_hyperpar=FALSE)
+
+# Test. 
+print("X agrees:")
+all.equal(gpHet1$X, gpHet1_update$X)
+
+print("Y agrees:")
+all.equal(gpHet1$Y, gpHet1_update$Y)
+
+print("X_train agrees after inverting scaling:")
+all.equal(gpHet1$scale(gpHet1$X_train, inverse=TRUE), 
+          gpHet1_update$scale(gpHet1_update$X_train, inverse=TRUE))
+
+print("Y_train agrees after inverting normalization:")
+all.equal(gpHet1$normalize(gpHet1$Y_train, inverse=TRUE), 
+          gpHet1_update$normalize(gpHet1_update$Y_train, inverse=TRUE))
+
+print("hetGP X agrees with gpWrapper X_train:")
+for(i in 1:gpHet1_update$Y_dim) {
+  print(all.equal(gpHet1_update$gp_model[[i]]$X0, gpHet1_update$X_train))
+}
+  
+print("hetGP Y agrees with gpWrapper Y_train")
+for(i in 1:gpHet1_update$Y_dim) {
+  print(all.equal(gpHet1_update$gp_model[[i]]$Z, gpHet1_update$Y_train[,i]))
+}
+
+# Predictive plot for updated GPs. With so few training points, the fit often yields a 
+# very small nugget that almost interpolates, which leads to overfitting. 
+gpHet1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
+```
+
+
+
 
 # 2d validation. 
 
