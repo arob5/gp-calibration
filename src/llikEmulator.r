@@ -124,6 +124,11 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
+  predict = function(input, lik_par_val=NULL, conditional=default_conditional, 
+                     normalize=default_normalize, ...) {
+    .NotYetImplemented()
+  },
+  
   get_design_inputs = function(...) {
     .NotYetImplemented()
   },
@@ -298,6 +303,29 @@ llikSumEmulator$methods(
     return(llik_vals)
   },
   
+  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, conditional=default_conditional, 
+                     normalize=default_normalize, sum_terms=TRUE, 
+                     labels=llik_label, ...) {
+    
+    predict_list <- list()
+    for(lbl in labels) {
+      predict_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict(input, lik_par_val=lik_par_val,
+                                                                return_mean=return_mean, return_var=return_var,
+                                                                return_cov=return_cov, conditional=conditional,
+                                                                normalize=normalize, ...)
+    }
+    
+    if(!sum_terms) return(predict_list)
+
+    sum_list <- list()
+    if(return_mean) sum_list$mean <- Reduce("+", lapply(predict_list, function(l) l$mean))
+    if(return_var) sum_list$var <- Reduce("+", lapply(predict_list, function(l) l$var))
+    if(return_cov) sum_list$cov <- Reduce("+", lapply(predict_list, function(l) l$cov))
+
+    return(sum_list)
+  },
+  
   get_design_inputs = function(return_list=FALSE, labels=llik_label, ...) {
     design_input_list <- list()
     for(lbl in labels) {
@@ -455,11 +483,28 @@ llikEmulatorMultGausGP$methods(
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par, conditional, normalize)
+  }, 
+  
+  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, conditional=default_conditional, 
+                     normalize=default_normalize, include_nugget=TRUE, ...) {
+    
+    pred_list <- .self$emulator_model$predict(input, return_mean=return_mean, return_var=return_var,
+                                              return_cov=return_cov, include_nugget=include_nugget)
+    
+    if(include_mean) {
+      pred_list$mean <- .self$assemble_llik(pred_list$mean, lik_par=lik_par_val, conditional, normalize)
+    }
+    
+    if(include_var) pred_list$var <- pred_list$var / (4*lik_par_val^2)
+    if(include_cov) pred_list$cov <- pred_list$cov / (4*lik_par_val^2)
+    
+    return(pred_list)
   }
-
+  
 )
 
-
+ 
 # -----------------------------------------------------------------------------
 # llikEmulatorExactLinGaus class
 # This simply implements the exact likelihood corresponding to a linear 
