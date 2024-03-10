@@ -134,32 +134,46 @@ gpWrapper$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     X_cov=NULL, include_nugget=TRUE) {
+                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, ...) {
+    # Logic for all predict() functions:
+    #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers to k(X_new, X_cross).
+    #   - The former is always diagonal, and `include_nugget==TRUE` will cause nugget variances to be 
+    #     added to the diagonal. The latter may or may not be diagonal, and `include_nugget` has no
+    #     effect on the cross cov matrix (nugget variances will NOT be added in either case). 
+    #   - If `return_cov==TRUE`, then the variances will always be returned as well, by simply taking 
+    #     the diagonal of the covariance matrix. 
+    #   - `return_cross_cov` has no effect on the other settings; can be thought of as an optional add-on. 
+    
     # Scale inputs, if required. 
     if(scale_input) {
       X_new <- .self$scale(X_new)
-      if(return_cov && !is.null(X_cov)) X_cov <- .self$scale(X_cov)
+      if(return_cross_cov && !is.null(X_cross)) X_cross <- .self$scale(X_cross)
     }
     
-    # If covariance is requested, default to computing cov at inputs `X_new`. 
-    if(return_cov && is.null(X_cov)) X_cov <- X_new
-    
+    # If covariance is requested, default to computing cov at inputs `X_new`.
+    if(return_cross_cov && is.null(X_cross)) stop("`return_cross_cov` is TRUE but `X_cross` is NULL.") 
+      
     # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(pred_list)) {
-      pred_list[[i]] <- predict_package(X_new, i, return_mean, return_var, return_cov, X_cov, include_nugget)
+      pred_list[[i]] <- predict_package(X_new, i, return_mean, return_var, return_cov, 
+                                        return_cross_cov, X_cross, include_nugget, ...)
     }
-    
+
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$var))
     cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
+    cross_cov_pred <- abind(lapply(pred_list, function(l) l$cross_cov), along=3)
     
     # Set negative variances to 0. 
-    neg_var_idx <- (var_pred < 0)
-    if(any(neg_var_idx)) {
-      message("Thresholding negative variance predictions at 0.")
-      var_pred[neg_var_idx] <- 0
+    if(return_var || return_cov) {
+      neg_var_idx <- (var_pred < 0)
+      if(any(neg_var_idx)) {
+        message("Thresholding negative variance predictions at 0.")
+        var_pred[neg_var_idx] <- 0
+        if(return_cov) diag(cov_pred)[neg_var_idx] <- 0
+      }
     }
     
     # Return outputs to unnormalized scale. 
@@ -167,9 +181,10 @@ gpWrapper$methods(
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
       if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
+      if(return_cross_cov) for(i in 1:Y_dim) cross_cov_pred[,,i] <- Y_std[i]^2 * cross_cov_pred[,,i]
     }
       
-    return(list(mean=mean_pred, var=var_pred, cov=cov_pred))
+    return(list(mean=mean_pred, var=var_pred, cov=cov_pred, cross_cov=cross_cov_pred))
   }, 
   
   
@@ -410,22 +425,28 @@ gpWrapperHet$methods(
   },
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
-                             return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
+                             return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
+                             include_nugget=TRUE, ...) {
     
-    if(!return_cov) X_cov <- NULL
-    
-    pred <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_cov)
+    if(return_cov) X_prime <- X_new
+    else X_prime <- NULL
+
+    pred <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_prime)
     return_list <- list()
     if(return_mean) return_list$mean <- pred$mean
-    if(return_var) {
+    if(return_cov) {
+      return_list$cov <- pred$cov
+      if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs
+      return_list$var <- diag(return_list$cov)
+    } else if(return_var) {
       return_list$var <- pred$sd2
       if(include_nugget) return_list$var <- return_list$var + pred$nugs
     }
     
-    if(return_cov) {
-      return_list$cov <- pred$cov
-      # TODO: need to check that this is right. 
-      if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs 
+    # Cross covariance.
+    if(return_cross_cov) {
+      pred_cross <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_cross)
+      return_list$cross_cov <- pred_cross$cov
     }
     
     return(return_list)

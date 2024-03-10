@@ -10,6 +10,8 @@ library(assertthat)
 library(ggmatplot)
 library(abind)
 
+source("general_helper_functions.r")
+
 
 # -----------------------------------------------------------------------------
 # llikEmulator: Class encapsulating a (typically stochastic) approximation to 
@@ -303,8 +305,10 @@ llikSumEmulator$methods(
     return(llik_vals)
   },
   
+  
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                     return_cov=FALSE, conditional=default_conditional, 
+                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                     conditional=default_conditional, 
                      normalize=default_normalize, sum_terms=TRUE, 
                      labels=llik_label, ...) {
     
@@ -312,7 +316,8 @@ llikSumEmulator$methods(
     for(lbl in labels) {
       predict_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict(input, lik_par_val=lik_par_val,
                                                                 return_mean=return_mean, return_var=return_var,
-                                                                return_cov=return_cov, conditional=conditional,
+                                                                return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                                                input_cross=input_cross, conditional=conditional,
                                                                 normalize=normalize, ...)
     }
     
@@ -320,8 +325,16 @@ llikSumEmulator$methods(
 
     sum_list <- list()
     if(return_mean) sum_list$mean <- Reduce("+", lapply(predict_list, function(l) l$mean))
-    if(return_var) sum_list$var <- Reduce("+", lapply(predict_list, function(l) l$var))
-    if(return_cov) sum_list$cov <- Reduce("+", lapply(predict_list, function(l) l$cov))
+    if(return_cov) {
+      sum_list$cov <- Reduce("+", lapply(predict_list, function(l) l$cov))
+      sum_list$var <- diag(sum_list$cov)
+    } else if(return_var) {
+      sum_list$var <- Reduce("+", lapply(predict_list, function(l) l$var))
+    }
+    
+    if(return_cross_cov) {
+      sum_list$cross_cov <- Reduce("+", lapply(predict_list, function(l) l$cross_cov))
+    }
 
     return(sum_list)
   },
@@ -486,20 +499,74 @@ llikEmulatorMultGausGP$methods(
   }, 
   
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                     return_cov=FALSE, conditional=default_conditional, 
+                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                     conditional=default_conditional, 
                      normalize=default_normalize, include_nugget=TRUE, ...) {
     
     pred_list <- .self$emulator_model$predict(input, return_mean=return_mean, return_var=return_var,
-                                              return_cov=return_cov, include_nugget=include_nugget)
+                                              return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                              X_cross=input_cross, include_nugget=include_nugget)
     
     if(include_mean) {
       pred_list$mean <- .self$assemble_llik(pred_list$mean, lik_par=lik_par_val, conditional, normalize)
     }
     
-    if(include_var) pred_list$var <- pred_list$var / (4*lik_par_val^2)
-    if(include_cov) pred_list$cov <- pred_list$cov / (4*lik_par_val^2)
+    if(include_cov) {
+      pred_list$cov <- pred_list$cov / (4*lik_par_val^2)
+      pred_list$var <- diag(pred_list$cov)
+    } else if(include_var) {
+      pred_list$var <- pred_list$var / (4*lik_par_val^2)
+    }
     
+    if(include_cross_cov) {
+      pred_list$cross_cov <- pred_list$cov / (4*lik_par_val^2)
+    }
+
     return(pred_list)
+  }, 
+  
+  predict_exp = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                         conditional=default_conditional, 
+                         normalize=default_normalize, include_nugget=TRUE, 
+                         log_moments=FALSE, pred_llik_list=NULL, ...) {
+    # Note that the mean of the likelihood is required in to compute the var/cov of the 
+    # likelihood, so it is always returned regardless of the value `return_mean`. Also 
+    # the log moments are always returned. The logic here is that numerical overflow is 
+    # common on the exponential scale; a costly prediction computation could be wasted 
+    # if only the exponential is returned. Always returning the moments on the log scale
+    # thus acts as a backup. 
+    
+    if(is.null(pred_llik_list)) {
+      # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
+      pred_llik_list <- .self$predict(input, lik_par_val, return_mean=TRUE, return_var=!return_cov, 
+                                      return_cov, return_cross_cov, input_cross, conditional, 
+                                      normalize, include_nugget, ...)
+    }
+    
+    # The log of the likelihood expectation is always returned. 
+    return_list <- list()
+    return_list$log_mean <- pred_llik_list$mean + 0.5 * pred_llik_list$var
+    
+    if(return_cov) {
+      return_list$log_cov <- log_exp_minus_1(pred_llik_list$cov) + 
+                             outer(return_list$log_mean, return_list$log_mean, FUN="+")
+      return_list$log_var <- diag(return_list$log_cov)
+    } else if(return_var) {
+      return_list$log_var <- log_exp_minus_1(pred_llik_list$var) + 2*return_list$log_mean
+    }
+    
+    # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
+    if(return_cross_cov) {
+      pred_llik_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                            conditional=conditional, normalize=normalize, ...)
+      return_list$log_mean_cross <- pred_llik_list_cross$mean + 0.5 * pred_llik_list_cross$var                                   
+       
+      return_list$log_cross_cov <- log_exp_minus_1(pred_llik_list$cross_cov) + 
+                                   outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")
+    }
+    
+    return(return_list)
   }
   
 )
