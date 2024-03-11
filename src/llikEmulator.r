@@ -4,14 +4,13 @@
 # inherit from these classes. All classes defined using reference classes. 
 #
 # Andrew Roberts
+#
+# Depends on: general_helper_functions.r
 # 
 
 library(assertthat)
 library(ggmatplot)
 library(abind)
-
-source("general_helper_functions.r")
-
 
 # -----------------------------------------------------------------------------
 # llikEmulator: Class encapsulating a (typically stochastic) approximation to 
@@ -126,11 +125,37 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  predict = function(input, lik_par_val=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, ...) {
+  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                     conditional=default_conditional, normalize=default_normalize, ...) {
     .NotYetImplemented()
   },
   
+  calc_quantiles <- function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, llik_pred_list=NULL,
+                             lower_tail=TRUE, ...) {
+    .NotYetImplemented()
+  },
+  
+  calc_confidence_interval = function(input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+                                      normalize=default_normalize, llik_pred_list=NULL, CI_prob=0.9, ...) {
+
+    if(is.null(llik_pred_list)) {
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)
+    }
+    
+    CI_list <- list()
+    CI_tail_prob <- 0.5 * (1-CI_prob)
+    CI_list$upper <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val,  
+                                          conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list,
+                                          lower_tail=TRUE, ...)
+    CI_list$lower <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val,  
+                                          conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list,
+                                          lower_tail=FALSE, ...)
+    
+    return(CI_list)
+  },
+
   get_design_inputs = function(...) {
     .NotYetImplemented()
   },
@@ -167,35 +192,33 @@ llikEmulator$methods(
     
   },
   
-  plot_llik_samp = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                            normalize=default_normalize, ...) {
-    llik_samp <- .self$sample(input, lik_par_val=lik_par_val, N_samp=N_samp, 
-                              conditional=conditional, normalize=normalize, ...)
-  },
+  plot_llik_pred_1d = function(input_new, lik_par_val=NULL, return_cross_cov=FALSE, conditional=default_conditional,
+                               normalize=default_normalize, sum_terms=TRUE, labels=llik_label, CI_prob=0.9, 
+                               llik_pred_list=NULL, llik_new=NULL, ...) {
+    assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(llik_pred_list)) {
+      llik_pred_list <- .self$predict(input_new, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                      conditional=conditional, normalize=normalize, ...)
+    }
+    
+    df_train <- data.frame(x=drop(.self$get_design_inputs(...)), 
+                           y=get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...))
+    df_pred <- data.frame(x=drop(input_new), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
+    CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
+    df_pred$CI_upper <- CI_list$upper
+    df_pred$CI_lower <- CI_list$lower
+    if(!is.null(llik_new)) df_pred$y <- drop(llik_new)
+    
+    plt <- ggplot(df_pred) + 
+            geom_line(aes(x, y_mean), color="blue") + 
+            geom_line(aes(x, CI_upper), color="gray") + 
+            geom_line(aes(x, CI_lower), color="gray") +
+            geom_point(aes(x,y), df_train, color="red")
+    if(!is.null(llik_new)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
   
-  mean_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
-                      normalize=default_normalize, ...) {
-    .NotYetImplemented()
-  }, 
-  
-  var_log = function(input, lik_par_val=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, ...) {
-    .NotYetImplemented()
-  }, 
-  
-  mean_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
-                      normalize=default_normalize, ...) {
-    .NotYetImplemented()
-  }, 
-  
-  var_lik = function(input, lik_par_val=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, ...) {
-    .NotYetImplemented()
-  },
-  
-  log_norm_constant = function(lik_par_val=NULL, conditional=default_conditional, 
-                               normalize=default_normalize, ...) {
-    .NotYetImplemented()
+    return(plt)
   }
   
 )
@@ -314,7 +337,7 @@ llikSumEmulator$methods(
     
     predict_list <- list()
     for(lbl in labels) {
-      predict_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict(input, lik_par_val=lik_par_val,
+      predict_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict(input, lik_par_val=lik_par_val[[lbl]],
                                                                 return_mean=return_mean, return_var=return_var,
                                                                 return_cov=return_cov, return_cross_cov=return_cross_cov,
                                                                 input_cross=input_cross, conditional=conditional,
@@ -426,6 +449,12 @@ llikSumEmulator$methods(
     }
     
     return(plts)
+  },
+  
+  plot_llik_pred_1d = function(input, lik_par_val=NULL, return_cross_cov=FALSE, conditional=default_conditional,
+                               normalize=default_normalize, sum_terms=TRUE, labels=llik_label, CI_prob=0.9, 
+                               llik_pred_list=NULL, llik_new=NULL, ...) {
+    .NotYetImplemented()
   }
   
 )
@@ -507,18 +536,18 @@ llikEmulatorMultGausGP$methods(
                                               return_cov=return_cov, return_cross_cov=return_cross_cov,
                                               X_cross=input_cross, include_nugget=include_nugget)
     
-    if(include_mean) {
+    if(return_mean) {
       pred_list$mean <- .self$assemble_llik(pred_list$mean, lik_par=lik_par_val, conditional, normalize)
     }
     
-    if(include_cov) {
-      pred_list$cov <- pred_list$cov / (4*lik_par_val^2)
+    if(return_cov) {
+      pred_list$cov <- pred_list$cov[,,1] / (4*lik_par_val^2)
       pred_list$var <- diag(pred_list$cov)
-    } else if(include_var) {
+    } else if(return_var) {
       pred_list$var <- pred_list$var / (4*lik_par_val^2)
     }
     
-    if(include_cross_cov) {
+    if(return_cross_cov) {
       pred_list$cross_cov <- pred_list$cov / (4*lik_par_val^2)
     }
 
@@ -529,7 +558,7 @@ llikEmulatorMultGausGP$methods(
                          return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
                          conditional=default_conditional, 
                          normalize=default_normalize, include_nugget=TRUE, 
-                         log_moments=FALSE, pred_llik_list=NULL, ...) {
+                         log_moments=FALSE, llik_pred_list=NULL, ...) {
     # Note that the mean of the likelihood is required in to compute the var/cov of the 
     # likelihood, so it is always returned regardless of the value `return_mean`. Also 
     # the log moments are always returned. The logic here is that numerical overflow is 
@@ -537,36 +566,48 @@ llikEmulatorMultGausGP$methods(
     # if only the exponential is returned. Always returning the moments on the log scale
     # thus acts as a backup. 
     
-    if(is.null(pred_llik_list)) {
+    if(is.null(llik_pred_list)) {
       # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
-      pred_llik_list <- .self$predict(input, lik_par_val, return_mean=TRUE, return_var=!return_cov, 
+      llik_pred_list <- .self$predict(input, lik_par_val, return_mean=TRUE, return_var=!return_cov, 
                                       return_cov, return_cross_cov, input_cross, conditional, 
                                       normalize, include_nugget, ...)
     }
     
     # The log of the likelihood expectation is always returned. 
     return_list <- list()
-    return_list$log_mean <- pred_llik_list$mean + 0.5 * pred_llik_list$var
+    return_list$log_mean <- llik_pred_list$mean + 0.5 * llik_pred_list$var
     
     if(return_cov) {
-      return_list$log_cov <- log_exp_minus_1(pred_llik_list$cov) + 
+      return_list$log_cov <- log_exp_minus_1(llik_pred_list$cov) + 
                              outer(return_list$log_mean, return_list$log_mean, FUN="+")
       return_list$log_var <- diag(return_list$log_cov)
     } else if(return_var) {
-      return_list$log_var <- log_exp_minus_1(pred_llik_list$var) + 2*return_list$log_mean
+      return_list$log_var <- log_exp_minus_1(llik_pred_list$var) + 2*return_list$log_mean
     }
     
     # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
     if(return_cross_cov) {
-      pred_llik_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
+      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
                                             conditional=conditional, normalize=normalize, ...)
-      return_list$log_mean_cross <- pred_llik_list_cross$mean + 0.5 * pred_llik_list_cross$var                                   
+      return_list$log_mean_cross <- llik_pred_list_cross$mean + 0.5 * llik_pred_list_cross$var                                   
        
-      return_list$log_cross_cov <- log_exp_minus_1(pred_llik_list$cross_cov) + 
+      return_list$log_cross_cov <- log_exp_minus_1(llik_pred_list$cross_cov) + 
                                    outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")
     }
     
     return(return_list)
+  }, 
+  
+  calc_quantiles <- function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, llik_pred_list=NULL,
+                             lower_tail=TRUE, include_nugget=TRUE, ...) {
+    if(is.null(llik_pred_list)) {
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                      conditional=conditional, normalize=normalize, 
+                                      include_nugget=include_nugget, ...)
+    }
+    
+    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower_tail=lower_tail)
   }
   
 )

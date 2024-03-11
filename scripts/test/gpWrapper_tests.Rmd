@@ -66,6 +66,19 @@ gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```
 
+```{r}
+# Test cross covariance calculation by computing the cross covariances between 
+# the same set of test points. This should equal the covariance returned when 
+# `return_cov` is TRUE and `include_nugget` is FALSE. 
+
+gpHet1_pred_cross <- gpHet1$predict(X1_new, return_mean=FALSE, return_var=FALSE, 
+                                    return_cross_cov=TRUE, X_cross=X1_new)
+gpHet1_pred_cross_baseline <- gpHet1$predict(X1_new, return_mean=FALSE, return_var=FALSE, 
+                                             return_cov=TRUE, include_nugget=FALSE)
+
+cat("Cross covariance calculation is correct: ", all.equal(gpHet1_pred_cross$cross_cov, gpHet1_pred_cross_baseline$cov))
+```
+
 
 ```{r}
 # Sample 

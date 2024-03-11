@@ -18,6 +18,7 @@ base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
 
 source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
@@ -234,7 +235,14 @@ print(all.equal(llik_true, llik_test2))
 
 ```
 
+```{r}
+# Validating predict() and predict_exp() methods for llikEmulatorMultGausGP and llikSumEmulator. 
 
+llik_sum_pred_list <- llik_sum_emulator$predict(test_info$inputs, lik_par_val=sig2_true, return_mean=TRUE, 
+                                                return_cov=TRUE, normalize=TRUE, include_nugget=TRUE)
+
+
+```
 
 
 

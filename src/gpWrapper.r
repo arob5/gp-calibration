@@ -126,7 +126,8 @@ gpWrapper$methods(
     .NotYetImplemented()
   },
   
-  predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
+  predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
+                             return_cross_cov=NULL, X_cross=NULL, include_nugget=TRUE) {
     err_msg <- "A predict_package() method must be implemented for each class inheriting from 
                 gpWrapper. gpWrapper does not implement its own predict_package() method. The
                 predict() method should ultimately call predict_package()."
@@ -188,8 +189,8 @@ gpWrapper$methods(
   }, 
   
   
-  predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, 
-                              return_cov=FALSE, X_cov=NULL, include_nugget=TRUE) {
+  predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE,
+                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE) {
     .NotYetImplemented()
   },
   
@@ -200,7 +201,7 @@ gpWrapper$methods(
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
-                           X_cov=X_new, include_nugget=include_nugget)
+                           include_nugget=include_nugget)
     }
     
     # Compute lower Cholesky factors of the predictive covariance matrices. 
