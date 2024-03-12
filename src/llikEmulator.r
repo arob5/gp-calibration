@@ -71,8 +71,7 @@ llikEmulator <- setRefClass(
   fields = list(emulator_model="ANY", lik_description="character", llik_label="character",
                 emulator_description="character", default_conditional="logical",
                 default_normalize="logical", use_fixed_lik_par="logical", lik_par="ANY",
-                input_names="character", dim_input="integer")
-                 
+                input_names="character", dim_input="integer", llik_pred_dist="character")
 )
 
 llikEmulator$lock("llik_label")
@@ -81,14 +80,15 @@ llikEmulator$methods(
   
   initialize = function(llik_label, input_names, lik_description, emulator_description, dim_input,  
                         emulator_model=NULL, default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, ...) {
+                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_pred_dist=NULL, ...) {
 
     initFields(llik_label=llik_label, input_names=input_names, lik_description=lik_description, 
                dim_input=dim_input, emulator_description=emulator_description,
                emulator_model=emulator_model, default_conditional=default_conditional,
-               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, lik_par=lik_par)  
+               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+               lik_par=lik_par, llik_pred_dist=llik_pred_dist)  
         
-    if(use_fixed_lik_par && is.null(lik_par)) message("Fixed `lik_par` not yet passed.")
+    if(use_fixed_lik_par && is.null(lik_par)) stop("Fixed `lik_par` not passed but `use_fixed_lik_par` is TRUE.")
   }, 
   
   get_lik_par = function(lik_par_val=NULL, ...) {
@@ -131,7 +131,7 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  calc_quantiles <- function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, llik_pred_list=NULL,
                              lower_tail=TRUE, ...) {
     .NotYetImplemented()
@@ -164,21 +164,21 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  plot_llik_samp_1d = function(input_new, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                               normalize=default_normalize, true_llik_new=NULL, include_design=FALSE, ...) {
+  plot_llik_samp_1d = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                               normalize=default_normalize, true_llik=NULL, include_design=FALSE, ...) {
     
     assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
     
-    input_new <- get_input(input_new)
-    llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, ...)
+    input <- get_input(input)
+    llik_samp <- .self$sample(input, lik_par=lik_par_val, N_samp=N_samp, ...)
     
-    plt <- ggmatplot(input_new, llik_samp, plot_type="line", color="gray") + 
+    plt <- ggmatplot(input, llik_samp, plot_type="line", color="gray") + 
             theme(legend.position = "none") + 
             ggtitle("Log Likelihood Samples") + 
             xlab(input_names) + ylab(paste0("Log Likelihood: ", llik_label))
 
-    if(!is.null(true_llik_new)) {
-      df <- data.frame(x=input_new[,1], y=drop(true_llik_new))
+    if(!is.null(true_llik)) {
+      df <- data.frame(x=input[,1], y=drop(true_llik))
       plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
     }
     
@@ -192,31 +192,33 @@ llikEmulator$methods(
     
   },
   
-  plot_llik_pred_1d = function(input_new, lik_par_val=NULL, return_cross_cov=FALSE, conditional=default_conditional,
-                               normalize=default_normalize, sum_terms=TRUE, labels=llik_label, CI_prob=0.9, 
-                               llik_pred_list=NULL, llik_new=NULL, ...) {
+  plot_llik_pred_1d = function(input, lik_par_val=NULL, conditional=default_conditional,
+                               normalize=default_normalize, include_CI=FALSE, 
+                               CI_prob=0.9, llik_pred_list=NULL, true_llik=NULL, ...) {
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
     
     # Compute required predictive quantities if not already provided. 
     if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input_new, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
                                       conditional=conditional, normalize=normalize, ...)
     }
     
     df_train <- data.frame(x=drop(.self$get_design_inputs(...)), 
                            y=get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...))
-    df_pred <- data.frame(x=drop(input_new), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
-    CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
-    df_pred$CI_upper <- CI_list$upper
-    df_pred$CI_lower <- CI_list$lower
-    if(!is.null(llik_new)) df_pred$y <- drop(llik_new)
+    df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
+    if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
     
     plt <- ggplot(df_pred) + 
             geom_line(aes(x, y_mean), color="blue") + 
-            geom_line(aes(x, CI_upper), color="gray") + 
-            geom_line(aes(x, CI_lower), color="gray") +
             geom_point(aes(x,y), df_train, color="red")
-    if(!is.null(llik_new)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
+    if(!is.null(true_llik)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
+    
+    if(include_CI) {
+      CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
+      df_pred$CI_upper <- CI_list$upper
+      df_pred$CI_lower <- CI_list$lower
+      plt <- plt + geom_line(aes(x, CI_upper), color="gray") + geom_line(aes(x, CI_lower), color="gray")
+    }
   
     return(plt)
   }
@@ -258,12 +260,21 @@ llikSumEmulator$methods(
     equal_set <- function(x,y) if(setequal(x,y)) x else FALSE
     input_names_list <- lapply(llik_emulator_list, function(obj) obj$input_names)
     assert_that(!isFALSE(Reduce(equal_set, input_names_list)), msg="Different `input_names` found for different llik terms.")
-  
+    
+    # Since the llikEmulator terms are assumed to have independent predictive distributions, then the 
+    # llikSumEmulator predictive distribution is Gaussian provided all of the terms are Gaussian. Otherwise, 
+    # the distribution cannot be determined without further information. 
+    llik_term_dists <- sapply(llik_emulator_list, function(x) x$llik_pred_dist)
+    if(all(llik_term_dists == "Gaussian")) llik_sum_dist <- "Gaussian"
+    else llik_sum_dist <- NULL
+    
     callSuper(llik_label=term_lbls, lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
               default_normalize=default_normalize, dim_input=llik_emulator_list[[1]]$dim_input,
               input_names=llik_emulator_list[[1]]$input_names,
-              use_fixed_lik_par=all(sapply(llik_emulator_list, function(x) x$use_fixed_lik_par)), lik_par=NULL)
+              use_fixed_lik_par=all(sapply(llik_emulator_list, function(x) x$use_fixed_lik_par)), 
+              lik_par=NULL, llik_pred_dist=llik_sum_dist)
+              
   },
   
   get_llik_term_attr = function(attr_name, labels=llik_label) {
@@ -405,28 +416,28 @@ llikSumEmulator$methods(
                  sum_terms=sum_terms, labels=labels)
   }, 
   
-  plot_llik_samp_1d = function(input_new, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                               normalize=default_normalize, true_llik_new=NULL, include_design=FALSE, 
+  plot_llik_samp_1d = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+                               normalize=default_normalize, true_llik=NULL, include_design=FALSE, 
                                labels=llik_label, sum_terms=TRUE, ...) {
-    # `true_llik_new` should be a vector (or 1 col matrix) if `sum_terms` is TRUE. Otherwise should
+    # `true_llik` should be a vector (or 1 col matrix) if `sum_terms` is TRUE. Otherwise should
     # be a matrix with `N_terms` cols, with colnames set to llik labels. 
     
     assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
-    input_new <- get_input(input_new)
+    input <- get_input(input)
     
     if(sum_terms) {
-      llik_samp <- .self$sample(input_new, lik_par=lik_par_val, N_samp=N_samp, conditional=conditional,
+      llik_samp <- .self$sample(input, lik_par=lik_par_val, N_samp=N_samp, conditional=conditional,
                                 normalize=normalize, sum_terms=TRUE, labels=labels, ...)
-      plt <- ggmatplot(input_new, llik_samp, plot_type="line", color="gray") +
+      plt <- ggmatplot(input, llik_samp, plot_type="line", color="gray") +
               theme(legend.position = "none") +
               ggtitle("Log Likelihood Samples") +
               xlab(input_names) + ylab("Log Likelihood")
 
-      if(!is.null(true_llik_new)) {
-        true_llik_new <- drop(true_llik_new)
-        assert_that(is.numeric(true_llik_new) && length(true_llik_new)==nrow(input_new), 
-                    msg="With `sum_terms==TRUE`, `true_llik_new` must be vector of length `nrow(input_new)`.")
-        df <- data.frame(x=input_new[,1], y=true_llik_new)
+      if(!is.null(true_llik)) {
+        true_llik <- drop(true_llik)
+        assert_that(is.numeric(true_llik) && length(true_llik)==nrow(input), 
+                    msg="With `sum_terms==TRUE`, `true_llik` must be vector of length `nrow(input)`.")
+        df <- data.frame(x=input[,1], y=true_llik)
         plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
       }
       
@@ -443,18 +454,92 @@ llikSumEmulator$methods(
     # for each llik emulator term. 
     plts <- list()
     for(lbl in labels) {
-      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_samp_1d(input_new, lik_par_val[[lbl]], N_samp,
-                                                                  conditional, normalize, true_llik_new[,lbl],
+      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_samp_1d(input, lik_par_val[[lbl]], N_samp,
+                                                                  conditional, normalize, true_llik[[lbl]],
                                                                   include_design, ...)
     }
     
     return(plts)
   },
   
-  plot_llik_pred_1d = function(input, lik_par_val=NULL, return_cross_cov=FALSE, conditional=default_conditional,
-                               normalize=default_normalize, sum_terms=TRUE, labels=llik_label, CI_prob=0.9, 
-                               llik_pred_list=NULL, llik_new=NULL, ...) {
-    .NotYetImplemented()
+  plot_llik_pred_1d = function(input, lik_par_val=NULL, conditional=default_conditional,
+                               normalize=default_normalize, include_CI=FALSE, CI_prob=0.9, 
+                               llik_pred_list=NULL, true_llik=NULL, sum_terms=TRUE, labels=llik_label, ...) {
+    
+    assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
+    
+    # If `sum_terms==TRUE` produce plot based on the llikSumEmulator predictions directly. 
+    if(sum_terms) {
+      if(is.null(llik_pred_list)) {
+        llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                        conditional=conditional, normalize=normalize, sum_terms=TRUE, labels=labels, ...)
+      }
+      
+      df_train <- data.frame(x=drop(.self$get_design_inputs(return_list=FALSE, labels=labels, ...)), 
+                             y=.self$get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, 
+                                                     return_list=FALSE, labels=labels, ...))
+      df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
+      if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
+      
+      plt <- ggplot(df_pred) + 
+        geom_line(aes(x, y_mean), color="blue") + 
+        geom_point(aes(x,y), df_train, color="red")
+      if(!is.null(true_llik)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
+      
+      if(include_CI) {
+        CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob, ...)
+        df_pred$CI_upper <- CI_list$upper
+        df_pred$CI_lower <- CI_list$lower
+        plt <- plt + geom_line(aes(x, CI_upper), color="gray") + geom_line(aes(x, CI_lower), color="gray")
+      }
+      
+      return(plt)
+    }
+
+    # If not summing terms, produce one plot per llik term. Simply call the plot function 
+    # for each llik emulator term. 
+    plts <- list()
+    for(lbl in labels) {
+      plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_pred_1d(input, lik_par_val=lik_par_val[[lbl]],
+                                                                  conditional=conditional, normalize=normalize, 
+                                                                  true_llik=true_llik[[lbl]], include_CI=include_CI,
+                                                                  CI_prob=CI_prob, llik_pred_list=llik_pred_list[[lbl]], ...)
+                                                                  
+    }
+
+    return(plts)
+  },
+  
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, llik_pred_list=NULL,
+                             lower_tail=TRUE, labels=llik_label, sum_terms=TRUE, ...) {
+    # If `sum_terms==TRUE` then `llik_pred_list` must be summed across terms. If `sum_terms==FALSE` then 
+    # it must be a list of the llik pred lists for each term. 
+
+    # If `sum_terms==TRUE` then only proceed if the predictive distribution of the llik sum is 
+    # Gaussian. Otherwise, the llik distribution cannot be determined from the llik term distributions. 
+    if(sum_terms) {
+      assert_that(llik_pred_dist=="Gaussian", 
+                  msg="`calc_quantiles()` method of `llikSumEmulator` currently only supports `sum_terms==TRUE` when `llik_pred_dist=='Gaussian'`")
+      
+      if(is.null(llik_pred_list)) {
+        llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                        conditional=conditional, normalize=normalize, sum_terms=TRUE, labels=labels, ...)
+      }
+      
+      return(qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower_tail=lower_tail))
+    }
+
+    # Otherwise call the quantile function for each term separately and return list of the results. 
+    quantiles_list <- list()
+    for(lbl in labels) {
+      quantiles_list[[lbl]] <- llik_emulator_terms[[lbl]]$calc_quantiles(p, input=input, lik_par_val=lik_par_val[[lbl]], 
+                                                                         conditional=conditional, normalize=normalize, 
+                                                                         lower_tail=lower_tail, 
+                                                                         llik_pred_list=llik_pred_list[[lbl]], ...)
+    }
+    
+    return(quantiles_list)
   }
   
 )
@@ -598,7 +683,7 @@ llikEmulatorMultGausGP$methods(
     return(return_list)
   }, 
   
-  calc_quantiles <- function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, llik_pred_list=NULL,
                              lower_tail=TRUE, include_nugget=TRUE, ...) {
     if(is.null(llik_pred_list)) {
