@@ -80,7 +80,7 @@ llikEmulator$methods(
   
   initialize = function(llik_label, input_names, lik_description, emulator_description, dim_input,  
                         emulator_model=NULL, default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_pred_dist=NULL, ...) {
+                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_pred_dist="unspecified", ...) {
 
     initFields(llik_label=llik_label, input_names=input_names, lik_description=lik_description, 
                dim_input=dim_input, emulator_description=emulator_description,
@@ -204,8 +204,8 @@ llikEmulator$methods(
     }
     
     df_train <- data.frame(x=drop(.self$get_design_inputs(...)), 
-                           y=get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...))
-    df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
+                           y=drop(get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)))
+    df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(llik_pred_list$var)))
     if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
     
     plt <- ggplot(df_pred) + 
@@ -217,7 +217,7 @@ llikEmulator$methods(
       CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
       df_pred$CI_upper <- CI_list$upper
       df_pred$CI_lower <- CI_list$lower
-      plt <- plt + geom_line(aes(x, CI_upper), color="gray") + geom_line(aes(x, CI_lower), color="gray")
+      plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + geom_line(aes(x, CI_lower), df_pred, color="gray")
     }
   
     return(plt)
@@ -266,7 +266,7 @@ llikSumEmulator$methods(
     # the distribution cannot be determined without further information. 
     llik_term_dists <- sapply(llik_emulator_list, function(x) x$llik_pred_dist)
     if(all(llik_term_dists == "Gaussian")) llik_sum_dist <- "Gaussian"
-    else llik_sum_dist <- NULL
+    else llik_sum_dist <- "unspecified"
     
     callSuper(llik_label=term_lbls, lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
@@ -476,9 +476,9 @@ llikSumEmulator$methods(
       }
       
       df_train <- data.frame(x=drop(.self$get_design_inputs(return_list=FALSE, labels=labels, ...)), 
-                             y=.self$get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, 
-                                                     return_list=FALSE, labels=labels, ...))
-      df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(pred_list$var)))
+                             y=drop(.self$get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, 
+                                                          return_list=FALSE, labels=labels, ...)))
+      df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(llik_pred_list$var)))
       if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
       
       plt <- ggplot(df_pred) + 
@@ -490,7 +490,7 @@ llikSumEmulator$methods(
         CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob, ...)
         df_pred$CI_upper <- CI_list$upper
         df_pred$CI_lower <- CI_list$lower
-        plt <- plt + geom_line(aes(x, CI_upper), color="gray") + geom_line(aes(x, CI_lower), color="gray")
+        plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + geom_line(aes(x, CI_lower), df_pred, color="gray")
       }
       
       return(plt)
@@ -511,8 +511,8 @@ llikSumEmulator$methods(
   },
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                             normalize=default_normalize, llik_pred_list=NULL,
-                             lower_tail=TRUE, labels=llik_label, sum_terms=TRUE, ...) {
+                            normalize=default_normalize, llik_pred_list=NULL,
+                            lower_tail=TRUE, labels=llik_label, sum_terms=TRUE, ...) {
     # If `sum_terms==TRUE` then `llik_pred_list` must be summed across terms. If `sum_terms==FALSE` then 
     # it must be a list of the llik pred lists for each term. 
 
@@ -527,7 +527,7 @@ llikSumEmulator$methods(
                                         conditional=conditional, normalize=normalize, sum_terms=TRUE, labels=labels, ...)
       }
       
-      return(qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower_tail=lower_tail))
+      return(qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail))
     }
 
     # Otherwise call the quantile function for each term separately and return list of the results. 
@@ -572,7 +572,8 @@ llikEmulatorMultGausGP$methods(
               dim_input=gp_model$X_dim, default_conditional=default_conditional, 
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Multiplicative Gaussian.",
-              emulator_description="GP emulating sum of squared error function.", ...)
+              emulator_description="GP emulating sum of squared error function.", 
+              llik_pred_dist="Gaussian", ...)
   }, 
   
   assemble_llik = function(SSR, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
@@ -692,7 +693,7 @@ llikEmulatorMultGausGP$methods(
                                       include_nugget=include_nugget, ...)
     }
     
-    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower_tail=lower_tail)
+    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
   }
   
 )

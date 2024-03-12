@@ -167,8 +167,21 @@ llik_sum_emulator$get_llik_term_attr("N_obs")
 
 for(i in 1:llik_sum_emulator$N_terms) {
   print(llik_sum_emulator$llik_emulator_terms[[i]]$emulator_model$plot_pred_1d(test_info$inputs, 
-                                                                         Y_new=test_info$outputs[,i,drop=FALSE]))
+                                                                               Y_new=test_info$outputs[,i,drop=FALSE]))
 }
+```
+```{r}
+#
+# llikEmulator term predictive plots and predictive plot for overall (summed) llik. 
+#
+
+llik_term_plts <- llik_sum_emulator$plot_llik_pred_1d(test_info$inputs, lik_par_val=sig2_true, 
+                                                      include_CI=TRUE, sum_terms=FALSE)
+llik_sum_plt <- llik_sum_emulator$plot_llik_pred_1d(test_info$inputs, lik_par_val=sig2_true, 
+                                                    include_CI=TRUE, sum_terms=TRUE)
+
+for(plt in llik_term_plts) plot(plt)
+plot(llik_sum_plt)
 ```
 
 ```{r}
