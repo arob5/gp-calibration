@@ -5,6 +5,73 @@
 # Andrew Roberts
 # 
 
+convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL, cov_Gaussian=NULL, 
+                                   return_mean=TRUE, return_var=TRUE, return_cov=FALSE, log_scale=FALSE) {
+  # Given the mean and either variance or covariance matrix of a Gaussian random vector X, computes
+  # the mean, variance, and covariance of Y := exp(X), which is log-normally (LN) distributed. 
+  # Optionally, returns the log of these quantities, which is often recommended for numerical stability. 
+  # The log scale option is not allowed when `return_cov` is TRUE, since the covariance matrix can contain
+  # negative values. In the below descriptions, let N denote the length of X. 
+  #
+  # Args:
+  #    mean_Gaussian: numeric(N), or Nx1 matrix; the mean vector of X. 
+  #    var_Gaussian: numeric(N), or Nx1 matrix; the variance of each component of X. Required
+  #                  if `cov_Gaussian` is NULL. 
+  #    cov_Gaussian: NxN matrix, the covariance matrix of X. Required if `var_Gaussian` is NULL.
+  #                  Required if `return_cov` is NULL. 
+  #    return_mean: logical(1), whether or not to return the (log) mean of Y. 
+  #    return_var: logical(1), whether or not to return the (log) variances of Y.
+  #    return_cov: logical(1), whether or not to return the covariance matrix of Y. 
+  #    log_scale: logical(1), whether to return the log of the mean/variance of Y. Must be 
+  #               FALSE if `return_cov` is TRUE. 
+  #
+  # Returns: 
+  #    list with the LN computations. Potential list arguments include "mean", "var", "cov", 
+  #    "log_mean", and "log_var". 
+                                   
+  assert_that(!is.null(var_Gaussian) || !is.null(cov_Gaussian), 
+              msg="Gaussian variance or covariance matrix required to compute log-normal moments.")
+  assert_that(!(log_scale && return_cov), msg="Cannot return LN moments on log scale if `return_cov` is TRUE.")
+  if(is.null(var_Gaussian)) var_Gaussian <- diag(cov_Gaussian)
+
+  # Compute the log of the LN mean and variance. Note that this can't be done for the 
+  # covariance given the that covariance matrix can have negative values. 
+  log_mean <- drop(mean_Gaussian) + 0.5*drop(var_Gaussian)
+  if(return_var) log_var <- log_exp_minus_1(var_Gaussian) + 2*log_mean
+  if(log_scale) return(list(log_mean=log_mean, log_var=log_var))
+  
+  # Continue if LN moments are requested on the original scale. The mean is always returned 
+  return_list <- list()
+  if(return_mean) return_list$mean <- exp(log_mean)
+  if(return_var) return_list$var <- exp(log_var)
+  if(return_cov) {
+    assert_that(!is.null(return_cov), msg="Computing cov requires non-NULL `cov_Gaussian`.")
+    return_list$cov <- exp(outer(log_mean, log_mean, FUN="+")) * (exp(cov_Gaussian)-1)
+  }
+  
+  return(return_list)
+                                
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 gen_lin_Gaus_NIW_test_data <- function(G_list, Sig_eps=NULL, mu0=NULL, Sig0=NULL, 
                                        IW_scale=NULL, IW_dof=NULL, N_missing_obs=NULL) {
   # TODO: write up blog post on Normal Inverse Wishart model and then write this function.  

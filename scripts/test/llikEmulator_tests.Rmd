@@ -251,10 +251,15 @@ print(all.equal(llik_true, llik_test2))
 ```{r}
 # Validating predict() and predict_exp() methods for llikEmulatorMultGausGP and llikSumEmulator. 
 
+# predict()
 llik_sum_pred_list <- llik_sum_emulator$predict(test_info$inputs, lik_par_val=sig2_true, return_mean=TRUE, 
                                                 return_cov=TRUE, normalize=TRUE, include_nugget=TRUE)
+llik_sum_emulator$plot_llik_pred_1d(input=test_info$inputs, lik_par_val=sig2_true, 
+                                    llik_pred_list=llik_sum_pred_list, include_CI=TRUE)
 
-
+# predict_exp()
+llik_sum_pred_exp_list <- llik_sum_emulator$predict_exp(test_info$inputs, lik_par_val=sig2_true, return_mean=TRUE, 
+                                                        return_cov=TRUE, normalize=TRUE, include_nugget=TRUE)
 ```
 
 

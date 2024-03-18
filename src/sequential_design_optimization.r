@@ -1,11 +1,82 @@
 #
 # sequential_design_optimization.r
-# Functions related to sequential design for GPs and Bayesian Optimization. 
+# Functions related to sequential design and optimization, primarily involving 
+# Gaussian processes (GPs). These functions are designed to function with the 
+# gpWrapper, llikEmulator, and llikSumEmulator classes. Most of the functions 
+# here consider sequential design/optimization algorithms for a function f(u)
+# which is distributed according to a GP or exponentiated GP, which we refer
+# to as a log-normal process (LNP).
 #
 # Andrew Roberts
 #
 
 library(matrixStats)
+
+acq_IEVAR_grid <- function(input, model_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
+  
+  # validate_args_acq_IEVAR_grid()
+  N_grid <- nrow(grid_points)
+  if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
+  model_obj_copy <- model_obj$copy()
+  
+  # Emulator predictions at acquisition evaluation locations and at grid locations. 
+  pred <- model_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  pred_grid <- model_obj_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  
+  # Update the GP model, treating the predictive mean as the observed 
+  # response at the acquisition evaluation locations. 
+  model_obj_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
+  
+  # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
+  # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
+  pred_cond <- model_obj_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
+  log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
+                                             return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
+  
+  # Compute the variance inflation term on the log scale. 
+  log_var_inflation <- 2 * (pred_grid$var - pred_cond$var)
+  
+  # Compute log IEVAR. 
+  log_summands <- log_pred_cond_LN$log_var + log_var_inflation + log(weights)
+  log_IEVAR <- matrixStats::logSumExp(log_summands)
+  
+  if(log_scale) return(log_IEVAR)
+  return(exp(log_IEVAR))
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 run_sequential_design_optimization <- function(acquisition_settings, init_design_settings, emulator_settings, computer_model_data, 
                                                sig2_eps, theta_prior_params, theta_grid_ref = NULL, optimize_sig_eps = FALSE, 

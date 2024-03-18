@@ -540,6 +540,73 @@ llikSumEmulator$methods(
     }
     
     return(quantiles_list)
+  }, 
+  
+  predict_exp = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                         conditional=default_conditional, normalize=default_normalize,
+                         log_moments=FALSE, llik_pred_list=NULL, sum_terms=FALSE,
+                         labels=llik_label, ...) {
+    # Note that the mean of the likelihood is required in to compute the var/cov of the 
+    # likelihood, so it is always returned regardless of the value `return_mean`. Also 
+    # the log moments are always returned. The logic here is that numerical overflow is 
+    # common on the exponential scale; a costly prediction computation could be wasted 
+    # if only the exponential is returned. Always returning the moments on the log scale
+    # thus acts as a backup. 
+    
+    # In this case, simply call `predict_exp()` method for each llikEmulator term, and then return 
+    # the results as a list. 
+    if(!sum_terms) {
+      pred_exp_list <- list()
+      for(lbl in labels) {
+        pred_exp_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict_exp(input, lik_par_val=lik_par_val[[lbl]], 
+                                                                       return_mean=return_mean, return_var=return_var,
+                                                                       return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                                                       input_cross=input_cross, conditional=conditional, 
+                                                                       normalize=normalize, log_moments=log_moments, 
+                                                                       llik_pred_list=llik_pred_list[[lbl]])
+      }
+      return(pred_exp_list)
+    }
+    
+    # If considering the llik sum, the `predict_exp` method is only valid when the distribution of 
+    # the exponential of the sum is known. Currently, this means that the llikSumEmulator must have 
+    # a Gaussian predictive distribution, so that its exponential is log normal. 
+    assert_that(llik_pred_dist=="Gaussian", 
+                msg="`llikSumEmulator$predict_exp(sum_terms=TRUE, ...)` is only valid when `llik_pred_dist=='Gaussian'`.")
+    
+    # Compute Gaussian llikSumEmulator predictions. 
+    if(is.null(llik_pred_list)) {
+      # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, 
+                                      return_var=!return_cov, return_cov=return_cov, 
+                                      return_cross_cov=return_cross_cov, input_cross=input_cross,
+                                      conditional=conditional, normalize=normalize, labels=labels, ...)
+    }
+    
+    # The log of the likelihood expectation is always returned. 
+    return_list <- list()
+    return_list$log_mean <- llik_pred_list$mean + 0.5 * llik_pred_list$var
+    
+    if(return_cov) {
+      return_list$log_cov <- log_exp_minus_1(llik_pred_list$cov) + 
+                             outer(return_list$log_mean, return_list$log_mean, FUN="+")
+      return_list$log_var <- diag(return_list$log_cov)
+    } else if(return_var) {
+      return_list$log_var <- log_exp_minus_1(llik_pred_list$var) + 2*return_list$log_mean
+    }
+    
+    # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
+    if(return_cross_cov) {
+      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                            conditional=conditional, normalize=normalize, ...)
+      return_list$log_mean_cross <- llik_pred_list_cross$mean + 0.5 * llik_pred_list_cross$var                                   
+      
+      return_list$log_cross_cov <- log_exp_minus_1(llik_pred_list$cross_cov) + 
+                                   outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")
+    }
+    
+    return(return_list)
   }
   
 )
@@ -644,7 +711,7 @@ llikEmulatorMultGausGP$methods(
                          return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
                          conditional=default_conditional, 
                          normalize=default_normalize, include_nugget=TRUE, 
-                         log_moments=FALSE, llik_pred_list=NULL, ...) {
+                         only_log_moments=FALSE, llik_pred_list=NULL, ...) {
     # Note that the mean of the likelihood is required in to compute the var/cov of the 
     # likelihood, so it is always returned regardless of the value `return_mean`. Also 
     # the log moments are always returned. The logic here is that numerical overflow is 
@@ -654,35 +721,51 @@ llikEmulatorMultGausGP$methods(
     
     if(is.null(llik_pred_list)) {
       # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
-      llik_pred_list <- .self$predict(input, lik_par_val, return_mean=TRUE, return_var=!return_cov, 
-                                      return_cov, return_cross_cov, input_cross, conditional, 
-                                      normalize, include_nugget, ...)
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=!return_cov, 
+                                      return_cov=return_cov, return_cross_cov=return_cross_cov, 
+                                      input_cross=input_cross, conditional=conditional, 
+                                      normalize=normalize, include_nugget=include_nugget, ...)
     }
     
-    # The log of the likelihood expectation is always returned. 
+    # The log of the likelihood expectation always returned. 
     return_list <- list()
-    return_list$log_mean <- llik_pred_list$mean + 0.5 * llik_pred_list$var
+    return_list$log_mean <- drop(llik_pred_list$mean) + 0.5 * drop(llik_pred_list$var)
     
-    if(return_cov) {
-      return_list$log_cov <- log_exp_minus_1(llik_pred_list$cov) + 
-                             outer(return_list$log_mean, return_list$log_mean, FUN="+")
-      return_list$log_var <- diag(return_list$log_cov)
-    } else if(return_var) {
+    # The log of the likelihood variance is always returned provided `return_cov` or 
+    # `return_var` is TRUE. Note that log covariance matrices are not computed since 
+    # covariance matrices may contain negative values. 
+    if(return_var || return_cov) {
       return_list$log_var <- log_exp_minus_1(llik_pred_list$var) + 2*return_list$log_mean
     }
     
+    # If only values of the log scale are requested, then return them now. 
+    if(only_log_moments) {
+      if(return_cov || return_cross_cov) message("Not including `cov` or `cross_cov` on the log-scale since these matrices may contain negative values.")
+      return(return_list)
+    }
+    
+    # Otherwise, return the values on the exponential scale as well. Note that these computations may risk 
+    # numerical overflow. 
+    if(return_cov) {
+      return_list$cov <- exp(outer(return_list$log_mean, return_list$log_mean, FUN="+")) * (exp(llik_pred_list$cov)-1)
+      return_list$var <- diag(return_list$cov)
+    } else if(return_var) {
+      return_list_var <- exp(return_list$log_var)
+    }
+    
+    if(return_mean) return_list$mean <- exp(return_list$log_mean)
+    
     # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
     if(return_cross_cov) {
-      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                            conditional=conditional, normalize=normalize, ...)
+      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val=lik_par_val, return_mean=TRUE,  
+                                            return_var=TRUE, conditional=conditional, normalize=normalize, ...)
       return_list$log_mean_cross <- llik_pred_list_cross$mean + 0.5 * llik_pred_list_cross$var                                   
-       
-      return_list$log_cross_cov <- log_exp_minus_1(llik_pred_list$cross_cov) + 
-                                   outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")
+      return_list$cross_cov <- exp(outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")) * (exp(llik_pred_list$cross_cov)-1)
     }
     
     return(return_list)
   }, 
+  
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, llik_pred_list=NULL,
