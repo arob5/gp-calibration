@@ -250,7 +250,8 @@ print(all.equal(llik_true, llik_test2))
 ```
 
 ```{r}
-# Validating predict() and predict_exp() methods for llikEmulatorMultGausGP and llikSumEmulator. 
+# Validating predict() methods for llikEmulatorMultGausGP and llikSumEmulator, and exponentiating 
+# the predictive distribution to obtain the log-normal predictions. 
 
 # predict()
 llik_sum_pred_list <- llik_sum_emulator$predict(test_info$inputs, lik_par_val=sig2_true, return_mean=TRUE, 
@@ -258,9 +259,18 @@ llik_sum_pred_list <- llik_sum_emulator$predict(test_info$inputs, lik_par_val=si
 llik_sum_emulator$plot_llik_pred_1d(input=test_info$inputs, lik_par_val=sig2_true, 
                                     llik_pred_list=llik_sum_pred_list, include_CI=TRUE)
 
-# predict_exp()
-llik_sum_pred_exp_list <- llik_sum_emulator$predict_exp(test_info$inputs, lik_par_val=sig2_true, return_mean=TRUE, 
-                                                        return_cov=TRUE, normalize=TRUE, include_nugget=TRUE)
+# Log-normal predictions, on log scale. 
+log_LN_pred_list <- convert_Gaussian_to_LN(mean_Gaussian=llik_sum_pred_list$mean, var_Gaussian=llik_sum_pred_list$var, 
+                                           return_mean=TRUE, return_var=TRUE, log_scale=TRUE)
+CI_tail_prob <- 0.05
+LN_CI_upper <- log(qlnorm(CI_tail_prob, llik_sum_pred_list$mean, sqrt(llik_sum_pred_list$var)))
+LN_CI_lower <- log(qlnorm(CI_tail_prob, llik_sum_pred_list$mean, sqrt(llik_sum_pred_list$var), lower.tail=FALSE))
+
+plot_pred_1d_helper(test_info$inputs, log_LN_pred_list$log_mean, CI_lower=LN_CI_lower, CI_upper=LN_CI_upper, 
+                    X_design=llik_sum_emulator$get_design_inputs(), 
+                    y_design=llik_sum_emulator$get_design_llik(lik_par_val=sig2_true),
+                    plot_title="LNP Predictions on log scale", xlab=llik_sum_emulator$input_names, ylab="log(LNP Pred)")
+
 ```
 
 
