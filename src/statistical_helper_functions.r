@@ -54,22 +54,89 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL, cov_Gaussia
 }
 
 
+plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_design=!is.null(X_design), 
+                                  include_CI=!is.null(pred_var), CI_prob=0.9, y_new=NULL,
+                                  X_design=NULL, y_design=NULL, transformation=NULL, plot_title=NULL,
+                                  xlab="x", ylab="y") {
+  # Produces a Gaussian process prediction plot for one-dimensional input space. 
+  #
+  # Args:
+  #    X_new: numeric, or one-column matrix, the input test locations. 
+  #    pred_mean: numeric, or one-column matrix, the predictive mean at the test locations. 
+  #    pred_var: numeric, or one-column matrix, the predictive variance at the test locations. 
+  #    include_design: logical(1), whether or not to plot the design (i.e. training) points. 
+  #    include_CI: logical(1), whether or not to plot confidence intervals. 
+  #    CI_prob: numeric value in (0,1); e.g. `0.9` corresponds to 90% confidence interval. 
+  #    y_new: numeric, or one-column matrix, the true response values at the prediction locations. 
+  #    X_design: numeric, or one-column matrix, the design locations. 
+  #    y_design: numeric, or one-column matrix, the response values at the design locations. 
+  #    transformation: character, not yet implemented but intended to allow the options 
+  #                    "LN", "truncated", or "rectified" as transformations of the Gaussian predictions. 
+  # 
+  # Returns: 
+  #    ggplot2 object. 
+  
+  assert_that(is.numeric(X_new) || (ncol(X_new)==1), msg="plot_Gaussian_pred_1d() requires 1d input space.")
+  if(!is.null(transformation)) .NotYetImplemented() 
+  
+  # Set default title, if not provided. 
+  if(is.null(plot_title)) plot_title <- paste0("GP Predictions")
+  if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+  if(!is.null(transformation)) plot_title <- paste0(plot_title, " ", transformation, "transform")
+  
+  # Confidence intervals. 
+  if(include_CI) {
+    CI_tail_prob <- 0.5 * (1-CI_prob)
+    CI_upper <- qnorm(CI_tail_prob, pred_mean, sqrt(pred_var))
+    CI_lower <- qnorm(CI_tail_prob, pred_mean, sqrt(pred_var), lower.tail=FALSE)
+  } else {
+    CI_upper <- NULL
+    CI_lower <- NULL
+  }
+  
+  plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_CI,
+                             CI_lower=CI_lower, CI_upper=CI_upper, y_new=y_new, X_design=X_design,
+                             y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab) 
+  return(plt)
+}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_design), 
+                                include_CI=!is.null(CI_lower), CI_lower=NULL, CI_upper=NULL, 
+                                y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
+                                xlab="x", ylab="y") {
+  
+  # Set default title, if not provided. 
+  if(is.null(plot_title)) plot_title <- "Model Predictions"
+  
+  # Base plot: mean at prediction locations. 
+  df_pred <- data.frame(x=drop(X_new), y_mean=drop(pred_mean))
+  plt <- ggplot() + geom_line(aes(x, y_mean), df_pred, color="blue") + 
+            ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  
+  # Confidence intervals. 
+  if(include_CI) {
+    df_pred$CI_upper <- CI_upper
+    df_pred$CI_lower <- CI_lower
+    plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + 
+                 geom_line(aes(x, CI_lower), df_pred, color="gray")
+  }
+  
+  # True values at prediction locations. 
+  if(!is.null(y_new)) {
+    df_pred$y_true <- y_new
+    plt <- plt + geom_line(aes(x, y_new), df_pred, color="red")
+  }
+  
+  # Design points. 
+  if(include_design) {
+    df_design <- data.frame(x=drop(X_design), y=drop(y_design))
+    plt <- plt + geom_point(aes(x,y), df_design, color="black")
+  }
+  
+  return(plt)
+  
+}
 
 
 gen_lin_Gaus_NIW_test_data <- function(G_list, Sig_eps=NULL, mu0=NULL, Sig0=NULL, 

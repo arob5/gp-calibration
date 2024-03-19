@@ -194,7 +194,8 @@ llikEmulator$methods(
   
   plot_llik_pred_1d = function(input, lik_par_val=NULL, conditional=default_conditional,
                                normalize=default_normalize, include_CI=FALSE, 
-                               CI_prob=0.9, llik_pred_list=NULL, true_llik=NULL, ...) {
+                               CI_prob=0.9, llik_pred_list=NULL, true_llik=NULL, 
+                               xlab=input_names, ylab="llik", plot_title=NULL, ...) {
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
     
     # Compute required predictive quantities if not already provided. 
@@ -203,24 +204,26 @@ llikEmulator$methods(
                                       conditional=conditional, normalize=normalize, ...)
     }
     
-    df_train <- data.frame(x=drop(.self$get_design_inputs(...)), 
-                           y=drop(get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)))
-    df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(llik_pred_list$var)))
-    if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
-    
-    plt <- ggplot(df_pred) + 
-            geom_line(aes(x, y_mean), color="blue") + 
-            geom_point(aes(x,y), df_train, color="red")
-    if(!is.null(true_llik)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
-    
-    if(include_CI) {
-      CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
-      df_pred$CI_upper <- CI_list$upper
-      df_pred$CI_lower <- CI_list$lower
-      plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + geom_line(aes(x, CI_lower), df_pred, color="gray")
+    # Plot title and labels.
+    if(is.null(plot_title)) {
+      plot_title <- "Log Likelihood Emulator Predictions"
+      if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
     }
-  
-    return(plt)
+    if(!normalize) {
+      ylab <- paste0(ylab, ", ", ifelse(conditional, "unnormalized/conditional", "unnormalized"))
+    }
+    
+    # Compute confidence interval. 
+    if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
+      
+    # Produce plot. 
+    plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(llik_pred_list$mean), 
+                               include_CI=include_CI, CI_lower=CI_list$lower, CI_upper=CI_list$upper, 
+                               y_new=drop(true_llik), X_design=drop(.self$get_design_inputs(...)), 
+                               y_design=drop(get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)), 
+                               plot_title=plot_title, xlab=xlab, ylab=ylab)
+                        
+    return(plt)                     
   }
   
 )
@@ -464,7 +467,8 @@ llikSumEmulator$methods(
   
   plot_llik_pred_1d = function(input, lik_par_val=NULL, conditional=default_conditional,
                                normalize=default_normalize, include_CI=FALSE, CI_prob=0.9, 
-                               llik_pred_list=NULL, true_llik=NULL, sum_terms=TRUE, labels=llik_label, ...) {
+                               llik_pred_list=NULL, true_llik=NULL, sum_terms=TRUE, labels=llik_label, 
+                               plot_title=NULL, ...) {
     
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
     
@@ -475,24 +479,27 @@ llikSumEmulator$methods(
                                         conditional=conditional, normalize=normalize, sum_terms=TRUE, labels=labels, ...)
       }
       
-      df_train <- data.frame(x=drop(.self$get_design_inputs(return_list=FALSE, labels=labels, ...)), 
-                             y=drop(.self$get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, 
-                                                          return_list=FALSE, labels=labels, ...)))
-      df_pred <- data.frame(x=drop(input), y_mean=drop(llik_pred_list$mean), y_sd=sqrt(drop(llik_pred_list$var)))
-      if(!is.null(true_llik)) df_pred$y <- drop(true_llik)
-      
-      plt <- ggplot(df_pred) + 
-        geom_line(aes(x, y_mean), color="blue") + 
-        geom_point(aes(x,y), df_train, color="red")
-      if(!is.null(true_llik)) plts <- plts + geom_line(aes(x,y), linetype="dotted")
-      
-      if(include_CI) {
-        CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob, ...)
-        df_pred$CI_upper <- CI_list$upper
-        df_pred$CI_lower <- CI_list$lower
-        plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + geom_line(aes(x, CI_lower), df_pred, color="gray")
+      # Plot title and labels.
+      if(is.null(plot_title)) {
+        plot_title <- "Log Likelihood Sum Emulator Predictions"
+        if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+      }
+      xlab <- input_names
+      ylab <- "llik sum"
+      if(!normalize) {
+        ylab <- paste0(ylab, ", ", ifelse(conditional, "unnormalized/conditional", "unnormalized"))
       }
       
+      # Compute confidence interval. 
+      if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob, ...)
+      
+      # Produce plot. 
+      plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(llik_pred_list$mean), 
+                                 include_CI=include_CI, CI_lower=CI_list$lower, CI_upper=CI_list$upper, 
+                                 y_new=drop(true_llik), X_design=drop(.self$get_design_inputs(return_list=FALSE, labels=labels, ...)), 
+                                 y_design=drop(get_design_llik(lik_par_val=lik_par_val, conditional=conditional,  
+                                                               normalize=normalize, return_list=FALSE, labels=labels, ...)), 
+                                 plot_title=plot_title, xlab=xlab, ylab=ylab)
       return(plt)
     }
 
@@ -503,8 +510,8 @@ llikSumEmulator$methods(
       plts[[lbl]] <- llik_emulator_terms[[lbl]]$plot_llik_pred_1d(input, lik_par_val=lik_par_val[[lbl]],
                                                                   conditional=conditional, normalize=normalize, 
                                                                   true_llik=true_llik[[lbl]], include_CI=include_CI,
-                                                                  CI_prob=CI_prob, llik_pred_list=llik_pred_list[[lbl]], ...)
-                                                                  
+                                                                  CI_prob=CI_prob, llik_pred_list=llik_pred_list[[lbl]], 
+                                                                  ylab=paste0("llik term: ", lbl), ...)
     }
 
     return(plts)

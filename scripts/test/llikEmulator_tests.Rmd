@@ -19,6 +19,7 @@ src_dir <- file.path(base_dir, "src")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))

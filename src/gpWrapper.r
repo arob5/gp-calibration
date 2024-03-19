@@ -5,6 +5,8 @@
 #
 # Andrew Roberts
 # 
+# Depends: statistical_helper_functions.r
+#
 
 library(assertthat)
 library(tmvtnorm)
@@ -261,18 +263,9 @@ gpWrapper$methods(
     CI_tail_prob <- 0.5 * (1-CI_prob)
     plts <- vector(mode="list", length=Y_dim)
     for(i in 1:Y_dim) {
-      df_train <- data.frame(x=X[,1], y=Y[,i])
-      df_pred <- data.frame(x=X_new[,1], y_mean=pred_list$mean[,i], y_sd=sqrt(pred_list$var[,i]))
-      df_pred$CI_upper <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd)
-      df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, lower.tail=FALSE)
-      if(!is.null(Y_new)) df_pred$y <- Y_new[,i]
-      
-      plts[[i]] <- ggplot(df_pred) + 
-                   geom_line(aes(x, y_mean), color="blue") + 
-                   geom_line(aes(x, CI_upper), color="gray") + 
-                   geom_line(aes(x, CI_lower), color="gray") +
-                   geom_point(aes(x,y), df_train, color="red")
-      if(!is.null(Y_new)) plts[[i]] <- plts[[i]] + geom_line(aes(x,y), linetype="dotted")
+      plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], pred_var=pred_list$var[,i], 
+                                         CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], y_design=Y[,i], 
+                                         xlab=X_names, ylab=Y_names[i])
     }
     
     return(plts)

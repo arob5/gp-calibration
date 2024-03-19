@@ -17,7 +17,7 @@ acq_IEVAR_grid <- function(input, model_obj, grid_points, weights=NULL, log_scal
   # validate_args_acq_IEVAR_grid()
   N_grid <- nrow(grid_points)
   if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
-  model_obj_copy <- model_obj$copy()
+  model_obj_copy <- model_obj$copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
   pred <- model_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
