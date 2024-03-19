@@ -1,0 +1,181 @@
+---
+title: "Tests for Sequential Design and Optimization Functions"
+author: "Andrew Roberts"
+date: '2024-03-19'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "sequential_design_optimization.r"))
+```
+
+
+```{r}
+global_seed <- 22
+data_seed <- 9
+
+set.seed(22)
+```
+
+
+```{r}
+#
+# Linear Gaussian Model to perform tests.  
+#
+
+# 1D input, 2D output, some missing observations.
+N_output <- 2
+N_obs <- 100
+N_missing_output1 <- 4
+N_missing_output2 <- 6
+u_bound_lower <- 0
+u_bound_upper <- 3
+u_prior <- data.frame(dist="Uniform", param1=u_bound_lower, param2=u_bound_upper)
+output_names <- paste0("output", 1:N_output)
+par_names <- "par1"
+
+# Multi-output forward model. `G_old` satisfies the requirements of the `computer_model_list`
+# so the old design functions can be used, while `G` vectorizes over multiple 
+# inputs and returns a 3-dimensional array of shape Ntimestep x Ninput x Noutput. 
+G1_mat <- matrix(sin(2*pi*seq(1,N_obs)/N_obs), ncol=1)
+G2_mat <- matrix(cos(2*pi*3*seq(1,N_obs)/N_obs), ncol=1)
+G <- function(U, ...) abind(y1=G1_mat %*% t(U), y2=G2_mat %*% t(U), along=3)
+G_old <- function(u, ...) cbind(y1=u*G1_mat, y2=u*G2_mat)
+
+# Ground truth.  
+u_true <- matrix(runif(1, min=u_bound_lower, max=u_bound_upper), nrow=1)
+sig2_true <- setNames(c(1, 1.5), output_names)
+G_true <-  G(u_true)[,1,]
+
+# Simulate data, adding missing observations. 
+Y <- G_true + cbind(rnorm(N_obs, 0, sqrt(sig2_true[1])),
+                    rnorm(N_obs, 0, sqrt(sig2_true[2])))
+Y[sample.int(N_obs, N_missing_output1),1] <- NA_real_
+Y[sample.int(N_obs, N_missing_output2),2] <- NA_real_
+colnames(Y) <- output_names
+computer_model_data <- list(data_obs=Y, f=G_old, output_vars=output_names)
+N_obs <- colSums(!is.na(Y))
+computer_model_data$n_obs <- N_obs
+
+for(p in 1:ncol(Y)) {
+  plot(1:N_obs, Y[,p], main=paste0("Ground Truth and Observed Data: Output ", p),
+       xlab="t", ylab=colnames(Y)[p])
+  lines(1:N_obs, G_true[,p], col="red")
+}
+
+```
+
+
+```{r}
+#
+# Generate design points in parameter space. 
+#
+
+# Settings. 
+N_design <- 4
+N_test <- 51
+
+# Bounds on parameter space.  
+input_bounds <- rbind(u_bound_lower, u_bound_upper)
+rownames(input_bounds) <- c("min", "max")
+
+# Generate latin hypercube designs. 
+design_info <- get_input_output_design(N_points=N_design,
+                                       design_method="LHS", 
+                                       scale_inputs=FALSE,
+                                       normalize_response=FALSE,
+                                       param_ranges=input_bounds,  
+                                       computer_model_data=computer_model_data, 
+                                       theta_prior_params=u_prior)
+colnames(design_info$inputs) <- par_names
+
+# Validation data. 
+test_info <- get_input_output_design(N_points=N_test,
+                                     design_method="grid", 
+                                     scale_inputs=FALSE,
+                                     normalize_response=FALSE,
+                                     param_ranges=input_bounds,  
+                                     computer_model_data=computer_model_data, 
+                                     theta_prior_params=u_prior)
+```
+
+
+```{r}
+#
+# We consider fitting a GP directly to the log likelihood (assuming fixed likelihood parameters). 
+# Here we calculate the true log likelihood at the design inputs for training the 
+# emulator, as well as at the test inputs for validation. 
+#
+
+design_info$llik <- matrix(llik_product_Gaussian(computer_model_data, sig2_true, SSR=design_info$outputs, normalize=TRUE), ncol=1)
+test_info$llik <- matrix(llik_product_Gaussian(computer_model_data, sig2_true, SSR=test_info$outputs, normalize=TRUE), ncol=1)
+                                  
+```
+
+
+```{r}
+# Fit emulator to log likelihood. 
+
+gp_llik <- gpWrapperHet(design_info$inputs, design_info$llik, normalize_output=TRUE, scale_input=TRUE)
+gp_llik$fit("Gaussian", "constant")
+
+gp_llik$plot_pred_1d(test_info$inputs, Y_new=test_info$llik)
+```
+
+```{r}
+# Compute log IEVAR acquisition at test inputs, using same grid of inputs as grid points. Evaluating 
+# acquisition at one point ata a time, not in batch mode. 
+log_IEVAR_vals <- vector(mode="numeric", length=nrow(test_info$inputs))
+
+for(i in 1:nrow(test_info$inputs)) {
+  log_IEVAR_vals[i] <- acq_IEVAR_grid(test_info$inputs[i,1,drop=FALSE], gp_llik, grid_points=test_info$inputs, log_scale=TRUE)
+}
+
+```
+
+```{r}
+# Plot log IEVAR evaluations. 
+plot(test_info$inputs, log_IEVAR_vals, type="l", xlab="test inputs", ylab="log IEVAR", 
+     main="log IEVAR single point evals, uniform weights")
+```
+
+
+```{r}
+# Repeat but with N(2.5, 0.1^2) weights. 
+log_IEVAR_vals_wt <- vector(mode="numeric", length=nrow(test_info$inputs))
+wts <- dnorm(test_info$inputs, 2.5, 0.1)
+
+for(i in 1:nrow(test_info$inputs)) {
+  log_IEVAR_vals_wt[i] <- acq_IEVAR_grid(test_info$inputs[i,1,drop=FALSE], gp_llik, grid_points=test_info$inputs, 
+                                         log_scale=TRUE, weights=wts)
+}
+
+```
+
+
+```{r}
+# Plot log IEVAR evaluations with Gaussian weights.
+plot(test_info$inputs, log_IEVAR_vals_wt, type="l", xlab="test inputs", ylab="log IEVAR", 
+     main="log IEVAR single point evals, N(2.5, 0.1^2) weights")
+```
+
+
+

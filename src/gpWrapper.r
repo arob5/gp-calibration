@@ -42,6 +42,11 @@ gpWrapper$methods(
                         x_names=NULL, y_names=NULL, 
                         default_nugget=sqrt(.Machine$double.eps), ...) {
     
+    # X and Y should only be missing when the generator is being called due to 
+    # a call to `$copy()`. 
+    # TODO: think of better long-term solution. 
+    if(missing(X) || missing(Y)) return(NULL)
+    
     # Handle missing values. 
     assert_that(is.matrix(X) && is.matrix(Y), msg="X and Y must be matrices.")
     assert_that(!any(is.na(X)), msg="NAs found in X.")
@@ -389,6 +394,12 @@ gpWrapperHet <- setRefClass(
 gpWrapperHet$methods(
   
   initialize = function(X, Y, ...) {
+    # X and Y should only be missing when the generator is being called due to 
+    # a call to `$copy()`. 
+    # TODO: think of better long-term solution. 
+    if(missing(X) || missing(Y)) return(NULL)
+    
+    
     library(hetGP)
     
     initFields(kernel_name_map=list(Gaussian="Gaussian", Matern5_2="Matern5_2", Matern3_2="Matern3_2"), 

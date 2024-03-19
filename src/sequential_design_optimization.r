@@ -46,38 +46,6 @@ acq_IEVAR_grid <- function(input, model_obj, grid_points, weights=NULL, log_scal
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 run_sequential_design_optimization <- function(acquisition_settings, init_design_settings, emulator_settings, computer_model_data, 
                                                sig2_eps, theta_prior_params, theta_grid_ref = NULL, optimize_sig_eps = FALSE, 
                                                sig_eps_prior_params = NULL) {
