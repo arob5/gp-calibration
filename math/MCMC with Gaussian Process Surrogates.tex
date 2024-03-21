@@ -95,6 +95,34 @@ strategies are effective for sampling from this target?
 \subsection{Log-Likelihood Emulation}
 
 \subsection{Propagating GP Uncertainty}
+With an emulator $\llik_{\Ndesign}$ approximating the likelihood in hand, it remains to decide how to utilize this emulator in deriving a posterior approximation. 
+The paper \cite{StuartTeck1} considers the following posterior approximations. Letting $\mu_0$ denote the prior measure (which has Lebesgue density 
+$\priorDens$). The exact posterior measure $\mu^y$ may be characterized by its Radon-Nikodym derivative with respect to the prior:
+%\begin{align*}
+%\frac{d\mu^y}{d\mu_0}(\bpar) &= \frac{1}{Z} \exp\left\{\llik(\bpar) \right\}, && Z = \Exp_{\mu_0}\left[\exp\left\{\llik(\bpar) \right\}\right]
+%\end{align*}
+
+The papers \cite{StuartTeck1} and \cite{StuartTeck2} consider the following approximations to this posterior. 
+\begin{align}
+\frac{d\mu_{\text{mean}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{mean}}} \exp\left\{\GPMeanPred[\Ndesign](\bpar) \right\} \\
+\frac{d\mu_{\text{samp}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{samp}}} \exp\left\{\llik_{\Ndesign}(\bpar)\right\} \\
+\frac{d\mu_{\text{marg}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{marg}}}  \E_{\llik_{\Ndesign}}\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right] \\
+ 							      &=  \frac{1}{\E_{\llik_{\Ndesign}}[Z_{\text{samp}}]}  \E_{\llik_{\Ndesign}}\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right] \nonumber \\
+\frac{d\mu_{\text{marg}^\prime}}{d\mu_0}(\bpar) &= \E_{\llik_{\Ndesign}}\left[\frac{1}{Z} \exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right].
+\end{align}
+The first approximation utilizes only the GP predictive mean in the approximation, while the remaining three incorporate the predictive variance. 
+The second approximation defines a random measure, while the remaining two construct deterministic approximations based on this random measure. 
+The final approximation computes the marginal posterior density by integrating out the GP. The third approximation represents an alternative marginal 
+approach, in which the GP is integrated out of the \textit{unnormalized} posterior density and then normalized after the fact. In \cite{StuartTeck1} the authors
+provide bounds (under some regularity conditions and the assumption of known GP hyperparameters)
+on the Hellinger distance between $\mu^y$ and each of the respective approximate posteriors, in terms of the $L^2_{\mu_0}$ error between 
+average (with respect to the GP) error between $\llik$ and $\llik_{\Ndesign}$. 
+For the random sample approximation, the expected (with respect to the GP) Hellinger distance is bounded. In \cite{StuartTeck2}, similar bounds are given 
+with respect to $L^2_{\mu^y}$ in place of $L^2_{\mu_0}$, capturing the intuitive notion that the emulator need only be accurate in regions of significant 
+posterior mass. Their theoretical results indicate that focusing on regions of sufficient posterior mass is a sound design strategy, and also suggest that 
+oversampling the tails of $\mu^y$ may be preferable. 
+
+
 Stuart and Teckentrup posterior consistency paper, Aki Vehtari paper, train paper that approximates sampling GP trajectories, Emulate/Calibrate/Sample paper, 
 GP MCMC paper for MALA approximation; mention exact methods: Youssef work and delayed acceptance schemes 
 
@@ -287,6 +315,13 @@ v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 \end{align*}
 \end{definition} 
 
+\sections{Questions}
+\begin{enumerate} 
+\item Difference in performance for various ways of trying to obtain design points in high posterior regions: (i.) IEVAR with approximate-posterior 
+weights; (ii.) IEVAR with prior weights; (iii.) IVAR with approximate-posterior weights. 
+\end{enumerate}
+
+
 \section{TODOs}
 \begin{enumerate}
 \item Add section on dealing with likelihood parameters. 
@@ -294,6 +329,8 @@ v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 expectation with respect to $\ell_B$? 
 \end{enumerate}
 
+\bibliography{framework_calibrating_ecosystem_models} 
+\bibliographystyle{ieeetr}
 
 \end{document}
 

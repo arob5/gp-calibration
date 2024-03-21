@@ -35,9 +35,86 @@ abstract = {Abstract The past few decades have witnessed an explosive synergy be
 year = {2021}
 }
 
+% Utilize a plug-in estimator for the likelihood which computes a quantile of the emulator distribution, the idea being that something like the 90th percentile represents 
+% a conservative estimate of the true likelihood. They also incorporate bound constraints to account for the fact that they are emulating a non-negative quantity (in their 
+% case, the unnormalized log Gaussian likelihood). 
+@misc{dinkel2023solving,
+      title={Solving Bayesian Inverse Problems With Expensive Likelihoods Using Constrained Gaussian Processes and Active Learning}, 
+      author={Maximilian Dinkel and Carolin M. Geitner and Gil Robalo Rei and Jonas Nitzler and Wolfgang A. Wall},
+      year={2023},
+      eprint={2312.08085},
+      archivePrefix={arXiv},
+      primaryClass={cs.CE}
+}
 
+% Utilize an adaptive scheme somewhat resembling likelihood tempering. Their adaptive approach requires constructing an approximate density function. 
+% They utilize an information-based acquisition criterion. 
+@article{article,
+author = {Wang, Hongqiao and Li, Jinglai},
+year = {2017},
+month = {03},
+pages = {},
+title = {Adaptive Gaussian Process Approximation for Bayesian Inference with Expensive Likelihood Functions},
+volume = {30},
+journal = {Neural Computation},
+doi = {10.1162/neco_a_01127}
+}
 
+% First consider an approach from propagating uncertainty in GP hyperparameters. Consider adding GP cov to the observation cov. 
+% Then consider using a secondary GP fit to the residuals to correct the first one. 
+@article{https://doi.org/10.1029/2019WR025721,
+author = {Zhang, Jiangjiang and Zheng, Qiang and Chen, Dingjiang and Wu, Laosheng and Zeng, Lingzao},
+title = {Surrogate-Based Bayesian Inverse Modeling of the Hydrological System: An Adaptive Approach Considering Surrogate Approximation Error},
+journal = {Water Resources Research},
+volume = {56},
+number = {1},
+pages = {e2019WR025721},
+doi = {https://doi.org/10.1029/2019WR025721},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2019WR025721},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2019WR025721},
+note = {e2019WR025721 2019WR025721},
+abstract = {Abstract Bayesian inverse modeling is important for a better understanding of hydrological processes. However, this approach can be computationally demanding, as it usually requires a large number of model evaluations. To address this issue, one can take advantage of surrogate modeling techniques. Nevertheless, when approximation error of the surrogate model is neglected, the inversion result will be biased. In this paper, we develop a surrogate-based Bayesian inversion framework that explicitly quantifies and gradually reduces the approximation error of the surrogate. Specifically, two strategies are proposed to quantify the surrogate error. The first strategy works by quantifying the surrogate prediction uncertainty with a Bayesian method, while the second strategy uses another surrogate to simulate and correct the approximation error of the primary surrogate. By adaptively refining the surrogate over the posterior distribution, we can gradually reduce the surrogate approximation error to a small level. Demonstrated with three case studies involving high dimensionality, multimodality, and a real-world application, it is found that both strategies can reduce the bias introduced by surrogate approximation error, while the second strategy that integrates two methods (i.e., polynomial chaos expansion and Gaussian process in this work) that complement each other shows the best performance.},
+year = {2020}
+}
 
+% Consider multiple posterior approximations and provide error bounds. 
+@misc{StuartTeck1,
+      title={Posterior Consistency for Gaussian Process Approximations of Bayesian Posterior Distributions}, 
+      author={Andrew M. Stuart and Aretha L. Teckentrup},
+      year={2016},
+      eprint={1603.02004},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+@misc{StuartTeck2,
+      title={Introduction To Gaussian Process Regression In Bayesian Inverse Problems, With New ResultsOn Experimental Design For Weighted Error Measures}, 
+      author={Tapio Helin and Andrew Stuart and Aretha Teckentrup and Konstantinos Zygalakis},
+      year={2023},
+      eprint={2302.04518},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+
+% TODO: need to read 
+@misc{GP_PDE_priors,
+      title={Gaussian processes for Bayesian inverse problems associated with linear partial differential equations}, 
+      author={Tianming Bai and Aretha L. Teckentrup and Konstantinos C. Zygalakis},
+      year={2023},
+      eprint={2307.08343},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+
+% Suggest choosing design points based on the posterior density, but oversampling the tails. 
+@misc{briol2017sampling,
+      title={On the Sampling Problem for Kernel Quadrature}, 
+      author={Francois-Xavier Briol and Chris J. Oates and Jon Cockayne and Wilson Ye Chen and Mark Girolami},
+      year={2017},
+      eprint={1706.03369},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
 
 
 

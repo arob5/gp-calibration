@@ -72,8 +72,7 @@ Y[sample.int(N_obs, N_missing_output1),1] <- NA_real_
 Y[sample.int(N_obs, N_missing_output2),2] <- NA_real_
 colnames(Y) <- output_names
 computer_model_data <- list(data_obs=Y, f=G_old, output_vars=output_names)
-N_obs <- colSums(!is.na(Y))
-computer_model_data$n_obs <- N_obs
+computer_model_data$n_obs <- colSums(!is.na(Y))
 
 for(p in 1:ncol(Y)) {
   plot(1:N_obs, Y[,p], main=paste0("Ground Truth and Observed Data: Output ", p),
@@ -90,7 +89,7 @@ for(p in 1:ncol(Y)) {
 #
 
 # Settings. 
-N_design <- 4
+N_design <- 3
 N_test <- 51
 
 # Bounds on parameter space.  
@@ -135,7 +134,7 @@ test_info$llik <- matrix(llik_product_Gaussian(computer_model_data, sig2_true, S
 # Fit emulator to log likelihood. 
 
 gp_llik <- gpWrapperHet(design_info$inputs, design_info$llik, normalize_output=TRUE, scale_input=TRUE)
-gp_llik$fit("Gaussian", "constant")
+gp_llik$fit("Gaussian", "constant", estimate_nugget=FALSE)
 
 gp_llik$plot_pred_1d(test_info$inputs, Y_new=test_info$llik)
 ```
