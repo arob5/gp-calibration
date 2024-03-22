@@ -319,6 +319,8 @@ v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 \begin{enumerate} 
 \item Difference in performance for various ways of trying to obtain design points in high posterior regions: (i.) IEVAR with approximate-posterior 
 weights; (ii.) IEVAR with prior weights; (iii.) IVAR with approximate-posterior weights. 
+\item Numerically investigate error in the MCMC acceptance probability calculation for the MCWMH algorithm. In particular, look at trends in over/under 
+estimating the probability and how they differ with and without using the GP covariance. 
 \end{enumerate}
 
 
@@ -327,6 +329,8 @@ weights; (ii.) IEVAR with prior weights; (iii.) IVAR with approximate-posterior 
 \item Add section on dealing with likelihood parameters. 
 \item Consider incorporating GP predictive covariance into IEVAR criterion. Review derivation; why isn't predictive cov showing up already considering the 
 expectation with respect to $\ell_B$? 
+\item Effect of incorporating a quadratic trend in the GP; options: (i.) Add quadratic kernel, (ii.) Fit GP to residuals of quadratic regression, (iii.) Joint optimization 
+of quadratic mean trend and kernel hyperparameters, (iv.) Marginalized quadratic mean prior approach (see Vehtari paper) 
 \end{enumerate}
 
 \bibliography{framework_calibrating_ecosystem_models} 

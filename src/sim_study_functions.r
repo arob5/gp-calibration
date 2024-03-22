@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------------------------------
-# sequential_design_sim_study.r
+# sim_study_functions.r
 # Simulation study for comparing different approaches to (batch) sequential design with GP emulator. 
 # Dependencies: mcmc_calibration_functions.r, gp_emulator_functions.r, 
 #               sequential_design_optimiation.r
@@ -16,6 +16,137 @@ library(viridis)
 library(gridExtra)
 library(data.table)
 library(BayesianTools)
+
+
+init_experiment <- function(experiment_id, experiment_type, parent_dir, global_seed, set_seed=FALSE, 
+                            set_global_variables=FALSE, ...) {
+  
+  print(paste0("Creating experiment: ", experiment_id))
+  
+  experiment_config <- list()
+  experiment_config$global_seed <- global_seed
+  experiment_config$experiment_type <- experiment_type
+  
+  # Create directory. If the run ID already exists, throw error. 
+  experiment_dir <- file.path(parent_dir, experiment_id)
+  if(file.exists(experiment_dir)) stop("Experiment directory ", experiment_dir, " already exists.")
+  dir.create(experiment_dir)
+  print(paste0("Created experiment directory: ", experiment_dir))
+  experiment_config$experiment_id <- experiment_id
+  experiment_config$experiment_dir <- experiment_dir
+  
+  # Save experiment config as JSON file. 
+  experiment_config_json <- toJSON(experiment_config)
+  experiment_config_path <- file.path(experiment_dir, "experiment_config.json") 
+  write(experiment_config_json, experiment_config_path)
+  print(paste0("Saved experiment config settings: ", experiment_config_path))
+  experiment_config$experiment_config_path <- experiment_config_path
+  
+  # Optionally set global seed. 
+  if(set_seed) {
+    set.seed(experiment_config$global_seed)
+    print(paste0("Global seed set to ", experiment_config$global_seed))
+  }
+  
+  # Optionally store settings as global variables. 
+  if(set_global_variables) {
+    convert_list_to_global_vars(experiment_config)
+    print("`experiment_config` elements stored as global variables.")
+  }
+  
+  return(invisible(experiment_config))
+}
+
+
+load_experiment <- function(experiment_id, parent_dir, config_filename="experiment_config.json", 
+                            set_seed=FALSE, set_global_variables=FALSE, ...) {
+                  
+  # Check if experiment is already loaded. 
+  if(exists("experiment_id", where=.GlobalEnv)) stop("Experiment is already loaded: ", experiment_id)
+            
+  # Check that the experiment exists.
+  experiment_dir <- file.path(parent_dir, experiment_id)
+  if(!file.exists(experiment_dir)) stop("Experiment ", experiment_dir, " not found.")
+  
+  # Check that experiment config exists. If so load and convert to R list. 
+  experiment_config_path <- file.path(experiment_dir, config_filename)
+  if(!file.exists(experiment_config_path)) {
+    stop("Config for experiment ", experiment_id, " not found at path ", experiment_config_path)
+  }
+  
+  experiment_config <- fromJSON(experiment_config_path)
+  
+  # Check required settings are present. 
+  validate_experiment_base_settings(experiment_config)
+  
+  # Optionally set global seed. 
+  if(set_seed) {
+    set.seed(experiment_config$global_seed)
+    print(paste0("Global seed set to ", experiment_config$global_seed))
+  }
+  
+  # Optionally store settings as global variables. 
+  if(set_global_variables) {
+    convert_list_to_global_vars(experiment_config)
+    print("`experiment_config` elements stored as global variables.")
+  }
+  
+  return(invisible(experiment_config))
+  
+}
+
+
+validate_experiment_base_settings <- function(experiment_config) {
+  
+  required_base_settings <- c("experiment_id", "experiment_type", "global_seed")
+  missing_setting_names <- setdiff(required_base_settings, names(experiment_config))
+  
+  # Ensure required settings are found as names in the list. 
+  if(length(missing_setting_names) > 0) {
+    stop("`experiment config missing required settings: ", missing_setting_names)
+  }
+  
+  # Ensure the corresponding list elements are not missing. 
+  setting_is_missing <- sapply(required_base_settings, 
+                               function(setting_name) is.na(experiment_config[[setting_name]]) ||
+                                                      is.null(experiment_config[[setting_name]]))
+  if(any(setting_is_missing)) {
+    stop("`experiment` config has NA or NULL settings: ", 
+         paste(required_base_settings[setting_is_missing], sep=", "))
+  }
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # -----------------------------------------------------------------------------
 # Setup:

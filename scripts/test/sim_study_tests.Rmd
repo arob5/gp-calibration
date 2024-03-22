@@ -1,0 +1,41 @@
+---
+title: "Testing Simulation Study Code"
+author: "Andrew Roberts"
+date: '2024-03-22'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+experiment_parent_dir <- file.path(base_dir, "output")
+
+source(file.path(src_dir, "sim_study_functions.r"))
+
+```
+
+
+```{r}
+
+# Create experiment. 
+config <- init_experiment(experiment_id="test", experiment_type="test", 
+                          parent_dir=experiment_parent_dir, global_seed=5,
+                          set_seed=TRUE, set_global_variables=TRUE)
+print(paste0("Experiment ID: ", experiment_id))
+
+# Remove experiment variables, so can test loading the experiment. 
+rm(list=names(config))
+config <- load_experiment(experiment_id="test", parent_dir=experiment_parent_dir, 
+                          set_seed=TRUE, set_global_variables=TRUE)
+print(paste0("Experiment ID: ", experiment_id))
+```
+
+
+
+
+
+
+
+
