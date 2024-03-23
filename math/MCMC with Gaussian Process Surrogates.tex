@@ -41,7 +41,7 @@
 \newtheorem{corollary}{Corollary}
 
 % Title and author
-\title{MCMC with Gaussian Process Log-Likelihood Surrogates}
+\title{Gaussian Process Log-Likelihood Surrogates: Posterior Approximation and Sequential Design}
 \author{Andrew Roberts}
 
 \begin{document}
@@ -66,8 +66,14 @@ process
 and evaluation of the forward model $\fwd(\bpar)$ requires a significant amount of time. A well-established solution to circumvent the intractability of standard MCMC is 
 to leverage a cheaper surrogate model (also called an \textit{emulator} or \textit{meta-model}), which is trained from a small number of forward model 
 runs, and then proceed to use the surrogate in place of the expensive model in subsequent inference algorithms. In the fields of computer modeling and 
-Bayesian inverse problems, the typical approach is to replace the forward model $\fwd$ with an emulator. We instead focus on the alternative 
-method of directly emulating the log-likelihood $\llik(\bpar) := \log p(\bpar|\dataOut)$. In particular, we assume uncertainty in the log-likelihood is represented by a Gaussian 
+Bayesian inverse problems, the typical approach is to replace the forward model $\fwd$ with an emulator. While this has a variety of advantages, our focus in on the 
+setting where $\fwd$ maps to a high-dimensional output space. For example, $\fwd$ could represent the output from an ODE solver, in which case the dimension of the 
+output space is equal to the number of time steps for which the solver is run. While various approaches have been proposed for emulating such dynamic models 
+(e.g., \cite{GP_dynamic_emulation}, \cite{Bayesian_emulation_dynamic},  \cite{emulate_functional_output}, \cite{emulate_dynamic_epidemic_model}, 
+\cite{Liu_West_dynamic_emulation}), this is in general a challenging problem. We instead focus on the alternative 
+method of directly emulating the log-likelihood $\llik(\bpar) := \log p(\bpar|\dataOut)$. This offers the significant advantage of reduction to a scalar-valued emulation 
+problem. We focus on the common choice of Gaussian process (GP) emulators. 
+In particular, we assume uncertainty in the log-likelihood is represented by a Gaussian 
 process (GP), 
 \begin{align}
 \llik_{\Ndesign} \sim \GP(\GPMeanPred[\Ndesign], \GPKerPred[\Ndesign]),
@@ -98,17 +104,17 @@ strategies are effective for sampling from this target?
 With an emulator $\llik_{\Ndesign}$ approximating the likelihood in hand, it remains to decide how to utilize this emulator in deriving a posterior approximation. 
 The paper \cite{StuartTeck1} considers the following posterior approximations. Letting $\mu_0$ denote the prior measure (which has Lebesgue density 
 $\priorDens$). The exact posterior measure $\mu^y$ may be characterized by its Radon-Nikodym derivative with respect to the prior:
-%\begin{align*}
-%\frac{d\mu^y}{d\mu_0}(\bpar) &= \frac{1}{Z} \exp\left\{\llik(\bpar) \right\}, && Z = \Exp_{\mu_0}\left[\exp\left\{\llik(\bpar) \right\}\right]
-%\end{align*}
+\begin{align*}
+\frac{d\mu^y}{d\mu_0}(\bpar) &= \frac{1}{Z} \exp\left\{\llik_{\Ndesign}(\bpar) \right\}, && Z = \E_{\mu_0}\left[\exp\left\{\llik_{\Ndesign}(\bpar) \right\}\right] 
+\end{align*}
 
 The papers \cite{StuartTeck1} and \cite{StuartTeck2} consider the following approximations to this posterior. 
 \begin{align}
-\frac{d\mu_{\text{mean}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{mean}}} \exp\left\{\GPMeanPred[\Ndesign](\bpar) \right\} \\
-\frac{d\mu_{\text{samp}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{samp}}} \exp\left\{\llik_{\Ndesign}(\bpar)\right\} \\
-\frac{d\mu_{\text{marg}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{marg}}}  \E_{\llik_{\Ndesign}}\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right] \\
+\frac{d\mu^y_{\text{mean}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{mean}}} \exp\left\{\GPMeanPred[\Ndesign](\bpar) \right\} \\
+\frac{d\mu^y_{\text{samp}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{samp}}} \exp\left\{\llik_{\Ndesign}(\bpar)\right\} \\
+\frac{d\mu^y_{\text{marg}}}{d\mu_0}(\bpar) &= \frac{1}{Z_{\text{marg}}}  \E_{\llik_{\Ndesign}}\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right] \\
  							      &=  \frac{1}{\E_{\llik_{\Ndesign}}[Z_{\text{samp}}]}  \E_{\llik_{\Ndesign}}\left[\exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right] \nonumber \\
-\frac{d\mu_{\text{marg}^\prime}}{d\mu_0}(\bpar) &= \E_{\llik_{\Ndesign}}\left[\frac{1}{Z} \exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right].
+\frac{d\mu^y_{\text{marg}^\prime}}{d\mu_0}(\bpar) &= \E_{\llik_{\Ndesign}}\left[\frac{1}{Z} \exp\left\{\llik_{\Ndesign}(\bpar)\right\}\right].
 \end{align}
 The first approximation utilizes only the GP predictive mean in the approximation, while the remaining three incorporate the predictive variance. 
 The second approximation defines a random measure, while the remaining two construct deterministic approximations based on this random measure. 
@@ -120,7 +126,15 @@ average (with respect to the GP) error between $\llik$ and $\llik_{\Ndesign}$.
 For the random sample approximation, the expected (with respect to the GP) Hellinger distance is bounded. In \cite{StuartTeck2}, similar bounds are given 
 with respect to $L^2_{\mu^y}$ in place of $L^2_{\mu_0}$, capturing the intuitive notion that the emulator need only be accurate in regions of significant 
 posterior mass. Their theoretical results indicate that focusing on regions of sufficient posterior mass is a sound design strategy, and also suggest that 
-oversampling the tails of $\mu^y$ may be preferable. 
+oversampling the tails of $\mu^y$ may be preferable. These bounds are generalized in \cite{random_fwd_models}, which considers more general 
+emulators of the potentially non-Gaussian variety. 
+
+Similar posterior approximations are considered in \cite{GP_PDE_priors}, which focuses on Bayesian inverse problems arising from linear PDEs. They 
+compare the mean-based and marginal approximations in the settings of either emulating the log likelihood $\llik$ or the forward model $\fwd$. In examples 
+with relatively low-dimensional parameter spaces (mostly 1-2, with one ten-dimensional example) the authors find that the marginal approximation tends to 
+place more posterior mass around the true posterior. They also note that with few design points the forward model emulators tend to be more reliable, which 
+may be attributed to the fact that their forward model emulators incorporated prior knowledge specific to the linear PDE setting, which was not possible with 
+the log likelihood emulation approach. 
 
 
 Stuart and Teckentrup posterior consistency paper, Aki Vehtari paper, train paper that approximates sampling GP trajectories, Emulate/Calibrate/Sample paper, 
@@ -192,6 +206,38 @@ which is solved by
 Normalizing \ref{unnormalized_optimum} again recovers $\hat{\postDens}$, as given in \ref{point_estimate}. We emphasize that the density 
 $\hat{\postDens}$ does not inherit the $L^2$ optimality from $\hat{\tilde{\postDens}}(\bpar)$. 
 
+% A Note on Log Likelihood vs. Forward Model Emulation 
+\section{A Note on Log Likelihood vs. Forward Model Emulation}
+We briefly comment on a notable difference in the posterior approximations if one were to instead employ GP emulation of the forward model. 
+To illustrate this, consider the likelihood  
+
+\begin{align*}
+\dataOut|\bpar &\sim \Gaussian(\fwd(\bpar), \Sigma). 
+\end{align*}
+
+We consider the emulators $\llik_{\Ndesign} \sim \GP(\mu_N, k_N)$ and $\fwd_N \sim \GP(\mu^{\fwd}_N, k^{\fwd}_N)$, the latter corresponding 
+to a multi-output GP in the case where the output space has dimension greater than one. Focusing on the marginal posterior approximation, 
+we recall that the approximate posterior density resulting from integrating $\llik_N$ out of the unnormalized likelihood is given by 
+\begin{align}
+\postDens_{\text{marg}}(\bpar) 
+&\propto \exp\left\{\mu_N(\bpar) + \frac{1}{2} k_N(\bpar) \right\} \priorDens(\bpar) \nonumber \\
+&\propto \exp\left\{\mu_N(\bpar) \right\} \priorDens(\bpar) \exp\left\{\frac{1}{2} k_N(\bpar) \right\} \\
+&\propto \postDens_{\text{mean}}(\bpar) \exp\left\{\frac{1}{2} k_N(\bpar) \right\} \label{mult_var_inflation}
+\end{align}
+The analogous marginal approximation under $\fwd_N$ is given by  
+\begin{align}
+\postDens^{\fwd}_{\text{marg}}(\bpar) 
+&\propto \E_{\fwd_N}\left[\exp\left\{-\frac{1}{2}\norm{\dataOut - \fwd_N(\bpar)}^2_{\Sigma} \right\} \right] \priorDens(\bpar) \nonumber \\
+&= \exp\left\{-\frac{1}{2}\norm{\dataOut - \mu^{\fwd}_N(\bpar)}^2_{\Sigma + k^{\fwd}_N(\bpar)} \right\} \priorDens(\bpar) \label{add_var_inflation}
+\end{align}
+where \ref{add_var_inflation} may be derived by applying the formula for the convolution of two Gaussians (e.g., \cite{GP_PDE_priors}). We observe 
+that both approximations yield a form of variance inflation that varies by $\bpar$; density evaluations at inputs $\bpar$ at which the GP is more uncertain 
+are more inflated. However, the nature of the variance inflation is different in the two cases. The log likelihood case \ref{mult_var_inflation} yields a form 
+of multiplicative variance inflation, while the forward model emulation induces \ref{add_var_inflation} induces additive variance inflation. In some sense, the 
+uncertainty in the forward model approximation is modulated by the effect of being fed through the likelihood. Based on this, we would expect that the variance
+inflation to be more extreme in the log likelihood emulation case when there is significant uncertainty in the emulator fit. In particular, due to the fact 
+that the GP predictive variance vanishes at the design points, we would expect the marginal posterior approximation to be more severely multimodal as 
+the uncertainty in the emulator increases. 
 
 % Noisy MCMC Approaches
 \subsection{Noisy MCMC Approaches}
@@ -315,7 +361,7 @@ v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 \end{align*}
 \end{definition} 
 
-\sections{Questions}
+\section{Questions}
 \begin{enumerate} 
 \item Difference in performance for various ways of trying to obtain design points in high posterior regions: (i.) IEVAR with approximate-posterior 
 weights; (ii.) IEVAR with prior weights; (iii.) IVAR with approximate-posterior weights. 

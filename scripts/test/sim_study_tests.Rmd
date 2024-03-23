@@ -18,7 +18,6 @@ source(file.path(src_dir, "sim_study_functions.r"))
 
 
 ```{r}
-
 # Create experiment. 
 config <- init_experiment(experiment_id="test", experiment_type="test", 
                           parent_dir=experiment_parent_dir, global_seed=5,
