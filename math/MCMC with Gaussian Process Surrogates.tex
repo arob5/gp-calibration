@@ -136,10 +136,6 @@ place more posterior mass around the true posterior. They also note that with fe
 may be attributed to the fact that their forward model emulators incorporated prior knowledge specific to the linear PDE setting, which was not possible with 
 the log likelihood emulation approach. 
 
-
-Stuart and Teckentrup posterior consistency paper, Aki Vehtari paper, train paper that approximates sampling GP trajectories, Emulate/Calibrate/Sample paper, 
-GP MCMC paper for MALA approximation; mention exact methods: Youssef work and delayed acceptance schemes 
-
 \subsection{Experimental Design}
 Original integrated variance paper (see Gramacy book for references), Youssef paper on integrated variance criteria, Vehtari paper, Stuart and Teckentrup experimental 
 design paper, sequential design GP paper that considers KL divergence, Stefan Wild paper, Sinsbeck and Nowak 
@@ -207,7 +203,7 @@ Normalizing \ref{unnormalized_optimum} again recovers $\hat{\postDens}$, as give
 $\hat{\postDens}$ does not inherit the $L^2$ optimality from $\hat{\tilde{\postDens}}(\bpar)$. 
 
 % A Note on Log Likelihood vs. Forward Model Emulation 
-\section{A Note on Log Likelihood vs. Forward Model Emulation}
+\subsection{A Note on Log Likelihood vs. Forward Model Emulation}
 We briefly comment on a notable difference in the posterior approximations if one were to instead employ GP emulation of the forward model. 
 To illustrate this, consider the likelihood  
 

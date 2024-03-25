@@ -201,7 +201,7 @@ llik_sum_emulator$plot_llik_samp_1d(test_info$inputs, lik_par_val=sig2_true, N_s
                                     use_cov=TRUE)
 ```
 
-# Validating llikEmulatorExactLinGaus and llikEmulatorExactLinGausDiag
+# Validating llikEmulatorExactGauss and llikEmulatorExactGaussDiag
 ```{r}
 
 # Linear Gaussian Model Setup. 
@@ -211,6 +211,9 @@ G <- matrix(nrow=N_obs, ncol=D)
 for(d in 1:D) {
   G[,d] <- matrix(sin(2*pi*freqs[d]*seq(1, N_obs)/N_obs), ncol=1)
 }
+
+fwd_model <- function(input) {G %*% matrix(input, ncol=1)}
+fwd_model_vectorized <- function(input) {G %*% t(input)}
 
 Sig0 <- diag(rlnorm(D, meanlog=0, sdlog=2))
 mu0 <- rnorm(D, mean=0, sd=4)

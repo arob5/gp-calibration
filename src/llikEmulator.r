@@ -71,22 +71,26 @@ llikEmulator <- setRefClass(
   fields = list(emulator_model="ANY", lik_description="character", llik_label="character",
                 emulator_description="character", default_conditional="logical",
                 default_normalize="logical", use_fixed_lik_par="logical", lik_par="ANY",
-                input_names="character", dim_input="integer", llik_pred_dist="character")
+                input_names="character", dim_input="integer", llik_pred_dist="character", 
+                exact_llik="logical")
 )
 
 llikEmulator$lock("llik_label")
+llikEmulator$lock("llik_pred_dist")
+llikEmulator$lock("exact_llik")
 
 llikEmulator$methods(
   
   initialize = function(llik_label, input_names, lik_description, emulator_description, dim_input,  
                         emulator_model=NULL, default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_pred_dist="unspecified", ...) {
+                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_pred_dist="unspecified", 
+                        exact_llik=FALSE, ...) {
 
     initFields(llik_label=llik_label, input_names=input_names, lik_description=lik_description, 
                dim_input=dim_input, emulator_description=emulator_description,
                emulator_model=emulator_model, default_conditional=default_conditional,
                default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
-               lik_par=lik_par, llik_pred_dist=llik_pred_dist)  
+               lik_par=lik_par, llik_pred_dist=llik_pred_dist, exact_llik=exact_llik)  
         
     if(use_fixed_lik_par && is.null(lik_par)) stop("Fixed `lik_par` not passed but `use_fixed_lik_par` is TRUE.")
   }, 
@@ -271,12 +275,16 @@ llikSumEmulator$methods(
     if(all(llik_term_dists == "Gaussian")) llik_sum_dist <- "Gaussian"
     else llik_sum_dist <- "unspecified"
     
+    # The llikSumEmulator sum emulator is only exact if all of its component terms are exact. 
+    llik_terms_exact <- sapply(llik_emulator_list, function(x) x$exact_llik)
+    llik_sum_exact <- all(llik_terms_exact)
+    
     callSuper(llik_label=term_lbls, lik_description=lik_description, emulator_description=emulator_description,
               emulator_model=NULL, default_conditional=default_conditional, 
               default_normalize=default_normalize, dim_input=llik_emulator_list[[1]]$dim_input,
               input_names=llik_emulator_list[[1]]$input_names,
               use_fixed_lik_par=all(sapply(llik_emulator_list, function(x) x$use_fixed_lik_par)), 
-              lik_par=NULL, llik_pred_dist=llik_sum_dist)
+              lik_par=NULL, llik_pred_dist=llik_sum_dist, exact_llik=llik_sum_exact)
               
   },
   
@@ -647,7 +655,7 @@ llikEmulatorMultGausGP$methods(
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Multiplicative Gaussian.",
               emulator_description="GP emulating sum of squared error function.", 
-              llik_pred_dist="Gaussian", ...)
+              llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
   }, 
   
   assemble_llik = function(SSR, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
@@ -790,57 +798,73 @@ llikEmulatorMultGausGP$methods(
 
  
 # -----------------------------------------------------------------------------
-# llikEmulatorExactLinGaus class
-# This simply implements the exact likelihood corresponding to a linear 
-# Gaussian inverse problem: y|u ~ N(Gu, Sig). This is exact in the sense 
-# that there is no emulation here - the reason for implementing this as a 
+# llikEmulatorExactGauss class
+# This simply implements the exact likelihood corresponding to a  
+# Gaussian inverse problem: y|u ~ N(G(u), Sig), where G may be nonlinear.
+# The forward map G is defined by an attribute called `fwd_model` in the class, 
+# which is a function that users pass in when instantiating the class. 
+# This is exact in the sense that there is no emulation here -
+# the reason for implementing this as a 
 # llikEmulator class is to use it for algorithm testing; e.g. ensuring the 
 # correctness of an MCMC implementation. The `lik_par` here is defined to 
-# be the covariance matrix `Sig`. The definition of a Gaussian prior on `u`
-# completes the linear Gaussian setup and yields a Gaussian posterior (when 
-# Sig is fixed), a Normal Inverse Wishart posterior (when Sig is assigned
-# and inverse Wishart prior), or a Normal Inverse Gamma posterior (when 
-# Sig is specified to be diagonal with independent inverse gamma priors on 
-# the diagonal elements).
+# be the covariance matrix `Sig`. 
 #
-# Note that the class llikEmulatorExactLinGausDiag should be used in the 
+# In the case that `G` is linear and `u` is assigned a Gaussian prior, then 
+# this yields a linear Gaussian inverse problem, implying that the posterior 
+# u|y is Gaussian (when `Sig` is fixed). When `Sig` is not fixed and instead 
+# assigned an inverse Wishart prior then the joint posterior u, Sig|y is 
+# Normal Inverse Wishart.
+#
+# Note that the class llikEmulatorExactGaussDiag should be used in the 
 # special case where `Sig` is constrained to be diagonal. 
 # -----------------------------------------------------------------------------
 
-llikEmulatorExactLinGaus <- setRefClass(
-  Class = "llikEmulatorExactLinGaus", 
+llikEmulatorExactLinGauss <- setRefClass(
+  Class = "llikEmulatorExactLinGauss", 
   contains = "llikEmulator",
-  fields = list(fwd_model="matrix", y="numeric", N_obs="integer", L_Cov="matrix")
+  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", N_obs="integer", L_Cov="matrix")
 )
 
-llikEmulatorExactLinGaus$methods(
+llikEmulatorExactGauss$methods(
   
-  initialize = function(llik_lbl, fwd_model, y_obs, Cov=NULL, default_conditional=FALSE, 
-                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
+  initialize = function(llik_lbl, y_obs, dim_par, fwd_model=NULL, fwd_model_vectorized=NULL, Cov=NULL, 
+                        default_conditional=FALSE, default_normalize=FALSE, use_fixed_lik_par=FALSE, 
+                        par_names=NULL, ...) {
     
-    assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
-    initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
-    d <- ncol(fwd_model)
+    # Forward model must be provided, either vectorized or single-input version. 
+    assert_that(is.null(fwd_model) || is.function(fwd_model))
+    assert_that(is.null(fwd_model_vectorized) || is.function(fwd_model_vectorized))
+    assert_that(is.function(fwd_model) || is.function(fwd_model_vectorized))
+    initFields(fwd_model=fwd_model, fwd_model_vectorized=fwd_model_vectorized, 
+               N_obs=length(drop(y_obs)), y=drop(y_obs))
     
-    if(!is.null(colnames(fwd_model))) input_names_val <- colnames(fwd_model)
-    else input_names_val <- paste0("input", 1:d)
+    # Set parameter names. 
+    if(is.null(par_names)) par_names <- paste0("input", 1:dim_par)
+    assert_that(length(par_names) == dim_par)
 
+    # Covariance matrix of Gaussian likelihood. 
     if(!is.null(Cov)) {
       assert_that(is.matrix(Cov) && (nrow(Cov)==N_obs) && (ncol(Cov)==N_obs),
                   msg="`Cov` must be a positive definite matrix with dim `N_obs` x `N_obs`")
       initFields(L_Cov=t(chol(Cov))) 
     }
     
-    y_obs <- drop(y_obs)
-    assert_that(length(y_obs)==N_obs, 
-                msg="Number of observations implied by `y_obs` and `fwd_model` disagree.")
-    initFields(y=y_obs)
-    
-    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov, dim_input=d,
-              default_conditional=default_conditional, input_names=input_names_val,
+    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov, dim_input=dim_par,
+              default_conditional=default_conditional, input_names=par_names,
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Exact linear Gaussian likelihood.",
-              emulator_description="No emulation.", ...)
+              emulator_description="No emulation.", exact_llik=TRUE, ...)
+  },
+  
+  run_fwd_model = function(input, ...) {
+    if(is.null(.self$fwd_model_vectorized)) return(vectorize_fwd_model(input, ...))
+    return(.self$fwd_model_vectorized(input, ...))
+  },
+  
+  vectorize_fwd_model = function(input, ...) {
+    model_output <- vector(mode="numeric", length=nrow(input))
+    for(i in 1:nrow(input)) model_output[i] <- .self$fwd_model(input[i,], ...)
+    return(matrix(model_output, ncol=1))
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
@@ -862,7 +886,7 @@ llikEmulatorExactLinGaus$methods(
     L <- get_lik_par(lik_par_val, return_chol=TRUE)
     
     # Construct log likelihood. 
-    llik <- -0.5 * colSums(solve(L, y - fwd_model %*% t(input))^2, na.rm=TRUE)
+    llik <- -0.5 * colSums(solve(L, y - run_fwd_model(input, ...))^2, na.rm=TRUE)
     if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
@@ -888,21 +912,21 @@ llikEmulatorExactLinGaus$methods(
 
 
 # -----------------------------------------------------------------------------
-# llikEmulatorExactLinGausDiag class.
-#    Identical to llikEmulatorExactLinGaus except that `Sig` is assumed to 
+# llikEmulatorExactGaussDiag class.
+#    Identical to llikEmulatorExactGauss except that `Sig` is assumed to 
 #    be diagonal, so the `lik_par` for this class is defined to be the vector 
 #    corresponding to the diagonal of this covariance matrix.`lik_par` may 
 #    also be provided as a single value, which is interpreted as a 
 #    homoskedastic variance. 
 # -----------------------------------------------------------------------------
 
-llikEmulatorExactLinGausDiag <- setRefClass(
-  Class = "llikEmulatorExactLinGausDiag", 
+llikEmulatorExactGaussDiag <- setRefClass(
+  Class = "llikEmulatorExactGaussDiag", 
   contains = "llikEmulator",
   fields = list(fwd_model="matrix", y="numeric", N_obs="integer")
 )
 
-llikEmulatorExactLinGausDiag$methods(
+llikEmulatorExactGaussDiag$methods(
   
   initialize = function(llik_lbl, fwd_model, y_obs, sig2=NULL, default_conditional=FALSE, 
                         default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
