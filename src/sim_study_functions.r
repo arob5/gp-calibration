@@ -17,6 +17,9 @@ library(gridExtra)
 library(data.table)
 library(BayesianTools)
 
+# -----------------------------------------------------------------------------
+# Generic functions for running simulation experiments. 
+# -----------------------------------------------------------------------------
 
 init_experiment <- function(experiment_id, experiment_type, parent_dir, global_seed, set_seed=FALSE, 
                             set_global_variables=FALSE, ...) {
@@ -118,11 +121,49 @@ validate_experiment_base_settings <- function(experiment_config) {
 }
 
 
+# -----------------------------------------------------------------------------
+# Experiment Type: llik_emulator_seq_design (lesd, for short). 
+#
+# Simulation experiment functions for testing log-likelihood emulators
+# for accelerated MCMC in Bayesian inverse problems, and sequential design 
+# methods for improving the emulators. This experiment type fixes a specific 
+# Bayesian inverse problem (likelihood, data, forward model, priors), so 
+# the experiments concern varying the emulation methods, sequential design 
+# algorithms, and/or MCMC algorithms. 
+#
+# This experiment type features multiple "rounds" corresponding to rounds 
+# of sequential design. Round 0 is the "initial design", round 1 is the 
+# first round of (batch) sequential design, and so on. Each round features 
+# 3 "stages": setup, design, and sample. Setup involves defining config 
+# parameters to specify which methods to test, how many replication to 
+# run, etc. The design stage runs algorithms which acquire a batch of 
+# design points in parameter space, which typically requires outputs from 
+# previous rounds as input. The sample stage runs MCMC algorithms using
+# the log-likelihood emulators which have been updated in the previous 
+# design stage.
+# -----------------------------------------------------------------------------
 
+# Required settings which are fixed across rounds: 
+# define_Bayesian_inverse_problem.r: 
+#   Script which first initializes the experiment and then creates the 
+#   llikEmulatorExactGauss object (storing the likelihood and forward model), 
+#   and the data.frames defining the priors (have option to fix Sig_eps, in 
+#   which case a prior is not required).
+#
+#   The global seed will be set anytime an experiment is loaded (maybe this 
+#   isn't a good idea). But I should definitely make use of local seeds which 
+#   are set before steps involving randomization. For example, lesd should 
+#   require the config to contain a data seed which is set at the top of 
+#   llikEmulatorExactGauss, ensuring that the same data Y is generated 
+#   anytime this file is run. Will have to think about how to handle 
+#   the seeds for the design and sampling stages as well; e.g. best to 
+#   have a fixed seed for each of these that is the same across all rounds, 
+#   or have round specific seeds for each? 
 
-
-
-
+validate_experiment_base_settings_lesd <- function(experiment_config) {
+  # Ensure `define_Bayesian_inverse_problem.r` exists, 
+  
+}
 
 
 

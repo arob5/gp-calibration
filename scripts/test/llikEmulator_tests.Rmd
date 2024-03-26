@@ -243,14 +243,14 @@ llik_exact_novect_obj <- llikEmulatorExactGauss(llik_lbl="exact_novect", fwd_mod
                                                 y_obs=computer_model_data$data_obs, dim_par=ncol(G), 
                                                 Cov=diag(sig2_eps, nrow=N_obs), use_fixed_lik_par=TRUE, 
                                                 par_names=computer_model_data$pars_cal_names)
-llik_exact_diag_vect_obj <- llikEmulatorExactGaussDiag(llik_lbl="exact_diag_vect", fwd_model=fwd_model, 
+llik_exact_diag_vect_obj <- llikEmulatorExactGaussDiag(llik_lbl="exact_diag_vect", fwd_model_vectorized=fwd_model_vectorized,
                                                        y_obs=computer_model_data$data_obs, dim_par=ncol(G), 
                                                        sig2=sig2_eps, use_fixed_lik_par=TRUE, 
                                                        par_names=computer_model_data$pars_cal_names)
-llik_exact_diag_vect_obj <- llikEmulatorExactGaussDiag(llik_lbl="exact_diag_vect", fwd_model=fwd_model, 
-                                                       y_obs=computer_model_data$data_obs, dim_par=ncol(G), 
-                                                       sig2=sig2_eps, use_fixed_lik_par=TRUE, 
-                                                       par_names=computer_model_data$pars_cal_names)
+llik_exact_diag_novect_obj <- llikEmulatorExactGaussDiag(llik_lbl="exact_diag_novect", fwd_model=fwd_model, 
+                                                         y_obs=computer_model_data$data_obs, dim_par=ncol(G), 
+                                                         sig2=sig2_eps, use_fixed_lik_par=TRUE, 
+                                                         par_names=computer_model_data$pars_cal_names)
 
 # Test evaluation inputs. 
 test_design <- get_input_output_design(N_points=1000,
@@ -266,6 +266,8 @@ llik_true <- llik_product_Gaussian(computer_model_data, sig2_eps,
                                    theta_vals=test_design$inputs, normalize=TRUE, na.rm=TRUE)
 llik_test_vect <- drop(llik_exact_vect_obj$sample(test_design$inputs, normalize=TRUE))
 llik_test_novect <- drop(llik_exact_novect_obj$sample(test_design$inputs, normalize=TRUE))
+llik_test_diag_vect <- drop(llik_exact_diag_vect_obj$sample(test_design$inputs, normalize=TRUE))
+llik_test_diag_novect <- drop(llik_exact_diag_novect_obj$sample(test_design$inputs, normalize=TRUE))
 
 print("llikEmulatorExactGaussDiag llik calculation using vectorized forward model is correct:")
 print(all.equal(llik_true, llik_test_vect))
@@ -273,20 +275,13 @@ print(all.equal(llik_true, llik_test_vect))
 print("llikEmulatorExactGauss llik calculation using non-vectorized forward model is correct:")
 print(all.equal(llik_true, llik_test_novect))
 
-```
+print("llikEmulatorExactGaussDiag llik calculation using vectorized forward model is correct:")
+print(all.equal(llik_true, llik_test_diag_vect))
 
-```{r}
-#
-# Testing class `llikEmulatorExactGaussDiag`, which is just like `llikEmulatorExactGauss`
-# but the covariance of the Gaussian likelihood is constrained to be diagonal. 
-#
-
-
-
-llik_test_diag <- drop(llik_exact_diag_obj$sample(test_design$inputs, normalize=TRUE))
+print("llikEmulatorExactGaussDiag llik calculation using non-vectorized forward model is correct:")
+print(all.equal(llik_true, llik_test_diag_novect))
 
 ```
-
 
 
 ```{r}
