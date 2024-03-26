@@ -819,8 +819,8 @@ llikEmulatorMultGausGP$methods(
 # special case where `Sig` is constrained to be diagonal. 
 # -----------------------------------------------------------------------------
 
-llikEmulatorExactLinGauss <- setRefClass(
-  Class = "llikEmulatorExactLinGauss", 
+llikEmulatorExactGauss <- setRefClass(
+  Class = "llikEmulatorExactGauss", 
   contains = "llikEmulator",
   fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", N_obs="integer", L_Cov="matrix")
 )
@@ -857,14 +857,17 @@ llikEmulatorExactGauss$methods(
   },
   
   run_fwd_model = function(input, ...) {
+    # `input` is an M x D matrix with input parameter values stacked in the rows. 
+    # `fwd_model_vectorized(input)` returns N_obs x M dimensional output. 
+    
     if(is.null(.self$fwd_model_vectorized)) return(vectorize_fwd_model(input, ...))
     return(.self$fwd_model_vectorized(input, ...))
   },
   
   vectorize_fwd_model = function(input, ...) {
-    model_output <- vector(mode="numeric", length=nrow(input))
-    for(i in 1:nrow(input)) model_output[i] <- .self$fwd_model(input[i,], ...)
-    return(matrix(model_output, ncol=1))
+    model_output <- matrix(nrow=N_obs, ncol=nrow(input))
+    for(i in 1:nrow(input)) model_output[,i] <- .self$fwd_model(input[i,], ...)
+    return(model_output)
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
@@ -923,36 +926,51 @@ llikEmulatorExactGauss$methods(
 llikEmulatorExactGaussDiag <- setRefClass(
   Class = "llikEmulatorExactGaussDiag", 
   contains = "llikEmulator",
-  fields = list(fwd_model="matrix", y="numeric", N_obs="integer")
+  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", N_obs="integer")
 )
 
 llikEmulatorExactGaussDiag$methods(
   
-  initialize = function(llik_lbl, fwd_model, y_obs, sig2=NULL, default_conditional=FALSE, 
-                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
+  initialize = function(llik_lbl, y_obs, dim_par, fwd_model=NULL, fwd_model_vectorized=NULL, 
+                        sig2=NULL, default_conditional=FALSE, default_normalize=FALSE, 
+                        use_fixed_lik_par=FALSE, par_names=NULL, ...) {
+                        
+    # Forward model must be provided, either vectorized or single-input version. 
+    assert_that(is.null(fwd_model) || is.function(fwd_model))
+    assert_that(is.null(fwd_model_vectorized) || is.function(fwd_model_vectorized))
+    assert_that(is.function(fwd_model) || is.function(fwd_model_vectorized))
+    initFields(fwd_model=fwd_model, fwd_model_vectorized=fwd_model_vectorized, 
+               N_obs=length(drop(y_obs)), y=drop(y_obs))
     
-    assert_that(is.matrix(fwd_model), msg="`fwd_model` must be a matrix.")
-    initFields(fwd_model=fwd_model, N_obs=nrow(fwd_model))
-    d <- ncol(fwd_model)
+    # Set parameter names. 
+    if(is.null(par_names)) par_names <- paste0("input", 1:dim_par)
+    assert_that(length(par_names) == dim_par)
     
-    if(!is.null(colnames(fwd_model))) input_names_val <- colnames(fwd_model)
-    else input_names_val <- paste0("input", 1:d)
-    
+    # Variance parameters for Gaussian likelihood. 
     if(!is.null(sig2)) {
       assert_that(is.numeric(sig2) && ((length(sig2)==N_obs) || (length(sig2)==1)) && all(sig2>0),
-                  msg="`sig2` must be either vector of length `N_obs` or 1 containing positive numbers.")
+                  msg="`sig2` must be either vector of length `N_obs` or 1 and only contain positive numbers.")
     }
     
-    y_obs <- drop(y_obs)
-    assert_that(length(y_obs)==N_obs, 
-                msg="Number of observations implied by `y_obs` and `fwd_model` disagree.")
-    initFields(y=y_obs)
-    
-    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=sig2, dim_input=d,
-              default_conditional=default_conditional, input_names=input_names_val,
+    callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=sig2, dim_input=dim_par,
+              default_conditional=default_conditional, input_names=par_names,
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Exact linear Gaussian likelihood, diagonal covariance structure.",
-              emulator_description="No emulation.", ...)
+              emulator_description="No emulation.", exact_llik=TRUE, ...)
+  },
+  
+  run_fwd_model = function(input, ...) {
+    # `input` is an M x D matrix with input parameter values stacked in the rows. 
+    # `fwd_model_vectorized(input)` returns N_obs x M dimensional output. 
+    
+    if(is.null(.self$fwd_model_vectorized)) return(vectorize_fwd_model(input, ...))
+    return(.self$fwd_model_vectorized(input, ...))
+  },
+  
+  vectorize_fwd_model = function(input, ...) {
+    model_output <- matrix(nrow=N_obs, ncol=nrow(input))
+    for(i in 1:nrow(input)) model_output[,i] <- .self$fwd_model(input[i,], ...)
+    return(model_output)
   },
   
   get_lik_par = function(lik_par_val=NULL, ...) {
@@ -974,7 +992,7 @@ llikEmulatorExactGaussDiag$methods(
     sig2_val <- get_lik_par(lik_par_val)
     
     # Construct log likelihood. 
-    llik <- -0.5 * colSums((y - fwd_model %*% t(input))^2 / sig2_val, na.rm=TRUE)
+    llik <- -0.5 * colSums((y - run_fwd_model(input, ...))^2 / sig2_val, na.rm=TRUE)
     if(normalize || !conditional) llik <- llik - 0.5 * sum(log(sig2_val))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
