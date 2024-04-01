@@ -137,6 +137,38 @@ may be attributed to the fact that their forward model emulators incorporated pr
 the log likelihood emulation approach. 
 
 \subsection{Experimental Design}
+
+
+\subsubsection{Integrated Variance Criteria for GPs}
+We start by considering (sequential) design criteria for GP regression for a generic function with GP prior $f_0 \sim \GP(\GPMeanPred[0], \GPKerPred[0])$.
+We consider techniques for acquiring a batch of $\Nbatch$ inputs $\inputMatBatch$ via solution of the minimization problem
+\begin{align}
+\inputMatBatch^* := \argmin_{\inputMatBatch \subset \parSpace} \int_{\parSpace^\prime}  \GPKerPred[\Ndesign + \Nbatch](\bpar) \rho(d\bpar), \label{imspe}
+\end{align}
+where we have used the notation $\GPKerPred[\Ndesign + \Nbatch](\bpar) = \Var[f_N(\bpar)|\inputMatBatch, f(\inputMatBatch)]$. Note that \ref{imspe} 
+encompasses both one-shot batch and sequential design, the former corresponding to the case where $N=0$. The case $N > 0$ corresponds to 
+sequential design (augmenting an existing $N$-point design), and when in addition $B > 1$ then the problem is referred to as \textit{batch sequential design}. 
+While the search space for this optimization problem is the entire design space $\parSpace$ we allow for $\parSpace^\prime \subset \parSpace$ to account 
+for situations in which one may only want to assess model uncertainty on some smaller domain. The measure $\rho$ also allows for the integrand to be 
+weighted over this domain. The integral in \ref{imspe} is often referred to as \textit{integrated mean squared prediction error} (IMSPE), but we will 
+follow \cite{Mercer_kernels_IVAR} and refer to this more generically as an \textit{integrated variance} (IVAR) criterion. 
+
+There are a variety of techniques used to (approximately) solve the optimization problem \ref{imspe}, which are summarized nicely in \cite{Mercer_kernels_IVAR}.
+While certain special choices of $\parSpace^\prime$ and $\rho$ allow the IVAR objective to be computed in closed-form, generally it is intractable. Therefore, 
+quadrature or Monte Carlo approximations are common in practice. Since the former is limited to lower-dimensional design spaces, we focus on the Monte 
+Carlo approach here, which yields to the approximation 
+\begin{align}
+ \int_{\parSpace^\prime}  \GPKerPred[\Ndesign + \Nbatch](\bpar) \rho(d\bpar) &\approx \frac{1}{M} \sum_{m=1}^{M} \GPKerPred[\Ndesign + \Nbatch](\bpar_m), &&\bpar_m \overset{iid}{\sim} \rho.
+\end{align}
+Viewing the $\bpar_m$ are random yields a stochastic objective function and thus falls under the umbrella of stochastic optimization. The paper \cite{Mercer_kernels_IVAR} 
+considers the alternative of sampling the $\bpar_m$ a single time and then fixing them going forward. This so-called \textit{sample average approximation} (SAA) results 
+in deterministic problem, and is commonly favored in practice. 
+
+
+
+\subsubsection{Integrated Variance Criteria for Posterior Approximation}
+
+
 Original integrated variance paper (see Gramacy book for references), Youssef paper on integrated variance criteria, Vehtari paper, Stuart and Teckentrup experimental 
 design paper, sequential design GP paper that considers KL divergence, Stefan Wild paper, Sinsbeck and Nowak 
 

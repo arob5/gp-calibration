@@ -21,48 +21,53 @@ library(BayesianTools)
 # Generic functions for running simulation experiments. 
 # -----------------------------------------------------------------------------
 
-init_experiment <- function(experiment_id, experiment_type, parent_dir, global_seed, set_seed=FALSE, 
-                            set_global_variables=FALSE, ...) {
-  
+init_experiment <- function(experiment_id, experiment_type, parent_dir, global_seed, set_seed=FALSE, ...) {
+
   print(paste0("Creating experiment: ", experiment_id))
   
-  experiment_config <- list()
-  experiment_config$global_seed <- global_seed
-  experiment_config$experiment_type <- experiment_type
+  experiment_config <- list(base_settings=list(), base_paths=list())
+  experiment_config$base_settings$global_seed <- global_seed
+  experiment_config$base_settings$experiment_type <- experiment_type
   
   # Create directory. If the run ID already exists, throw error. 
   experiment_dir <- file.path(parent_dir, experiment_id)
   if(file.exists(experiment_dir)) stop("Experiment directory ", experiment_dir, " already exists.")
   dir.create(experiment_dir)
   print(paste0("Created experiment directory: ", experiment_dir))
-  experiment_config$experiment_id <- experiment_id
-  experiment_config$experiment_dir <- experiment_dir
+  experiment_config$base_settings$experiment_id <- experiment_id
+  experiment_config$base_paths$experiment_dir <- experiment_dir
+  
+  # Create settings, output, and code subdirectories. 
+  settings_dir <- file.path(experiment_dir, "settings")
+  output_dir <- file.path(experiment_dir, "output")
+  code_dir <- file.path(experiment_dir, "code")
+  dir.create(settings_dir)
+  dir.create(output_dir)
+  dir.create(code_dir)
+  experiment_config$base_paths$settings_dir <- settings_dir
+  experiment_config$base_paths$output_dir <- output_dir
+  experiment_config$base_paths$code_dir <- code_dir
   
   # Save experiment config as JSON file. 
   experiment_config_json <- toJSON(experiment_config)
-  experiment_config_path <- file.path(experiment_dir, "experiment_config.json") 
+  experiment_config_path <- file.path(settings_dir, "experiment_config.json") 
   write(experiment_config_json, experiment_config_path)
   print(paste0("Saved experiment config settings: ", experiment_config_path))
-  experiment_config$experiment_config_path <- experiment_config_path
+  experiment_config$base_paths$experiment_config_path <- experiment_config_path
   
   # Optionally set global seed. 
   if(set_seed) {
     set.seed(experiment_config$global_seed)
-    print(paste0("Global seed set to ", experiment_config$global_seed))
+    print(paste0("Global seed set to ", experiment_config$base_settings$global_seed))
   }
   
-  # Optionally store settings as global variables. 
-  if(set_global_variables) {
-    convert_list_to_global_vars(experiment_config)
-    print("`experiment_config` elements stored as global variables.")
-  }
+  return(experiment_config)
   
-  return(invisible(experiment_config))
 }
 
 
 load_experiment <- function(experiment_id, parent_dir, config_filename="experiment_config.json", 
-                            set_seed=FALSE, set_global_variables=FALSE, ...) {
+                            set_seed=FALSE, ...) {
                   
   # Check if experiment is already loaded. 
   if(exists("experiment_id", where=.GlobalEnv)) stop("Experiment is already loaded: ", experiment_id)
@@ -72,7 +77,7 @@ load_experiment <- function(experiment_id, parent_dir, config_filename="experime
   if(!file.exists(experiment_dir)) stop("Experiment ", experiment_dir, " not found.")
   
   # Check that experiment config exists. If so load and convert to R list. 
-  experiment_config_path <- file.path(experiment_dir, config_filename)
+  experiment_config_path <- file.path(experiment_dir, "settings", config_filename)
   if(!file.exists(experiment_config_path)) {
     stop("Config for experiment ", experiment_id, " not found at path ", experiment_config_path)
   }
@@ -85,16 +90,10 @@ load_experiment <- function(experiment_id, parent_dir, config_filename="experime
   # Optionally set global seed. 
   if(set_seed) {
     set.seed(experiment_config$global_seed)
-    print(paste0("Global seed set to ", experiment_config$global_seed))
+    print(paste0("Global seed set to ", experiment_config$base_settings$global_seed))
   }
   
-  # Optionally store settings as global variables. 
-  if(set_global_variables) {
-    convert_list_to_global_vars(experiment_config)
-    print("`experiment_config` elements stored as global variables.")
-  }
-  
-  return(invisible(experiment_config))
+  return(experiment_config)
   
 }
 
@@ -102,7 +101,7 @@ load_experiment <- function(experiment_id, parent_dir, config_filename="experime
 validate_experiment_base_settings <- function(experiment_config) {
   
   required_base_settings <- c("experiment_id", "experiment_type", "global_seed")
-  missing_setting_names <- setdiff(required_base_settings, names(experiment_config))
+  missing_setting_names <- setdiff(required_base_settings, names(experiment_config$base_settings))
   
   # Ensure required settings are found as names in the list. 
   if(length(missing_setting_names) > 0) {
@@ -111,8 +110,8 @@ validate_experiment_base_settings <- function(experiment_config) {
   
   # Ensure the corresponding list elements are not missing. 
   setting_is_missing <- sapply(required_base_settings, 
-                               function(setting_name) is.na(experiment_config[[setting_name]]) ||
-                                                      is.null(experiment_config[[setting_name]]))
+                               function(setting_name) is.na(experiment_config$base_settings[[setting_name]]) ||
+                                                      is.null(experiment_config$base_settings[[setting_name]]))
   if(any(setting_is_missing)) {
     stop("`experiment` config has NA or NULL settings: ", 
          paste(required_base_settings[setting_is_missing], sep=", "))
