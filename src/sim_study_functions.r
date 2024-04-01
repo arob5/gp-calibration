@@ -27,7 +27,11 @@ init_experiment <- function(experiment_id, experiment_type, parent_dir, global_s
   
   experiment_config <- list(base_settings=list(), base_paths=list())
   experiment_config$base_settings$global_seed <- global_seed
+  
+  # Set the experiment type.
+  experiment_tag <- get_experiment_type_tag(experiment_type)
   experiment_config$base_settings$experiment_type <- experiment_type
+  experiment_config$base_settings$experiment_type_tag <- experiment_tag
   
   # Create directory. If the run ID already exists, throw error. 
   experiment_dir <- file.path(parent_dir, experiment_id)
@@ -69,9 +73,6 @@ init_experiment <- function(experiment_id, experiment_type, parent_dir, global_s
 load_experiment <- function(experiment_id, parent_dir, config_filename="experiment_config.json", 
                             set_seed=FALSE, ...) {
                   
-  # Check if experiment is already loaded. 
-  if(exists("experiment_id", where=.GlobalEnv)) stop("Experiment is already loaded: ", experiment_id)
-            
   # Check that the experiment exists.
   experiment_dir <- file.path(parent_dir, experiment_id)
   if(!file.exists(experiment_dir)) stop("Experiment ", experiment_dir, " not found.")
@@ -84,16 +85,36 @@ load_experiment <- function(experiment_id, parent_dir, config_filename="experime
   
   experiment_config <- fromJSON(experiment_config_path)
   
-  # Check required settings are present. 
-  validate_experiment_base_settings(experiment_config)
-  
+  # Check required settings are present and store the current status of the experiment. 
+  status <- get_experiment_status(experiment_config)
+
   # Optionally set global seed. 
   if(set_seed) {
     set.seed(experiment_config$global_seed)
     print(paste0("Global seed set to ", experiment_config$base_settings$global_seed))
   }
   
-  return(experiment_config)
+  return(list(config=experiment_config, status=status))
+  
+}
+
+
+get_experiment_status <- function(experiment_config) {
+  # There is a minimal set of base settings required for all experiments. 
+  # If any of these are missing an error is thrown. Beyond that, experiment 
+  # status is defined and tracked differently for each experiment type. 
+  
+  # Validation checks for base settings must pass or error is thrown. 
+  validate_experiment_base_settings(experiment_config)
+  status <- list(base_settings_validated=TRUE)
+  
+  # Status for specific experiment type. 
+  tag <- experiment_config$base_settings$experiment_type_tag 
+  if(tag != "none") {
+    status[tag] <- get_experiment_type_status(experiment_config)
+  }
+  
+  return(status)
   
 }
 
@@ -117,9 +138,46 @@ validate_experiment_base_settings <- function(experiment_config) {
          paste(required_base_settings[setting_is_missing], sep=", "))
   }
   
+  # Ensure the experiment type and the tag are a matching pair. 
+  tag <- get_experiment_type_tag(experiment_config$base_settings$experiment_type)
+  if(tag != experiment_config$base_settings$experiment_type_tag) {
+    stop("`experiment_config$experiment_type_tag` == ",  experiment_config$experiment_type_tag, 
+         " does not match expected tag ", tag)
+  }
+  
 }
 
 
+get_experiment_type_status <- function(experiment_config) {
+  # Assumes that the base experiment settings have already 
+  # been validated with `validate_experiment_base_settings`. 
+  
+  tag <- experiment_config$base_settings$experiment_type_tag
+  get(paste0("get_experiment_type_status_", tag))(experiment_config)
+  
+}
+
+
+get_experiment_type_tag <- function(experiment_type) {
+  # Defines valid experiment types. The special type "none" means that the 
+  # experiment only uses the base functions. Most experiment types have a 
+  # specialized suite of functions, which are identified by the suffix 
+  # "_<experiment_type_tag>". 
+  
+  # This defines the valid experiment types and their associated tags. 
+  # The names and values give the type full name and short name (i.e., "tag), 
+  # respectively. 
+  experiment_type_mapping <- c(none="none", llik_emulator_seq_design="lesd")
+  
+  if(!(experiment_type %in% names(experiment_type_mapping))) {
+    stop("Experiment type ", experiment_type, " not recognized.")
+  }
+  
+  return(unname(experiment_type_mapping[experiment_type]))
+  
+}
+
+ 
 # -----------------------------------------------------------------------------
 # Experiment Type: llik_emulator_seq_design (lesd, for short). 
 #
@@ -159,12 +217,32 @@ validate_experiment_base_settings <- function(experiment_config) {
 #   have a fixed seed for each of these that is the same across all rounds, 
 #   or have round specific seeds for each? 
 
+get_experiment_type_status_lesd <- function(experiment_config) {
+  
+  #
+  # Setup phase: checking the files that will be fixed throughout the entire experiment 
+  # and must be correctly specified before proceeding with the experiment. 
+  #
+  
+  # Function defining Bayesian inverse problem setup. 
+  # File defining valid sequential design algorithms. 
+  # File defining valid sampling algorithms. 
+  # File defining valid likelihood emulation methods. 
+
+}
+
+
+
 validate_experiment_base_settings_lesd <- function(experiment_config) {
   # Ensure `define_Bayesian_inverse_problem.r` exists, 
   
 }
 
 
+llik_emulator_seq_design <- function() {
+  
+  
+}
 
 
 
