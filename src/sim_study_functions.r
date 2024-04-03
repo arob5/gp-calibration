@@ -22,7 +22,8 @@ library(BayesianTools)
 # -----------------------------------------------------------------------------
 
 init_experiment <- function(experiment_id, experiment_type, parent_dir, global_seed, set_seed=FALSE, ...) {
-
+  # The `...` should be used to pass in experiment type-specific settings. 
+  
   print(paste0("Creating experiment: ", experiment_id))
   
   experiment_config <- list(base_settings=list(), base_paths=list())
@@ -36,12 +37,15 @@ init_experiment <- function(experiment_id, experiment_type, parent_dir, global_s
   # Create directory. If the run ID already exists, throw error. 
   experiment_dir <- file.path(parent_dir, experiment_id)
   if(file.exists(experiment_dir)) stop("Experiment directory ", experiment_dir, " already exists.")
-  dir.create(experiment_dir)
-  print(paste0("Created experiment directory: ", experiment_dir))
   experiment_config$base_settings$experiment_id <- experiment_id
   experiment_config$base_paths$experiment_dir <- experiment_dir
   
-  # Create settings, output, and code subdirectories. 
+  # Get list of experiment type-specific settings. 
+  experiment_config$experiment_type_settings <- init_experiment_type(experiment_config, ...)
+  
+  # Create main experiment directory and subdirectories. 
+  dir.create(experiment_dir)
+  print(paste0("Created experiment directory: ", experiment_dir))
   settings_dir <- file.path(experiment_dir, "settings")
   output_dir <- file.path(experiment_dir, "output")
   code_dir <- file.path(experiment_dir, "code")
@@ -83,38 +87,62 @@ load_experiment <- function(experiment_id, parent_dir, config_filename="experime
     stop("Config for experiment ", experiment_id, " not found at path ", experiment_config_path)
   }
   
-  experiment_config <- fromJSON(experiment_config_path)
+  experiment_config <- fromJSON(experiment_config_path, simplify=FALSE)
   
-  # Check required settings are present and store the current status of the experiment. 
-  status <- get_experiment_status(experiment_config)
-
+  # Validation checks for base settings must pass or error is thrown. 
+  validate_experiment_base_settings(experiment_config)
+  status <- list(base_settings_validated=TRUE)
+  
+  # Validation checks for core experiment type settings must similarly pass. 
+  validate_experiment_type_core_settings(experiment_config)
+  status$core_experiment_type_settings_validated <- TRUE
+  
+  # Specialized load function for the specific experiment type.  
+  type_return_list <- load_experiment_type(experiment_config, status)
+  status <- type_return_list$status
+  
   # Optionally set global seed. 
   if(set_seed) {
     set.seed(experiment_config$global_seed)
     print(paste0("Global seed set to ", experiment_config$base_settings$global_seed))
   }
   
-  return(list(config=experiment_config, status=status))
+  return(list(config=experiment_config, status=status, obj=type_return_list$obj))
   
 }
 
+init_experiment_type <- function(config, ...) {
+  tag <- config$base_settings$experiment_type_tag 
+  
+  if(tag != "none") {
+    experiment_type_settings <- get(paste0("init_experiment_type_", tag))(config, ...)
+    return(experiment_type_settings)
+  }
+  
+  return(NULL)
+}
 
-get_experiment_status <- function(experiment_config) {
+
+load_experiment_type <- function(config, status) {
   # There is a minimal set of base settings required for all experiments. 
   # If any of these are missing an error is thrown. Beyond that, experiment 
   # status is defined and tracked differently for each experiment type. 
   
-  # Validation checks for base settings must pass or error is thrown. 
-  validate_experiment_base_settings(experiment_config)
-  status <- list(base_settings_validated=TRUE)
-  
-  # Status for specific experiment type. 
-  tag <- experiment_config$base_settings$experiment_type_tag 
+  # Validation checks for base settings must pass before moving on to specifics
+  # for the experiment type. 
+  assert_that(status$base_settings_validated, 
+              msg="Base settings must pass validation before running `load_experiment_type()`.")
+
+  # Load specific experiment type. 
+  tag <- config$base_settings$experiment_type_tag 
   if(tag != "none") {
-    status[tag] <- get_experiment_type_status(experiment_config)
+    type_load_list <- get(paste0("load_experiment_type_", tag))(config)
+    status[[tag]] <- type_load_list$status
+    experiment_type_objects <- type_load_list$obj
+    return(list(status=status, obj=experiment_type_objects))
   }
   
-  return(status)
+  return(list(status=status, obj=NULL))
   
 }
 
@@ -148,13 +176,10 @@ validate_experiment_base_settings <- function(experiment_config) {
 }
 
 
-get_experiment_type_status <- function(experiment_config) {
-  # Assumes that the base experiment settings have already 
-  # been validated with `validate_experiment_base_settings`. 
+validate_experiment_type_core_settings <- function(config) {
   
-  tag <- experiment_config$base_settings$experiment_type_tag
-  get(paste0("get_experiment_type_status_", tag))(experiment_config)
-  
+  tag <- config$base_settings$experiment_type_tag 
+  if(tag != "none") get(paste0("validate_experiment_type_core_settings_", tag))(config$experiment_type_settings)
 }
 
 
@@ -217,32 +242,83 @@ get_experiment_type_tag <- function(experiment_type) {
 #   have a fixed seed for each of these that is the same across all rounds, 
 #   or have round specific seeds for each? 
 
-get_experiment_type_status_lesd <- function(experiment_config) {
+init_experiment_type_lesd <- function(config, inverse_problem_seed, ...) {
+  # `inverse_problem_seed` is the integer random seed which is set in prior to calling 
+  # `define_Bayesian_inverse_problem()` which ensures the synthetic data generation, etc 
+  # generates the same exact inverse problem each time the experiment is loaded. 
+  
+  settings <- list()
+  assert_that((inverse_problem_seed %% 1) == 0, msg="`inverse_problem_seed` must be integer") # Ensure this is an integer
+  settings$inverse_problem_seed <- inverse_problem_seed
+  
+  return(settings)
+  
+}
+
+
+validate_experiment_type_core_settings_lesd <- function(exp_type_config) {
+  
+  required_core_settings <- c("inverse_problem_seed")
+  missing_setting_names <- setdiff(required_core_settings, names(exp_type_config))
+  
+  # Ensure required settings are found as names in the list. 
+  if(length(missing_setting_names) > 0) {
+    stop("`experiment type config missing required settings: ", missing_setting_names)
+  }
+  
+  # Ensure the corresponding list elements are not missing. 
+  setting_is_missing <- sapply(required_core_settings, 
+                               function(setting_name) is.na(exp_type_config[[setting_name]]) ||
+                                                      is.null(exp_type_config[[setting_name]]))
+  if(any(setting_is_missing)) {
+    stop("experiment type config has NA or NULL settings: ", 
+         paste(required_core_settings[setting_is_missing], sep=", "))
+  }
+  
+  assert_that((exp_type_config$inverse_problem_seed %% 1) == 0, 
+              msg="`inverse_problem_seed` must be integer") # Ensure this is an integer
+  
+}
+
+
+load_experiment_type_lesd <- function(config) {
+  
+  status <- list()
   
   #
   # Setup phase: checking the files that will be fixed throughout the entire experiment 
   # and must be correctly specified before proceeding with the experiment. 
   #
   
+  status$setup <- list()
+  
   # Function defining Bayesian inverse problem setup. 
+  status$setup$inverse_problem <- list(file_exists=FALSE, file_validated=FALSE)
+  inv_prob_script_path <- file.path(config$base_paths["code_dir"], "define_Bayesian_inverse_problem.r")
+  inv_prob_file_exists <- file.exists(inv_prob_script_path)
+  status$setup$inverse_problem$file_exists <- inv_prob_file_exists
+  if(!inv_prob_file_exists) return(list(status=status)) 
+  
+  # Source file, then run function to load the objects defining the Bayesian inverse problem. 
+  source(inv_prob_script_path)
+  func_name <- "define_Bayesian_inverse_problem"
+  inv_prob_func_exists <- exists(func_name, envir=.GlobalEnv)
+  if(!inv_prob_func_exists) return(list(status=status))
+  inv_prob_list <- get(func_name)(config)
+    
+
   # File defining valid sequential design algorithms. 
   # File defining valid sampling algorithms. 
   # File defining valid likelihood emulation methods. 
 
-}
-
-
-
-validate_experiment_base_settings_lesd <- function(experiment_config) {
-  # Ensure `define_Bayesian_inverse_problem.r` exists, 
+  return(list(status=status, obj=inv_prob_list))
   
 }
 
 
-llik_emulator_seq_design <- function() {
-  
-  
-}
+
+
+
 
 
 
