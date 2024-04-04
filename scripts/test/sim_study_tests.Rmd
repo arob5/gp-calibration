@@ -12,7 +12,7 @@ base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
 experiment_parent_dir <- file.path(base_dir, "experiments")
 
-experiment_id <- "test3"
+experiment_id <- "test4"
 
 source(file.path(src_dir, "sim_study_functions.r"))
 
@@ -22,7 +22,8 @@ source(file.path(src_dir, "sim_study_functions.r"))
 ```{r}
 # Create experiment. 
 config <- init_experiment(experiment_id=experiment_id, experiment_type="llik_emulator_seq_design", 
-                          parent_dir=experiment_parent_dir, global_seed=5, set_seed=TRUE, inverse_problem_seed=5L)
+                          parent_dir=experiment_parent_dir, global_seed=5, set_seed=TRUE, 
+                          inverse_problem_seed=5L, fix_lik_par=FALSE)
 print(paste0("Experiment ID: ", config$base_settings$experiment_id))
 
 # Test loading the experiment. 

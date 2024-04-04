@@ -242,14 +242,19 @@ get_experiment_type_tag <- function(experiment_type) {
 #   have a fixed seed for each of these that is the same across all rounds, 
 #   or have round specific seeds for each? 
 
-init_experiment_type_lesd <- function(config, inverse_problem_seed, ...) {
+init_experiment_type_lesd <- function(config, inverse_problem_seed, fix_lik_par, ...) {
   # `inverse_problem_seed` is the integer random seed which is set in prior to calling 
   # `define_Bayesian_inverse_problem()` which ensures the synthetic data generation, etc 
-  # generates the same exact inverse problem each time the experiment is loaded. 
+  #  generates the same exact inverse problem each time the experiment is loaded. 
+  #  `fix_lik_par` is TRUE/FALSE, determines whether the likelihood parameters 
+  #  (e.g. observation covariance) should be fixed or learned. 
   
   settings <- list()
   assert_that((inverse_problem_seed %% 1) == 0, msg="`inverse_problem_seed` must be integer") # Ensure this is an integer
   settings$inverse_problem_seed <- inverse_problem_seed
+  
+  assert_that(is.logical(fix_lik_par))
+  settings$fix_lik_par <- fix_lik_par
   
   return(settings)
   
@@ -258,7 +263,7 @@ init_experiment_type_lesd <- function(config, inverse_problem_seed, ...) {
 
 validate_experiment_type_core_settings_lesd <- function(exp_type_config) {
   
-  required_core_settings <- c("inverse_problem_seed")
+  required_core_settings <- c("inverse_problem_seed", "fix_lik_par")
   missing_setting_names <- setdiff(required_core_settings, names(exp_type_config))
   
   # Ensure required settings are found as names in the list. 
@@ -277,6 +282,7 @@ validate_experiment_type_core_settings_lesd <- function(exp_type_config) {
   
   assert_that((exp_type_config$inverse_problem_seed %% 1) == 0, 
               msg="`inverse_problem_seed` must be integer") # Ensure this is an integer
+  assert_that(is.logical(exp_type_config$fix_lik_par))
   
 }
 
@@ -305,7 +311,8 @@ load_experiment_type_lesd <- function(config) {
   inv_prob_func_exists <- exists(func_name, envir=.GlobalEnv)
   if(!inv_prob_func_exists) return(list(status=status))
   inv_prob_list <- get(func_name)(config)
-    
+  status$setup$inverse_problem$file_validated <- ensure_valid_inv_prob_list_lesd(inv_prob_list, 
+                                                                                 config$experiment_type_settings$fix_lik_par)
 
   # File defining valid sequential design algorithms. 
   # File defining valid sampling algorithms. 
@@ -316,6 +323,33 @@ load_experiment_type_lesd <- function(config) {
 }
 
 
+ensure_valid_inv_prob_list_lesd <- function(inv_prob_list, fix_lik_par) {
+  # TODO: should update this to provide more info on what specifically is not 
+  # satisfying the requirements. There are also currently no constraints on 
+  # `lik_par_prior_params`
+  
+  required_elements <- c("llik_exact", "par_prior_params", "ground_truth")
+  
+  # Ensure it is a list with correct names. 
+  if(!is.list(inv_prob_list)) return(FALSE)
+  if(length(setdiff(required_elements, names(inv_prob_list))) > 0) return(FALSE)
+  if(!fix_lik_par && !("lik_par_prior_params" %in% names(inv_prob_list))) return(FALSE)
+  
+  # Ensure `llik_exact` is a reference class which inherits from class `llikEmulator` and 
+  # has attribute `exact_llik == TRUE`. 
+  if(!inherits(inv_prob_list$llik_exact, "llikEmulator")) return(FALSE)
+  if(!inv_prob_list$llik_exact$exact_llik) return(FALSE)
+  
+  # Ensure prior are provided for each calibration parameter. 
+  if(!isTRUE(setequal(inv_prob_list$llik_exact$input_names, rownames(inv_prob_list$par_prior_params)))) return(FALSE)
+  
+  # Ensure ground truth is a list with the true parameters. 
+  if(!is.list(inv_prob_list$ground_truth)) return(FALSE)
+  if(length(setdiff(c("par_true", "lik_par_true"), names(inv_prob_list$ground_truth))) > 0) return(FALSE)
+  
+  
+  return(TRUE)
+}
 
 
 
