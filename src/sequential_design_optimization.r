@@ -12,24 +12,75 @@
 
 library(matrixStats)
 
-acq_IEVAR_grid <- function(input, model_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
+
+acquire_batch_input_sequentially <- function(emulator_obj, acq_func_name, N_batch, model_response_heuristic, 
+                                             opt_method, model_func=NULL, reoptimize_hyperpar=FALSE, ...) {
+  # `model_response_heuristic` can be "KB", "CL_pessimist", "CL_optimist", or "none"; the latter runs the 
+  # full forward model. `opt_method` currently only allows "grid". 
+  # TODO: validate_args_acquire_batch_input_sequentially()
   
-  # validate_args_acq_IEVAR_grid()
+  # Make a copy to avoid modifying the emulator provided in argument. 
+  emulator_obj_copy <- emulator_obj$copy(shallow=FALSE)
+  
+  # Objects to store the acquired inputs and the associated model (perhaps pseudo) responses. 
+  input_batch <- matrix(nrow=N_batch, ncol=emulator_obj$dim_input)
+  response_batch <- matrix(nrow=N_batch, ncol=1)
+  
+  for(i in 1:N_batch) {
+    # Acquire new input point. 
+    input_new <- optimize_acq_single_input(acq_func_name, model_obj, opt_method, ...)
+    input_batch[i,] <- input_new
+    
+    # Acquire model response or pseudo model response at acquired input. 
+    response_new <- get_acq_model_response(input_new, emulator_obj, model_func, ...)
+    response_batch[i,] <- response_new
+    
+    # Update emulator. 
+    emulator_obj_copy$update(input_new, response_new, update_hyperpar=reoptimize_hyperpar, ...)
+  }
+  
+  return(list(input_batch=input_batch, response_batch=response_batch, emulator_obj_updated=emulator_obj_copy))
+  
+}
+
+
+optimize_acq_single_input <- function(acq_func_name, emulator_obj, opt_method, ...) {
+  
+  # Define objective function for the optimization. 
+  objective_func <- function(input) get(paste0("acq_", acq_func_name))(input, emulator_obj=emulator_obj, ...)
+  
+  # Dispatch to the correct optimization algorithm. 
+  if(opt_method == "grid") input_new <- optimize_objective_grid(objective_func, candidate_grid, ...)
+  
+  
+}
+
+
+optimize_objective_grid <- function(objective_func, candidate_grid, ...) {
+  
+  
+}
+
+
+acq_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
+  # TODO: how should lik_par be handled here? 
+  # TODO: validate_args_acq_IEVAR_grid()
+  
   N_grid <- nrow(grid_points)
   if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
-  model_obj_copy <- model_obj$copy(shallow=FALSE)
+  emulator_obj_copy <- emulator_obj$copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
-  pred <- model_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  pred_grid <- model_obj_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  pred <- emulator_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  pred_grid <- emulator_obj_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
   
   # Update the GP model, treating the predictive mean as the observed 
   # response at the acquisition evaluation locations. 
-  model_obj_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
+  emulator_obj_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
   
   # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
   # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
-  pred_cond <- model_obj_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
+  pred_cond <- emulator_obj_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
   log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
                                              return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
   
