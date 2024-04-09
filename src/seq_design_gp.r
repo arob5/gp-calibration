@@ -15,8 +15,25 @@ library(matrixStats)
 
 acquire_batch_input_sequentially <- function(emulator_obj, acq_func_name, N_batch, model_response_heuristic, 
                                              opt_method, model_func=NULL, reoptimize_hyperpar=FALSE, ...) {
+  # This function implements an acquisition optimization based sequential design loop, sequentially 
+  # requiring design points (inputs) serially one at a time. The model response must be univariate (this is 
+  # typically a log-likelihood value). Note that the underlying emulator might be multi-output but these 
+  # outputs are then combined to form a single scalar. If `model_response_heuristic` is "none" then 
+  # this means the full forward model must be run after each new input is acquired. Other options for 
+  # `model_response_heuristic` implement heuristics to avoid forward model evaluations. 
   # `model_response_heuristic` can be "KB", "CL_pessimist", "CL_optimist", or "none"; the latter runs the 
   # full forward model. `opt_method` currently only allows "grid". 
+  # `model_func` is a function with single argument `input` and the output should be the response value
+  # associated with `emulator_obj`. Note that this is often different from the output of the "forward
+  # model". For example, if `emulator_obj` is a log-likelihood emulator then `model_func` should output
+  # log-likelihood values. If `emulator_obj` implements independent GP emulators for P outputs, 
+  # then `model_func` should output these P outputs. In short, the returned value of `model_func` must 
+  # be compatible with `emulator_obj` as in `emulator_obj$update(input, model_func(input))`.
+  #
+  # Returns:
+  #     Note that `emulator_obj_updated` will contain the pseudo model responses if a model response 
+  #     heuristic is used. 
+  
   # TODO: validate_args_acquire_batch_input_sequentially()
   
   # Make a copy to avoid modifying the emulator provided in argument. 
@@ -32,14 +49,34 @@ acquire_batch_input_sequentially <- function(emulator_obj, acq_func_name, N_batc
     input_batch[i,] <- input_new
     
     # Acquire model response or pseudo model response at acquired input. 
-    response_new <- get_acq_model_response(input_new, emulator_obj, model_func, ...)
+    response_new <- get_acq_model_response(input_new, model_response_heuristic, emulator_obj, model_func, ...)
     response_batch[i,] <- response_new
     
     # Update emulator. 
-    emulator_obj_copy$update(input_new, response_new, update_hyperpar=reoptimize_hyperpar, ...)
+    emulator_obj_copy$update(matrix(input_new, nrow=1), response_new, update_hyperpar=reoptimize_hyperpar, ...)
   }
   
   return(list(input_batch=input_batch, response_batch=response_batch, emulator_obj_updated=emulator_obj_copy))
+  
+}
+
+
+get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
+  
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, 
+                             return_list=FALSE, labels=llik_label, ...)
+  
+    
+    
+  if(constant_liar_method == "constant_liar_pessimist") {
+    return(min(lpost_emulator$outputs_lpost))
+  } else if(constant_liar_method == "constant_liar_optimist") {
+    return(max(lpost_emulator$outputs_lpost))
+  } else if(constant_liar_method == "constant_liar_mean") {
+    return(mean(lpost_emulator$outputs_lpost))
+  } else {
+    stop("Invalid constant liar method: ", constant_liar_method)
+  }
   
 }
 
@@ -51,12 +88,26 @@ optimize_acq_single_input <- function(acq_func_name, emulator_obj, opt_method, .
   
   # Dispatch to the correct optimization algorithm. 
   if(opt_method == "grid") input_new <- optimize_objective_grid(objective_func, candidate_grid, ...)
+  else stop("`opt_method` ", opt_method, " not supported.")
   
-  
+  return(input_new)
 }
 
 
-optimize_objective_grid <- function(objective_func, candidate_grid, ...) {
+minimize_objective_grid <- function(objective_func, candidate_grid, ...) {
+  # Simply calls `objective_func(input)` (where `input` is a row of the matrix 
+  # `candidate_grid`) for each input, then returns the argmin. 
+  
+  argmin_idx <- which.min(apply(candidate_grid, 1, objective_func))
+  return(candidate_grid[argmin_idx,])
+}
+
+
+get_acq_model_response <- function(input, model_response_heuristic, 
+                                   emulator_obj=NULL, model_func=NULL, ...) {
+  
+  if(model_response_heuristic == "none") return(model_func(input))
+  else if(model_response_heuristic == "kriging_believer") return(emulator_obj$predict(input, return_mean=TRUE, return_var=FALSE, ...))
   
   
 }
