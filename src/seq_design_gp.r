@@ -1,11 +1,16 @@
 #
-# sequential_design_optimization.r
-# Functions related to sequential design and optimization, primarily involving 
-# Gaussian processes (GPs). These functions are designed to function with the 
-# gpWrapper, llikEmulator, and llikSumEmulator classes. Most of the functions 
-# here consider sequential design/optimization algorithms for a function f(u)
-# which is distributed according to a GP or exponentiated GP, which we refer
-# to as a log-normal process (LNP).
+# seq_design_gp.r
+#
+# Functions related to sequential design and optimization for Gaussian processes
+# (GPs). Currently, this concerns design and optimization directly for GPs, in 
+# addition to exponentiated GPs (i.e., log-normal processes). The methods 
+# implemented here fall under the framework of optimizing some objective function 
+# to select the design points. We refer to the objective function as an 
+# "acquisition function" ("acq" for short), but this function is also called
+# a design criterion or refinement function in the literature. 
+#
+# Depends: These functions are designed to work with objects from the 
+#          gpWrapper class. 
 #
 # Andrew Roberts
 #
@@ -13,125 +18,102 @@
 library(matrixStats)
 
 
-acquire_batch_input_sequentially <- function(emulator_obj, acq_func_name, N_batch, model_response_heuristic, 
-                                             opt_method, model_func=NULL, reoptimize_hyperpar=FALSE, ...) {
-  # This function implements an acquisition optimization based sequential design loop, sequentially 
-  # requiring design points (inputs) serially one at a time. The model response must be univariate (this is 
-  # typically a log-likelihood value). Note that the underlying emulator might be multi-output but these 
-  # outputs are then combined to form a single scalar. If `model_response_heuristic` is "none" then 
-  # this means the full forward model must be run after each new input is acquired. Other options for 
-  # `model_response_heuristic` implement heuristics to avoid forward model evaluations. 
+acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_response_heuristic, 
+                                             opt_method, f_exact=NULL, reoptimize_hyperpar=FALSE, ...) {
+  # This function implements an acquisition optimization-based sequential design loop, sequentially 
+  # requiring design points (inputs) serially one at a time. If `model_response_heuristic` is "none" then 
+  # this means the full forward model `f_exact` must be run after each new input is acquired. Other options  
+  # for `model_response_heuristic` implement heuristics to avoid forward model evaluations. 
   # `model_response_heuristic` can be "KB", "CL_pessimist", "CL_optimist", or "none"; the latter runs the 
   # full forward model. `opt_method` currently only allows "grid". 
-  # `model_func` is a function with single argument `input` and the output should be the response value
-  # associated with `emulator_obj`. Note that this is often different from the output of the "forward
-  # model". For example, if `emulator_obj` is a log-likelihood emulator then `model_func` should output
-  # log-likelihood values. If `emulator_obj` implements independent GP emulators for P outputs, 
-  # then `model_func` should output these P outputs. In short, the returned value of `model_func` must 
-  # be compatible with `emulator_obj` as in `emulator_obj$update(input, model_func(input))`.
   #
   # Returns:
-  #     Note that `emulator_obj_updated` will contain the pseudo model responses if a model response 
+  #     Note that `gp_updated` will contain the pseudo model responses if a model response 
   #     heuristic is used. 
   
+  # Should verify that `gp` is of class gpWrapper with `dim_Y==1`. 
   # TODO: validate_args_acquire_batch_input_sequentially()
   
   # Make a copy to avoid modifying the emulator provided in argument. 
-  emulator_obj_copy <- emulator_obj$copy(shallow=FALSE)
+  gp_copy <- gp$copy(shallow=FALSE)
   
   # Objects to store the acquired inputs and the associated model (perhaps pseudo) responses. 
-  input_batch <- matrix(nrow=N_batch, ncol=emulator_obj$dim_input)
-  response_batch <- matrix(nrow=N_batch, ncol=1)
+  input_batch <- matrix(nrow=N_batch, ncol=gp$dim_input)
+  response_batch <- rep(NA_real_, N_batch)
   
   for(i in 1:N_batch) {
     # Acquire new input point. 
-    input_new <- optimize_acq_single_input(acq_func_name, model_obj, opt_method, ...)
+    input_new <- optimize_acq_single_input(acq_func_name, gp_copy, opt_method, ...)
     input_batch[i,] <- input_new
     
     # Acquire model response or pseudo model response at acquired input. 
-    response_new <- get_acq_model_response(input_new, model_response_heuristic, emulator_obj, model_func, ...)
-    response_batch[i,] <- response_new
+    response_new <- get_acq_model_response(input_new, model_response_heuristic, gp, f_exact, ...)
+    response_batch[i] <- response_new
     
     # Update emulator. 
-    emulator_obj_copy$update(matrix(input_new, nrow=1), response_new, update_hyperpar=reoptimize_hyperpar, ...)
+    gp_copy$update(matrix(input_new, nrow=1), matrix(response_new, nrow=1), 
+                   update_hyperpar=reoptimize_hyperpar, ...)
   }
   
-  return(list(input_batch=input_batch, response_batch=response_batch, emulator_obj_updated=emulator_obj_copy))
+  return(list(input_batch=input_batch, response_batch=response_batch, gp_updated=gp_copy))
   
 }
 
 
-get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
-  
-  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, 
-                             return_list=FALSE, labels=llik_label, ...)
-  
-    
-    
-  if(constant_liar_method == "constant_liar_pessimist") {
-    return(min(lpost_emulator$outputs_lpost))
-  } else if(constant_liar_method == "constant_liar_optimist") {
-    return(max(lpost_emulator$outputs_lpost))
-  } else if(constant_liar_method == "constant_liar_mean") {
-    return(mean(lpost_emulator$outputs_lpost))
-  } else {
-    stop("Invalid constant liar method: ", constant_liar_method)
-  }
-  
-}
-
-
-optimize_acq_single_input <- function(acq_func_name, emulator_obj, opt_method, ...) {
+optimize_acq_single_input <- function(acq_func_name, gp, opt_method, ...) {
   
   # Define objective function for the optimization. 
-  objective_func <- function(input) get(paste0("acq_", acq_func_name))(input, emulator_obj=emulator_obj, ...)
+  acq_func <- get(paste0("acq_", acq_func_name))
   
   # Dispatch to the correct optimization algorithm. 
-  if(opt_method == "grid") input_new <- optimize_objective_grid(objective_func, candidate_grid, ...)
+  if(opt_method == "grid") input_new <- optimize_objective_grid(acq_func, candidate_grid, ...)
   else stop("`opt_method` ", opt_method, " not supported.")
   
   return(input_new)
 }
 
 
-minimize_objective_grid <- function(objective_func, candidate_grid, ...) {
-  # Simply calls `objective_func(input)` (where `input` is a row of the matrix 
-  # `candidate_grid`) for each input, then returns the argmin. 
+minimize_objective_grid <- function(acq_func, candidate_grid, ...) {
+  # Evaluates the acquisition function at each input and then returns 
+  # the input with the minimum acquisition function value. 
   
-  argmin_idx <- which.min(apply(candidate_grid, 1, objective_func))
+  acq_func_evals <- acq_func(candidate_grid, ...)
+  argmin_idx <- which.min(acq_func_evals)
+  
   return(candidate_grid[argmin_idx,])
 }
 
 
 get_acq_model_response <- function(input, model_response_heuristic, 
-                                   emulator_obj=NULL, model_func=NULL, ...) {
+                                   gp=NULL, f_exact=NULL, ...) {
   
-  if(model_response_heuristic == "none") return(model_func(input))
-  else if(model_response_heuristic == "kriging_believer") return(emulator_obj$predict(input, return_mean=TRUE, return_var=FALSE, ...))
-  
-  
+  if(model_response_heuristic == "none") return(f_exact(input))
+  else .NotYetImplemented()
 }
 
 
-acq_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
-  # TODO: how should lik_par be handled here? 
+acq_IEVAR_grid <- function(input, gp, grid_points, weights=NULL, log_scale=TRUE, ...) {
+  # This function targets exploration for the exponentiated GP. It can be thought 
+  # of as an integrated mean squared prediction error criterion for 
+  # log-normal processes. 
+  
   # TODO: validate_args_acq_IEVAR_grid()
   
   N_grid <- nrow(grid_points)
   if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
-  emulator_obj_copy <- emulator_obj$copy(shallow=FALSE)
+  gp_copy <- gp_copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
-  pred <- emulator_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  pred_grid <- emulator_obj_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  pred <- gp_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  pred_grid <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
   
   # Update the GP model, treating the predictive mean as the observed 
   # response at the acquisition evaluation locations. 
-  emulator_obj_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
+  gp_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
   
   # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
   # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
-  pred_cond <- emulator_obj_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
+  pred_cond <- gp_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
   log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
                                              return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
   
@@ -146,6 +128,18 @@ acq_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_s
   return(exp(log_IEVAR))
   
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 run_sequential_design_optimization <- function(acquisition_settings, init_design_settings, emulator_settings, computer_model_data, 
