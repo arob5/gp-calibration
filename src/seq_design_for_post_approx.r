@@ -30,9 +30,8 @@ library(matrixStats)
 # Acquisition Function Framework 
 #
 # Acquisition functions must be called as `acq_<acq_func_name>(input, ...)`, 
-# where `input` is a M x D matrix with each row representing a different  
-# parameter value. The output of the function must be a numeric vector of 
-# length M containing the acqusition function evaluations at the M input points. 
+# where `input` is a numeric D-length vector or 1xD matrix representing a 
+# parameter value. 
 #
 # -----------------------------------------------------------------------------
 

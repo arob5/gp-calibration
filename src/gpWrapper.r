@@ -277,6 +277,15 @@ gpWrapper$methods(
     
   },
   
+  
+  plot_pred_2d = function(X_new, include_nugget=TRUE, pred_list=NULL, Y_new=NULL) {
+    # Returns a list of heatmaps for the predictive mean and standard deviation. 
+    
+    assert_that(X_dim==2, msg=paste0("plot_pred_2d() requires 1d input space. X_dim = ", X_dim))
+    
+  },
+  
+  
   plot_pred = function(X_new, Y_new, include_CI=FALSE, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL) {
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {

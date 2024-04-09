@@ -20,6 +20,7 @@ src_dir <- file.path(base_dir, "src")
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
@@ -89,7 +90,7 @@ for(p in 1:ncol(Y)) {
 #
 
 # Settings. 
-N_design <- 3
+N_design <- 4
 N_test <- 51
 
 # Bounds on parameter space.  
@@ -142,12 +143,9 @@ gp_llik$plot_pred_1d(test_info$inputs, Y_new=test_info$llik)
 ```{r}
 # Compute log IEVAR acquisition at test inputs, using same grid of inputs as grid points. Evaluating 
 # acquisition at one point ata a time, not in batch mode. 
-log_IEVAR_vals <- vector(mode="numeric", length=nrow(test_info$inputs))
 
-for(i in 1:nrow(test_info$inputs)) {
-  log_IEVAR_vals[i] <- acq_IEVAR_grid(test_info$inputs[i,1,drop=FALSE], gp_llik, grid_points=test_info$inputs, log_scale=TRUE)
-}
-
+log_IEVAR_vals <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_llik,
+                                               grid_points=test_info$inputs, log_scale=TRUE)
 ```
 
 ```{r}
@@ -159,14 +157,11 @@ plot(test_info$inputs, log_IEVAR_vals, type="l", xlab="test inputs", ylab="log I
 
 ```{r}
 # Repeat but with N(2.5, 0.1^2) weights. 
-log_IEVAR_vals_wt <- vector(mode="numeric", length=nrow(test_info$inputs))
+
 wts <- dnorm(test_info$inputs, 2.5, 0.1)
 
-for(i in 1:nrow(test_info$inputs)) {
-  log_IEVAR_vals_wt[i] <- acq_IEVAR_grid(test_info$inputs[i,1,drop=FALSE], gp_llik, grid_points=test_info$inputs, 
-                                         log_scale=TRUE, weights=wts)
-}
-
+log_IEVAR_vals_wt <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_llik,
+                                                  grid_points=test_info$inputs, log_scale=TRUE, weights=wts)
 ```
 
 
@@ -175,6 +170,129 @@ for(i in 1:nrow(test_info$inputs)) {
 plot(test_info$inputs, log_IEVAR_vals_wt, type="l", xlab="test inputs", ylab="log IEVAR", 
      main="log IEVAR single point evals, N(2.5, 0.1^2) weights")
 ```
+
+# 2d Input Example. 
+
+```{r}
+#
+# Define Bayesian inverse problem. 
+#
+
+# Non-linear forward model. 
+n_obs <- 100
+G_fwd <- t(t(chol(matrix(c(1, .7, .7, 1), nrow=2))) %*% matrix(rnorm(n_obs*2), nrow=2, ncol=n_obs))
+fwd <- function(u) {
+  u <- drop(u)
+  G_fwd %*% matrix(c(0.5*u[1], exp(-2*u[2])), ncol=1)
+}
+
+# Isotropic Gaussian likelihood. 
+sig2_eps <- 0.4
+
+# Ground truth and data. 
+u_true <- c(1.216, 0.331)
+y <- drop(fwd(u_true)) + rnorm(n_obs, 0, sqrt(sig2_eps)) 
+
+# True log-posterior, using N(0, I) prior. 
+lpost_true <- function(u) {
+  sum(dnorm(y, mean=fwd(u), sd=sqrt(sig2_eps), log=TRUE)) + sum(dnorm(drop(u), log=TRUE))
+}
+
+lpost_true_vect <- function(U) {
+  apply(U, 1, lpost_true)
+}
+
+computer_model_data <- list(data_obs=y, f=fwd, output_vars="y", n_obs=n_obs)
+u_prior <- data.frame(dist="Gaussian", param1=c(0,0), param2=rep(sqrt(sig2_eps), 2))
+
+```
+
+```{r}
+#
+# Plot contours of true posterior. 
+#
+
+# True post contours
+rng_u1 <- c(0, 3)
+rng_u2 <- c(0, 2)
+input_bounds <- cbind(rng_u1, rng_u2)
+rownames(input_bounds) <- c("min", "max")
+colnames(input_bounds) <- c("u1", "u2")
+
+contour_grid_u1 <- seq(rng_u1[1], rng_u1[2], length.out=50)
+contour_grid_u2 <- seq(rng_u2[1], rng_u2[2], length.out=50)
+contour_grid <- expand.grid(contour_grid_u1, contour_grid_u2)
+lpost_contour <- lpost_true_vect(as.matrix(contour_grid))
+lpost_dens_grid <- data.frame(x=contour_grid[,1], y=contour_grid[,2], z=lpost_contour)
+
+test_info <- list(inputs=as.matrix(contour_grid), outputs=matrix(lpost_contour, ncol=1))
+                                    
+ggplot() + 
+  geom_contour(aes(x=x, y=y, z=z), lpost_dens_grid, bins=20) +
+  xlab("u1") + ylab("u2") + ggtitle("True log posterior density contours")
+                          
+```
+
+
+```{r}
+#
+# Initial design and fit GP. 
+#
+
+N_design <- 4
+
+# Generate latin hypercube design. 
+design_info<- get_input_design(N_points=N_design, 
+                               theta_prior_params=u_prior, 
+                               design_method="LHS", 
+                               scale_inputs=FALSE, 
+                               param_ranges=input_bounds)
+colnames(design_info$inputs) <- colnames(input_bounds)
+design_info$outputs <- matrix(lpost_true_vect(design_info$inputs), ncol=1)
+
+# Fit GP emulator to unnormalized lpost density. 
+gp_lpost <- gpWrapperHet(design_info$inputs, design_info$outputs, normalize_output=TRUE, scale_input=TRUE)
+gp_lpost$fit("Gaussian", "constant", estimate_nugget=FALSE)
+
+```
+```{r}
+# Predict at grid points. 
+
+lpost_pred_list <- gp_lpost$predict(test_info$inputs, return_mean=TRUE, return_var=TRUE, return_cov=FALSE)
+
+# TODO: add option to pass in multiple scalar values into the `y` argument so that multiple plots will be 
+# created. I might already have this implemented - check. 
+
+# TODO: need to think about the log scale here and how to add geom_contour option to `plot_heatmap`. 
+plt <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, log_scale=TRUE)
+plt <- plt + geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20)
+plot(plt)
+
+
+plot_heatmap (X, y, samples_kde=NULL, points_mat=NULL,  
+                         raster=FALSE, point_coords=NULL, main_title="Heatmap", 
+                         invert_colors=TRUE, legend_label="y", log_scale=FALSE, 
+                         point_coords_shape=8, point_coords_col="black", 
+                         points_mat_size=1, point_coords_size=3, 
+                         samples_kde_lab="KDE", points_mat_lab="points_mat", 
+                         KDE_opacity=1.0, xlab="x1", ylab="x2")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -437,7 +437,7 @@ calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_boun
   #                        "bound_lower" and "bound_upper". The ith row of the data.frame
   #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper)
-  #                         and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
+  #                         and "Truncated_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
   #                         bound_upper = upper truncation value). 
   #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
   #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 

@@ -73,11 +73,16 @@ optimize_acq_single_input <- function(acq_func_name, gp, opt_method, ...) {
 }
 
 
+evaluate_acq_func_vectorized <- function(acq_func, input_mat, ...) {
+  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), ...))
+}
+
+
 minimize_objective_grid <- function(acq_func, candidate_grid, ...) {
   # Evaluates the acquisition function at each input and then returns 
   # the input with the minimum acquisition function value. 
   
-  acq_func_evals <- acq_func(candidate_grid, ...)
+  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, candidate_grid, ...)
   argmin_idx <- which.min(acq_func_evals)
   
   return(candidate_grid[argmin_idx,])
@@ -101,7 +106,7 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=NULL, log_scale=TRUE,
   
   N_grid <- nrow(grid_points)
   if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
-  gp_copy <- gp_copy(shallow=FALSE)
+  gp_copy <- gp$copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
   pred <- gp_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
