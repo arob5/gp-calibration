@@ -1,5 +1,5 @@
 ---
-title: "Tests for Sequential Design and Optimization Functions"
+title: "Tests for Sequential Design and Optimization Functions for Gaussian Processes"
 author: "Andrew Roberts"
 date: '2024-03-19'
 output: html_document
@@ -24,7 +24,7 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
-source(file.path(src_dir, "sequential_design_optimization.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
 ```
 
 
