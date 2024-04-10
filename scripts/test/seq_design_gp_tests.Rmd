@@ -262,23 +262,52 @@ lpost_pred_list <- gp_lpost$predict(test_info$inputs, return_mean=TRUE, return_v
 
 # TODO: add option to pass in multiple scalar values into the `y` argument so that multiple plots will be 
 # created. I might already have this implemented - check. 
+# TODO: I should use facets to make multiple plots. 
+# TODO: ggdensity package seems useful. 
 
 # TODO: need to think about the log scale here and how to add geom_contour option to `plot_heatmap`. 
-plt <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, log_scale=TRUE)
-plt <- plt + geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20)
+plt <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, log_transform=TRUE)
 plot(plt)
 
 
-plot_heatmap (X, y, samples_kde=NULL, points_mat=NULL,  
-                         raster=FALSE, point_coords=NULL, main_title="Heatmap", 
-                         invert_colors=TRUE, legend_label="y", log_scale=FALSE, 
-                         point_coords_shape=8, point_coords_col="black", 
-                         points_mat_size=1, point_coords_size=3, 
-                         samples_kde_lab="KDE", points_mat_lab="points_mat", 
-                         KDE_opacity=1.0, xlab="x1", ylab="x2")
+plt <- plt + geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20) + 
+plot(plt)
+
+plt1 <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE) + 
+          geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20)
+plt2 <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, transformation="log") + 
+          geom_contour(mapping=aes(x=x1, y=x2, z=log(y)), bins=20)
+plt3 <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE, transformation="log") + 
+          geom_contour(mapping=aes(x=x1, y=x2, z=exp(y)), bins=20) + 
+          scale_size_continuous(trans="log")
+
+plot(plt1)
+plot(plt2)
+plot(plt3)
 
 
+df <- data.frame(x1=test_info$inputs[,1], x2=test_info$inputs[,2], y=test_info$outputs[,1])
+test <- ggplot() + 
+        geom_contour_filled(aes(x=x1, y=x2, z=exp(y)), data=df) + 
+        scale_fill_continuous(trans="log")
+plot(test)
 
+
+df_mvn_samp <- data.frame(x1=rnorm(10000), x2=rnorm(10000))
+tester <- ggplot(df_mvn_samp) + 
+          stat_density2d(aes(x=x1, y=x2), contour=TRUE, n=100)
+plot(tester)
+
+test2 <- MASS::kde2d(df_mvn_samp$x1, df_mvn_samp$x2, n=100)
+df_test2 <- expand.grid(test2$x, test2$y) 
+colnames(df_test2) <- c("x", "y")
+df_test2$z <- melt(test2$z)$value
+
+tester2 <- ggplot(df_test2) + geom_contour(aes(x=x, y=y, z=z))
+plot(tester2)
+
+tester2_log <- ggplot(df_test2) + geom_contour(aes(x=x, y=y, z=log(z)))
+plot(tester2_log)
 ```
 
 

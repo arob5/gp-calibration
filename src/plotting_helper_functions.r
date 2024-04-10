@@ -5,6 +5,7 @@
 # Andrew Roberts
 # 
 
+library(reshape2)
 
 plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_design=!is.null(X_design), 
                                   include_CI=!is.null(pred_var), CI_prob=0.9, y_new=NULL,
@@ -96,7 +97,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,  
                          raster=FALSE, point_coords=NULL, main_title="Heatmap", 
                          invert_colors=TRUE, legend_label="y",
-                         transformation="identity", 
+                         log_transform=FALSE, log_func_str="log",
                          point_coords_shape=8, point_coords_col="black", 
                          points_mat_size=1, point_coords_size=3, 
                          samples_kde_lab="KDE", points_mat_lab="points_mat", 
@@ -127,9 +128,11 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   #    main_title: character(1), the title of the plot. 
   #    invert_colors: logical(1), whether to invert the color scheme of the plot. 
   #    legend_label: character(1), the title for the legend which indicates the color scale. 
-  #    transformation: character(1), transformation that is passed to ggplot2. "identity" 
-  #                    has no effect and is the default. For log scale, some options are 
-  #                    "log10" or "log" (natural log).
+  #    log_transform: logical(1), if TRUE log transforms the scalar output data. 
+  #    log_func_str: character(1), the name of the log function to use as the log transformation
+  #                  if `log_transform` is TRUE. Default is "log" (natural log). Another option 
+  #                  is "log10" for base 10. 
+  #                  
   #
   # Returns:
   #    ggplot2 object. 
@@ -140,11 +143,12 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   color_direction <- ifelse(invert_colors, 1, -1)
   color_breaks <- c()
   color_values <- c()
-  if(transformation != "identity") main_title <- paste0(main_title, ", ", transformation)
-
+  if(log_transform)  legend_label <- paste0(log_func_str, "(", legend_label, ")")
+   
   # Store data as data.frame for ggplot2. 
   df <- as.data.frame(cbind(X, y))
   colnames(df) <- c("x1", "x2", "y")
+  if(log_transform) df$y <- get(log_func_str)(df$y)
   
   #
   # Heatmap. 
@@ -156,12 +160,12 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   if(raster) {
     plt <- ggplot(data=df) + 
             geom_tile(mapping=aes(x=x1, y=x2, fill=y)) + 
-            scale_fill_viridis(discrete=FALSE, direction=color_direction, trans=transformation) + 
+            scale_fill_viridis(discrete=FALSE, direction=color_direction) + 
             labs(fill=legend_label)
   } else {
     plt <- ggplot(data=df) + 
             geom_point(mapping=aes(x=x1, y=x2, fill=y), shape=21, stroke=NA) + # Color set using fill attribute. 
-            scale_fill_viridis(discrete=FALSE, direction=color_direction, trans=transformation) +
+            scale_fill_viridis(discrete=FALSE, direction=color_direction) +
             labs(fill=legend_label)
   }
   
