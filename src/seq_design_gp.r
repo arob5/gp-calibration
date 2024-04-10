@@ -38,7 +38,7 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   gp_copy <- gp$copy(shallow=FALSE)
   
   # Objects to store the acquired inputs and the associated model (perhaps pseudo) responses. 
-  input_batch <- matrix(nrow=N_batch, ncol=gp$dim_input)
+  input_batch <- matrix(nrow=N_batch, ncol=gp$X_dim)
   response_batch <- rep(NA_real_, N_batch)
   
   for(i in 1:N_batch) {
@@ -60,13 +60,13 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
 }
 
 
-optimize_acq_single_input <- function(acq_func_name, gp, opt_method, ...) {
+optimize_acq_single_input <- function(acq_func_name, gp, opt_method, candidate_grid=NULL, ...) {
   
   # Define objective function for the optimization. 
   acq_func <- get(paste0("acq_", acq_func_name))
   
   # Dispatch to the correct optimization algorithm. 
-  if(opt_method == "grid") input_new <- optimize_objective_grid(acq_func, candidate_grid, ...)
+  if(opt_method == "grid") input_new <- minimize_objective_grid(acq_func, candidate_grid, gp=gp, ...)
   else stop("`opt_method` ", opt_method, " not supported.")
   
   return(input_new)
@@ -78,11 +78,13 @@ evaluate_acq_func_vectorized <- function(acq_func, input_mat, ...) {
 }
 
 
-minimize_objective_grid <- function(acq_func, candidate_grid, ...) {
+minimize_objective_grid <- function(acq_func, candidate_grid, gp=NULL, ...) {
   # Evaluates the acquisition function at each input and then returns 
   # the input with the minimum acquisition function value. 
   
-  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, candidate_grid, ...)
+  assert_that(is.matrix(candidate_grid))
+  
+  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, candidate_grid, gp=gp, ...)
   argmin_idx <- which.min(acq_func_evals)
   
   return(candidate_grid[argmin_idx,])
@@ -97,15 +99,57 @@ get_acq_model_response <- function(input, model_response_heuristic,
 }
 
 
-acq_IEVAR_grid <- function(input, gp, grid_points, weights=NULL, log_scale=TRUE, ...) {
+# -----------------------------------------------------------------------------
+# Acquisition Functions
+#
+# Acquisition functions must be called as `acq_<acq_func_name>(input, ...)`, 
+# where `input` is a numeric D-length vector or 1xD matrix representing a 
+# parameter value. 
+#
+# -----------------------------------------------------------------------------
+
+acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), ...) {
+  # A grid-based (sample sum approximation) of the integrated variance criterion 
+  # for GPs (also known as integrated mean squared prediction error). When `input` 
+  # is a matrix with more than 1 row, then the acquisition will be computed
+  # in batch mode, meaning that it considers conditioning on the entire 
+  # batch of inputs. Note that this is different from the function simply 
+  # being vectorized across multiple inputs. For the latter, use 
+  # `evaluate_acq_func_vectorized()`. 
+  
+  # TODO: validate_args_acq_IVAR_grid()
+  
+  N_grid <- nrow(grid_points)
+  if(length(weights)==1) weights <- rep(weights, N_grid)
+  gp_copy <- gp$copy(shallow=FALSE)
+  
+  # Condition the GP on the new batch of inputs `input`. Since the conditional variance 
+  # does not depend on the response, the associated batch response is just set to a 
+  # vector of zeros. 
+  pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
+  gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
+  
+  # Evaluate conditional variance at grid points. 
+  pred_cond <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  
+  # Return the weighted sum of conditional variances. 
+  return(sum(drop(pred_cond$var) * weights))
+}
+
+
+acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
   # This function targets exploration for the exponentiated GP. It can be thought 
   # of as an integrated mean squared prediction error criterion for 
-  # log-normal processes. 
+  # log-normal processes. When `input` is a matrix with more than 1 row, then the
+  # acquisition will be computed in batch mode, meaning that it considers conditioning
+  # on the entire batch of inputs. Note that this is different from the function simply 
+  # being vectorized across multiple inputs. For the latter, use 
+  # `evaluate_acq_func_vectorized()`. 
   
   # TODO: validate_args_acq_IEVAR_grid()
   
   N_grid <- nrow(grid_points)
-  if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
+  if(length(weights)==1) weights <- rep(weights, N_grid)
   gp_copy <- gp$copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
@@ -135,16 +179,30 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=NULL, log_scale=TRUE,
 }
 
 
+acq_neg_var <- function(input, gp, ...) {
+  # Simply returns the negative predictive variance at the input point 
+  # `input`. The negative is due to the fact that the framework assumes
+  # that acquisition functions are always minimized, so to implement 
+  # the "maximum variance" acquisition it must be negated here. 
+  
+  -1 * gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]
+}
 
 
-
-
-
-
-
-
-
-
+acq_neg_exp_var <- function(input, gp, log_scale=TRUE, ...) {
+  # Returns the negative predictive variance of the log-normal process 
+  # (LNP) `exp(gp)` at the input points `input`.
+  # The negative is due to the fact that the framework assumes
+  # that acquisition functions are always minimized, so to implement 
+  # the "maximum LNP variance" acquisition it must be negated here. 
+  
+  gp_pred <- gp$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  lnp_pred <- convert_Gaussian_to_LN(mean_Gaussian=gp_pred$mean, var_Gaussian=gp_pred$var,
+                                     return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
+  
+  if(log_scale) return(-lnp_pred$log_var)
+  return(-exp(lnp_pred$log_var))
+}
 
 
 run_sequential_design_optimization <- function(acquisition_settings, init_design_settings, emulator_settings, computer_model_data, 

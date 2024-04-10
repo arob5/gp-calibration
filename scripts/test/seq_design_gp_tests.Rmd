@@ -222,6 +222,7 @@ colnames(input_bounds) <- c("u1", "u2")
 contour_grid_u1 <- seq(rng_u1[1], rng_u1[2], length.out=50)
 contour_grid_u2 <- seq(rng_u2[1], rng_u2[2], length.out=50)
 contour_grid <- expand.grid(contour_grid_u1, contour_grid_u2)
+colnames(contour_grid) <- c("u1", "u2")
 lpost_contour <- lpost_true_vect(as.matrix(contour_grid))
 lpost_dens_grid <- data.frame(x=contour_grid[,1], y=contour_grid[,2], z=lpost_contour)
 
@@ -265,62 +266,114 @@ lpost_pred_list <- gp_lpost$predict(test_info$inputs, return_mean=TRUE, return_v
 # TODO: I should use facets to make multiple plots. 
 # TODO: ggdensity package seems useful. 
 
-# TODO: need to think about the log scale here and how to add geom_contour option to `plot_heatmap`. 
-plt <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, log_transform=TRUE)
+df_contour <- data.frame(x1=test_info$inputs[,1], x2=test_info$inputs[,2], y=test_info$outputs, 
+                         y_pred=lpost_pred_list$mean[,1], y_sd=sqrt(lpost_pred_list$var))
+df_design <- data.frame(x1=design_info$inputs[,1], x2=design_info$inputs[,2], y=design_info$outputs[,1])
+
+plt <- ggplot(df_contour) + 
+        geom_contour(aes(x=x1, y=x2, z=y), color="blue") + 
+        geom_contour(aes(x=x1, y=x2, z=y_pred), color="red") + 
+        geom_point(aes(x=x1, y=x2), data=df_design, color="black") + 
+        ggtitle("True lpost vs. GP lpost predictive mean")
+
+plt_uncertainty <- plot_heatmap(test_info$inputs, sqrt(lpost_pred_list$var[,1]), points_mat=design_info$inputs, raster=TRUE, 
+                                point_coords=u_true, main_title="lpost predictive SD", points_mat_lab="Design point")
+
 plot(plt)
+plot(plt_uncertainty)
 
+# plt <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE)
+# plot(plt)
 
-plt <- plt + geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20) + 
-plot(plt)
+```
 
-plt1 <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE) + 
-          geom_contour(mapping=aes(x=x1, y=x2, z=y), bins=20)
-plt2 <- plot_heatmap(test_info$inputs, exp(test_info$outputs), raster=TRUE, transformation="log") + 
-          geom_contour(mapping=aes(x=x1, y=x2, z=log(y)), bins=20)
-plt3 <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE, transformation="log") + 
-          geom_contour(mapping=aes(x=x1, y=x2, z=exp(y)), bins=20) + 
-          scale_size_continuous(trans="log")
+```{r}
+# Evaluate log IEVAR on grid. 
 
-plot(plt1)
-plot(plt2)
-plot(plt3)
+log_IEVAR_vals <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_lpost,
+                                               grid_points=test_info$inputs, log_scale=TRUE)
 
+df_contour$log_IEVAR <- log_IEVAR_vals
 
-df <- data.frame(x1=test_info$inputs[,1], x2=test_info$inputs[,2], y=test_info$outputs[,1])
-test <- ggplot() + 
-        geom_contour_filled(aes(x=x1, y=x2, z=exp(y)), data=df) + 
-        scale_fill_continuous(trans="log")
-plot(test)
+selected_point_idx <- which.min(log_IEVAR_vals)
+plt_log_IEVAR <- plot_heatmap(test_info$inputs, log_IEVAR_vals, points_mat=design_info$inputs, raster=TRUE, 
+                              point_coords=test_info$inputs[selected_point_idx,], main_title="log IEVAR", 
+                              points_mat_lab="Design point", point_coords_col="white")
+                              
+plot(plt_log_IEVAR)
+```
 
+```{r}
+# IEVAR sequential acquisition loop. 
+N_grid_points <- 300
+grid_points_idx <- sample.int(nrow(test_info$inputs), size=N_grid_points)
 
-df_mvn_samp <- data.frame(x1=rnorm(10000), x2=rnorm(10000))
-tester <- ggplot(df_mvn_samp) + 
-          stat_density2d(aes(x=x1, y=x2), contour=TRUE, n=100)
-plot(tester)
-
-test2 <- MASS::kde2d(df_mvn_samp$x1, df_mvn_samp$x2, n=100)
-df_test2 <- expand.grid(test2$x, test2$y) 
-colnames(df_test2) <- c("x", "y")
-df_test2$z <- melt(test2$z)$value
-
-tester2 <- ggplot(df_test2) + geom_contour(aes(x=x, y=y, z=z))
-plot(tester2)
-
-tester2_log <- ggplot(df_test2) + geom_contour(aes(x=x, y=y, z=log(z)))
-plot(tester2_log)
+results <- acquire_batch_input_sequentially(gp_lpost, "IEVAR_grid", N_batch=20, model_response_heuristic="none", 
+                                            opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                            grid_points=test_info$inputs[grid_points_idx,], 
+                                            candidate_grid=test_info$inputs[grid_points_idx,])
 ```
 
 
+```{r}
+# Plot acquisitions. 
+
+df_acq_points <- data.frame(results$input_batch)
+colnames(df_acq_points) <- c("u1", "u2")
+df_acq_points$order <- 1:nrow(df_acq_points)
+
+plt_acq <- plt + geom_text(data=df_acq_points, mapping=aes(x=u1, y=u2, label=order), color="black")
+plot(plt_acq)                           
+            
+```
+
+```{r}
+# Same as above but using the integrated variance criterion applied directly to the lpost emulator. 
+
+results_IVAR <- acquire_batch_input_sequentially(gp_lpost, "IVAR_grid", N_batch=20, model_response_heuristic="none", 
+                                                 opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                 grid_points=test_info$inputs[grid_points_idx,], 
+                                                 candidate_grid=test_info$inputs[grid_points_idx,])
+
+df_acq_points_IVAR <- data.frame(results_IVAR$input_batch)
+colnames(df_acq_points_IVAR) <- c("u1", "u2")
+df_acq_points_IVAR$order <- 1:nrow(df_acq_points_IVAR)
+
+plt_acq_IVAR <- plt + geom_text(data=df_acq_points_IVAR, mapping=aes(x=u1, y=u2, label=order), color="black")
+plot(plt_acq_IVAR)   
 
 
+```
 
+```{r}
+# Same as above but using the maximum variance criterion applied directly to the lpost emulator. 
+results_neg_var <- acquire_batch_input_sequentially(gp_lpost, "neg_var", N_batch=20, model_response_heuristic="none", 
+                                                    opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                    candidate_grid=test_info$inputs)
 
+df_acq_points_neg_var <- data.frame(results_neg_var$input_batch)
+colnames(df_acq_points_neg_var) <- c("u1", "u2")
+df_acq_points_neg_var$order <- 1:nrow(df_acq_points_neg_var)
 
+plt_acq_neg_var <- plt + geom_text(data=df_acq_points_neg_var, mapping=aes(x=u1, y=u2, label=order), color="black")
+plot(plt_acq_neg_var)   
 
+```
 
+```{r}
+# Same as above but using the maximum variance criterion applied directly to the lpost emulator. 
+results_neg_exp_var <- acquire_batch_input_sequentially(gp_lpost, "neg_exp_var", N_batch=20, model_response_heuristic="none", 
+                                                        opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                        candidate_grid=test_info$inputs)
 
+df_acq_points_neg_exp_var <- data.frame(results_neg_exp_var$input_batch)
+colnames(df_acq_points_neg_exp_var) <- c("u1", "u2")
+df_acq_points_neg_exp_var$order <- 1:nrow(df_acq_points_neg_exp_var)
 
+plt_acq_neg_exp_var <- plt + geom_text(data=df_acq_points_neg_exp_var, mapping=aes(x=u1, y=u2, label=order), color="black")
+plot(plt_acq_neg_exp_var)   
 
+```
 
 
 

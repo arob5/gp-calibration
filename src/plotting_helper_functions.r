@@ -100,8 +100,8 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
                          log_transform=FALSE, log_func_str="log",
                          point_coords_shape=8, point_coords_col="black", 
                          points_mat_size=1, point_coords_size=3, 
-                         samples_kde_lab="KDE", points_mat_lab="points_mat", 
-                         KDE_opacity=1.0, xlab="x1", ylab="x2") {
+                         samples_kde_lab="KDE", log_transform_kde=log_transform, 
+                         points_mat_lab="points_mat", KDE_opacity=1.0, xlab="x1", ylab="x2") {
   # Plots a 2d heatmap or contours of a scalar quantity `y`. Optionally overlays contours 
   # of a 2d kernel density estimate from `samples_kde`. The input locations are given by the 
   # M x 2 matrix `X`. If these input locations correspond to an evenly-spaced grid, 
@@ -132,6 +132,12 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   #    log_func_str: character(1), the name of the log function to use as the log transformation
   #                  if `log_transform` is TRUE. Default is "log" (natural log). Another option 
   #                  is "log10" for base 10. 
+  #    log_transform_kde: logical(1), if TRUE computes the 2d kernel density estimate of 
+  #                       `samples_kde` then takes the log of the esitmated density and plots
+  #                       the contours of the result. If FALSE, then no log is taken. Defaults 
+  #                       to the value `log_transform`, but it may be necessary to have these 
+  #                       values differ in some cases; e.g. if `y` is already log-transformed 
+  #                       before calling this function. 
   #                  
   #
   # Returns:
@@ -158,9 +164,9 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   # that has both fill and color attributes. We can then use the fill attribute as the mapping, while removing 
   # the border of these points with `stroke = NA`. 
   if(raster) {
-    plt <- ggplot(data=df) + 
-            geom_tile(mapping=aes(x=x1, y=x2, fill=y)) + 
-            scale_fill_viridis(discrete=FALSE, direction=color_direction) + 
+    plt <- ggplot(data=df) +
+            geom_tile(mapping=aes(x=x1, y=x2, fill=y)) +
+            scale_fill_viridis(discrete=FALSE, direction=color_direction) +
             labs(fill=legend_label)
   } else {
     plt <- ggplot(data=df) + 
@@ -172,15 +178,31 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   # Title and axis labels. 
   plt <- plt + ggtitle(main_title) + xlab(xlab) + ylab(ylab)
   
-  # Density contours from samples. 
+  # Density contours from samples. I'd like to use stat_density_2d or geom_density_2d here 
+  # but I cannot figure out how to plot the contours of the log of the estimated density 
+  # in the case that `log_transform` is TRUE. Therefore, I compute the density 
+  # separately using MASS::kde2d (which is what ggplot2 uses under the hood) and then 
+  # use this to manually plot the contour function. It may also be nice to incorporate 
+  # the package "ggdensity" for more interpretable plots, but again I don't know 
+  # if this would be able to log-transform the plots as needed here. 
   if(!is.null(samples_kde)) {
     assert_that(ncol(samples_kde)==2)
     samples_kde <- as.data.frame(samples_kde)
     colnames(samples_kde) <- c("x1", "x2")
     
-    # Setting color to the character string `samples_kde_lab` allows us to manually add the 
-    # color such that it will show up in the legend. 
-    plt <- plt + geom_density_2d(data=samples_kde, mapping=aes(x=x1, y=x2, color=samples_kde_lab), alpha=KDE_opacity)
+    # Compute 2d kernel density estimate. 
+    kde <- MASS::kde2d(samples_kde$x1, samples_kde$x2, n=100)
+    df_kde <- expand.grid(kde$x1, kde$x2)
+    colnames(df_kde) <- c("x1", "x2")
+    df_kde$z <- reshape2::melt(kde$z)$value
+    if(log_transform_kde) {
+      df_kde$z <- get(log_func_str)(df_kde$z)
+      samples_kde_lab <- paste0(log_func_str, "(", samples_kde_lab, ")")
+    }
+
+    # Plot contours of the KDE. Manually setting the color value so that it shows up 
+    # in the legend. 
+    plt <- plt + geom_contour(aes(x=x1, y=x2, z=z), df_kde, alpha=KDE_opacity)
     color_breaks <- c(color_breaks, samples_kde_lab)
     color_values <- c(color_values, setNames("blue", samples_kde_lab))
   }

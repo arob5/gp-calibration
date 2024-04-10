@@ -29,7 +29,7 @@ library(matrixStats)
 # -----------------------------------------------------------------------------
 # Acquisition Function Framework 
 #
-# Acquisition functions must be called as `acq_<acq_func_name>(input, ...)`, 
+# Acquisition functions must be called as `acq_llik_<acq_func_name>(input, ...)`, 
 # where `input` is a numeric D-length vector or 1xD matrix representing a 
 # parameter value. 
 #
@@ -136,7 +136,7 @@ get_acq_model_response <- function(input, model_response_heuristic,
 }
 
 
-acq_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
+acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
   # TODO: how should lik_par be handled here? 
   # TODO: validate_args_acq_IEVAR_grid()
   
