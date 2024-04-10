@@ -26,6 +26,7 @@ source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
 ```
 
 
@@ -204,6 +205,7 @@ lpost_true_vect <- function(U) {
 
 computer_model_data <- list(data_obs=y, f=fwd, output_vars="y", n_obs=n_obs)
 u_prior <- data.frame(dist="Gaussian", param1=c(0,0), param2=rep(sqrt(sig2_eps), 2))
+rownames(u_prior) <- c("u1", "u2")
 
 ```
 
@@ -243,12 +245,8 @@ ggplot() +
 N_design <- 4
 
 # Generate latin hypercube design. 
-design_info<- get_input_design(N_points=N_design, 
-                               theta_prior_params=u_prior, 
-                               design_method="LHS", 
-                               scale_inputs=FALSE, 
-                               param_ranges=input_bounds)
-colnames(design_info$inputs) <- colnames(input_bounds)
+input_design <- get_batch_design("LHS", N_batch=N_design, prior_params=u_prior, bounds=input_bounds)
+design_info <- list(inputs=input_design)
 design_info$outputs <- matrix(lpost_true_vect(design_info$inputs), ncol=1)
 
 # Fit GP emulator to unnormalized lpost density. 

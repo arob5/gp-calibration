@@ -19,50 +19,90 @@
 # Andrew Roberts
 # 
 
-get_batch_design <- function(method, N_batch, par_prior_params=NULL, design_candidates=NULL, 
+
+get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidates=NULL, 
                              design_candidate_weights=NULL, ...) {
   
-  if(method == "LHS") return(get_LHS_sample(N_batch, par_prior_params, ...))
+  if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
   else stop("Design method ", method, " not supported.")
   
 }
 
 
-get_LHS_sample <- function(N_batch, prior_params=NULL, bounds=NULL, order_1d=FALSE, ...) {
+get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=FALSE, ...) {
+  # Produces a Latin Hypercube Sample (LHS) with `N_batch` points. The LHS is first sampled
+  # uniformly in the unit hypercube using `lhs` package, then an inverse cumulative 
+  # distribution function (CDF) tranformation is applied corresponding to the probability 
+  # distributions specified in `prior_dist_info`. The argument `bounds` also allows 
+  # bounds to be enforced on the sample space. `bounds` is interpreted in the context of 
+  # the specific probability distributions specified; see details below. 
+  #
+  # Args:
+  #    N_batch: integer(1), the number of points to sample. 
+  #    prior_dist_info: data.frame with columns "dist", "param1", "param2" containing one
+  #                     row per input dimension. Each dimension is considered independent. 
+  #                     Currently supports "Uniform" with the parameters interpreted as the
+  #                     lower/upper bounds, respectively; and "Gaussian", with the parameters
+  #                     interpreted as the mean/sd. `prior_dist_info` must be non-NULL if 
+  #                     `bounds` is NULL.  
+  #    bounds: matrix of dimension (2,input dimension). The first row contains lower
+  #            bounds for each parameter, and the second row contains the upper bounds. 
+  #            If `prior_dist_info` is NULL, then `bounds` must be provided and is 
+  #            interpreted as defining the bounds for a hypercube which will be sampled
+  #            uniformly. If `prior_dist_info` is provided, then `bounds` is applied 
+  #            differently depending on the distribution. For "Uniform", `bounds` may 
+  #            truncate the lower/upper parameters, but is not allowed to enlarge them. 
+  #            For "Gaussian", `bounds` is used to convert the Gaussian distribution into 
+  #            a truncated Gaussian with the specified bounds (-Inf/Inf is allowed for 
+  #            one-sided truncation). 
+  #    order_1d: If TRUE, sorts the LHS in increasing order. This is only used when the 
+  #              input dimension is 1. 
+  #    
+  # Returns: 
+  #    matrix of dimension N_batch x input dimension. Each row contains a sampled point. 
+
+  # Either `prior_dist_info` or `bounds` must be provided. 
+  assert_that(!is.null(prior_dist_info) || !is.null(bounds))
+
   # The dimension of the input space.
-  d <- nrow(theta_prior_params)
+  dim_input <- nrow(prior_dist_info)
   
-  if(is.null(param_ranges)) {
-    param_ranges <- matrix(NA, nrow = 2, ncol = d)
+  # If `prior_dist_info` is NULL, samples points uniformly in the region 
+  # defined by `bounds`.
+  if(is.null(prior_dist_info)) {
+    prior_dist_info <- data.frame(dist="Uniform", param1=bounds[1,], param2=bounds[2,])
   }
   
-  # Generate LHS design. 
-  X_LHS <- randomLHS(N_points, d)
+  # If `bounds` is NULL, set to NA. No bounds will be enforced beyond those
+  # implied by the prior distributions. For distributions with unbounded support. 
+  if(is.null(bounds)) bounds <- matrix(NA, nrow=2, ncol=dim_input)
   
-  # Apply inverse CDS transform using prior distributions.
-  for(j in seq_len(d)) {
-    if(theta_prior_params[j, "dist"] == "Uniform") {
-      lower_bound <- ifelse(is.na(param_ranges[1, j]), theta_prior_params[j, "param1"], param_ranges[1, j])
-      upper_bound <- ifelse(is.na(param_ranges[2, j]), theta_prior_params[j, "param2"], param_ranges[2, j])
-      X_LHS[,j] <- qunif(X_LHS[,j], lower_bound, upper_bound) 
-    } else if(theta_prior_params[j, "dist"] == "Gaussian") {
-      lower_bound <- ifelse(is.na(param_ranges[1, j]), -Inf, param_ranges[1, j])
-      upper_bound <- ifelse(is.na(param_ranges[2, j]), Inf, param_ranges[2, j])
-      X_LHS[,j] <- qtruncnorm(X_LHS[,j], a = lower_bound, b = upper_bound, mean = theta_prior_params[j, "param1"], sd = theta_prior_params[j, "param2"])
+  # Generate LHS design on unit hypercube. 
+  X_lhs <- lhs::randomLHS(N_batch, dim_input)
+  
+  # Apply inverse CDF transform using prior distributions.
+  for(j in seq_len(dim_input)) {
+    if(prior_dist_info[j,"dist"] == "Uniform") {
+      lower_bound <- ifelse(is.na(bounds[1,j]), prior_dist_info[j,"param1"], 
+                            max(bounds[1,j], prior_dist_info[j,"param1"]))
+      upper_bound <- ifelse(is.na(bounds[2,j]), prior_dist_info[j,"param2"], 
+                            min(bounds[2,j], prior_dist_info[j,"param2"]))
+      X_lhs[,j] <- qunif(X_lhs[,j], lower_bound, upper_bound)
+    } else if(prior_dist_info[j,"dist"] == "Gaussian") {
+      lower_bound <- ifelse(is.na(bounds[1,j]), -Inf, bounds[1,j])
+      upper_bound <- ifelse(is.na(bounds[2,j]), Inf, bounds[2,j])
+      X_lhs[,j] <- truncnorm::qtruncnorm(X_lhs[,j], a=lower_bound, b=upper_bound, 
+                                         mean=prior_dist_info[j,"param1"], sd=prior_dist_info[j, "param2"])
     } else {
-      stop("Unsupported prior distribution: ", theta_prior_params[j, "dist"])
+      stop("Unsupported prior distribution: ", prior_dist_info[j,"dist"])
     }
   }
   
-  # For 1 dimensional data, order samples in increasing order. 
-  if(order_1d && (d == 1)) {
-    X_LHS <- X_LHS[order(X_LHS),,drop=FALSE]
-  }
-  
-  colnames(X_LHS) <- rownames(theta_prior_params)
-  
-  return(X_LHS)
- 
+  # For 1 dimensional data, optionally order samples in increasing order. 
+  if(order_1d && (dim_input == 1)) X_lhs <- X_lhs[order(X_lhs),,drop=FALSE]
+    
+  colnames(X_lhs) <- rownames(prior_dist_info)
+  return(X_lhs)
 }
 
 
