@@ -872,10 +872,38 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
 }
 
 
+# ---------------------------------------------------------------------
+# Unnormalized log posterior functions using log-likelihood emulators. 
+# ---------------------------------------------------------------------
+
+gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
+                          conditional=FALSE, normalize=TRUE, ...) {
+  
+  assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  
+  llik_vals <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
+                       conditional=conditional, normalize=normalize, ...)$mean
+  lprior_vals <- calc_lprior_theta(input, par_prior_params)
+  
+  return(llik_vals + lprior_vals)
+
+}
 
 
-
-
+gp_lpost_marginal <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
+                              conditional=FALSE, normalize=TRUE, ...) {
+  
+  assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  
+  pred <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                  conditional=conditional, normalize=normalize, ...)
+  llik_vals <- convert_Gaussian_to_LN(mean_Gaussian=pred$mean, var_Gaussian=pred$var,
+                                      return_mean=TRUE, return_var=FALSE, log_scale=TRUE)
+  lprior_vals <- calc_lprior_theta(input, par_prior_params)
+  
+  return(llik_vals + lprior_vals)
+  
+}
 
 
 

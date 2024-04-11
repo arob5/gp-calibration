@@ -254,10 +254,12 @@ gp_lpost <- gpWrapperHet(design_info$inputs, design_info$outputs, normalize_outp
 gp_lpost$fit("Gaussian", "constant", estimate_nugget=FALSE)
 
 ```
+
 ```{r}
 # Predict at grid points. 
-
 lpost_pred_list <- gp_lpost$predict(test_info$inputs, return_mean=TRUE, return_var=TRUE, return_cov=FALSE)
+gp_lpost_marginal_pred <- convert_Gaussian_to_LN(mean_Gaussian=lpost_pred_list$mean, var_Gaussian=lpost_pred_list$var,
+                                                 return_mean=TRUE, return_var=FALSE, log_scale=TRUE)$log_mean
 
 # TODO: add option to pass in multiple scalar values into the `y` argument so that multiple plots will be 
 # created. I might already have this implemented - check. 
@@ -265,7 +267,8 @@ lpost_pred_list <- gp_lpost$predict(test_info$inputs, return_mean=TRUE, return_v
 # TODO: ggdensity package seems useful. 
 
 df_contour <- data.frame(x1=test_info$inputs[,1], x2=test_info$inputs[,2], y=test_info$outputs, 
-                         y_pred=lpost_pred_list$mean[,1], y_sd=sqrt(lpost_pred_list$var))
+                         y_pred=lpost_pred_list$mean[,1], y_sd=sqrt(lpost_pred_list$var), 
+                         y_marg_approx=gp_lpost_marginal_pred)
 df_design <- data.frame(x1=design_info$inputs[,1], x2=design_info$inputs[,2], y=design_info$outputs[,1])
 
 plt <- ggplot(df_contour) + 
@@ -274,10 +277,19 @@ plt <- ggplot(df_contour) +
         geom_point(aes(x=x1, y=x2), data=df_design, color="black") + 
         ggtitle("True lpost vs. GP lpost predictive mean")
 
+# TODO: why does this marginal approx not look right? 
+plt_marg_approx<- ggplot(df_contour) + 
+                  geom_contour(aes(x=x1, y=x2, z=y), color="blue") + 
+                  geom_contour(aes(x=x1, y=x2, z=y_marg_approx), color="red") + 
+                  geom_point(aes(x=x1, y=x2), data=df_design, color="black") + 
+                  ggtitle("True lpost vs. GP lpost marginal approximation")
+
+
 plt_uncertainty <- plot_heatmap(test_info$inputs, sqrt(lpost_pred_list$var[,1]), points_mat=design_info$inputs, raster=TRUE, 
                                 point_coords=u_true, main_title="lpost predictive SD", points_mat_lab="Design point")
 
 plot(plt)
+plot(plt_marg_approx)
 plot(plt_uncertainty)
 
 # plt <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE)

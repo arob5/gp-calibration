@@ -24,6 +24,7 @@ get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidat
                              design_candidate_weights=NULL, ...) {
   
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
+  else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else stop("Design method ", method, " not supported.")
   
 }
@@ -106,7 +107,16 @@ get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=
 }
 
 
+run_EKI_finite_time <- function(N_steps=1, init_ensemble=NULL) {
+  
+  
+}
 
+
+run_EKI_unit_step <- function(total_steps=1) {
+  
+
+}
 
 
 

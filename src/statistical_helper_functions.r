@@ -38,9 +38,13 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL, cov_Gaussia
   # covariance given the that covariance matrix can have negative values. 
   log_mean <- drop(mean_Gaussian) + 0.5*drop(var_Gaussian)
   if(return_var) log_var <- log_exp_minus_1(var_Gaussian) + 2*log_mean
-  if(log_scale) return(list(log_mean=log_mean, log_var=log_var))
+  if(log_scale) {
+    return_list <- list(log_mean=log_mean)
+    if(return_var) return_list$log_var <- log_var
+    return(return_list)
+  }
   
-  # Continue if LN moments are requested on the original scale. The mean is always returned 
+  # Continue if LN moments are requested on the original scale. The mean is always returned.
   return_list <- list()
   if(return_mean) return_list$mean <- exp(log_mean)
   if(return_var) return_list$var <- exp(log_var)
