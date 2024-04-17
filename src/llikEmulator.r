@@ -112,6 +112,8 @@ llikEmulator$methods(
   
   assemble_llik = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
                            normalize=default_normalize, ...) {
+    # Since a log-likelihood is scalar-valued, this should always return a numeric vector
+    # of length equal to the number of rows in `input`. 
     .NotYetImplemented()
   },
   
@@ -127,8 +129,8 @@ llikEmulator$methods(
   },
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                             normalize=default_normalize, llik_pred_list=NULL,
-                             lower_tail=TRUE, ...) {
+                            normalize=default_normalize, llik_pred_list=NULL,
+                            lower_tail=TRUE, ...) {
     .NotYetImplemented()
   },
   
@@ -193,6 +195,8 @@ llikEmulator$methods(
                                xlab=input_names, ylab="llik", plot_title=NULL, ...) {
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
     
+    input <- .self$get_input(input)
+    
     # Compute required predictive quantities if not already provided. 
     if(is.null(llik_pred_list)) {
       llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
@@ -210,12 +214,15 @@ llikEmulator$methods(
     
     # Compute confidence interval. 
     if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
+    else CI_list <- NULL
       
     # Produce plot. 
     plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(llik_pred_list$mean), 
                                include_CI=include_CI, CI_lower=CI_list$lower, CI_upper=CI_list$upper, 
                                y_new=drop(true_llik), X_design=drop(.self$get_design_inputs(...)), 
-                               y_design=drop(get_design_llik(lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)), 
+                               y_design=drop(.self$get_design_llik(lik_par_val=lik_par_val, 
+                                                                   conditional=conditional, 
+                                                                   normalize=normalize, ...)), 
                                plot_title=plot_title, xlab=xlab, ylab=ylab)
                         
     return(plt)                     
@@ -580,10 +587,6 @@ llikEmulatorGP <- setRefClass(
   fields = list(N_obs="integer")
 )
 
-llikEmulatorGP$lock("default_conditional")
-llikEmulatorGP$lock("default_normalize")
-llikEmulatorGP$lock("lik_par")
-
 llikEmulatorGP$methods(
   
   initialize = function(llik_lbl, gp_model, default_conditional, default_normalize,
@@ -594,7 +597,6 @@ llikEmulatorGP$methods(
     assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
     assert_that(!is.null(gp_model$X_names) && noNA(gp_model$X_names), 
                 msg="`llikEmulatorMultGausGP` requires that `gp_model` has `X_names` field set.")
-    assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
     
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, input_names=gp_model$X_names,
               dim_input=gp_model$X_dim, default_conditional=default_conditional, 
@@ -621,11 +623,11 @@ llikEmulatorGP$methods(
     }
   },
   
-  assemble_llik = function(llik, lik_par_var=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+  assemble_llik = function(llik, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
     # llik should be N_input x 1. Since the llik is emulated directly, then this function simply returns 
     # the argument `llik` after performing argument validation. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    return(llik)
+    return(drop(llik))
   },
   
   get_design_inputs = function(...) {
@@ -635,7 +637,7 @@ llikEmulatorGP$methods(
   get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
     # Returns the response values in the design of the GP, since the response is the llik in this case. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    return(emulator$Y)
+    return(emulator_model$Y)
   },
   
   sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
@@ -709,18 +711,18 @@ llikEmulatorMultGausGP$methods(
               llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
   }, 
   
-  assemble_llik = function(SSR, lik_par=NULL, conditional=default_conditional, normalize=default_normalize) {
+  assemble_llik = function(SSR, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize) {
     # SSR should be N_input x N_samp. 
     
     # Fetch the variance parameter. 
-    sig2 <- get_lik_par(lik_par)
+    sig2 <- get_lik_par(lik_par_val)
     
     # Construct likelihood using SSR.  
     llik <- -0.5 * SSR / sig2
     if(normalize || !conditional) llik <- llik - 0.5*N_obs*log(sig2)
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
     
-    return(llik)
+    return(drop(llik))
     
   },
   
@@ -729,7 +731,7 @@ llikEmulatorMultGausGP$methods(
   },
   
   get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
-    assemble_llik(emulator_model$Y, lik_par=lik_par_val, conditional=conditional, normalize=normalize)
+    assemble_llik(emulator_model$Y, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize)
   },
   
   sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, adjustment="rectified", ...) {
@@ -737,13 +739,13 @@ llikEmulatorMultGausGP$methods(
                           N_samp=N_samp, adjustment=adjustment)[,,1,drop=FALSE]             
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
+  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
     samp <- sample_emulator(input, N_samp, use_cov, include_nugget, ...)
     
     # Compute unnormalized or normalized log-likelihood. 
-    assemble_llik(samp, lik_par, conditional, normalize)
+    assemble_llik(samp, lik_par_val, conditional, normalize)
   }, 
   
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
@@ -884,7 +886,7 @@ llikEmulatorExactGauss$methods(
     if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
-    return(matrix(llik, ncol=1))
+    return(drop(llik))
   }, 
   
   sample_emulator = function(input, N_samp=1, ...) {
@@ -987,7 +989,7 @@ llikEmulatorExactGaussDiag$methods(
     if(normalize || !conditional) llik <- llik - 0.5 * sum(log(sig2_val))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
 
-    return(matrix(llik, ncol=1))
+    return(drop(llik))
   }, 
   
   sample_emulator = function(input, N_samp=1, ...) {

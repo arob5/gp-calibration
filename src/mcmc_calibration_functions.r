@@ -2047,19 +2047,19 @@ format_mcmc_output <- function(samp_list, test_label) {
   #    column `itr` contains the integer MCMC iteration. The column `sample` contains the MCMC numeric sample values. 
   
   for(j in seq_along(samp_list)) {
-    
     # Format samples for current variable. 
     samp_param_dt <- as.data.table(samp_list[[j]])
-    samp_param_dt[, param_type := names(samp_list)[j]]
-    samp_param_dt[, itr := 1:.N]
-    samp_param_dt <- melt.data.table(data = samp_param_dt, id.vars = c("param_type", "itr"), 
-                                     variable.name = "param_name", value.name = "sample", na.rm = TRUE, 
-                                     variable.factor = FALSE)
-    
-    # Append to samples for existing variables. 
-    if(j == 1) samp_dt <- copy(samp_param_dt)
-    else samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names = TRUE)  
-    
+    if(nrow(samp_param_dt) > 0) {
+      samp_param_dt[, param_type := names(samp_list)[j]]
+      samp_param_dt[, itr := 1:.N]
+      samp_param_dt <- melt.data.table(data = samp_param_dt, id.vars=c("param_type", "itr"), 
+                                       variable.name="param_name", value.name="sample", na.rm=TRUE, 
+                                       variable.factor=FALSE)
+      
+      # Append to samples for existing variables. 
+      if(!exists("samp_dt")) samp_dt <- copy(samp_param_dt)
+      else samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names = TRUE)  
+    }
   }
   
   # Add test label. 
@@ -2067,6 +2067,24 @@ format_mcmc_output <- function(samp_list, test_label) {
   
   
   return(samp_dt)
+  
+}
+
+
+append_mcmc_output <- function(mcmc_samp_dt, samp_list, test_label) {
+  # Appends a new `samp_list` to an existing MCMC samp data.table. First 
+  # formats the list via `format_mcmc_output()` then appends it. 
+  # Ensures that the `test_label` is not already present in the data.table, 
+  # but this could be relaxed if needed in the future. 
+  
+  assert_that(is.data.table(mcmc_samp_dt))
+  assert_that(all(colnames(mcmc_samp_dt) == c("param_type", "itr", "param_name", "sample", "test_label")))
+  assert_that(!(test_label %in% mcmc_samp_dt$test_label))
+  
+  mcmc_samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label)
+  mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_new), use.names=TRUE)
+  
+  return(mcmc_samp_dt)
   
 }
 

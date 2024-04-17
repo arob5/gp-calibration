@@ -1,0 +1,18 @@
+{
+ "base_settings": {
+ "global_seed":        5,
+"experiment_type": "llik_emulator_seq_design",
+"experiment_type_tag": "lesd",
+"experiment_id": "test4" 
+},
+"base_paths": {
+ "experiment_dir": "/Users/andrewroberts/Desktop/git-repos/gp-calibration/experiments/test4",
+"settings_dir": "/Users/andrewroberts/Desktop/git-repos/gp-calibration/experiments/test4/settings",
+"output_dir": "/Users/andrewroberts/Desktop/git-repos/gp-calibration/experiments/test4/output",
+"code_dir": "/Users/andrewroberts/Desktop/git-repos/gp-calibration/experiments/test4/code" 
+},
+"experiment_type_settings": {
+ "inverse_problem_seed": 5,
+"fix_lik_par": false 
+} 
+}

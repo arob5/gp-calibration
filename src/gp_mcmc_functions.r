@@ -747,10 +747,9 @@ mcmc_calibrate_ind_gp_trajectory_trunc_prop <- function(computer_model_data, the
 mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
                           sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
                           log_scale_prop=NULL, mode="MCMH", use_gp_cov=FALSE,
-                          SSR_sample_adjustment="rectified", 
                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
                           adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
-                          adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200) {
+                          adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
   # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
   
   # Validation and setup for log-likelihood emulator. 
@@ -783,6 +782,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
+    sig2_curr <- NULL
     sig2_samp <- NULL
   }
   
@@ -806,7 +806,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     
     # Sample SSR. 
     emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), use_cov=use_gp_cov, 
-                                                        include_nugget=TRUE, adjustment=SSR_sample_adjustment)  
+                                                        include_nugget=TRUE, ...)  
 
     # Immediately reject if proposal has prior density zero (which will often happen when the 
     # prior has been truncated to stay within the design bounds). 
@@ -815,12 +815,12 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       SSR_idx <- 1
     } else {
       # Sample log-likelihood emulator. 
-      llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par=sig2_curr, conditional=TRUE,
+      llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par_val=sig2_curr, conditional=TRUE,
                                                normalize=FALSE)
 
       # Accept-Reject step.
-      lpost_par_curr <- lprior_par_curr + llik_samp[1,]
-      lpost_par_prop <- lprior_par_prop + llik_samp[2,]
+      lpost_par_curr <- lprior_par_curr + llik_samp[1]
+      lpost_par_prop <- lprior_par_prop + llik_samp[2]
       alpha <- min(1.0, exp(lpost_par_prop - lpost_par_curr))
 
       if(runif(1) <= alpha) {
@@ -877,12 +877,18 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
 # ---------------------------------------------------------------------
 
 gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
-                          conditional=FALSE, normalize=TRUE, ...) {
+                          conditional=FALSE, normalize=TRUE, llik_pred_list=NULL, ...) {
   
   assert_that(llik_emulator$llik_pred_dist == "Gaussian")
   
-  llik_vals <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
-                       conditional=conditional, normalize=normalize, ...)$mean
+  if(is.null(llik_pred_list)) {
+    llik_vals <- drop(predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
+                              conditional=conditional, normalize=normalize, ...)$mean)
+  } else {
+    llik_vals <- drop(llik_pred_list$mean)
+    assert_that(!is.null(llik_vals))
+  }
+  
   lprior_vals <- calc_lprior_theta(input, par_prior_params)
   
   return(llik_vals + lprior_vals)
@@ -891,14 +897,19 @@ gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NU
 
 
 gp_lpost_marginal <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
-                              conditional=FALSE, normalize=TRUE, ...) {
+                              conditional=FALSE, normalize=TRUE, llik_pred_list=NULL, ...) {
   
   assert_that(llik_emulator$llik_pred_dist == "Gaussian")
   
-  pred <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                  conditional=conditional, normalize=normalize, ...)
-  llik_vals <- convert_Gaussian_to_LN(mean_Gaussian=pred$mean, var_Gaussian=pred$var,
-                                      return_mean=TRUE, return_var=FALSE, log_scale=TRUE)
+  if(is.null(llik_pred_list)) {
+    llik_pred_list <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                              conditional=conditional, normalize=normalize, ...)
+  } else {
+    assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
+  }
+  
+  llik_vals <- convert_Gaussian_to_LN(mean_Gaussian=llik_pred_list$mean, var_Gaussian=llik_pred_list$var,
+                                      return_mean=TRUE, return_var=FALSE, log_scale=TRUE)$log_mean
   lprior_vals <- calc_lprior_theta(input, par_prior_params)
   
   return(llik_vals + lprior_vals)

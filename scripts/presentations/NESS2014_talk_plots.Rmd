@@ -34,6 +34,7 @@ source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
 ```
 
 
@@ -45,49 +46,97 @@ set.seed(seed_pt1)
 # Define inverse problem. 
 N_obs <- 20
 fwd_model <- function(u) exp(u) + cos(2*u)
-par_prior_params <- data.frame(dist="Gaussian", param1=0, param2=1)
+par_prior_params <- data.frame(dist="Gaussian", param1=1, param2=1)
 rownames(par_prior_params) <- "u"
-u_true <- 0.3
+u_true <- 1.0
 sig2_true <- 1
 y <- fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+
+default_conditional <- TRUE
+default_normalize <- FALSE
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
                                          y_obs=y, dim_par=1L, use_fixed_lik_par=TRUE,
                                          sig2=sig2_true, par_names=rownames(par_prior_params), 
-                                         default_conditional=TRUE, default_normalize=FALSE)
-inv_prob1 <- list(llik=llik_exact, par_prior=par_prior_params, par_true=u_true, y=y)
+                                         default_conditional=default_conditional, 
+                                         default_normalize=default_normalize)
+inv_prob1 <- list(llik=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
 
 # Create grid for plotting. 
 N_grid <- 101
 u_grid <- get_tensor_product_grid(N_grid, inv_prob1$par_prior)
+test_info <- list(inputs=u_grid)
+test_info$outputs <- llik_exact$assemble_llik(test_info$inputs)
+test_info$lprior <- calc_lprior_theta(test_info$inputs, inv_prob1$par_prior)
+test_info$lpost <- test_info$outputs + test_info$lprior
 
 # Plot true unnormalized posterior density. 
-lpost_grid <- llik_exact$assemble_llik(u_grid) + calc_lprior_theta(u_grid, inv_prob1$par_prior)
-plot(u_grid, exp(lpost_grid), type="l", main="True unnormalized posterior density", xlab="u", ylab="density")
-
+plot(test_info$inputs, exp(test_info$lpost), type="l", main="True unnormalized posterior density", xlab="u", ylab="density")
+plot(test_info$inputs, test_info$outputs, type="l", main="True unnormalized log-likelihood", xlab="u", ylab="density")
 ```
 
 ```{r}
 # Initial design. 
 N_design <- 4
 design_info <- list()
-design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob1$par_prior)
-design_info$output <- llik_exact$assemble_llik(design_info$input)
+design_info$inputs <- get_batch_design("tensor_product_grid", N_design, prior_params=inv_prob1$par_prior)
+design_info$outputs <- llik_exact$assemble_llik(design_info$inputs)
+design_info$lprior <- calc_lprior_theta(design_info$inputs, inv_prob1$par_prior)
+design_info$lpost <- design_info$outputs + design_info$lprior
 
 # Fit GP to log-likelihood. 
-
-
+gp <- gpWrapperHet(design_info$inputs, matrix(design_info$outputs, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+llik_gp <- llikEmulatorGP("llik_gp", gp, default_conditional=default_conditional, 
+                          default_normalize=default_normalize, lik_par=inv_prob1$sig2_true)
+llik_gp$plot_llik_pred_1d(test_info$inputs, include_CI=TRUE, true_llik=test_info$outputs)
 
 ```
 
 
 ```{r}
-# Marginal approximation. 
+# Comparing mean and marginal approximations. 
+llik_pred <- llik_gp$predict(test_info$inputs)
+log_post_mean <- gp_lpost_mean(test_info$inputs, llik_gp, 
+                               par_prior_params, llik_pred_list=llik_pred)
+log_post_marg <- gp_lpost_marginal(test_info$inputs, llik_gp, 
+                                   par_prior_params, llik_pred_list=llik_pred)
+df_post_dens_approx <- data.frame(inputs=test_info$inputs[,1], exact=test_info$lpost, 
+                                  approx_mean=log_post_mean, approx_marg=log_post_marg)
+df_design <- data.frame(inputs=design_info$inputs[,1], lpost=design_info$lpost)
+
+approx_log_dens_plt <- ggplot(df_post_dens_approx) + 
+                          geom_line(aes(x=inputs, y=exact), color="black") + 
+                          geom_line(aes(x=inputs, y=approx_mean), color="blue") + 
+                          geom_line(aes(x=inputs, y=approx_marg), color="red") + 
+                          geom_point(aes(x=inputs, y=lpost), data=df_design, color="black") + 
+                          xlab("u") + ylab("log density") + ggtitle("Unnormalized log posterior approx")
 
 
+approx_dens_plt <- ggplot(df_post_dens_approx) + 
+                    geom_line(aes(x=inputs, y=exp(exact)), color="black") + 
+                    geom_line(aes(x=inputs, y=exp(approx_mean)), color="blue") + 
+                    # geom_line(aes(x=inputs, y=exp(approx_marg)), color="red") +
+                    geom_point(aes(x=inputs, y=exp(lpost)), data=df_design, color="black") + 
+                    xlab("u") + ylab("density") + ggtitle("Unnormalized posterior approx")
 
+plot(approx_log_dens_plt)
+plot(approx_dens_plt)
 ```
 
+```{r}
+# Noisy MCMC approximations. 
+N_mcmc <- 50000
+mcmh_nocov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior, N_itr=N_mcmc, mode="MCMH", use_gp_cov=FALSE)  
+mcmh_cov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior, N_itr=N_mcmc, mode="MCMH", use_gp_cov=TRUE)                     
+mcmh_samp_dt <- format_mcmc_output(mcmh_nocov_list, test_label="nocov")
+mcmh_samp_dt <- append_mcmc_output(mcmh_samp_dt, mcmh_cov_list, test_label="cov")
 
+trace_plots <- get_trace_plots(mcmh_samp_dt) 
+for(plt in trace_plots) plot(plt) 
+burn_in_start <- N_mcmc/2
+
+get_hist_plot_comparisons(mcmh_samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov")[[1]]
+```
 
 
 

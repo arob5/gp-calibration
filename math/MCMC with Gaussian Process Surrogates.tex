@@ -389,18 +389,33 @@ v(\newInput; \inputMatBatch) \rho(\newInput) d\newInput.
 \end{align*}
 \end{definition} 
 
-\section{Questions}
+\section{Questions and Future Directions}
+
+\subsection{Questions to Answer}
 \begin{enumerate} 
 \item Difference in performance for various ways of trying to obtain design points in high posterior regions: (i.) IEVAR with approximate-posterior 
 weights; (ii.) IEVAR with prior weights; (iii.) IVAR with approximate-posterior weights. 
 \item Numerically investigate error in the MCMC acceptance probability calculation for the MCWMH algorithm. In particular, look at trends in over/under 
 estimating the probability and how they differ with and without using the GP covariance. 
+\item Investigate the effect of marginalizing vs. optimizing the likelihood parameters during sequential design. 
+\item Introduce the noisy MCMC approach but first viewing the mean/marginal approximations through the approximations they induce in the MCMC algorithm. 
+\item Alternative GP specifications (e.g. including quadratic trend). 
+\item Delving deeper into the GP approximation of the acceptance probability; how well does the GP posterior approximate this function? 
+\item Alternative view-point: Metropolis-Hastings via Classification; instead of trying to approximate the acceptance probability, view this as trying to solve a classification problem. 
 \end{enumerate}
+
+\subsection{Possible things to investigate}
+\begin{enumerate}
+\item "Hierarchical" acquisition functions (see the Mak paper on hierarchical EI). 
+\item Optimizing the GP with bound constraints. 
+\end{enumerate}
+
+
 
 
 \section{TODOs}
 \begin{enumerate}
-\item Add section on dealing with likelihood parameters. 
+\item Add section on dealing with likelihood parameters: test two methods of optimizing or marginalizing the likelihood parameters. 
 \item Consider incorporating GP predictive covariance into IEVAR criterion. Review derivation; why isn't predictive cov showing up already considering the 
 expectation with respect to $\ell_B$? 
 \item Effect of incorporating a quadratic trend in the GP; options: (i.) Add quadratic kernel, (ii.) Fit GP to residuals of quadratic regression, (iii.) Joint optimization 
