@@ -284,12 +284,18 @@ plt_marg_approx<- ggplot(df_contour) +
                   geom_point(aes(x=x1, y=x2), data=df_design, color="black") + 
                   ggtitle("True lpost vs. GP lpost marginal approximation")
 
+heatmap_mean_approx <- plot_heatmap(test_info$inputs, df_contour$y_pred, points_mat=design_info$inputs, raster=TRUE, 
+                                    point_coords=u_true, main_title="lpost pred mean approx", points_mat_lab="Design point")
+heatmap_marg_approx <- plot_heatmap(test_info$inputs, df_contour$y_marg_approx, points_mat=design_info$inputs, raster=TRUE, 
+                                    point_coords=u_true, main_title="lpost marginal approx", points_mat_lab="Design point")
 
 plt_uncertainty <- plot_heatmap(test_info$inputs, sqrt(lpost_pred_list$var[,1]), points_mat=design_info$inputs, raster=TRUE, 
                                 point_coords=u_true, main_title="lpost predictive SD", points_mat_lab="Design point")
 
 plot(plt)
 plot(plt_marg_approx)
+plot(heatmap_mean_approx)
+plot(heatmap_marg_approx)
 plot(plt_uncertainty)
 
 # plt <- plot_heatmap(test_info$inputs, test_info$outputs, raster=TRUE)

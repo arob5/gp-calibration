@@ -57,15 +57,6 @@ library(abind)
 # could then be used for testing purposes. 
 # -----------------------------------------------------------------------------
 
-#
-# TODO: update this so that it is defined by default to be a CONDITIONAL likelihood, 
-# viewed as a function of `input` with `lik_par` being the other parameters being 
-# conditioned on, and `lik_component` being other fixed stuctural information (such 
-# as sample size, number of outputs, etc.). Thus, by default all functions should 
-# output unnormalized values, dropping terms that only depend on `lik_par`. Overriding 
-# the default would then include these terms. An alternative is to have a class 
-# attribute that stores the default behavior.
-
 llikEmulator <- setRefClass(
   Class = "llikEmulator", 
   fields = list(emulator_model="ANY", lik_description="character", llik_label="character",
@@ -555,73 +546,133 @@ llikSumEmulator$methods(
     }
     
     return(quantiles_list)
+  } 
+  
+)
+
+
+# -----------------------------------------------------------------------------
+# llikEmulatorGP class: 
+# 
+# Direct GP emulation of the log-likelihood. Currently only supports fixed 
+# `lik_par`, but this should be generalized to allow GPs that predict the 
+# llik as a function of both `par` and `lik_par`. This class is likelihood 
+# agnostic - any log likelihood can be emulated by a GP and this class does
+# not store any information about the underlying likelihood structure. For 
+# this reason, there is no way to change the settings `normalize` and 
+# `conditional` on the fly, as in most of the other llikEmulator classes. 
+# These must be set when creating the class; e.g., if the GP emulator was
+# fit to normalized log likelihood values, then the class should be 
+# initialized with `default_conditional=TRUE`, `default_normalize=TRUE`. 
+# Unlike in other llikEmulator classes, if the user calles a method and 
+# tries to pass a value for `normalize` or `conditional` that differs 
+# from the default, then an error is thrown. While `lik_par` is not 
+# required for any computations in this class, it is still required 
+# for reference and validation purposes. Similar to 
+# `normalize` and `conditional`, an error is thrown 
+# if the user tries to pass a likelihood parameter that differs from the 
+# fixed value set when initializing the class. 
+# -----------------------------------------------------------------------------
+
+llikEmulatorGP <- setRefClass(
+  Class = "llikEmulatorGP", 
+  contains = "llikEmulator",
+  fields = list(N_obs="integer")
+)
+
+llikEmulatorGP$lock("default_conditional")
+llikEmulatorGP$lock("default_normalize")
+llikEmulatorGP$lock("lik_par")
+
+llikEmulatorGP$methods(
+  
+  initialize = function(llik_lbl, gp_model, default_conditional, default_normalize,
+                        use_fixed_lik_par=TRUE, lik_par=NULL, ...) {
+                        
+    assert_that(use_fixed_lik_par, msg="llikEmulatorGP does not yet support emulation as a function of `lik_par`.")
+    assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
+    assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
+    assert_that(!is.null(gp_model$X_names) && noNA(gp_model$X_names), 
+                msg="`llikEmulatorMultGausGP` requires that `gp_model` has `X_names` field set.")
+    assert_that(is.numeric(sig2) && (sig2>0), msg="`sig2` must be NULL or numeric positive value.")
+    
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, input_names=gp_model$X_names,
+              dim_input=gp_model$X_dim, default_conditional=default_conditional, 
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              lik_description="Generic llik.",
+              emulator_description="GP directly emulating the .", 
+              llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
   }, 
   
-  predict_exp = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                         conditional=default_conditional, normalize=default_normalize,
-                         log_moments=FALSE, llik_pred_list=NULL, sum_terms=FALSE,
-                         labels=llik_label, ...) {
-    # Note that the mean of the likelihood is required in to compute the var/cov of the 
-    # likelihood, so it is always returned regardless of the value `return_mean`. Also 
-    # the log moments are always returned. The logic here is that numerical overflow is 
-    # common on the exponential scale; a costly prediction computation could be wasted 
-    # if only the exponential is returned. Always returning the moments on the log scale
-    # thus acts as a backup. 
-    
-    # In this case, simply call `predict_exp()` method for each llikEmulator term, and then return 
-    # the results as a list. 
-    if(!sum_terms) {
-      pred_exp_list <- list()
-      for(lbl in labels) {
-        pred_exp_list[[lbl]] <- llik_emulator_terms[[lbl]]$predict_exp(input, lik_par_val=lik_par_val[[lbl]], 
-                                                                       return_mean=return_mean, return_var=return_var,
-                                                                       return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                                                       input_cross=input_cross, conditional=conditional, 
-                                                                       normalize=normalize, log_moments=log_moments, 
-                                                                       llik_pred_list=llik_pred_list[[lbl]])
-      }
-      return(pred_exp_list)
+  check_fixed_quantities = function(conditional=NULL, normalize=NULL, lik_par_val=NULL) {
+    if(!is.null(conditional)) {
+      assert_that(conditional==default_conditional, 
+                  msg="`llikEmulatorGP` class requires `conditional` to agree with `default_conditional`.")
     }
     
-    # If considering the llik sum, the `predict_exp` method is only valid when the distribution of 
-    # the exponential of the sum is known. Currently, this means that the llikSumEmulator must have 
-    # a Gaussian predictive distribution, so that its exponential is log normal. 
-    assert_that(llik_pred_dist=="Gaussian", 
-                msg="`llikSumEmulator$predict_exp(sum_terms=TRUE, ...)` is only valid when `llik_pred_dist=='Gaussian'`.")
+    if(!is.null(normalize)) {
+      assert_that(normalize==default_normalize, 
+                  msg="`llikEmulatorGP` class requires `normalize` to agree with `default_normalize`.")
+    }
     
-    # Compute Gaussian llikSumEmulator predictions. 
+    if(!is.null(lik_par_val)) {
+      assert_that(lik_par_val==get_lik_par(lik_par), 
+                  msg="`llikEmulatorGP` class requires `lik_par_val` to agree with `lik_par`.")
+    }
+  },
+  
+  assemble_llik = function(llik, lik_par_var=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    # llik should be N_input x 1. Since the llik is emulated directly, then this function simply returns 
+    # the argument `llik` after performing argument validation. 
+    .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    return(llik)
+  },
+  
+  get_design_inputs = function(...) {
+    emulator_model$X
+  }, 
+  
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    # Returns the response values in the design of the GP, since the response is the llik in this case. 
+    .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    return(emulator$Y)
+  },
+  
+  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+    emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
+                          N_samp=N_samp, ...)[,,1,drop=FALSE]             
+  },
+  
+  sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
+                    conditional=default_conditional, normalize=default_normalize, ...) {
+    # Directly returns the emulator samples, since these are llik samples. 
+    .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    sample_emulator(input, N_samp, use_cov, include_nugget, ...)
+  }, 
+  
+  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                     conditional=default_conditional, normalize=default_normalize,
+                     include_nugget=TRUE, ...) {
+    .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
+                                 return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                 X_cross=input_cross, include_nugget=include_nugget, ...)
+  }, 
+  
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+                            normalize=default_normalize, llik_pred_list=NULL,
+                            lower_tail=TRUE, include_nugget=TRUE, ...) {
+    
     if(is.null(llik_pred_list)) {
-      # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, 
-                                      return_var=!return_cov, return_cov=return_cov, 
-                                      return_cross_cov=return_cross_cov, input_cross=input_cross,
-                                      conditional=conditional, normalize=normalize, labels=labels, ...)
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE,  
+                                      return_var=TRUE, conditional=conditional,  
+                                      normalize=normalize, include_nugget=include_nugget, ...)
+    } else {
+      .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     }
     
-    # The log of the likelihood expectation is always returned. 
-    return_list <- list()
-    return_list$log_mean <- llik_pred_list$mean + 0.5 * llik_pred_list$var
-    
-    if(return_cov) {
-      return_list$log_cov <- log_exp_minus_1(llik_pred_list$cov) + 
-                             outer(return_list$log_mean, return_list$log_mean, FUN="+")
-      return_list$log_var <- diag(return_list$log_cov)
-    } else if(return_var) {
-      return_list$log_var <- log_exp_minus_1(llik_pred_list$var) + 2*return_list$log_mean
-    }
-    
-    # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
-    if(return_cross_cov) {
-      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                            conditional=conditional, normalize=normalize, ...)
-      return_list$log_mean_cross <- llik_pred_list_cross$mean + 0.5 * llik_pred_list_cross$var                                   
-      
-      return_list$log_cross_cov <- log_exp_minus_1(llik_pred_list$cross_cov) + 
-                                   outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")
-    }
-    
-    return(return_list)
+    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
   }
   
 )
@@ -689,7 +740,7 @@ llikEmulatorMultGausGP$methods(
   sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
-    samp <- sample_emulator(get_input(input), N_samp, use_cov, include_nugget)
+    samp <- sample_emulator(input, N_samp, use_cov, include_nugget, ...)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par, conditional, normalize)
@@ -700,9 +751,9 @@ llikEmulatorMultGausGP$methods(
                      conditional=default_conditional, 
                      normalize=default_normalize, include_nugget=TRUE, ...) {
     
-    pred_list <- .self$emulator_model$predict(input, return_mean=return_mean, return_var=return_var,
+    pred_list <- .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
                                               return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                              X_cross=input_cross, include_nugget=include_nugget)
+                                              X_cross=input_cross, include_nugget=include_nugget, ...)
     
     if(return_mean) {
       pred_list$mean <- .self$assemble_llik(pred_list$mean, lik_par=lik_par_val, conditional, normalize)
@@ -720,71 +771,11 @@ llikEmulatorMultGausGP$methods(
     }
 
     return(pred_list)
-  }, 
-  
-  predict_exp = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                         conditional=default_conditional, 
-                         normalize=default_normalize, include_nugget=TRUE, 
-                         only_log_moments=FALSE, llik_pred_list=NULL, ...) {
-    # Note that the mean of the likelihood is required in to compute the var/cov of the 
-    # likelihood, so it is always returned regardless of the value `return_mean`. Also 
-    # the log moments are always returned. The logic here is that numerical overflow is 
-    # common on the exponential scale; a costly prediction computation could be wasted 
-    # if only the exponential is returned. Always returning the moments on the log scale
-    # thus acts as a backup. 
-    
-    if(is.null(llik_pred_list)) {
-      # Computing the log-normal moments requires both the Gaussian mean and var (or cov).
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=!return_cov, 
-                                      return_cov=return_cov, return_cross_cov=return_cross_cov, 
-                                      input_cross=input_cross, conditional=conditional, 
-                                      normalize=normalize, include_nugget=include_nugget, ...)
-    }
-    
-    # The log of the likelihood expectation always returned. 
-    return_list <- list()
-    return_list$log_mean <- drop(llik_pred_list$mean) + 0.5 * drop(llik_pred_list$var)
-    
-    # The log of the likelihood variance is always returned provided `return_cov` or 
-    # `return_var` is TRUE. Note that log covariance matrices are not computed since 
-    # covariance matrices may contain negative values. 
-    if(return_var || return_cov) {
-      return_list$log_var <- log_exp_minus_1(llik_pred_list$var) + 2*return_list$log_mean
-    }
-    
-    # If only values of the log scale are requested, then return them now. 
-    if(only_log_moments) {
-      if(return_cov || return_cross_cov) message("Not including `cov` or `cross_cov` on the log-scale since these matrices may contain negative values.")
-      return(return_list)
-    }
-    
-    # Otherwise, return the values on the exponential scale as well. Note that these computations may risk 
-    # numerical overflow. 
-    if(return_cov) {
-      return_list$cov <- exp(outer(return_list$log_mean, return_list$log_mean, FUN="+")) * (exp(llik_pred_list$cov)-1)
-      return_list$var <- diag(return_list$cov)
-    } else if(return_var) {
-      return_list_var <- exp(return_list$log_var)
-    }
-    
-    if(return_mean) return_list$mean <- exp(return_list$log_mean)
-    
-    # Cross covariance also requires the predictive mean and variance at inputs `input_cross`. 
-    if(return_cross_cov) {
-      llik_pred_list_cross <- .self$predict(input_cross, lik_par_val=lik_par_val, return_mean=TRUE,  
-                                            return_var=TRUE, conditional=conditional, normalize=normalize, ...)
-      return_list$log_mean_cross <- llik_pred_list_cross$mean + 0.5 * llik_pred_list_cross$var                                   
-      return_list$cross_cov <- exp(outer(return_list$log_mean, return_list$log_mean_cross, FUN="+")) * (exp(llik_pred_list$cross_cov)-1)
-    }
-    
-    return(return_list)
-  }, 
-  
-  
+  },
+
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                             normalize=default_normalize, llik_pred_list=NULL,
-                             lower_tail=TRUE, include_nugget=TRUE, ...) {
+                            normalize=default_normalize, llik_pred_list=NULL,
+                            lower_tail=TRUE, include_nugget=TRUE, ...) {
     if(is.null(llik_pred_list)) {
       llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
                                       conditional=conditional, normalize=normalize, 
@@ -796,7 +787,7 @@ llikEmulatorMultGausGP$methods(
   
 )
 
- 
+
 # -----------------------------------------------------------------------------
 # llikEmulatorExactGauss class
 # This simply implements the exact likelihood corresponding to a  

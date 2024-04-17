@@ -1,0 +1,104 @@
+---
+title: "Plots for NESS Student Symposium"
+author: "Andrew Roberts"
+date: '2024-04-15'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+#
+# Generating plots/figures for 2024 New England Student Symposium talk. 
+# Goals: 
+#    (1) 1d illustrative example for different posterior approximations. 
+#    (2) 2d illustrative example of posterior approximations and sequential design. 
+#    (3) Higher-dimensional example showing posterior contractions. 
+
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
+```
+
+
+# Part 1: One-Dimensional Example
+```{r}
+seed_pt1 <- 1
+set.seed(seed_pt1)
+
+# Define inverse problem. 
+N_obs <- 20
+fwd_model <- function(u) exp(u) + cos(2*u)
+par_prior_params <- data.frame(dist="Gaussian", param1=0, param2=1)
+rownames(par_prior_params) <- "u"
+u_true <- 0.3
+sig2_true <- 1
+y <- fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
+                                         y_obs=y, dim_par=1L, use_fixed_lik_par=TRUE,
+                                         sig2=sig2_true, par_names=rownames(par_prior_params), 
+                                         default_conditional=TRUE, default_normalize=FALSE)
+inv_prob1 <- list(llik=llik_exact, par_prior=par_prior_params, par_true=u_true, y=y)
+
+# Create grid for plotting. 
+N_grid <- 101
+u_grid <- get_tensor_product_grid(N_grid, inv_prob1$par_prior)
+
+# Plot true unnormalized posterior density. 
+lpost_grid <- llik_exact$assemble_llik(u_grid) + calc_lprior_theta(u_grid, inv_prob1$par_prior)
+plot(u_grid, exp(lpost_grid), type="l", main="True unnormalized posterior density", xlab="u", ylab="density")
+
+```
+
+```{r}
+# Initial design. 
+N_design <- 4
+design_info <- list()
+design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob1$par_prior)
+design_info$output <- llik_exact$assemble_llik(design_info$input)
+
+# Fit GP to log-likelihood. 
+
+
+
+```
+
+
+```{r}
+# Marginal approximation. 
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
