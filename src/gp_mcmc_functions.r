@@ -872,9 +872,150 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
 }
 
 
+mcmc_gp_deterministic_approx <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
+                                         sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
+                                         log_scale_prop=NULL, approx_type="marginal",
+                                         adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
+                                         adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
+                                         adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
+  # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
+  # TODO: need to update the name of this function and the above one to reflect that these functions are valid
+  # only for Gaussian likelihoods with sig2 params assigned independent IG priors, or likelihoods with 
+  # fixed likelihood parameters. 
+  # Supported values for `approx_type`: "marginal", "mean". 
+  
+  # Validation and setup for log-likelihood emulator. 
+  # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
+  # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
+  # validate_args_mcmc_gp_deterministic_approx(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
+  #                                           cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
+  
+  # This should be moved to the argument validation function, once it is written. 
+  if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  
+  # Objects to store samples. 
+  d <- llik_emulator$dim_input
+  par_samp <- matrix(nrow=N_itr, ncol=d)
+  colnames(par_samp) <- llik_emulator$input_names
+  
+  # Setup for `sig2` (observation variances). Safe to assume that all of the 
+  # non-fixed likelihood parameters are `sig2` since this is verified by 
+  # `validate_args_mcmc_gp_noisy()` above. 
+  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
+  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
+  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
+  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
+  
+  if(include_sig2_Gibbs_step) {
+    .NotYetImplemented()
+    
+    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
+    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
+    sig2_samp[1,] <- sig2_curr
+  } else {
+    sig2_curr <- NULL
+    sig2_samp <- NULL
+  }
+  
+  # Set initial conditions. 
+  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
+  par_samp[1,] <- drop(par_init)
+  par_curr <- par_samp[1,]
+  lpost_pred_curr <- get_gp_lpost_approx(matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names)), 
+                                         approx_type, llik_emulator, par_prior_params,  
+                                         lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, ...)
+  
+  # Proposal covariance.
+  if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
+  if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
+  L_cov_prop <- t(chol(cov_prop))
+  accept_count <- 0
+  times_adapted <- 0
+  
+  for(itr in 2:N_itr) {
+    #
+    # Metropolis step for calibration parameters.
+    #
+    
+    # Random walk proposal. 
+    par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
+    
+    # Compute prior. 
+    lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
+    
+    # Compute log-posterior approximation. 
+    lpost_pred_prop <- get_gp_lpost_approx(matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names)), 
+                                           approx_type, llik_emulator, par_prior_params,  
+                                           lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, ...)
+    
+    # Accept-Reject step.
+    alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
+    
+    if(runif(1) <= alpha) {
+      par_samp[itr,] <- par_prop
+      par_curr <- par_prop
+      lpost_pred_curr <- lpost_pred_prop
+      SSR_idx <- 2 
+      accept_count <- accept_count + 1 
+    } else {
+      par_samp[itr,] <- par_curr
+      SSR_idx <- 1
+    }
+    
+    # Adapt proposal covariance matrix and scaling term.
+    if(adapt && (((itr-1) %% adapt_interval) == 0)) {
+      times_adapted <- times_adapted + 1
+      adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
+                                          times_adapted=times_adapted, 
+                                          adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
+                                          samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
+                                          accept_rate=accept_count/adapt_interval, accept_rate_target, 
+                                          adapt_factor_exponent, adapt_factor_numerator)
+      cov_prop <- adapt_list$cov
+      log_scale_prop <- adapt_list$log_scale
+      if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
+      accept_count <- 0
+    }
+    
+    #
+    # Gibbs step for sig2. 
+    #
+    
+    if(include_sig2_Gibbs_step) {
+      .NotYetImplemented()
+      
+      # Update sum of squared residuals (SSR) sample. 
+      SSR_curr <- sapply(term_labels_learn_sig2, function(lbl) emulator_samp_list[[lbl]][SSR_idx,])
+      
+      # TODO: how to deal with parameter ordering here? 
+      # SSR_curr, sig2_prior_info, N_obs should all use llik labels. 
+      sig2_curr <- sample_NIG_cond_post_sig2(SSR_curr, sig2_prior_info, N_obs)
+      sig2_samp[itr,] <- sig2_curr
+    }
+    
+  }
+  
+  return(list(par=par_samp, sig2=sig2_samp))
+  
+}
+
+
 # ---------------------------------------------------------------------
 # Unnormalized log posterior functions using log-likelihood emulators. 
 # ---------------------------------------------------------------------
+
+get_gp_lpost_approx <- function(input, approx_type, llik_emulator, par_prior_params, lik_par_val=NULL, 
+                                conditional=FALSE, normalize=TRUE, llik_pred_list=NULL, ...) {
+  if(approx_type == "mean") {
+    return(gp_lpost_mean(input, llik_emulator, par_prior_params, lik_par_val=lik_par_val, 
+                         conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list, ...))
+  } else if (approx_type == "marginal") {
+    return(gp_lpost_marginal(input, llik_emulator, par_prior_params, lik_par_val=lik_par_val, 
+                             conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list, ...))
+  } else {
+    stop("Invalid `approx_type` ", approx_type)
+  }
+}
 
 gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
                           conditional=FALSE, normalize=TRUE, llik_pred_list=NULL, ...) {
@@ -882,8 +1023,8 @@ gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NU
   assert_that(llik_emulator$llik_pred_dist == "Gaussian")
   
   if(is.null(llik_pred_list)) {
-    llik_vals <- drop(predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
-                              conditional=conditional, normalize=normalize, ...)$mean)
+    llik_vals <- drop(llik_emulator$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
+                                            conditional=conditional, normalize=normalize, ...)$mean)
   } else {
     llik_vals <- drop(llik_pred_list$mean)
     assert_that(!is.null(llik_vals))
@@ -902,8 +1043,8 @@ gp_lpost_marginal <- function(input, llik_emulator, par_prior_params, lik_par_va
   assert_that(llik_emulator$llik_pred_dist == "Gaussian")
   
   if(is.null(llik_pred_list)) {
-    llik_pred_list <- predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                              conditional=conditional, normalize=normalize, ...)
+    llik_pred_list <- llik_emulator$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+                                            conditional=conditional, normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
   }

@@ -2045,20 +2045,22 @@ format_mcmc_output <- function(samp_list, test_label) {
   #    constant with value set to `test_label`. The values in column "param_type" are taken from the names of `samp_list`, 
   #    while the values in column "param_name" are taken from the column names in the matrices within `samp_list`. The 
   #    column `itr` contains the integer MCMC iteration. The column `sample` contains the MCMC numeric sample values. 
+
+  samp_dt <- data.table(param_type=character(), itr=integer(), param_name=character(), sample=numeric())
   
   for(j in seq_along(samp_list)) {
     # Format samples for current variable. 
     samp_param_dt <- as.data.table(samp_list[[j]])
+    
     if(nrow(samp_param_dt) > 0) {
       samp_param_dt[, param_type := names(samp_list)[j]]
       samp_param_dt[, itr := 1:.N]
-      samp_param_dt <- melt.data.table(data = samp_param_dt, id.vars=c("param_type", "itr"), 
+      samp_param_dt <- melt.data.table(data=samp_param_dt, id.vars=c("param_type", "itr"), 
                                        variable.name="param_name", value.name="sample", na.rm=TRUE, 
                                        variable.factor=FALSE)
       
       # Append to samples for existing variables. 
-      if(!exists("samp_dt")) samp_dt <- copy(samp_param_dt)
-      else samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names = TRUE)  
+      samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names=TRUE)  
     }
   }
   
@@ -3181,8 +3183,8 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
   #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
 
   # Determine which plots to create by subsetting rows of `samp_dt`. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                     param_types = param_types, param_names = param_names)
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types=param_types, param_names=param_names)
   plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
   
   # Generate plots. 
@@ -3191,11 +3193,11 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
     test_label_curr <- plt_id_vars[j, test_label]
     param_type_curr <- plt_id_vars[j, param_type]
     param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep = "_")
+    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
     
     plts[[plt_label]] <- ggplot(data = samp_dt_subset[(test_label == test_label_curr) & 
                                                       (param_type == param_type_curr) & 
-                                                      (param_name == param_name_curr)], aes(x = itr, y = sample)) + 
+                                                      (param_name == param_name_curr)], aes(x=itr, y=sample)) + 
                           geom_line() + 
                           ggtitle(paste0("Trace Plot: ", plt_label)) + 
                           xlab("Iteration")

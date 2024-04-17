@@ -76,9 +76,9 @@ plot(test_info$inputs, test_info$outputs, type="l", main="True unnormalized log-
 
 ```{r}
 # Initial design. 
-N_design <- 4
+N_design <- 5
 design_info <- list()
-design_info$inputs <- get_batch_design("tensor_product_grid", N_design, prior_params=inv_prob1$par_prior)
+design_info$inputs <- get_batch_design("LHS", N_design, prior_params=inv_prob1$par_prior) # "tensor_product_grid"
 design_info$outputs <- llik_exact$assemble_llik(design_info$inputs)
 design_info$lprior <- calc_lprior_theta(design_info$inputs, inv_prob1$par_prior)
 design_info$lpost <- design_info$outputs + design_info$lprior
@@ -90,17 +90,31 @@ llik_gp <- llikEmulatorGP("llik_gp", gp, default_conditional=default_conditional
                           default_normalize=default_normalize, lik_par=inv_prob1$sig2_true)
 llik_gp$plot_llik_pred_1d(test_info$inputs, include_CI=TRUE, true_llik=test_info$outputs)
 
+# Truncate the prior based on the design points, allowing a small amount of extrapolation. 
+extrapolation_radius <- 0.2
+prior_bounds <- gp$X_bounds
+prior_bounds[1,] <- prior_bounds[1,] - extrapolation_radius
+prior_bounds[2,] <- prior_bounds[2,] + extrapolation_radius
+inv_prob1$par_prior_trunc <- truncate_prior_theta(inv_prob1$par_prior, prior_bounds)
+
+input_trunc_idx <- (test_info$inputs >= prior_bounds[1,]) & (test_info$inputs <= prior_bounds[2,])
+test_info_trunc <- list()
+test_info_trunc$inputs <- test_info$inputs[input_trunc_idx,, drop=FALSE]
+test_info_trunc$outputs <- test_info$outputs[input_trunc_idx]
+test_info_trunc$lprior_trunc <- test_info$lprior[input_trunc_idx]                                             
+test_info_trunc$lpost_trunc <- test_info$lpost[input_trunc_idx]                                              
+
 ```
 
 
 ```{r}
 # Comparing mean and marginal approximations. 
-llik_pred <- llik_gp$predict(test_info$inputs)
-log_post_mean <- gp_lpost_mean(test_info$inputs, llik_gp, 
+llik_pred <- llik_gp$predict(test_info_trunc$inputs)
+log_post_mean <- gp_lpost_mean(test_info_trunc$inputs, llik_gp, 
                                par_prior_params, llik_pred_list=llik_pred)
-log_post_marg <- gp_lpost_marginal(test_info$inputs, llik_gp, 
+log_post_marg <- gp_lpost_marginal(test_info_trunc$inputs, llik_gp, 
                                    par_prior_params, llik_pred_list=llik_pred)
-df_post_dens_approx <- data.frame(inputs=test_info$inputs[,1], exact=test_info$lpost, 
+df_post_dens_approx <- data.frame(inputs=test_info_trunc$inputs[,1], exact=test_info_trunc$lpost, 
                                   approx_mean=log_post_mean, approx_marg=log_post_marg)
 df_design <- data.frame(inputs=design_info$inputs[,1], lpost=design_info$lpost)
 
@@ -115,7 +129,7 @@ approx_log_dens_plt <- ggplot(df_post_dens_approx) +
 approx_dens_plt <- ggplot(df_post_dens_approx) + 
                     geom_line(aes(x=inputs, y=exp(exact)), color="black") + 
                     geom_line(aes(x=inputs, y=exp(approx_mean)), color="blue") + 
-                    # geom_line(aes(x=inputs, y=exp(approx_marg)), color="red") +
+                    geom_line(aes(x=inputs, y=exp(approx_marg)), color="red") +
                     geom_point(aes(x=inputs, y=exp(lpost)), data=df_design, color="black") + 
                     xlab("u") + ylab("density") + ggtitle("Unnormalized posterior approx")
 
@@ -123,23 +137,71 @@ plot(approx_log_dens_plt)
 plot(approx_dens_plt)
 ```
 
+
 ```{r}
 # Noisy MCMC approximations. 
-N_mcmc <- 50000
-mcmh_nocov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior, N_itr=N_mcmc, mode="MCMH", use_gp_cov=FALSE)  
-mcmh_cov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior, N_itr=N_mcmc, mode="MCMH", use_gp_cov=TRUE)                     
-mcmh_samp_dt <- format_mcmc_output(mcmh_nocov_list, test_label="nocov")
-mcmh_samp_dt <- append_mcmc_output(mcmh_samp_dt, mcmh_cov_list, test_label="cov")
 
-trace_plots <- get_trace_plots(mcmh_samp_dt) 
+# TODO: In mcmc_gp_noisy, get rid of mention of "SSR". 
+# I believe the results from before basically reflected the fact that the uncertainty in the GP was essentially uniform, so 
+# the posterior reflected the prior Gaussian distribution. Also, I have not been truncating the prior based on the 
+# design points; I should probably do this. 
+
+N_mcmc <- 50000
+mcmc_par_init <- sample_prior_theta(inv_prob1$par_prior_trunc)
+
+mcmh_nocov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior_trunc, N_itr=N_mcmc, mode="MCMH", 
+                                 use_gp_cov=FALSE, par_init=mcmc_par_init)  
+mcmh_cov_list <- mcmc_gp_noisy(llik_gp, inv_prob1$par_prior_trunc, N_itr=N_mcmc, mode="MCMH", 
+                               use_gp_cov=TRUE, par_init=mcmc_par_init)                     
+samp_dt <- format_mcmc_output(mcmh_nocov_list, test_label="nocov")
+samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_list, test_label="cov")
+
+trace_plots <- get_trace_plots(samp_dt) 
 for(plt in trace_plots) plot(plt) 
 burn_in_start <- N_mcmc/2
 
-get_hist_plot_comparisons(mcmh_samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov")[[1]]
+get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov")[[1]]
+```
+
+```{r}
+# MCMC deterministic approximations. 
+
+mcmc_list_marg <- mcmc_gp_deterministic_approx(llik_gp, inv_prob1$par_prior_trunc, par_init=mcmc_par_init, 
+                                               N_itr=N_mcmc, approx_type="marginal")
+mcmc_list_mean <- mcmc_gp_deterministic_approx(llik_gp, inv_prob1$par_prior_trunc, par_init=mcmc_par_init, 
+                                               N_itr=N_mcmc, approx_type="mean")
+
+samp_dt <- append_mcmc_output(samp_dt, mcmc_list_marg, test_label="marginal")
+samp_dt <- append_mcmc_output(samp_dt, mcmc_list_mean, test_label="mean")
+
+get_trace_plots(samp_dt, burn_in_start, test_labels=c("marginal", "mean"))
+
 ```
 
 
 
+```{r}
+# Exact samples, using original and truncated prior. 
+
+exact_mcmc_test<- mcmc_gp_noisy(llik_exact, inv_prob1$par_prior, N_itr=N_mcmc, mode="MCMH", 
+                                use_gp_cov=FALSE, par_init=mcmc_par_init)
+exact_mcmc_test_trunc_prior <- mcmc_gp_noisy(llik_exact, inv_prob1$par_prior_trunc, N_itr=N_mcmc, mode="MCMH", 
+                                             use_gp_cov=FALSE, par_init=mcmc_par_init)
+
+samp_dt <- append_mcmc_output(samp_dt, exact_mcmc_test, test_label="exact")
+samp_dt <- append_mcmc_output(samp_dt, exact_mcmc_test_trunc_prior, test_label="exact_trunc_prior")
+
+get_trace_plots(samp_dt, burn_in_start, test_labels=c("exact", "exact_trunc_prior"))
+get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_labels="exact_trunc_prior", 
+                          test_label_baseline="exact")
+```
+
+```{r}
+# Compare samples. 
+
+get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_labels=c("marginal", "mean", "cov", "nocov"), 
+                          test_label_baseline="exact")
+```
 
 
 
