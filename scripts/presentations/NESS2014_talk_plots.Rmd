@@ -336,7 +336,38 @@ lik_pred_mean_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, exp(llik_pred_
 ```
 
 
+```{r}
+# Run sampling algorithms. 
+inv_prob2$mcmc <- list(N_mcmc=50000, par_init=sample_prior_theta(inv_prob2$par_prior))
 
+
+mcmc_exact<- mcmc_gp_noisy(inv_prob2$llik, inv_prob2$par_prior, N_itr=inv_prob2$mcmc$N_mcmc, 
+                           mode="MCMH", use_gp_cov=FALSE, par_init=inv_prob2$mcmc$par_init)
+mcmc_noisy_cov <- mcmc_gp_noisy(inv_prob2$llik_gp, inv_prob2$par_prior, N_itr=inv_prob2$mcmc$N_mcmc,  
+                                 mode="MCMH", use_gp_cov=TRUE, par_init=inv_prob2$mcmc$par_init)
+mcmc_noisy_nocov <- mcmc_gp_noisy(inv_prob2$llik_gp, inv_prob2$par_prior, N_itr=inv_prob2$mcmc$N_mcmc,  
+                                  mode="MCMH", use_gp_cov=FALSE, par_init=inv_prob2$mcmc$par_init)
+mcmc_marginal <- mcmc_gp_deterministic_approx(inv_prob2$llik_gp, inv_prob2$par_prior, 
+                                              par_init=inv_prob2$mcmc$par_init, N_itr=inv_prob2$mcmc$N_mcmc,
+                                              approx_type="marginal")
+mcmc_mean <- mcmc_gp_deterministic_approx(inv_prob2$llik_gp, inv_prob2$par_prior, 
+                                          par_init=inv_prob2$mcmc$par_init, N_itr=inv_prob2$mcmc$N_mcmc,
+                                          approx_type="mean")
+
+# TODO: should allow multiple samples to be passed in, which a character vector of test labels. 
+samp_dt2 <- format_mcmc_output(mcmc_exact, "exact")
+samp_dt2 <- append_mcmc_output(samp_dt2, mcmc_noisy_cov, "mcwm_cov")
+samp_dt2 <- append_mcmc_output(samp_dt2, mcmc_noisy_nocov, "mcwm_nocov")
+samp_dt2 <- append_mcmc_output(samp_dt2, mcmc_marginal, "marginal")
+samp_dt2 <- append_mcmc_output(samp_dt2, mcmc_mean, "mean")
+
+# TODO: update these funtions so that they optionally have multiple plots in a single plot object.  
+get_trace_plots(samp_dt2)
+get_hist_plot_comparisons(samp_dt2, test_label_baseline="exact")
+
+# TODO: update this function: get_2d_density_contour_plot()
+
+```
 
 
 

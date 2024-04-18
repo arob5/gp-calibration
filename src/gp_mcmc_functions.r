@@ -1058,8 +1058,19 @@ gp_lpost_marginal <- function(input, llik_emulator, par_prior_params, lik_par_va
 }
 
 
+# ---------------------------------------------------------------------
+# Helper functions 
+# ---------------------------------------------------------------------
 
-
+run_llik_emulator_samplers <- function(sampler_settings_list, llik_emulator_default=NULL, 
+                                       par_prior=NULL,  lik_par_prior_default=NULL, N_mcmc_default=NULL) {
+  # Need to think about how to implement this. I want the ability to easily specify common settings that 
+  # are shared across all algorithms, but also want the ability to have complete control over the 
+  # settings for each algorithm, if desired. I'm currently thinking that there should be arguments 
+  # to specify "defaults", which will be overwritten if they are also specified in "sampler_settings_list". 
+  
+  .NotYetImplemented()
+}
 
 
 
