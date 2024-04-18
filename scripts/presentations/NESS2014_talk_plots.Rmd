@@ -203,6 +203,138 @@ get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_labels=c("m
                           test_label_baseline="exact")
 ```
 
+# Part 2: Two-Dimensional Example
+```{r, include = FALSE}
+# VSEM model with 2d input space, restricting test case 4 to a single output. 
+vsem_info <- generate_vsem_test_case(4)
+vsem_info$output_vars <- "NEE"
+
+vsem_info$ref_pars[vsem_info$pars_cal_sel,]
+
+inv_prob2 <- list()
+inv_prob2$fwd <- function(input) run_VSEM_single_input(input, computer_model_data=vsem_info)
+inv_prob2$sig2_true <- diag(vsem_info$Sig_eps)[vsem_info$output_vars]
+inv_prob2$par_true <- vsem_info$theta_true
+
+# Prior distribution. 
+inv_prob2$par_prior <- data.frame(dist=c("Uniform", "Uniform"), 
+                                  param1=c(1.4, 0.45),
+                                  param2=c(1.6, 0.55))
+rownames(inv_prob2$par_prior) <- vsem_info$pars_cal_names
+
+# Exact log likelihood. 
+inv_prob2$llik <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob2$fwd, 
+                                             y_obs=vsem_info$data_obs[,vsem_info$output_vars], 
+                                             dim_par=length(inv_prob2$par_true), 
+                                             use_fixed_lik_par=TRUE,
+                                             sig2=inv_prob2$sig2_true, 
+                                             par_names=vsem_info$pars_cal_names, 
+                                             default_conditional=default_conditional, 
+                                             default_normalize=default_normalize)
+
+
+# Plot grounbd truth and observations. 
+for(output_var in vsem_info$output_vars) {
+ plotTimeSeries(observed=vsem_info$data_obs[, output_var],
+                predicted=vsem_info$data_ref[, output_var], main=output_var) 
+}
+
+```
+
+```{r}
+# Define design points and test grid. 
+
+# Initial design.
+inv_prob2$design_info <- list(N_design=15)
+inv_prob2$design_info$inputs <- get_batch_design("LHS", inv_prob2$design_info$N_design, 
+                                                 prior_params=inv_prob2$par_prior)
+inv_prob2$design_info$outputs <- inv_prob2$llik$assemble_llik(inv_prob2$design_info$inputs)
+inv_prob2$design_info$lprior <- calc_lprior_theta(inv_prob2$design_info$inputs, inv_prob2$par_prior)
+inv_prob2$design_info$lpost <- inv_prob2$design_info$outputs + inv_prob2$design_info$lprior
+
+# Test grid. 
+inv_prob2$test_info <- list(N_design=51^2)
+inv_prob2$test_info$inputs <- get_batch_design("tensor_product_grid", inv_prob2$test_info$N_design, 
+                                               prior_params=inv_prob2$par_prior)
+inv_prob2$test_info$outputs <- inv_prob2$llik$assemble_llik(inv_prob2$test_info$inputs)
+inv_prob2$test_info$lprior <- calc_lprior_theta(inv_prob2$test_info$inputs, inv_prob2$par_prior)
+inv_prob2$test_info$lpost <- inv_prob2$test_info$outputs + inv_prob2$test_info$lprior
+
+```
+
+```{r}
+# Plot true likelihood with design points. 
+
+post_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, exp(inv_prob2$test_info$lpost + 1800), 
+                             points_mat=inv_prob2$design_info$inputs,  
+                             raster=TRUE, point_coords=inv_prob2$par_true, 
+                             main_title="Exact posterior with initial design", 
+                             legend_label="unnormalized density", points_mat_lab="Initial design",
+                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+
+lpost_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, inv_prob2$test_info$lpost, 
+                             points_mat=inv_prob2$design_info$inputs,  
+                             raster=TRUE, point_coords=inv_prob2$par_true, 
+                             main_title="Exact log posterior with initial design", 
+                             legend_label="log density", points_mat_lab="Initial design",
+                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+
+plot(post_heatmap)
+plot(lpost_heatmap)
+
+```
+```{r}
+# Fit emulator directly to log-likelihood. 
+# NOTE: not truncating prior in this example, since the uniform prior esssentially already does this. 
+
+# Fit GP to log-likelihood. 
+inv_prob2$gp <- gpWrapperHet(inv_prob2$design_info$inputs, matrix(inv_prob2$design_info$outputs, ncol=1), 
+                             normalize_output=TRUE, scale_input=TRUE)
+inv_prob2$gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+
+# Create llikEmulator object. 
+inv_prob2$llik_gp <- llikEmulatorGP("llik_gp", inv_prob2$gp, default_conditional=default_conditional, 
+                                    default_normalize=default_normalize, lik_par=inv_prob2$sig2_true)
+```
+
+
+```{r}
+# Plots for initial GP fit. 
+
+llik_pred_list <- inv_prob2$llik_gp$predict(inv_prob2$test_info$inputs)
+
+
+llik_pred_mean_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, llik_pred_list$mean, 
+                                       points_mat=inv_prob2$design_info$inputs,  
+                                       raster=TRUE, point_coords=inv_prob2$par_true, 
+                                       main_title="Log-Likelihood Predictive Mean", 
+                                       legend_label="GP Mean", points_mat_lab="Initial design",
+                                       xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+llik_pred_sd_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, sqrt(llik_pred_list$var), 
+                                     points_mat=inv_prob2$design_info$inputs,  
+                                     raster=TRUE, point_coords=inv_prob2$par_true, 
+                                     main_title="Log-Likelihood Predictive SD", 
+                                     legend_label="GP SD", points_mat_lab="Initial design",
+                                     xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+
+plot(llik_pred_mean_heatmap)
+plot(llik_pred_sd_heatmap)
+```
+
+```{r}
+# Compute deterministic posterior approximations. 
+
+
+lik_pred_mean_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, exp(llik_pred_list$mean + 1800), 
+                                      points_mat=inv_prob2$design_info$inputs,  
+                                      raster=TRUE, point_coords=inv_prob2$par_true, 
+                                      main_title="Exponentiated llik Predictive Mean", 
+                                      legend_label="exp(GP Mean + cst)", points_mat_lab="Initial design",
+                                      xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+
+
+```
+
 
 
 
