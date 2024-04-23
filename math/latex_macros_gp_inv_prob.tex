@@ -36,18 +36,26 @@
 \newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
 \newcommand{\gpMean}[1][]{\mu_{#1}}
 \newcommand{\gpKer}[1][]{k_{#1}}
+\newcommand{\nuggetSD}{\eta}
+
+% Exponentiated quadratic kernel.
+\newcommand{\lengthscale}{\ell}
+\newcommand{\margSD}{\sigma_{\gpKer}}
 
 % Log-likelihood and forward model emulators. 
+\newcommand{\funcEm}[1][]{\func_{#1}}
 \newcommand{\llikEm}[2][]{#1_{#2}}
 \newcommand{\emMean}[2][]{\mu^{#1}_{#2}}
 \newcommand{\emKer}[2][]{k^{#1}_{#2}}
 
 % Design. 
-\newcommand{\NDesign}{N}
+\newcommand{\Ndesign}{N}
 \newcommand{\NBatch}{B}
-\newcommand{\designIn}[1][\NDesign]{U} % Design inputs. 
-\newcommand{\designOutLlik}[1][\NDesign]{\ell_{#1}}
-\newcommand{\designOutFwd}[1][\NDesign]{g_{#1}}
+\newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
+\newcommand{\parMat}{U} % Generic matrix of input parameter points. 
+\newcommand{\designIn}[1][\Ndesign]{U_{#1}} % Design inputs. 
+\newcommand{\designOutLlik}[1][\Ndesign]{\ell_{#1}}
+\newcommand{\designOutFwd}[1][\Ndesign]{g_{#1}}
 \newcommand{\designBatchIn}{U_{\NBatch}}
 \newcommand{\designBatchLlik}{\ell_{\NBatch}}
 \newcommand{\designBatchFwd}{g_{\NBatch}}

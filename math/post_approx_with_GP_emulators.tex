@@ -112,8 +112,58 @@ as \textit{surrogates} or \textit{emulators}. The focus of the present work is o
 to derive emulators for the forward model or log-likelihood. 
 
 \subsection{Gaussian Processes}
-In this section, we provide a brief review of Gaussian processes (GPs); for in depth treatments, we refer readers to 
-(TODO: cite Gramacy, Stuart, Rasmussen and Williams). 
+In this section, we provide a brief review of Gaussian processes; for in depth treatments, we refer readers to 
+(TODO: cite Gramacy, Stuart, Rasmussen and Williams). A \textit{Gaussian process} (GP) is a probability 
+distribution over a set of functions $\func: \parSpace \to \R$, defined by the property that 
+he random vector $[\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top$ has
+a joint Gaussian distribution for any set of inputs $\parMat := [\Par_1, \dots, \Par_\Ndesign] \subset \parSpace$. 
+A GP is defined by its \textit{mean function} $\gpMean: \parSpace \to \R$ and positive-definite \textit{kernel} 
+(i.e., \textit{covariance function}) $\gpKer: \parSpace \times \parSpace \to \R$ and is thus denoted by 
+$\GP(\gpMean, \gpKer)$. Throughout this paper, we will vectorize notation as follows. Letting 
+$\tilde{\parMat} := [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
+$\func(\parMat) := [\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$ (and similarly for $\gpMean(\parMat)$), 
+$\gpKer(\parMat, \tilde{\parMat}) := \{\gpKer(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{1 \leq \idxDesign, m \leq \Ndesign} \in \R^{\Ndesign \times M}$, 
+and $\gpKer(\parMat) := \gpKer(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
+the defining property of the GP can be written as 
+\begin{align}
+\func(\parMat) &\sim \Gaussian(\gpMean(\parMat), \gpKer(\parMat)).
+\end{align}
+Now suppose that we have observed the (noiseless) function evaluations $\func(\designIn)$ at a set of \textit{design points} $\designIn$. 
+It is well-known (TODO: citations) that the conditional distribution $\func|\func(\designIn)$ is also a GP
+\begin{align}
+\funcEm[\Ndesign] := \func|\func(\designIn) \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])
+\end{align}
+with mean and kernel given by 
+\begin{align}
+\gpMean[\Ndesign](\parMat) &= \gpMean(\parMat) + \gpKer(\parMat, \designIn) \gpKer(\designIn)^{-1} [\func(\designIn) - \gpMean(\designIn)] \label{kriging_eqns} \\
+\gpKer[\Ndesign](\parMat) &= \gpKer(\parMat) - \gpKer(\parMat, \designIn) \gpKer(\designIn)^{-1} \gpKer(\designIn, \parMat). \nonumber
+\end{align}
+The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \func(\designIn)$), with 
+the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). To break these interpolation properties,
+a constant can be added to the diagonal of the kernel matrix so that $(\gpKer(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
+$\gpKer(\designIn)^{-1}$ in \ref{kriging_eqns}. In the present context, the maps $\fwd$ and $\llik$ are assumed to be deterministic functions 
+of $\Par$ and hence the interpolation property is desirable. Nevertheless, a small, positive fixed constant $\nuggetSD^2$ is still 
+typically included for numerical stability. 
+
+Our default choice of kernel function is the popular \textit{exponentiated quadratic} 
+(also called \textit{squared exponential} or \textit{Gaussian}), which is given by 
+\begin{align}
+\gpKer(\Par, \tilde{\Par}) &= 
+\margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, 
+\end{align}
+defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. We typically take the mean 
+function to be a constant or quadratic. We opt for the common empirical Bayes approach of fixing all mean and kernel hyperparameters 
+at their maximum likelihood estimates. 
+
+Finally, we consider the extension to multi-output functions $\func: \parSpace \to \R^{\dimObs}$. There is a large literature on multi-output 
+kernels (TODO: cite), but we focus here on the simplest case in which each output is modeled separately as an independent GP. 
+In this setting, the notation $\gpKer(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ diagonal matrix collecting the variance of each 
+independent GP. Similarly, for a set of inputs $\parMat \in \R^{M \times \dimPar}$, $\gpKer[\Ndesign](\parMat)$ is now the 
+$M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive covariances of each independent GP. 
+
+
+
+
 
 % Posterior Approximation
 \section{Posterior Approximation}
