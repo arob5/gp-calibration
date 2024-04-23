@@ -1,0 +1,156 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithmic}
+\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{bbm}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Local custom commands. 
+\include{latex_macros_general}
+\include{latex_macros_gp_inv_prob}
+\newcommand{\bphi}{\boldsymbol{\phi}}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{ {./images/} }
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Gaussian Process Surrogates for Bayesian Inverse Problems: Posterior Approximation and Sequential Design}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\maketitle
+
+
+% Introduction 
+\section{Introduction}
+
+% Setting and Background 
+\section{Setting and Background}
+
+\subsection{Bayesian Inverse Problems}
+We consider a \textit{forward model} $\fwd: \R^{\dimPar} \to \R^{\dimObs}$ describing some system of interest, parameterized by 
+input parameters $\Par \in \parSpace \subset \R^{\dimPar}$. In addition, we suppose that we have noisy observations 
+$\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal which $\fwd(\Par)$ seeks to approximate. The 
+\textit{inverse problem} concerns learning the parameter values $\Par$ such that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating}
+the model so that it agrees with reality. The statistical approach to this problem assumes that the link between model outputs and 
+observations is governed by a probability distribution on  $\obs | \Par$. We assume that this distribution admits a density 
+with corresponding log-likelihood 
+\begin{align}
+\llik: \parSpace \to \R, \label{log_likelihood}
+\end{align}
+such that $p(\obs | \Par) = \Exp{\llik(\Par)}$ 
+\footnote{For succinctness, the notation $\llik(\Par)$ suppresses dependence on the data $\obs$, 
+as we assume the data is fixed throughout the analysis.}
+\footnote{We are currently focusing on the forward model parameter $\Par$, treating other likelihood 
+parameters (e.g., observation covariance) as fixed. We will relax this assumption 
+in section \ref{section_lik_par}.}.
+
+The Bayesian approach completes this specification with a prior distribution 
+on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
+by the posterior distribution $\postDensNorm(\Par) := p(\Par | \obs)$. The posterior density is computed by Bayes' rule 
+\begin{align}
+\postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) := \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
+\end{align}
+with normalizing constant given by 
+\begin{align}
+\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
+\end{align}
+We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
+posterior density. In addition to considering 
+generic likelihoods, we will give special attention to the additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber \\
+\Par &\sim \priorDens \nonumber, 
+\end{align}
+with corresponding log-likelihood 
+\begin{align}
+\llik(\Par) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
+= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)). \label{llik_Gaussian}
+\end{align}
+
+In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
+standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
+algorithm. Such algorithms are iterative in nature, often requiring $\BigO(10^6)$ iterations, with each 
+iteration involving an evaluation of the unnormalized posterior density $\postDens$. In the inverse problem 
+context, this computational requirement is often prohibitive when the forward model evaluations $\fwd(\Par)$
+incur significant computational cost. This becomes clear upon observing that each log-likelihood evaluation 
+$\llik(\Par)$ (e.g., \ref{llik_Gaussian} in the additive Gaussian case) requires the corresponding forward 
+model evaluation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
+cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
+an approximation of the latter). We refer to such approximations interchangeably 
+as \textit{surrogates} or \textit{emulators}. The focus of the present work is on utilizing \textit{Gaussian processes} 
+to derive emulators for the forward model or log-likelihood. 
+
+\subsection{Gaussian Processes}
+In this section, we provide a brief review of Gaussian processes (GPs); for in depth treatments, we refer readers to 
+(TODO: cite Gramacy, Stuart, Rasmussen and Williams). 
+
+% Posterior Approximation
+\section{Posterior Approximation}
+\subsection{Deterministic Approximations}
+\subsection{Noisy MCMC}
+
+% Sequential Design
+\section{Sequential Design}
+\subsection{Background}
+\subsection{Integrated Expected Variance}
+
+% Learning Likelihood Parameters
+\section{Learning Likelihood Parameters} \label{section_lik_par}
+
+% Appendix 
+\section{Appendix}
+
+% Questions and TODOs
+\section{Questions and TODOs}
+\subsection{Notation}
+\begin{enumerate}
+\item Cleanest way to handle notation for llik emulation vs. forward model emulation? 
+\item Should I define $\postDens$ to be unnormalized, or introduce separate notation for the unnormalized density. 
+\item Should I define everything in terms of the potential (i.e. negative llik) instead of the llik? 
+\item Think about how to define the domain/co-domain of the forward model; should this differ from the par/observation space? 
+\end{enumerate}
+
+
+
+\bibliography{framework_calibrating_ecosystem_models} 
+\bibliographystyle{ieeetr}
+
+\end{document}
+
+
+
+
+
+
+

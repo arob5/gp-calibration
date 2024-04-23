@@ -34,6 +34,10 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   # Should verify that `gp` is of class gpWrapper with `dim_Y==1`. 
   # TODO: validate_args_acquire_batch_input_sequentially()
   
+  if((model_response_heuristic != "none") && (reoptimize_hyperpar)) {
+    message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is not none.")
+  }
+  
   # Make a copy to avoid modifying the emulator provided in argument. 
   gp_copy <- gp$copy(shallow=FALSE)
   

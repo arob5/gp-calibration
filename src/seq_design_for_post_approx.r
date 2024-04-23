@@ -36,18 +36,42 @@ library(matrixStats)
 # -----------------------------------------------------------------------------
 
 
-acquire_batch_input_sequentially <- function(llik_emulator, par_prior_params, lik_par_method, acq_func_name, 
-                                             N_batch, model_response_heuristic, opt_method,
-                                             exact_llik_func=NULL, reoptimize_hyperpar=FALSE, 
-                                             lik_par_prior_params=NULL, ...) {
-  # This function implements an acquisition optimization based sequential design loop, sequentially 
-  # requiring design points (inputs) serially one at a time. The model response must be univariate (this is 
-  # typically a log-likelihood value). Note that the underlying emulator might be multi-output but these 
-  # outputs are then combined to form a single scalar. If `model_response_heuristic` is "none" then 
-  # this means the full forward model must be run after each new input is acquired. Other options for 
-  # `model_response_heuristic` implement heuristics to avoid forward model evaluations. 
-  # `model_response_heuristic` can be "KB", "CL_pessimist", "CL_optimist", or "none"; the latter runs the 
-  # full forward model. `opt_method` currently only allows "grid". 
+acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, N_batch, 
+                                                  model_response_heuristic, opt_method, 
+                                                  llik_exact=NULL, reoptimize_hyperpar=FALSE, 
+                                                  lik_par_val=NULL, ...) {
+  # This function is the analog of `acquire_llik_batch_input_sequentially()` but operates on objects
+  # of class llikEmulator, rather than gpWrapper. It is thus the entrypoint for an acquisition 
+  # optimization-based sequential design loop which targets improvements to likelihood or 
+  # posterior approximation. This function specifically handles the case of one-at-a-time sequential 
+  # acquisition; setting `model_response_heuristic` is "none" implies a true sequential design, in 
+  # which the exact likelihood is evaluated following each design point acquisition. Setting 
+  # `model_response_heuristic` to "KB", "CL_pessimist", or "CL_optimist" alternatively causes 
+  # this function to operate in "heuristic mode", in which the exact likelihood is never evaluated 
+  # within this function. `opt_method` currently only allows "grid". 
+  #
+  # Args:
+  #    llik_emulator: object that inherits from class llikEmulator. 
+  #    acq_func_name: character(1), the acquisition function name. 
+  #    N_batch: integer(1), the number of design points to acquire. 
+  #    model_response_heuristic: character(1), currently accepts "none" (requires exact llik 
+  #                              evaluations), "KB" (kriging believer), "CL_pessimist" 
+  #                              (constant liar pessimist), "CL_optimist" (constant liar optimist). 
+  #    opt_method: character(1), the optimization method to use to minimize the acquisition function; 
+  #                currently only allows "grid", which selects points from a finite set of candidates. 
+  #    llik_exact: Only required if `model_response_heuristic == "none"`. `llik_exact` can either
+  #                be a function or an object that inherits from `llikEmulator` with `exact_llik == TRUE`. 
+  #                If a function must have two arguments; the first is interpreted as the input parameter
+  #                value and the second optional argument is the likelihood parameter. The function must 
+  #                return exact log-likelihood evaluations evaluated at the parameter/likelihood parameter 
+  #                values (the user should take care that this function uses the same normalization of the 
+  #                likelihood as used by `llik_emulator`).
+  #    reoptimize_hyperpar: If TRUE, re-optimizes emulator hyperparameters after acquiring each new 
+  #                         design point. Otherwise the hyperparameters are not changed at all in this 
+  #                         function. This should only be set to TRUE if `model_response_heuristic == "none"`. 
+  #    lik_par_val: 
+  
+  
   # `model_func` is a function with single argument `input` and the output should be the response value
   # associated with `emulator_obj`. Note that this is often different from the output of the "forward
   # model". For example, if `emulator_obj` is a log-likelihood emulator then `model_func` should output
@@ -59,7 +83,14 @@ acquire_batch_input_sequentially <- function(llik_emulator, par_prior_params, li
   #     Note that `emulator_obj_updated` will contain the pseudo model responses if a model response 
   #     heuristic is used. 
   
-  # TODO: validate_args_acquire_batch_input_sequentially()
+  validate_args_acquire_llik_batch_input_sequentially(llik_emulator, acq_func_name, N_batch, 
+                                                      model_response_heuristic, opt_method, 
+                                                      llik_exact=NULL, reoptimize_hyperpar=FALSE, 
+                                                      lik_par_val=NULL, ...)
+  
+  if((model_response_heuristic != "none") && (reoptimize_hyperpar)) {
+    message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is not none.")
+  }
   
   # Make a copy to avoid modifying the emulator provided in argument. 
   llik_emulator_copy <- llik_emulator$copy(shallow=FALSE)
@@ -169,3 +200,40 @@ acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, 
   return(exp(log_IEVAR))
   
 }
+
+
+# -----------------------------------------------------------------------------
+# Argument validation functions 
+# -----------------------------------------------------------------------------
+
+validate_args_acquire_llik_batch_input_sequentially(llik_emulator, acq_func_name, N_batch, 
+                                                    model_response_heuristic, opt_method, 
+                                                    llik_exact=NULL, reoptimize_hyperpar=FALSE, 
+                                                    lik_par_val=NULL, ...) {
+  
+  # It is not recommended to optimize hyperparameters based on pseudo model responses. 
+  if((model_response_heuristic != "none") && (reoptimize_hyperpar)) {
+    message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is not none.")
+  }
+  
+  # Exact log-likelihood function is required when no model response heuristic is to be used. 
+  if(model_response_heuristic == "none") {
+    assert_that(!is.null(llik_exact), 
+                msg="`llik_exact` is required when `model_response_heuristic` is 'none'")
+    using_exact_llik_obj <- inherits(llik_exact, "llikEmulator")
+    assert_that(using_exact_llik_obj || is.function(llik_exact))
+    if(using_exact_llik_obj) {
+      assert_that(llik_exact$exact_llik)
+      if(is.null(lik_par_val)) assert_that(all.equal(llik_exact$lik_par, llik_emulator$lik_par))
+    }
+  }
+  
+}
+
+
+
+
+
+
+
+

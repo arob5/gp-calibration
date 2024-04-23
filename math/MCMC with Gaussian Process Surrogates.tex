@@ -404,13 +404,29 @@ estimating the probability and how they differ with and without using the GP cov
 \item Alternative view-point: Metropolis-Hastings via Classification; instead of trying to approximate the acceptance probability, view this as trying to solve a classification problem. 
 \end{enumerate}
 
+\subsection{Need to Implement}
+\begin{enumerate} 
+\item Measure quality of the posterior approximation. This is easier for the deterministic approximations since we can evaluate the 
+(unnormalized) density for these approximations. For MCMC, we only have samples. 
+\item Emulating the forward model approach (assuming a Gaussian likelihood): 
+	\begin{enumerate}
+	\item Derive marginal approximation (which yields additive variance inflation). 
+	\item Derive integrated expected variance criterion. 
+	\item Repeat the two above steps for the basis function-approximated forward model. 
+	\item Implement all of these within the llikEmulator class framework. 
+	\end{enumerate}
+\end{enumerate}
+
 \subsection{Possible things to investigate}
 \begin{enumerate}
 \item "Hierarchical" acquisition functions (see the Mak paper on hierarchical EI). 
 \item Optimizing the GP with bound constraints. 
+\item Integrating GP out of acceptance probability (look at expected improvement derivation to see if there is something that could be done here). 
+\item Look into other closed-form extensions of IEVAR: hierarchical acq function, normalizing flows (see Mak paper) 
+\item See if its possible to obtain closed-form IVAR where the integrand is just the GP variance and the weighting density is the approximate 
+Gaussian marginal approximation. In general, when the weighting dist is Gaussian IVAR is available in closed-form (see Gramacy and Mak papers), 
+though I'm not sure if this will be possible in this case due to the fact in the marginal approximation the covariance matrix is also a function of $u$.  
 \end{enumerate}
-
-
 
 
 \section{TODOs}

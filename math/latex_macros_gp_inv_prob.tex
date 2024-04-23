@@ -1,0 +1,64 @@
+%!TEX root = SMA-book.tex
+
+% Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
+
+
+% --------------------------------------------------------------------------------------------------
+% Bayesian inverse problem: general setup 
+% --------------------------------------------------------------------------------------------------
+
+% General inverse problems.
+\newcommand{\Par}{u}
+\newcommand{\parSpace}{\mathcal{U}} % Parameter space
+\newcommand{\dimPar}{D} % Parameter dimension 
+\newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
+\newcommand{\obs}{y} % Data observation (response) vector
+\newcommand{\noise}{\epsilon} % Random variable representing noise, typically in additive noise model. 
+\newcommand{\obsSpace}{\mathcal{Y}} % Output space
+\newcommand{\dimObs}{P} % Dimension of data observation vector
+\newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
+\newcommand{\fwd}{G} % Forward model
+\newcommand{\llik}{\mathcal{L}} % Log-likelihood 
+\newcommand{\priorDens}{\pi_0} % Prior density 
+\newcommand{\postDens}{\pi} % Unnormalized posterior density.
+\newcommand{\postDensNorm}{\pi_{\text{norm}}} % Normalized posterior density.
+\newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
+\newcommand{\likPar}{\Sigma} % Likelihood parameter
+
+
+% --------------------------------------------------------------------------------------------------
+% Gaussian Process Emulators
+% --------------------------------------------------------------------------------------------------
+
+% Generic GP commands. 
+\newcommand{\GP}{\mathcal{GP}} % GP distribution.
+\newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
+\newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
+\newcommand{\gpMean}[1][]{\mu_{#1}}
+\newcommand{\gpKer}[1][]{k_{#1}}
+
+% Log-likelihood and forward model emulators. 
+\newcommand{\llikEm}[2][]{#1_{#2}}
+\newcommand{\emMean}[2][]{\mu^{#1}_{#2}}
+\newcommand{\emKer}[2][]{k^{#1}_{#2}}
+
+% Design. 
+\newcommand{\NDesign}{N}
+\newcommand{\NBatch}{B}
+\newcommand{\designIn}[1][\NDesign]{U} % Design inputs. 
+\newcommand{\designOutLlik}[1][\NDesign]{\ell_{#1}}
+\newcommand{\designOutFwd}[1][\NDesign]{g_{#1}}
+\newcommand{\designBatchIn}{U_{\NBatch}}
+\newcommand{\designBatchLlik}{\ell_{\NBatch}}
+\newcommand{\designBatchFwd}{g_{\NBatch}}
+
+% --------------------------------------------------------------------------------------------------
+% Markov Chain Monte Carlo. 
+% --------------------------------------------------------------------------------------------------
+
+% Generic MCMC commands. 
+\newcommand{\propDens}{q} % Proposal density
+\newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
+\newcommand{\NMCMC}{T_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
+

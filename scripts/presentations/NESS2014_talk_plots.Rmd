@@ -19,10 +19,12 @@ library(lhs)
 library(ggplot2)
 library(viridis)
 library(parallel)
+library(gridExtra)
 library(data.table)
 
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
+ness_output_dir <- file.path(base_dir, "output", "NESS2024_plots")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -102,7 +104,15 @@ test_info_trunc <- list()
 test_info_trunc$inputs <- test_info$inputs[input_trunc_idx,, drop=FALSE]
 test_info_trunc$outputs <- test_info$outputs[input_trunc_idx]
 test_info_trunc$lprior_trunc <- test_info$lprior[input_trunc_idx]                                             
-test_info_trunc$lpost_trunc <- test_info$lpost[input_trunc_idx]                                              
+test_info_trunc$lpost_trunc <- test_info$lpost[input_trunc_idx]
+
+# Save plot. 
+gp_plot <- llik_gp$plot_llik_pred_1d(test_info$inputs, include_CI=TRUE, true_llik=test_info$outputs)
+gp_plot <- gp_plot + xlim(-1.5, 3) + ylim(-4000, 200) + ylab("log-likelihood")
+
+plot(gp_plot)
+
+ggsave(file.path(ness_output_dir, "gp_plot.png"), gp_plot)
 
 ```
 
@@ -245,7 +255,7 @@ for(output_var in vsem_info$output_vars) {
 # Define design points and test grid. 
 
 # Initial design.
-inv_prob2$design_info <- list(N_design=15)
+inv_prob2$design_info <- list(N_design=8)
 inv_prob2$design_info$inputs <- get_batch_design("LHS", inv_prob2$design_info$N_design, 
                                                  prior_params=inv_prob2$par_prior)
 inv_prob2$design_info$outputs <- inv_prob2$llik$assemble_llik(inv_prob2$design_info$inputs)
@@ -268,21 +278,50 @@ inv_prob2$test_info$lpost <- inv_prob2$test_info$outputs + inv_prob2$test_info$l
 post_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, exp(inv_prob2$test_info$lpost + 1800), 
                              points_mat=inv_prob2$design_info$inputs,  
                              raster=TRUE, point_coords=inv_prob2$par_true, 
-                             main_title="Exact posterior with initial design", 
+                             main_title="Posterior, Initial Design", 
                              legend_label="unnormalized density", points_mat_lab="Initial design",
-                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2], 
+                             points_mat_size=3, point_coords_size=3)
 
 lpost_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, inv_prob2$test_info$lpost, 
                              points_mat=inv_prob2$design_info$inputs,  
                              raster=TRUE, point_coords=inv_prob2$par_true, 
-                             main_title="Exact log posterior with initial design", 
+                             main_title="Log-posterior, Initial Design", 
                              legend_label="log density", points_mat_lab="Initial design",
-                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+                             xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2],
+                             points_mat_size=3, point_coords_size=3)
 
 plot(post_heatmap)
 plot(lpost_heatmap)
 
+llik_true_save <- lpost_heatmap + xlab("u1") + ylab("u2") + 
+                        theme(legend.position = "none", 
+                              axis.text.x=element_blank(),
+                              axis.ticks.x=element_blank(), axis.text.y=element_blank(), 
+                              axis.ticks.y=element_blank(),
+                              panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                              panel.border = element_blank(), panel.background = element_blank(),
+                              plot.background = element_blank(), 
+                              axis.title=element_text(size=22), 
+                              plot.title=element_text(size=35))
+                              
+post_true_save <- post_heatmap + xlab("u1") + ylab("u2") + 
+                        theme(legend.position = "none", 
+                              axis.text.x=element_blank(),
+                              axis.ticks.x=element_blank(), axis.text.y=element_blank(), 
+                              axis.ticks.y=element_blank(),
+                              panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                              panel.border = element_blank(), panel.background = element_blank(),
+                              plot.background = element_blank(), 
+                              axis.title=element_text(size=22), 
+                              plot.title=element_text(size=35))
+
+ggsave(file.path(ness_output_dir, "llik_true.png"), llik_true_save)
+ggsave(file.path(ness_output_dir, "post_true.png"), post_true_save)
+
+
 ```
+
 ```{r}
 # Fit emulator directly to log-likelihood. 
 # NOTE: not truncating prior in this example, since the uniform prior esssentially already does this. 
@@ -307,18 +346,51 @@ llik_pred_list <- inv_prob2$llik_gp$predict(inv_prob2$test_info$inputs)
 llik_pred_mean_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, llik_pred_list$mean, 
                                        points_mat=inv_prob2$design_info$inputs,  
                                        raster=TRUE, point_coords=inv_prob2$par_true, 
-                                       main_title="Log-Likelihood Predictive Mean", 
+                                       main_title="Predictive Mean", 
                                        legend_label="GP Mean", points_mat_lab="Initial design",
-                                       xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+                                       xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2], 
+                                       points_mat_size=3, point_coords_size=3)
 llik_pred_sd_heatmap <- plot_heatmap(inv_prob2$test_info$inputs, sqrt(llik_pred_list$var), 
                                      points_mat=inv_prob2$design_info$inputs,  
                                      raster=TRUE, point_coords=inv_prob2$par_true, 
-                                     main_title="Log-Likelihood Predictive SD", 
+                                     main_title="Predictive SD", 
                                      legend_label="GP SD", points_mat_lab="Initial design",
-                                     xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2])
+                                     xlab=inv_prob2$llik$input_names[1], ylab=inv_prob2$llik$input_names[2], 
+                                     points_mat_size=3, point_coords_size=3)
 
 plot(llik_pred_mean_heatmap)
 plot(llik_pred_sd_heatmap)
+
+
+
+llik_pred_mean_save <- llik_pred_mean_heatmap + xlab("u1") + ylab("u2") + 
+                        theme(legend.position = "none", 
+                              axis.text.x=element_blank(),
+                              axis.ticks.x=element_blank(), 
+                              axis.text.y=element_blank(), 
+                              axis.ticks.y=element_blank(),
+                              panel.grid.major = element_blank(), 
+                              panel.grid.minor = element_blank(),
+                              panel.border = element_blank(), 
+                              panel.background = element_blank(),
+                              plot.background = element_blank(), 
+                              axis.title=element_text(size=22), 
+                              plot.title=element_text(size=35)) 
+                        
+
+llik_pred_sd_save <- llik_pred_sd_heatmap + xlab("u1") + ylab("u2") + 
+                        theme(legend.position = "none", axis.text.x=element_blank(),
+                              axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(),
+                              panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                              panel.border = element_blank(), panel.background = element_blank(),
+                              plot.background = element_blank(), 
+                              axis.title=element_text(size=22), 
+                              plot.title=element_text(size=35)) 
+
+ggsave(file.path(ness_output_dir, "llik_pred_mean.png"), llik_pred_mean_save)
+ggsave(file.path(ness_output_dir, "llik_pred_sd.png"), llik_pred_sd_save)
+
+
 ```
 
 ```{r}
@@ -363,16 +435,79 @@ samp_dt2 <- append_mcmc_output(samp_dt2, mcmc_mean, "mean")
 
 # TODO: update these funtions so that they optionally have multiple plots in a single plot object.  
 get_trace_plots(samp_dt2)
-get_hist_plot_comparisons(samp_dt2, test_label_baseline="exact")
+get_hist_plot_comparisons(samp_dt2, burn_in_start=0.5*inv_prob2$mcmc$N_mcmc, test_label_baseline="exact")
 
 # TODO: update this function: get_2d_density_contour_plot()
 
 ```
 
+```{r}
+# 2d Density contour plots 
+samp_dt2_wide <- data.table::dcast(select_mcmc_samp(samp_dt2, burn_in_start=0.5*inv_prob2$mcmc$N_mcmc), 
+                                   formula="param_type+itr+test_label ~ param_name", 
+                                   value.var="sample")
+
+kde_2d_plt <- ggplot(samp_dt2_wide[test_label != "mcwm_nocov"]) +
+                geom_density_2d(aes(x=LAR, y=KEXT), contour_var="ndensity") + 
+                geom_point(aes(x=LAR, y=KEXT), data=as.data.frame(inv_prob2$design_info$inputs), color="red") + 
+                facet_wrap(vars(test_label)) + 
+                xlab("u1") + ylab("u2") + ggtitle("Posterior Predictions") + 
+                theme(axis.title=element_text(size=22), 
+                              plot.title=element_text(size=35))
 
 
+                              
 
 
+ggsave(file.path(ness_output_dir, "kde_contour_plots.png"), kde_2d_plt)
+
+plot(kde_2d_plt)
+```
+
+
+```{r}
+# Sequential design. 
+
+llik_true <- function(input) {
+  
+    sig2_val <- inv_prob2$sig2_true
+    y <- vsem_info$data_obs[,vsem_info$output_vars]
+    N_obs <- vsem_info$n_obs
+  
+    # Construct log likelihood. 
+    llik <- -0.5 * sum((y - inv_prob2$fwd(input))^2 / sig2_val, na.rm=TRUE)
+    if(default_normalize || !default_conditional) llik <- llik - 0.5 * sum(log(sig2_val))
+    if(default_normalize) llik <- llik - 0.5*N_obs*log(2*pi)
+
+    return(drop(llik))
+}
+  
+
+N_grid_points <- 300
+grid_points_idx <- sample.int(nrow(inv_prob2$test_info$inputs), size=N_grid_points)
+
+results <- acquire_batch_input_sequentially(inv_prob2$gp, "IEVAR_grid", N_batch=20, model_response_heuristic="none", 
+                                            opt_method="grid", f_exact=llik_true, reoptimize_hyperpar=FALSE, 
+                                            grid_points=inv_prob2$test_info$inputs[grid_points_idx,], 
+                                            candidate_grid=inv_prob2$test_info$inputs[grid_points_idx,])
+
+
+```
+
+```{r}
+df_acq_points <- data.frame(results$input_batch)
+colnames(df_acq_points) <- c("u1", "u2")
+df_acq_points$order <- 1:nrow(df_acq_points)
+
+
+plt_acq <- post_true_save + geom_text(data=df_acq_points, mapping=aes(x=u1, y=u2, label=order, size=3), 
+                                      color="red") + ggtitle("Sequential Design")
+plot(plt_acq)   
+
+ggsave(file.path(ness_output_dir, "seq_design_plot.png"), plt_acq)
+
+
+```
 
 
 
