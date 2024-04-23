@@ -161,7 +161,38 @@ In this setting, the notation $\gpKer(\Par)$ is now interpreted as the $\dimObs 
 independent GP. Similarly, for a set of inputs $\parMat \in \R^{M \times \dimPar}$, $\gpKer[\Ndesign](\parMat)$ is now the 
 $M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive covariances of each independent GP. 
 
+\subsection{Surrogate Construction}
+We now consider modeling either $\fwd$ or $\llik$ with a GP, referring to these cases as \textit{forward model emulation} and 
+\textit{log-likelihood} emulation, respectively. As mentioned previously, computationally costly forward models render 
+standard inference algorithms intractable for solving Bayesian inverse problems due to the large number of model 
+evaluations that must be conducted iteratively. The main idea of model emulation is to front-load the forward model 
+runs, which can often be computed in parallel, to obtain a design 
+$\{(\Par_{\idxDesign}, \fwd(\Par_{\idxDesign}))\}_{\idxDesign=1}^{\Ndesign}$ or 
+$\{(\Par_{\idxDesign}, \llik(\Par_{\idxDesign}))\}_{\idxDesign=1}^{\Ndesign}$, which can then be used to train a model that 
+approximates $\fwd$ or $\llik$. 
 
+\subsubsection{Forward Model Emulation}
+If the output dimension $\dimObs$ is reasonably small, then a common approach is to specify an independent 
+multi-output GP prior directly for the forward model, $\fwd \sim \GP(\emMean{\fwd}, \emKer{\fwd})$. After 
+conditioning on the design $\{(\Par_{\idxDesign}, \fwd(\Par_{\idxDesign}))\}_{\idxDesign=1}^{\Ndesign}$, 
+the predictive distribution $\fwdEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ 
+represents the emulator for $\fwd$. We emphasize that $\fwdEm[\Ndesign]$ is a \textit{stochastic} surrogate; 
+the predicted forward model outputs at inputs $\parMat$ is summarized by the entire distribution 
+$\fwdEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\parMat), \emKer[\Ndesign]{\fwd}(\parMat))$. 
+Thus, the mean $\emMean[\Ndesign]{\fwd}(\parMat)$ provides a point estimate while the covariance 
+$\emKer[\Ndesign]{\fwd}(\parMat)$ summarizes the uncertainty in the estimate. This is useful for the purpose
+of uncertainty quantification, in that the additional uncertainty introduced as a consequence of the surrogate 
+approximation can be propagated to the approximate posterior distribution. We note that plugging the random 
+function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces an approximation of the log-likelihood. 
+In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approximation takes the form 
+\begin{align}
+\llikEmFwd[\Ndesign](\Par) := \log\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar). \label{induced_llik_emulator}
+\end{align}
+We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFwd[\Ndesign](\Par)$ is also 
+stochastic, but no longer Gaussian; and (ii.) $\llikEmFwd[\Ndesign]$ is a ``plug-in'' estimator for $\llik$; no 
+prior model for $\llik$ is specified. Instead, a modular approach \cite{modularization} is taken in which all of 
+the surrogate modeling decisions are made for $\fwd$, and then the resulting emulator $\fwdEm[\Ndesign]$ 
+is simply plugged into the likelihood.  
 
 
 
@@ -193,7 +224,7 @@ $M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive
 
 
 
-\bibliography{framework_calibrating_ecosystem_models} 
+\bibliography{post_approx_with_GP_emulators} 
 \bibliographystyle{ieeetr}
 
 \end{document}
