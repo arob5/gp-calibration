@@ -151,7 +151,9 @@ Our default choice of kernel function is the popular \textit{exponentiated quadr
 \gpKer(\Par, \tilde{\Par}) &= 
 \margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, 
 \end{align}
-defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. We typically take the mean 
+defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. This is an example
+of a stationary, or shift-invariant, kernel since $\gpKer(\Par, \tilde{\Par})$ only depends on its arguments through their difference 
+$\Par - \tilde{\Par}$. To complete the GP prior specification, we typically take the mean 
 function to be a constant or quadratic. We opt for the common empirical Bayes approach of fixing all mean and kernel hyperparameters 
 at their maximum likelihood estimates. 
 
@@ -192,9 +194,44 @@ We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFw
 stochastic, but no longer Gaussian; and (ii.) $\llikEmFwd[\Ndesign]$ is a ``plug-in'' estimator for $\llik$; no 
 prior model for $\llik$ is specified. Instead, a modular approach \cite{modularization} is taken in which all of 
 the surrogate modeling decisions are made for $\fwd$, and then the resulting emulator $\fwdEm[\Ndesign]$ 
-is simply plugged into the likelihood.  
+is simply plugged into the likelihood. Emulating expensive models using GPs is one of the central questions 
+studied in the computer experiments literature; see \cite{gramacy2020surrogates} and 
+\cite{design_analysis_computer_experiments} for detailed treatments. Challenges arise when the output
+dimension $\dimObs$ is large or the outputs are highly interdependent, rendering the independent GP 
+approach infeasible or ill-advised. For example, the output may correspond to the numerical solution of 
+a differential equation and thus may take the form of a long time series or large spatiotemporal grid. 
+A great deal of literature has addressed these challenges, including approaches tailored to forward models
+with dynamical structure 
+(e.g., \cite{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}).
+A popular alternative is to first approximately express the high-dimensional output as a linear combination of basis vectors 
+\begin{align}
+\fwd(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec},
+\end{align}
+and then model the coefficients $\basisWeight_{\idxBasis}(\Par)$ using independent GPs. The basis vectors 
+are typically found via a singular value decomposition, though other bases have been explored 
+(\cite{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}). The surrogate constructed in 
+this fashion is simply a linear combination of independent GP emulators, and hence most of the results on forward model 
+emulation in this paper are easily extended to this setting. See the appendix for details (TODO). 
 
-
+\subsubsection{Log-Likelihood Emulation}
+We observe in \ref{post_dens} that the forward model evaluations appear in the posterior density only through the 
+likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate $\llik(\Par)$ without 
+obtaining an approximation of the forward model. It is typically preferable to focus on approximating the logarithm 
+of the likelihood, which usually results in a smoother response surface that is more amenable to GP emulation. 
+The emulator construction proceeds as before; a GP prior $\llik \sim \GP(\emMean{\llik}, \emKer{\llik})$ is specified and the predictive 
+distribution $\llikEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$ obtained by 
+conditioning on the design $\{(\Par_{\idxDesign}, \llik(\Par_{\idxDesign}))\}_{\idxDesign=1}^{\Ndesign}$. 
+The use of GPs to approximate log-likelihoods has been widely used in approximate Bayesian inference 
+(\cite{VehtariParallelGP, Kandasamy_2017, llikRBF, trainDynamics, quantileApprox, wang2018adaptive, landslideCalibration})
+and Bayesian quadrature (\cite{BayesQuadrature, BayesQuadRatios}). In the context of inverse problems with 
+high-dimensional output spaces, log-likelihood emulation has the clear benefit of reducing to a univariate GP setting. 
+On the other hand, it has several downsides. Even on the log scale, log-likelihoods can be fast-varying and exhibit large 
+dynamic range, proving troublesome for stationary GP priors \cite{wang2018adaptive}. A second potential weakness 
+stems from the fact that log-likelihoods often have known bound constraints, which may not be respected by a GP 
+prior or predictive distribution. Recent work has dealt with this problem by incorporating constraints into the 
+GP hyperparameter optimization \cite{quantileApprox}. Finally, it may be difficult to incorporate prior domain knowledge 
+into the GP prior for the log-likelihood, as compared to forward model emulation \cite{GP_PDE_priors}. 
+Nevertheless, the benefits of reducing to a scalar output space may outweigh these downsides in many applications. 
 
 % Posterior Approximation
 \section{Posterior Approximation}
@@ -220,6 +257,10 @@ is simply plugged into the likelihood.
 \item Should I define $\postDens$ to be unnormalized, or introduce separate notation for the unnormalized density. 
 \item Should I define everything in terms of the potential (i.e. negative llik) instead of the llik? 
 \item Think about how to define the domain/co-domain of the forward model; should this differ from the par/observation space? 
+\item Perhaps give some context by discuss connections to Bayesian optimization and to log-likelihood approximation used in 
+simulation-based inference. 
+\item Hyperparameter marginalization: need to look into opportunities for closed-form hyperparameter marginalization during 
+sequential design phase. 
 \end{enumerate}
 
 
