@@ -142,17 +142,23 @@ gp_llik$plot_pred_1d(test_info$inputs, Y_new=test_info$llik)
 ```
 
 ```{r}
-# Compute log IEVAR acquisition at test inputs, using same grid of inputs as grid points. Evaluating 
-# acquisition at one point ata a time, not in batch mode. 
+# Compute log IEVAR and IEENT acquisitions at test inputs, using same grid of inputs as grid points. Evaluating 
+# acquisition at one point at a time, not in batch mode. 
 
 log_IEVAR_vals <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_llik,
                                                grid_points=test_info$inputs, log_scale=TRUE)
+
+IEENT_vals <- evaluate_acq_func_vectorized(acq_IEENT_grid, input_mat=test_info$inputs, gp=gp_llik,
+                                           grid_points=test_info$inputs, log_scale=TRUE)
 ```
 
 ```{r}
 # Plot log IEVAR evaluations. 
 plot(test_info$inputs, log_IEVAR_vals, type="l", xlab="test inputs", ylab="log IEVAR", 
      main="log IEVAR single point evals, uniform weights")
+
+plot(test_info$inputs, IEENT_vals, type="l", xlab="test inputs", ylab="IEENT", 
+     main="IEENT single point evals, uniform weights")
 ```
 
 
@@ -163,6 +169,8 @@ wts <- dnorm(test_info$inputs, 2.5, 0.1)
 
 log_IEVAR_vals_wt <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_llik,
                                                   grid_points=test_info$inputs, log_scale=TRUE, weights=wts)
+IEENT_vals_wt <- evaluate_acq_func_vectorized(acq_IEENT_grid, input_mat=test_info$inputs, gp=gp_llik,
+                                              grid_points=test_info$inputs, log_scale=TRUE, weights=wts)
 ```
 
 
@@ -170,6 +178,9 @@ log_IEVAR_vals_wt <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test
 # Plot log IEVAR evaluations with Gaussian weights.
 plot(test_info$inputs, log_IEVAR_vals_wt, type="l", xlab="test inputs", ylab="log IEVAR", 
      main="log IEVAR single point evals, N(2.5, 0.1^2) weights")
+
+plot(test_info$inputs, IEENT_vals_wt, type="l", xlab="test inputs", ylab="IEENT", 
+     main="IEENT single point evals, N(2.5, 0.1^2) weights")
 ```
 
 # 2d Input Example. 
@@ -277,7 +288,6 @@ plt <- ggplot(df_contour) +
         geom_point(aes(x=x1, y=x2), data=df_design, color="black") + 
         ggtitle("True lpost vs. GP lpost predictive mean")
 
-# TODO: why does this marginal approx not look right? 
 plt_marg_approx<- ggplot(df_contour) + 
                   geom_contour(aes(x=x1, y=x2, z=y), color="blue") + 
                   geom_contour(aes(x=x1, y=x2, z=y_marg_approx), color="red") + 
@@ -304,19 +314,29 @@ plot(plt_uncertainty)
 ```
 
 ```{r}
-# Evaluate log IEVAR on grid. 
+# Evaluate IEENT and log IEVAR on grid. 
 
 log_IEVAR_vals <- evaluate_acq_func_vectorized(acq_IEVAR_grid, input_mat=test_info$inputs, gp=gp_lpost,
                                                grid_points=test_info$inputs, log_scale=TRUE)
+IEENT_vals <- evaluate_acq_func_vectorized(acq_IEENT_grid, input_mat=test_info$inputs, gp=gp_lpost,
+                                           grid_points=test_info$inputs, log_scale=TRUE)
 
 df_contour$log_IEVAR <- log_IEVAR_vals
+df_contour$IEENT <- IEENT_vals
 
 selected_point_idx <- which.min(log_IEVAR_vals)
 plt_log_IEVAR <- plot_heatmap(test_info$inputs, log_IEVAR_vals, points_mat=design_info$inputs, raster=TRUE, 
                               point_coords=test_info$inputs[selected_point_idx,], main_title="log IEVAR", 
                               points_mat_lab="Design point", point_coords_col="white")
+
+selected_point_idx <- which.min(IEENT_vals)
+plt_IEENT <- plot_heatmap(test_info$inputs, IEENT_vals, points_mat=design_info$inputs, raster=TRUE, 
+                          point_coords=test_info$inputs[selected_point_idx,], main_title="IEENT", 
+                          points_mat_lab="Design point", point_coords_col="white")
+
                               
 plot(plt_log_IEVAR)
+plot(plt_IEENT)
 ```
 
 ```{r}
@@ -324,24 +344,51 @@ plot(plt_log_IEVAR)
 N_grid_points <- 300
 grid_points_idx <- sample.int(nrow(test_info$inputs), size=N_grid_points)
 
-results <- acquire_batch_input_sequentially(gp_lpost, "IEVAR_grid", N_batch=20, model_response_heuristic="none", 
-                                            opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
-                                            grid_points=test_info$inputs[grid_points_idx,], 
-                                            candidate_grid=test_info$inputs[grid_points_idx,])
+results_IEVAR <- acquire_batch_input_sequentially(gp_lpost, "IEVAR_grid", N_batch=20, model_response_heuristic="none", 
+                                                  opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                  grid_points=test_info$inputs[grid_points_idx,], 
+                                                  candidate_grid=test_info$inputs[grid_points_idx,])
 ```
 
 
 ```{r}
-# Plot acquisitions. 
+# IEENT sequential acquisition loop. 
+results_IEENT <- acquire_batch_input_sequentially(gp_lpost, "IEENT_grid", N_batch=20, model_response_heuristic="none", 
+                                                  opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                  grid_points=test_info$inputs[grid_points_idx,], 
+                                                  candidate_grid=test_info$inputs[grid_points_idx,])
+```
 
-df_acq_points <- data.frame(results$input_batch)
+
+
+```{r}
+# Plot acquisitions: IEVAR. 
+
+df_acq_points <- data.frame(results_IEVAR$input_batch)
 colnames(df_acq_points) <- c("u1", "u2")
 df_acq_points$order <- 1:nrow(df_acq_points)
 
-plt_acq <- plt + geom_text(data=df_acq_points, mapping=aes(x=u1, y=u2, label=order), color="black")
+plt_acq <- plt_marg_approx + 
+            geom_text(data=df_acq_points, mapping=aes(x=u1, y=u2, label=order), color="black") + 
+            ggtitle("IEVAR Acquisitions")
 plot(plt_acq)                           
             
 ```
+
+```{r}
+# Plot acquisitions: IEENT. 
+
+df_acq_points_IEENT <- data.frame(results_IEENT$input_batch)
+colnames(df_acq_points_IEENT) <- c("u1", "u2")
+df_acq_points_IEENT$order <- 1:nrow(df_acq_points_IEENT)
+
+plt_acq_IEENT <- plt_marg_approx + 
+                  geom_text(data=df_acq_points_IEENT, mapping=aes(x=u1, y=u2, label=order), color="black") + 
+                  ggtitle("IEENT Acquisitions")
+plot(plt_acq_IEENT)                           
+            
+```
+
 
 ```{r}
 # Same as above but using the integrated variance criterion applied directly to the lpost emulator. 
@@ -355,11 +402,30 @@ df_acq_points_IVAR <- data.frame(results_IVAR$input_batch)
 colnames(df_acq_points_IVAR) <- c("u1", "u2")
 df_acq_points_IVAR$order <- 1:nrow(df_acq_points_IVAR)
 
-plt_acq_IVAR <- plt + geom_text(data=df_acq_points_IVAR, mapping=aes(x=u1, y=u2, label=order), color="black")
+plt_acq_IVAR <- plt_marg_approx + geom_text(data=df_acq_points_IVAR, mapping=aes(x=u1, y=u2, label=order), color="black")
 plot(plt_acq_IVAR)   
 
 
 ```
+
+```{r}
+# Same as above but using the integrated entropy criterion applied directly to the lpost emulator. 
+
+results_IENT <- acquire_batch_input_sequentially(gp_lpost, "IENT_grid", N_batch=20, model_response_heuristic="none", 
+                                                 opt_method="grid", f_exact=lpost_true, reoptimize_hyperpar=FALSE, 
+                                                 grid_points=test_info$inputs[grid_points_idx,], 
+                                                 candidate_grid=test_info$inputs[grid_points_idx,])
+
+df_acq_points_IENT <- data.frame(results_IENT$input_batch)
+colnames(df_acq_points_IENT) <- c("u1", "u2")
+df_acq_points_IENT$order <- 1:nrow(df_acq_points_IENT)
+
+plt_acq_IENT <- plt_marg_approx + geom_text(data=df_acq_points_IENT, mapping=aes(x=u1, y=u2, label=order), color="black")
+plot(plt_acq_IENT)   
+
+
+```
+
 
 ```{r}
 # Same as above but using the maximum variance criterion applied directly to the lpost emulator. 

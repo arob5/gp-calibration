@@ -77,8 +77,8 @@ optimize_acq_single_input <- function(acq_func_name, gp, opt_method, candidate_g
 }
 
 
-evaluate_acq_func_vectorized <- function(acq_func, input_mat, ...) {
-  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), ...))
+evaluate_acq_func_vectorized <- function(acq_func, input_mat, gp=NULL, ...) {
+  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), gp=gp, ...))
 }
 
 
@@ -205,7 +205,7 @@ acq_IENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
   
   # Evaluate conditional entropy at grid points. 
-  integrand_vals <- acq_neg_entropy(grid_points, gp_copy, ...)
+  integrand_vals <- -1 * acq_neg_entropy(grid_points, gp_copy, ...)
   
   # Return the weighted sum of conditional variances. 
   return(sum(drop(integrand_vals) * weights))
@@ -230,9 +230,8 @@ acq_IEENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
   if(length(weights)==1) weights <- rep(weights, N_grid)
   gp_copy <- gp$copy(shallow=FALSE)
   
-  # Emulator predictions at acquisition evaluation locations and at grid locations. 
-  pred <- gp_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  pred_grid <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  # Emulator predictions at acquisition evaluation locations.
+  pred <- gp_copy$predict(input, return_mean=TRUE, return_var=FALSE, ...)
   
   # Update the GP model, treating the predictive mean as the observed 
   # response at the acquisition evaluation locations. 
@@ -241,20 +240,11 @@ acq_IEENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
   # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
   # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
   pred_cond <- gp_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
-  log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
-                                             return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
   
-  # TODO: left off here. 
-  # # Compute the variance inflation term on the log scale. 
-  # log_var_inflation <- 2 * (pred_grid$var - pred_cond$var)
-  # 
-  # # Compute log IEVAR. 
-  # log_summands <- log_pred_cond_LN$log_var + log_var_inflation + log(weights)
-  # log_IEVAR <- matrixStats::logSumExp(log_summands)
-  # 
-  # if(log_scale) return(log_IEVAR)
-  # return(exp(log_IEVAR))
-  
+  # Return the weighted sum of conditional entropy evaluations.
+  summands <- pred_cond$mean + 0.5*log(pred_cond$var) + 0.5*log(2*pi) + 0.5
+  return(sum(drop(summands) * weights))
+
 }
 
 
