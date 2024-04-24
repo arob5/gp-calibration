@@ -31,25 +31,52 @@
 % --------------------------------------------------------------------------------------------------
 
 % Generic GP commands. 
+\newcommand{\Ndesign}{N}
 \newcommand{\GP}{\mathcal{GP}} % GP distribution.
 \newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
 \newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
-\newcommand{\gpMean}[1][]{\mu_{#1}}
-\newcommand{\gpKer}[1][]{k_{#1}}
+\newcommand{\gpMeanPrior}{\mu}
+\newcommand{\gpKerPrior}{k}
+\newcommand{\gpMean}[1][\Ndesign]{\gpMeanPrior_{#1}}
+\newcommand{\gpKer}[1][\Ndesign]{\gpKerPrior_{#1}}
 \newcommand{\nuggetSD}{\eta}
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
-\newcommand{\margSD}{\sigma_{\gpKer}}
+\newcommand{\margSD}{\sigma_{\gpKerPrior}}
 
-% Log-likelihood, forward model, and posterior density emulators. 
-\newcommand{\funcEm}[1][]{\func_{#1}}
-\newcommand{\fwdEm}[1][]{\fwd_{#1}}
-\newcommand{\llikEm}[1][]{\llik_{#1}} 
-\newcommand{\llikEmFwd}[1][]{\llik^{\fwd}_{#1}}
-\newcommand{\llikEmGeneric}[1][]{\tilde{\llik}_{#1}} 
-\newcommand{\emMean}[2][]{\mu^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
-\newcommand{\emKer}[2][]{k^{#2}_{#1}}
+% Log-likelihood and forward model emulators. 
+\newcommand{\funcEm}[1][\Ndesign]{\func_{#1}}
+\newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
+\newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
+\newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
+\newcommand{\llikEmGeneric}[1][\Ndesign]{\tilde{\llik}_{#1}}
+
+% Mean and kernel functions for log-likelihood and forward model emulators. 
+\newcommand{\emMeanPrior}[1]{\gpMeanPrior^{#1}} 
+\newcommand{\emKerPrior}[1]{\gpKerPrior^{#1}}
+\newcommand{\emMean}[2][\Ndesign]{\gpMeanPrior^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
+\newcommand{\emKer}[2][\Ndesign]{\gpKerPrior^{#2}_{#1}}
+
+% Random (sample) approximations. 
+\newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
+\newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
+\newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
+\newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
+
+% Marginal approximations. 
+\newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
+\newcommand{\fwdEmMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,marg}}}
+\newcommand{\llikEmMargDens}[1][\Ndesign]{\llikEmMarg[#1]{\postDens}} 
+\newcommand{\fwdEmMargDens}[1][\Ndesign]{\fwdEmMarg[#1]{\postDens}} 
+
+% Mean approximations. 
+\newcommand{\llikEmMean}[2][\Ndesign]{{#2}_{#1}^{\text{mean}}}
+\newcommand{\fwdEmMean}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mean}}}
+\newcommand{\llikEmMeanDens}[1][\Ndesign]{\llikEmMean[#1]{\postDens}} 
+\newcommand{\fwdEmMeanDens}[1][\Ndesign]{\fwdEmMean[#1]{\postDens}} 
+
+
 \newcommand{\emPostDens}[1][]{\postDens_{#1}}
 \newcommand{\emApprox}[2][]{{#2}_{#1}}
 \newcommand{\emMeanApprox}[2][]{{#2}^{\text{mean}}_{#1}}
@@ -58,7 +85,6 @@
 \newcommand{\emPostDensMarg}[1][]{\emMargApprox[#1]{\postDens}}
 
 % Design. 
-\newcommand{\Ndesign}{N}
 \newcommand{\NBatch}{B}
 \newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
 \newcommand{\parMat}{U} % Generic matrix of input parameter points. 
