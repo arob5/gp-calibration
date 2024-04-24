@@ -85,7 +85,8 @@ with normalizing constant given by
 \normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
 \end{align}
 We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. In addition to considering 
+posterior density. When relevant, we will make explicit the likelihood dependence on the forward 
+model by writing $\llik(\Par; \fwd)$. In addition to considering 
 generic likelihoods, we will give special attention to the additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
@@ -94,7 +95,7 @@ generic likelihoods, we will give special attention to the additive Gaussian noi
 \end{align}
 with corresponding log-likelihood 
 \begin{align}
-\llik(\Par) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
+\llik(\Par; \fwd) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
 = -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)). \label{llik_Gaussian}
 \end{align}
 
@@ -235,6 +236,42 @@ Nevertheless, the benefits of reducing to a scalar output space may outweigh the
 
 % Posterior Approximation
 \section{Posterior Approximation}
+The forward model and log-likelihood emulation approaches result in the random log-likelihood approximations 
+$\llikEmFwd[\Ndesign]$ and $\llikEm[\Ndesign]$, respectively. The latter results in a Gaussian predictor 
+$\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$ 
+at any parameter set $\parMat$. On the other hand, the distribution of $\llikEmFwd[\Ndesign](\parMat)$ is 
+typically non-Gaussian and will depend on the specific likelihood under consideration. We use the notation  
+$\llikEmGeneric[\Ndesign]$ as a stand-in for either $\llikEmFwd[\Ndesign]$ or $\llikEm[\Ndesign]$ when 
+stating results that apply to both settings. 
+
+Plugging the log-likelihood surrogate into the posterior density expression \ref{post_dens} yields 
+
+\begin{align}
+\emApprox[\Ndesign]{\postDensNorm}(\Par) := \frac{1}{\emApprox[\Ndesign]{\normCst}}\emApprox[\Ndesign]{\postDens}(\Par) 
+:= \frac{1}{\emApprox[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEmGeneric[\Ndesign](\Par)}, \label{post_dens_random}
+\end{align}
+with normalizing constant given by 
+\begin{align}
+\emApprox[\Ndesign]{\normCst} &= \int \priorDens(\Par) \Exp{\llikEmGeneric[\Ndesign](\Par)} d\Par. \label{norm_cst_random}
+\end{align}
+The unnormalized posterior density $\emApprox[\Ndesign]{\postDens}$ is stochastic; each sample trajectory from the 
+underlying GP induces a different posterior. The papers \cite{StuartTeck1, StuartTeck2} refer to this as the \textit{sample-based}
+approximation of the posterior. Given that it is not obvious how to perform inference using this random object, one typically 
+proceeds by choosing a single, deterministic posterior approximation that somehow summarizes the uncertainty in the 
+random posterior measure. The popular choices for such deterministic approximations are presented below. 
+
+\subsection{Deterministic Approximations}
+Arguably the simplest approach is to reduce the random emulator to a deterministic one by considering only the GP 
+predictive mean. The plug-in mean estimators yield posterior approximations with unnormalized densities 
+\begin{align}
+\emPostDensMean[\Ndesign](\Par) &= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}
+\end{align}
+
+
+
+
+
+
 \subsection{Deterministic Approximations}
 \subsection{Noisy MCMC}
 
@@ -261,6 +298,8 @@ Nevertheless, the benefits of reducing to a scalar output space may outweigh the
 simulation-based inference. 
 \item Hyperparameter marginalization: need to look into opportunities for closed-form hyperparameter marginalization during 
 sequential design phase. 
+\item Notation questions: $\llik^{\fwd}_{\Ndesign}(u)$ or $\llik(u; \fwd_{N})$? Other? Define marginal approximation separately 
+for the two or can I use one notation that encompasses both? 
 \end{enumerate}
 
 

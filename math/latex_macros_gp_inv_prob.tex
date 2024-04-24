@@ -21,7 +21,7 @@
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood 
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Unnormalized posterior density.
-\newcommand{\postDensNorm}{\pi_{\text{norm}}} % Normalized posterior density.
+\newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 
@@ -42,13 +42,20 @@
 \newcommand{\lengthscale}{\ell}
 \newcommand{\margSD}{\sigma_{\gpKer}}
 
-% Log-likelihood and forward model emulators. 
+% Log-likelihood, forward model, and posterior density emulators. 
 \newcommand{\funcEm}[1][]{\func_{#1}}
 \newcommand{\fwdEm}[1][]{\fwd_{#1}}
 \newcommand{\llikEm}[1][]{\llik_{#1}} 
 \newcommand{\llikEmFwd}[1][]{\llik^{\fwd}_{#1}}
+\newcommand{\llikEmGeneric}[1][]{\tilde{\llik}_{#1}} 
 \newcommand{\emMean}[2][]{\mu^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
 \newcommand{\emKer}[2][]{k^{#2}_{#1}}
+\newcommand{\emPostDens}[1][]{\postDens_{#1}}
+\newcommand{\emApprox}[2][]{{#2}_{#1}}
+\newcommand{\emMeanApprox}[2][]{{#2}^{\text{mean}}_{#1}}
+\newcommand{\emMargApprox}[2][]{{#2}^{\text{marg}}_{#1}}
+\newcommand{\emPostDensMean}[1][]{\emMeanApprox[#1]{\postDens}}
+\newcommand{\emPostDensMarg}[1][]{\emMargApprox[#1]{\postDens}}
 
 % Design. 
 \newcommand{\Ndesign}{N}

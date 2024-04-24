@@ -144,7 +144,9 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
 acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
   # This function targets exploration for the exponentiated GP. It can be thought 
   # of as an integrated mean squared prediction error criterion for 
-  # log-normal processes. When `input` is a matrix with more than 1 row, then the
+  # log-normal processes. The outer integral over the design space is 
+  # approximated with a discrete sum over grid points `grid_points` which are given 
+  # weights `weights`. When `input` is a matrix with more than 1 row, then the
   # acquisition will be computed in batch mode, meaning that it considers conditioning
   # on the entire batch of inputs. Note that this is different from the function simply 
   # being vectorized across multiple inputs. For the latter, use 
@@ -183,6 +185,79 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
 }
 
 
+acq_IENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), ...) {
+  # A grid-based (sample sum approximation) of the integrated conditional entropy 
+  # criterion for GPs. When `input` is a matrix with more than 1 row, 
+  # then the acquisition will be computed in batch mode,
+  # meaning that it considers conditioning on the entire 
+  # batch of inputs. Note that this is different from the function simply 
+  # being vectorized across multiple inputs. For the latter, use 
+  # `evaluate_acq_func_vectorized()`. 
+  
+  N_grid <- nrow(grid_points)
+  if(length(weights)==1) weights <- rep(weights, N_grid)
+  gp_copy <- gp$copy(shallow=FALSE)
+  
+  # Condition the GP on the new batch of inputs `input`. Since the conditional entropy 
+  # does not depend on the response, the associated batch response is just set to a 
+  # vector of zeros. 
+  pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
+  gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
+  
+  # Evaluate conditional entropy at grid points. 
+  integrand_vals <- acq_neg_entropy(grid_points, gp_copy, ...)
+  
+  # Return the weighted sum of conditional variances. 
+  return(sum(drop(integrand_vals) * weights))
+  
+}
+
+
+acq_IEENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
+  # This function targets exploration for the exponentiated GP. It can be thought 
+  # of as an integrated conditional entropy criterion for 
+  # log-normal processes. The outer integral over the design space is approximated with a discrete
+  # sum over grid points `grid_points` which are given weights `weights`. 
+  # When `input` is a matrix with more than 1 row, then the
+  # acquisition will be computed in batch mode, meaning that it considers conditioning
+  # on the entire batch of inputs. Note that this is different from the function simply 
+  # being vectorized across multiple inputs. For the latter, use 
+  # `evaluate_acq_func_vectorized()`. 
+  
+  # TODO: validate_args_acq_IEENT_grid()
+  
+  N_grid <- nrow(grid_points)
+  if(length(weights)==1) weights <- rep(weights, N_grid)
+  gp_copy <- gp$copy(shallow=FALSE)
+  
+  # Emulator predictions at acquisition evaluation locations and at grid locations. 
+  pred <- gp_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  pred_grid <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  
+  # Update the GP model, treating the predictive mean as the observed 
+  # response at the acquisition evaluation locations. 
+  gp_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
+  
+  # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
+  # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
+  pred_cond <- gp_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
+  log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
+                                             return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
+  
+  # TODO: left off here. 
+  # # Compute the variance inflation term on the log scale. 
+  # log_var_inflation <- 2 * (pred_grid$var - pred_cond$var)
+  # 
+  # # Compute log IEVAR. 
+  # log_summands <- log_pred_cond_LN$log_var + log_var_inflation + log(weights)
+  # log_IEVAR <- matrixStats::logSumExp(log_summands)
+  # 
+  # if(log_scale) return(log_IEVAR)
+  # return(exp(log_IEVAR))
+  
+}
+
+
 acq_neg_var <- function(input, gp, ...) {
   # Simply returns the negative predictive variance at the input point 
   # `input`. The negative is due to the fact that the framework assumes
@@ -190,6 +265,30 @@ acq_neg_var <- function(input, gp, ...) {
   # the "maximum variance" acquisition it must be negated here. 
   
   -1 * gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]
+}
+
+acq_neg_entropy <- function(input, gp, ...) {
+  # The negative entropy of the GP predictive distribution at the input point
+  # `input`. 
+  
+  -0.5 * log(2*pi*gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]) - 0.5
+  
+}
+
+
+acq_neg_exp_entropy <- function(input, gp, ...) {
+  # Returns the negative entropy of the log-normal process 
+  # (LNP) `exp(gp)` at the input points `input`. This is technically 
+  # the negative entropy (computed with respect to the natural log) 
+  # up to a multiplicative constant. Multiplying the returned value
+  # by C^2, where C = log2(e) gives the exact negative entropy. 
+  
+  gp_pred <- gp$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  lnp_pred <- convert_Gaussian_to_LN(mean_Gaussian=gp_pred$mean, var_Gaussian=gp_pred$var,
+                                     return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
+  
+  -lnp_pred$log_mean - 0.5 * lnp_pred$log_var - 0.5*log(2*pi) - 0.5
+
 }
 
 
