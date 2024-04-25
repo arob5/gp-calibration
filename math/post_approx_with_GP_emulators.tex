@@ -241,10 +241,7 @@ The forward model and log-likelihood emulation approaches result in the random l
 $\llikEmFwd[\Ndesign]$ and $\llikEm[\Ndesign]$, respectively. The latter results in a Gaussian predictor 
 $\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$ 
 at any parameter set $\parMat$. On the other hand, the distribution of $\llikEmFwd[\Ndesign](\parMat)$ is 
-typically non-Gaussian and will depend on the specific likelihood under consideration. We use the notation  
-$\llikEmGeneric[\Ndesign]$ as a stand-in for either $\llikEmFwd[\Ndesign]$ or $\llikEm[\Ndesign]$ when 
-stating results that apply to both settings. 
-
+typically non-Gaussian and will depend on the specific likelihood under consideration.
 Plugging these log-likelihood surrogates into the posterior density expression \ref{post_dens} yields 
 
 \begin{align}
@@ -322,10 +319,34 @@ in regions where the emulator is uncertain. When $\emKer[\Ndesign]{\llik}(\Par) 
 reduces to the mean approximation. While the unnormalized posterior density \ref{post_dens_marg_var_inflation}
 can be plugged into off-the-shelf sampling algorithms, the uncertainty inflation term can cause highly multi-modal 
 distributions which prove difficult for standard MCMC schemes. (\todo: add plot) This difficulty is noted in the 
-supplement of \cite{VehtariParallelGP}.
+supplement of \cite{VehtariParallelGP}. 
 
+The expectation in the forward model emulation case 
+\ref{post_dens_marg_fwd} is generally intractable, though pseudo-marginal MCMC methods offer a potential 
+avenue for inference \cite{pseudoMarginalMCMC}. In the special case of a Gaussian likelihood \ref{llik_Gaussian}, 
+the expectation admits the closed-form expression
+\begin{align}
+\fwdEmMargDens[\Ndesign](\Par) 
+&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right]
+\nonumber \\
+&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)),
+\label{post_dens_marg_fwd_Gaussian}
+\end{align}
+which follows immediately from the fact that the expectation is of the form of a convolution 
+of two Gaussian densities (see appendix; \todo). The posterior \ref{post_dens_marg_fwd_Gaussian}
+corresponds to the modified Bayesian inverse problem  
+\begin{align}
+\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
+v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber \\
+\Par &\sim \priorDens \nonumber, 
+\end{align}
+where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
+\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
+from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}. 
+The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
+\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}. 
 
-\subsection{Deterministic Approximations}
 \subsection{Noisy MCMC}
 
 % Sequential Design
@@ -353,6 +374,7 @@ simulation-based inference.
 sequential design phase. 
 \item Notation questions: $\llik^{\fwd}_{\Ndesign}(u)$ or $\llik(u; \fwd_{N})$? Other? Define marginal approximation separately 
 for the two or can I use one notation that encompasses both? 
+\item Think about comparing the two forms of variance inflation in the frequency domain. 
 \end{enumerate}
 
 

@@ -22,6 +22,26 @@ url="https://doi.org/10.1007/978-3-540-28650-9_4"
 }
 
 
+%  ---------------------------------------------------------------------------------------------------
+% General MCMC
+%  ---------------------------------------------------------------------------------------------------
+
+% Pseudo-marginal. 
+@article{pseudoMarginalMCMC,
+author = {Christophe Andrieu and Gareth O. Roberts},
+title = {{The pseudo-marginal approach for efficient Monte Carlo computations}},
+volume = {37},
+journal = {The Annals of Statistics},
+number = {2},
+publisher = {Institute of Mathematical Statistics},
+pages = {697 -- 725},
+keywords = {auxiliary variable, convergence, marginal, Markov chain Monte Carlo},
+year = {2009},
+doi = {10.1214/07-AOS574},
+URL = {https://doi.org/10.1214/07-AOS574}
+}
+
+
 
 %  ---------------------------------------------------------------------------------------------------
 % General computer modeling
@@ -167,7 +187,7 @@ eprint = { https://doi.org/10.1198/106186008X320681}
 
 % First consider an approach from propagating uncertainty in GP hyperparameters. Consider adding GP cov to the observation cov. 
 % Then consider using a secondary GP fit to the residuals to correct the first one. 
-@article{https://doi.org/10.1029/2019WR025721,
+@article{hydrologicalModel,
 author = {Zhang, Jiangjiang and Zheng, Qiang and Chen, Dingjiang and Wu, Laosheng and Zeng, Lingzao},
 title = {Surrogate-Based Bayesian Inverse Modeling of the Hydrological System: An Adaptive Approach Considering Surrogate Approximation Error},
 journal = {Water Resources Research},
@@ -220,7 +240,7 @@ year = {2020}
    
 
 % Example application of Emulate, calibrate, sample approach. 
-@article{https://doi.org/10.1029/2020MS002454,
+@article{idealizedGCM,
 author = {Dunbar, Oliver R. A. and Garbuno-Inigo, Alfredo and Schneider, Tapio and Stuart, Andrew M.},
 title = {Calibration and Uncertainty Quantification of Convective Parameters in an Idealized GCM},
 journal = {Journal of Advances in Modeling Earth Systems},
@@ -289,7 +309,7 @@ year = {2021}
 }
 
 % Utilize Ensemble Kalman Inversion (EKI) or Ensemble Kalman Sampling (EKI) as cheap design method. 
-@article{Cleary2021,
+@article{CES,
 	doi = {10.1016/j.jcp.2020.109716},
 	url = {https://doi.org/10.1016\%2Fj.jcp.2020.109716},  
 	year = 2021,
@@ -497,7 +517,8 @@ URL = {https://doi.org/10.1214/09-BA415}
 % Integrated variance criteria
 % ---------------------------------------------------------------------------------------------------
 
-% Integrated variance criterion targeting the GP directly, but weighted by the approx posterior; accompanying theory, 
+% Integrated variance criterion targeting the GP directly, but weighted by the approx posterior; accompanying theory. 
+% Also utilize marginal approximation in Gaussian forward model emulation setting. 
 @misc{weightedIVAR,
       title={Sequential design for surrogate modeling in Bayesian inverse problems}, 
       author={Paul Lartaud and Philippe Humbert and Josselin Garnier},
