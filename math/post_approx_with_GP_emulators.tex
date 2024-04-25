@@ -159,7 +159,7 @@ function to be a constant or quadratic. We opt for the common empirical Bayes ap
 at their maximum likelihood estimates. 
 
 Finally, we consider the extension to multi-output functions $\func: \parSpace \to \R^{\dimObs}$. There is a large literature on multi-output 
-kernels (TODO: cite), but we focus here on the simplest case in which each output is modeled separately as an independent GP. 
+kernels (\todo: cite), but we focus here on the simplest case in which each output is modeled separately as an independent GP. 
 In this setting, the notation $\gpKerPrior(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ diagonal matrix collecting the variance of each 
 independent GP. Similarly, for a set of inputs $\parMat \in \R^{M \times \dimPar}$, $\gpKerPrior(\parMat)$ is now the 
 $M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive covariances of each independent GP. 
@@ -212,7 +212,7 @@ and then model the coefficients $\basisWeight_{\idxBasis}(\Par)$ using independe
 are typically found via a singular value decomposition, though other bases have been explored 
 (\cite{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}). The surrogate constructed in 
 this fashion is simply a linear combination of independent GP emulators, and hence most of the results on forward model 
-emulation in this paper are easily extended to this setting. See the appendix for details (TODO). 
+emulation in this paper are easily extended to this setting. See the appendix for details (\todo). 
 
 \subsubsection{Log-Likelihood Emulation}
 We observe in \ref{post_dens} that the forward model evaluations appear in the posterior density only through the 
@@ -276,21 +276,53 @@ Arguably the simplest approach to constructing a deterministic approximation is 
 to a deterministic one by considering only the GP predictive mean. 
 The plug-in mean estimators yield posterior approximations with unnormalized densities 
 \begin{align}
-\fwdEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\llik(\Par; \emMean[\Ndesign]{\fwd}(\Par))} \label{post_dens_mean_fwd} \\
-\llikEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} \label{post_dens_mean_llik}.
+\fwdEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\llik(\Par; \emMean[\Ndesign]{\fwd}(\Par))}
+ \label{post_dens_mean_fwd} \\
+\llikEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} 
+\label{post_dens_mean_llik}.
 \end{align}
-These approximations fail to account for the uncertainty introduced by the surrogate model. One approach to propagate the 
+These approximations fail to account for the uncertainty introduced by the surrogate model, which can lead 
+to overconfidence in downstream posterior inference. These mean-based approximations are analyzed 
+theoretically in \cite{StuartTeck1}, with error bounds provided in Hellinger distance. In \ref{VehtariParallelGP}, 
+the approximation \ref{post_dens_mean_llik} is considered and is instead referred to as the 
+\textit{median approximation}, owing to the fact that the mean and median of Gaussian distributions coincide. 
+The approximation $\llikEmMeanDens[\Ndesign](\Par)$ can be shown to be optimal in a certain  
+$L^1$ sense \cite{VehtariParallelGP, StuartTeck2}. 
+
+One approach to propagate the 
 emulator uncertainty is to marginalize the likelihood with respect to the emulator. Doing so yields the approximations 
 \begin{align}
 \fwdEmMargDens[\Ndesign](\Par) &:= \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_marg_fwd} \\
-\llikEmMargDens[\Ndesign](\Par) &:= \priorDens(\Par) \E_{\llikEm}\left[\Exp{\llikEm[\Ndesign](\Par)} \right] \label{post_dens_marg_llik}
+\llikEmMargDens[\Ndesign](\Par) &:= \priorDens(\Par) \E_{\llikEm}\left[\Exp{\llikEm[\Ndesign](\Par)} \right], \label{post_dens_marg_llik}
 \end{align}
-The subscripts in the expectations indicate integration with respect to the GP predictive distributions 
+with the expectation subscripts indicating integration with respect to the GP predictive distributions 
 $\Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$ and
 $\Gaussian(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par))$, respectively. Note that these expectations are 
 computed independently for each $\Par$; the GP predictive covariance structure is not considered. 
-The term \textit{marginal approximation} follows the references \cite{StuartTeck1, StuartTeck2}, which analyze the error of these
-approximations in the Gaussian likelihood setting. 
+We refer to these posteriors as \textit{marginal approximations} following the terminology used in
+ \cite{StuartTeck1, StuartTeck2}, which analyze the error of these approximations in the Gaussian likelihood setting. 
+
+Marginal approximations can be justified in various ways. \todo
+
+We now consider performing inference for the approximations \ref{post_dens_marg_fwd} and \ref{post_dens_marg_llik}. 
+In the log-likelihood emulation setting, observe that the induced likelihood approximation is log-normally distributed
+\begin{align}
+\Exp{\llikEm[\Ndesign](\Par)} &\sim \LN(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par)), 
+\end{align}
+which implies that \ref{post_dens_marg_llik} simplifies to 
+\begin{align}
+\llikEmMargDens[\Ndesign](\Par) 
+&:= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} 
+\label{post_dens_marg_llik_simplified} \\
+&= \llikEmMeanDens[\Ndesign](\Par) \Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}. 
+\label{post_dens_marg_var_inflation}
+\end{align}
+The final expression \ref{post_dens_marg_var_inflation} can be interpreted as a form of posterior inflation 
+in regions where the emulator is uncertain. When $\emKer[\Ndesign]{\llik}(\Par) = 0$ the marginal approximation 
+reduces to the mean approximation. While the unnormalized posterior density \ref{post_dens_marg_var_inflation}
+can be plugged into off-the-shelf sampling algorithms, the uncertainty inflation term can cause highly multi-modal 
+distributions which prove difficult for standard MCMC schemes. (\todo: add plot) This difficulty is noted in the 
+supplement of \cite{VehtariParallelGP}.
 
 
 \subsection{Deterministic Approximations}
