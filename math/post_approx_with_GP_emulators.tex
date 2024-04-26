@@ -265,13 +265,13 @@ The papers \cite{StuartTeck1, StuartTeck2} refer to this as the \textit{sample-b
 approximation of the posterior. Given that it is not obvious how to perform inference using these random objects, one typically 
 proceeds by choosing a single, deterministic posterior approximation that somehow summarizes the uncertainty in the 
 random posterior measure. Popular choices for such deterministic approximations are described below. Going forward, 
-for succinctness we will only define the unnormalized posterior densities, the associated normalized being 
+for succinctness we will only define the unnormalized posterior densities, with the associated normalizing constants  
 implicitly defined. 
 
 \subsection{Deterministic Approximations}
 Arguably the simplest approach to constructing a deterministic approximation is to reduce the random emulator 
 to a deterministic one by considering only the GP predictive mean. 
-The plug-in mean estimators yield posterior approximations with unnormalized densities 
+The plug-in mean estimators yield the unnormalized posterior density approximations 
 \begin{align}
 \fwdEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\llik(\Par; \emMean[\Ndesign]{\fwd}(\Par))}
  \label{post_dens_mean_fwd} \\
@@ -282,7 +282,10 @@ These approximations fail to account for the uncertainty introduced by the surro
 to overconfidence in downstream posterior inference. These mean-based approximations are analyzed 
 theoretically in \cite{StuartTeck1}, with error bounds provided in Hellinger distance. In \ref{VehtariParallelGP}, 
 the approximation \ref{post_dens_mean_llik} is considered and is instead referred to as the 
-\textit{median approximation}, owing to the fact that the mean and median of Gaussian distributions coincide. 
+\textit{median approximation}, owing to the fact that the median formula for a log-normal random variable 
+gives $\text{median}(\Exp{\llikEm[\Ndesign](\Par)}) = \Exp{\emMean[\Ndesign]{\fwd}(\Par)}$. In other words, 
+the median of the likelihood emulator yields the same estimator as plugging in the mean of the 
+\textit{log}-likelihood emulator.
 The approximation $\llikEmMeanDens[\Ndesign](\Par)$ can be shown to be optimal in a certain  
 $L^1$ sense \cite{VehtariParallelGP, StuartTeck2}. 
 
@@ -333,8 +336,8 @@ the expectation admits the closed-form expression
 \label{post_dens_marg_fwd_Gaussian}
 \end{align}
 which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see appendix; \todo). The posterior \ref{post_dens_marg_fwd_Gaussian}
-corresponds to the modified Bayesian inverse problem  
+of two Gaussian densities (see appendix; \todo). The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
+can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
 \begin{align}
 \obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
 v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
@@ -347,7 +350,31 @@ from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflati
 The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
 \cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}. 
 
+Finally we note that generalizations of $\text{median}(\Exp{\llikEm[\Ndesign](\Par)})$ have been considered, 
+resulting in the $\quantileProb$-quantile, $\quantileProb \in (0,1)$ approximations 
+\begin{align}
+\fwdEmQDens[\Ndesign](\Par) &:= \priorDens(\Par) \quantile \left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_quantile_fwd} \\
+\llikEmQDens[\Ndesign](\Par) &:= \priorDens(\Par) \quantile \left[\Exp{\llikEm[\Ndesign](\Par)} \right]. \label{post_dens_quantile_llik}
+\end{align}
+The log-likelihood emulation case \ref{post_dens_quantile_llik} simplifies to 
+\begin{align}
+\llikEmQDens[\Ndesign](\Par) 
+&= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}},
+\label{post_dens_quantile_llik_simplified}
+\end{align}
+with $\GaussianCDF$ denoting the standard Gaussian distribution function. The approximate posterior 
+\ref{post_dens_quantile_llik_simplified} is considered in \cite{VehtariParallelGP, quantileApprox}. Larger choices 
+of $\alpha$ correspond to more conservative approximations in the sense of inducing a larger degree of posterior 
+inflation in regions where the GP is uncertain.  
+
 \subsection{Noisy MCMC}
+
+
+
+
+
+
+
 
 % Sequential Design
 \section{Sequential Design}
