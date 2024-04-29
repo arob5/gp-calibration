@@ -2,10 +2,10 @@
 \RequirePackage[l2tabu, orthodox]{nag}
 \usepackage[main=english]{babel}
 \usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
-\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage[pdftex]{graphicx}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
 \usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
 \usepackage{algorithm}
 \usepackage{algpseudocode} % Note that this also loads algorithmicx
@@ -77,9 +77,9 @@ in section \ref{section_lik_par}.}.
 
 The Bayesian approach completes this specification with a prior distribution 
 on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
-by the posterior distribution $\postDensNorm(\Par) := p(\Par | \obs)$. The posterior density is computed by Bayes' rule 
+by the posterior distribution $\postDensNorm(\Par) \Def p(\Par | \obs)$. The posterior density is computed by Bayes' rule 
 \begin{align}
-\postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) := \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
+\postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) \Def \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
 \end{align}
 with normalizing constant given by 
 \begin{align}
@@ -118,14 +118,14 @@ In this section, we provide a brief review of Gaussian processes; for in-depth t
 \cite{gramacy2020surrogates, StuartTeck2, gpML}. A \textit{Gaussian process} (GP) is a probability 
 distribution over a set of functions $\func: \parSpace \to \R$, defined by the property that 
 the random vector $[\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top$ has
-a joint Gaussian distribution for any set of inputs $\parMat := \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
+a joint Gaussian distribution for any set of inputs $\parMat \Def \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
 A GP is defined by its \textit{mean function} $\gpMeanPrior: \parSpace \to \R$ and positive-definite \textit{kernel} 
 (i.e., \textit{covariance function}) $\gpKerPrior: \parSpace \times \parSpace \to \R$ and is thus denoted by 
 $\GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows. Letting 
-$\tilde{\parMat} := [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
-$\func(\parMat) := [\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$ (and similarly for $\gpMeanPrior(\parMat)$), 
-$\gpKerPrior(\parMat, \tilde{\parMat}) := \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{1 \leq \idxDesign, m \leq \Ndesign} \in \R^{\Ndesign \times M}$, 
-and $\gpKerPrior(\parMat) := \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
+$\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
+$\func(\parMat) \Def [\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$ (and similarly for $\gpMeanPrior(\parMat)$), 
+$\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{1 \leq \idxDesign, m \leq \Ndesign} \in \R^{\Ndesign \times M}$, 
+and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
 the defining property of the GP can be written as 
 \begin{align}
 \func(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
@@ -133,7 +133,7 @@ the defining property of the GP can be written as
 Now suppose that we have observed the (noiseless) function evaluations $\func(\designIn)$ at a set of \textit{design points} $\designIn$. 
 It is well-known \cite{gpML} that the conditional distribution $\func|\func(\designIn)$ is also a GP
 \begin{align}
-\funcEm[\Ndesign] := \func|\func(\designIn) \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]),
+\funcEm[\Ndesign] \Def \func|\func(\designIn) \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]),
 \end{align}
 with mean and kernel given by 
 \begin{align}
@@ -190,7 +190,7 @@ approximation can be propagated to the approximate posterior distribution. We no
 function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces an approximation of the log-likelihood. 
 In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approximation takes the form 
 \begin{align}
-\llikEmFwd(\Par) := \llik(\Par; \fwdEm) =  \log\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar). \label{induced_llik_emulator}
+\llikEmFwd(\Par) \Def \llik(\Par; \fwdEm) =  \log\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar). \label{induced_llik_emulator}
 \end{align}
 We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFwd[\Ndesign](\Par)$ is also 
 stochastic, but no longer Gaussian; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
@@ -255,15 +255,15 @@ $\llikEmFwd[\Ndesign]$ and $\llikEm[\Ndesign]$, respectively. The latter results
 $\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$ 
 at any parameter set $\parMat$. On the other hand, the distribution of $\llikEmFwd[\Ndesign](\parMat)$ is 
 typically non-Gaussian and will depend on the specific likelihood under consideration.
-Plugging these log-likelihood surrogates into the posterior density expression \ref{post_dens} yields 
+Plugging these log-likelihood surrogates into the posterior density expression \ref{post_dens} yields
 
 \begin{align}
 \fwdEmRdm[\Ndesign]{\postDensNorm}(\Par) 
-&:= \frac{1}{\fwdEmRdm[\Ndesign]{\normCst}} \fwdEmRdmDens[\Ndesign](\Par) 
-:=  \frac{1}{\fwdEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEmFwd[\Ndesign](\Par)} \label{post_dens_random_fwd} \\
+&\Def \frac{1}{\fwdEmRdm[\Ndesign]{\normCst}} \fwdEmRdmDens[\Ndesign](\Par) 
+\Def  \frac{1}{\fwdEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEmFwd[\Ndesign](\Par)} \label{post_dens_random_fwd} \\
 \llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
-&:= \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par) 
-:=  \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \label{post_dens_random_llik},
+&\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \label{post_dens_random_llik},
 \end{align}
 with normalizing constants given by 
 \begin{align}
@@ -281,14 +281,14 @@ random posterior measure. Popular choices for such deterministic approximations 
 for succinctness we will only define the unnormalized posterior densities, with the associated normalizing constants  
 implicitly defined. 
 
-\subsection{Deterministic Approximations}
+\subsection{Approximating the Unnormalized Posterior Density}
 Arguably the simplest approach to constructing a deterministic approximation is to reduce the random emulator 
 to a deterministic one by considering only the GP predictive mean. 
 The plug-in mean estimators yield the unnormalized posterior density approximations 
 \begin{align}
-\fwdEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\llik(\Par; \emMean[\Ndesign]{\fwd}(\Par))}
+\fwdEmMeanDens[\Ndesign](\Par) &\Def \priorDens(\Par) \Exp{\llik(\Par; \emMean[\Ndesign]{\fwd}(\Par))}
  \label{post_dens_mean_fwd} \\
-\llikEmMeanDens[\Ndesign](\Par) &:= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} 
+\llikEmMeanDens[\Ndesign](\Par) &\Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} 
 \label{post_dens_mean_llik}.
 \end{align}
 These approximations fail to account for the uncertainty introduced by the surrogate model, which can lead 
@@ -305,8 +305,8 @@ $L^1$ sense \cite{VehtariParallelGP, StuartTeck2}.
 One approach to propagate the 
 emulator uncertainty is to marginalize the likelihood with respect to the emulator. Doing so yields the approximations 
 \begin{align}
-\fwdEmMargDens[\Ndesign](\Par) &:= \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_marg_fwd} \\
-\llikEmMargDens[\Ndesign](\Par) &:= \priorDens(\Par) \E_{\llikEm}\left[\Exp{\llikEm[\Ndesign](\Par)} \right], \label{post_dens_marg_llik}
+\fwdEmMargDens[\Ndesign](\Par) &\Def \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_marg_fwd} \\
+\llikEmMargDens[\Ndesign](\Par) &\Def \priorDens(\Par) \E_{\llikEm}\left[\Exp{\llikEm[\Ndesign](\Par)} \right], \label{post_dens_marg_llik}
 \end{align}
 with the expectation subscripts indicating integration with respect to the GP predictive distributions 
 $\Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$ and
@@ -325,7 +325,7 @@ In the log-likelihood emulation setting, observe that the induced likelihood app
 which implies that \ref{post_dens_marg_llik} simplifies to 
 \begin{align}
 \llikEmMargDens[\Ndesign](\Par) 
-&:= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} 
+&\Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} 
 \label{post_dens_marg_llik_simplified} \\
 &= \llikEmMeanDens[\Ndesign](\Par) \Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}. 
 \label{post_dens_marg_var_inflation}
@@ -366,8 +366,8 @@ The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been 
 Finally we note that generalizations of $\text{median}(\Exp{\llikEm[\Ndesign](\Par)})$ have been considered, 
 resulting in the $\quantileProb$-quantile, $\quantileProb \in (0,1)$ approximations 
 \begin{align}
-\fwdEmQDens[\Ndesign](\Par) &:= \priorDens(\Par) \quantile \left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_quantile_fwd} \\
-\llikEmQDens[\Ndesign](\Par) &:= \priorDens(\Par) \quantile \left[\Exp{\llikEm[\Ndesign](\Par)} \right]. \label{post_dens_quantile_llik}
+\fwdEmQDens[\Ndesign](\Par) &\Def \priorDens(\Par) \quantile \left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \label{post_dens_quantile_fwd} \\
+\llikEmQDens[\Ndesign](\Par) &\Def \priorDens(\Par) \quantile \left[\Exp{\llikEm[\Ndesign](\Par)} \right]. \label{post_dens_quantile_llik}
 \end{align}
 The log-likelihood emulation case \ref{post_dens_quantile_llik} simplifies to 
 \begin{align}
@@ -443,19 +443,20 @@ or $\llikEmFwd[\Ndesign]$ to approximate $\accProbMH(\Par, \propPar)$, either di
 in approximations of $\accProbRatio(\Par, \propPar)$ or $\likRatio(\Par, \propPar)$.  
 For brevity, we focus on the log-likelihood emulation setting here, as the definitions are similar in the forward 
 model emulation case. 
-We thus consider the random variables $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
+We thus consider the random variables $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$,
+$\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$, and 
 $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ defined by inserting the emulated log-likelihoods 
 $\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ in place of their exact counterparts
 in \ref{MH_acc_prob_exact}. The mean, marginal, and quantile approximate posteriors introduced in the previous 
-section correspond to the following deterministic, plug-in estimates of $\accProbRatio(\Par, \propPar)$:
+section correspond to the following deterministic, plug-in estimates of $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$:
 \begin{align}
-\llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-:= \Exp{\emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par)} \\
-\llikEmMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-:= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+\llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
+\coloneqq \Exp{\emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par)} \\
+\llikEmMarg[\Ndesign]{\likRatio}(\Par, \propPar) 
+\Def \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
 \Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) - \emKer[\Ndesign]{\llik}(\Par)\right]} \\
-\llikEmQ[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-:= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+\llikEmQ[\Ndesign]{\likRatio}(\Par, \propPar) 
+\Def \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
 \Exp{\GaussianCDF^{-1}(\quantileProb)  \left[\sqrt{\emKer[\Ndesign]{\llik}(\propPar)} - \sqrt{\emKer[\Ndesign]{\llik}(\Par)}\right]}.
 \end{align}
 Notice that the marginal and quantile approximations inflate the probability of acceptance when the 
@@ -466,29 +467,34 @@ However, the GP emulator $\llikEm[\Ndesign]$ is a random function, meaning that
 $\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ are typically correlated, the covariance
 being given by $\emKer[\Ndesign]{\llik}(\propPar, \Par)$. It is therefore natural to consider incorporating 
 this information into approximations of the likelihood ratio. We define a second marginal approximation 
-by marginalizing $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ with respect to the \textit{joint} 
-distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which gives 
+by marginalizing $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$ with respect to the \textit{joint} 
+distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which gives
 \begin{align}
-\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-&:= \E_{\llikEm[\Ndesign]} \left[\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \right] \\
-&= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
-&=  \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  
+\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar) 
+&\Def \E_{\llikEm[\Ndesign]} \left[\Em[\Ndesign]{\likRatio}(\Par, \propPar) \right] \\
+&= \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
+&=  \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  
 \Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
 \label{lik_ratio_joint_marg}
 \end{align} 
-The joint marginal approximation, inflates the acceptance probability when the GP is uncertain about the 
+The joint marginal approximation inflates the acceptance probability when the GP is uncertain about the 
 \textit{difference} in log-likelihood values at the locations $\propPar$ and $\Par$. For example, it is possible
 that the marginal uncertainty at each location is large, but a large covariance between the locations 
 might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par)$. 
 
-We conclude this section by noting that the joint marginal approximation can be taken one step further by considering 
+The marginal approximation can be taken a step further by integrating $\llikEm$ out of 
+$\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ or $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead of 
+$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. Generalizing to the $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$
+case is trivial, given that $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ is of the form 
+$C \times \Em[\Ndesign]{\likRatio}(\Par, \propPar)$, where $C$ is a constant with respect to $\llikEm$. We thus 
+focus on the latter case, defining 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
-&= \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right],
+&\Def \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right].
 \label{acc_prob_joint_marg}
 \end{align} 
-whereby the expectation has been moved outside of the maximum. The expectation in \ref{acc_prob_joint_marg}
-is of the form $\E \max\left\{1, Y \right\}$ where $Y$ is log-normally distributed, and hence can be written (almost)
+The expectation in \ref{acc_prob_joint_marg}
+is of the form $\E\left[\max\left\{1, Y \right\}\right]$ where $Y$ is log-normally distributed, and hence can be written (almost)
 in closed form with respect to elementary functions and the Gaussian distribution function. See the appendix for 
 details. \todo
 
@@ -530,7 +536,7 @@ section. Thus, the noisy MCMC algorithms provide alternative inference algorithm
 considered approximate posteriors. Moreover, in the forward model emulation setting, they also generalize to 
 situations in which the deterministic approximations yield intractable integrals. For example, these algorithms are 
 not restricted to the setting of a Gaussian likelihood.  
-We use the notation $\parMat := \{\Par, \propPar\}$ in the below definitions. 
+We use the notation $\parMat \Def \{\Par, \propPar\}$ in the below definitions. 
 
 \paragraph{Joint Monte Carlo Within Metropolis-Hastings}
 We first consider setting $\llikSampDist_{\Par, \propPar}$ to be the joint distribution of 
@@ -620,12 +626,12 @@ where $\avgAccProbMH(\Par)$ is the overall acceptance probability, averaged over
 \avgAccProbMH(\Par)
 &= \int_{\parSpace} \propDens(\Par, \propPar) \accProbMH(\Par, \propPar) d\propPar. 
 \end{align}
-Denote $\parMat := \{\Par, \propPar\}$. 
+Denote $\parMat \Def \{\Par, \propPar\}$. 
 The \textit{MCWMH-joint} algorithm replaces the exact log-likelihood evaluations 
-$\llik(\parMat) := [\llik(\Par), \llik(\propPar)]^\top$ used to define $\propDens(\Par, \propPar)$ by 
+$\llik(\parMat) \Def [\llik(\Par), \llik(\propPar)]^\top$ used to define $\propDens(\Par, \propPar)$ by 
 sampled approximate values 
 \begin{align}
-\llikSamp_{\parMat} := [\llikSamp, \llikSampProp]^\top \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)). 
+\llikSamp_{\parMat} \Def [\llikSamp, \llikSampProp]^\top \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)). 
 \end{align}
 We let $\Em[\Ndesign]{\accProbMH}(\Par, \propPar | \llikSamp_{\parMat})$ denote the approximate acceptance probability defined using 
 the sampled values $\llikSamp_{\parMat}$. The probability of accepting a state in the set $A$, conditional on the sample $\llikSamp_{\parMat}$, 
@@ -645,9 +651,9 @@ The unconditional probability follows from the law of total probability:
 &= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)  d\propPar
 \end{align}
 where \ref{flip_integral_order} follows from Tonelli's theorem, and using the definition of $\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)$
-in \ref{acc_prob_joint_marg}. Setting $A := \parSpace$ in the above integral yields the overall acceptance probability 
+in \ref{acc_prob_joint_marg}. Setting $A \Def \parSpace$ in the above integral yields the overall acceptance probability 
 \begin{align}
-\llikEmJointMarg[\Ndesign]{\avgAccProbMH}(\Par) := \int_{\parSpace} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)  d\propPar. 
+\llikEmJointMarg[\Ndesign]{\avgAccProbMH}(\Par) \Def \int_{\parSpace} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)  d\propPar. 
 \end{align}
 These quantities thus give 
 \begin{align}
