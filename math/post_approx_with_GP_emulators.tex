@@ -232,7 +232,10 @@ On the other hand, it has several downsides. Even on the log scale, log-likeliho
 dynamic range, proving troublesome for stationary GP priors \cite{wang2018adaptive}. A second potential weakness 
 stems from the fact that log-likelihoods often have known bound constraints, which may not be respected by a GP 
 prior or predictive distribution. Recent work has dealt with this problem by incorporating constraints into the 
-GP hyperparameter optimization \cite{quantileApprox}. Finally, it may be difficult to incorporate prior domain knowledge 
+GP hyperparameter optimization \cite{quantileApprox}. A third challenge follows from the fact that, in many applications, 
+the likelihood parameters (e.g., $\likPar$) are typically not known and must also be learned from data. An obvious 
+solution is to extend the input space of the emulator to include the likelihood parameters. This is explored in 
+\cite{llikRBF}. Finally, it may be difficult to incorporate prior domain knowledge 
 into the GP prior for the log-likelihood, as compared to forward model emulation \cite{GP_PDE_priors}. 
 Nevertheless, the benefits of reducing to a scalar output space may outweigh these downsides in many applications. 
 
@@ -502,6 +505,28 @@ log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ when computing th
     \end{algorithmic}
 \end{algorithm}
 
+We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$. Let
+$\parMat := \{\Par, \propPar\}$, we consider: 
+\begin{enumerate}
+\item Joint Monte Carlo Within Metropolis-Hastings (\textbf{MCWMH-joint}): 
+\begin{align}
+\llikSampDist_{\Par, \propPar} = \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))
+\end{align}
+\item Independent Monte Carlo Within Metropolis-Hastings (\textbf{MCWMH-ind})
+\begin{align}
+\llikSampDist_{\Par, \propPar} 
+= \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\})
+\end{align}
+\item Pseudo-Marginal (\textbf{pseudo-marg})
+\begin{align}
+\llikSampDist_{\Par, \propPar} 
+= \delta_{\Par} \otimes  
+\Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)).
+\end{align}
+\end{enumerate}
+
+Note that we have continued to specialize the definitions to the log-likelihood emulation setting, but the forward model 
+emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$. 
 
 
 
