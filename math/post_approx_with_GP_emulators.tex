@@ -234,10 +234,19 @@ stems from the fact that log-likelihoods often have known bound constraints, whi
 prior or predictive distribution. Recent work has dealt with this problem by incorporating constraints into the 
 GP hyperparameter optimization \cite{quantileApprox}. A third challenge follows from the fact that, in many applications, 
 the likelihood parameters (e.g., $\likPar$) are typically not known and must also be learned from data. An obvious 
-solution is to extend the input space of the emulator to include the likelihood parameters. This is explored in 
-\cite{llikRBF}. Finally, it may be difficult to incorporate prior domain knowledge 
-into the GP prior for the log-likelihood, as compared to forward model emulation \cite{GP_PDE_priors}. 
-Nevertheless, the benefits of reducing to a scalar output space may outweigh these downsides in many applications. 
+solution is to extend the input space of the emulator to include the likelihood parameters, though the resulting response surface 
+may prove a more potent challenge for GP emulators. This approach is explored in \cite{llikRBF}. Alternatively, specific likelihood 
+choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters. This approach is employed 
+in \cite{FerEmulation}, which focuses on the Gaussian likelihood \ref{llik_Gaussian} in the specific case $\likPar = \sigma^2 I$. In this 
+case, a surrogate can be constructed to approximate the sufficient statistic $\norm{\obs - \fwd(\Par)}_2^2$, 
+which does not depend on the likelihood parameter $\sigma^2$. 
+Finally, we note that it may be difficult to incorporate prior domain knowledge 
+into the GP prior for the log-likelihood, whereas in certain settings it is easier to do so when constructing a forward model 
+surrogate \cite{GP_PDE_priors}. The paper \ref{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
+work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
+a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
+Despite all of these challenges, we emphasize that the reduction to a scalar-valued output space is a significant benefit which 
+may outweigh the downsides of log-likelihood emulation in many applications. 
 
 % Posterior Approximation
 \section{Posterior Approximation}
@@ -394,15 +403,20 @@ accepted with probability $\accProbMH(\Par, \propPar)$, defined by
 
 \begin{align}
 &\accProbMH(\Par, \propPar) = 
-\max\left\{1,  \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}
-{\priorDens(\Par)  \propDens(\Par, \propPar)} \accProbRatio(\Par, \propPar)  \right\}, 
-&&\accProbRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}}.
+\max\left\{1, \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)} \right\}.
 \label{MH_acc_prob_exact}
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
-This procedure is summarized in \Cref{alg:MH}. 
-We refer to $\accProbRatio(\Par, \propPar)$ and $\accProbMH(\Par, \propPar)$ as the likelihood 
-ratio and acceptance probability, respectively. 
+This procedure is summarized in \Cref{alg:MH}. For notational convenience in deriving approximations 
+of the acceptance probability, we define 
+\begin{align}
+&\accProbRatio(\Par, \propPar) 
+= \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)}, 
+&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}}.
+\label{MH_acc_prob_exact}
+\end{align}
+and refer to $\likRatio(\Par, \propPar)$, $\accProbRatio(\Par, \propPar)$ and $\accProbMH(\Par, \propPar)$ 
+as the likelihood ratio, acceptance ratio, and acceptance probability, respectively. 
 
 \begin{algorithm}
     \caption{Metropolis-Hastings}
@@ -425,7 +439,8 @@ ratio and acceptance probability, respectively.
 \end{algorithm}
 
 We can define approximate surrogate-based MCMC algorithms by utilizing $\llikEm[\Ndesign]$ 
-or $\llikEmFwd[\Ndesign]$ to approximate $\accProbRatio(\Par, \propPar)$ or $\accProbMH(\Par, \propPar)$. 
+or $\llikEmFwd[\Ndesign]$ to approximate $\accProbMH(\Par, \propPar)$, either directly or by plugging 
+in approximations of $\accProbRatio(\Par, \propPar)$ or $\likRatio(\Par, \propPar)$.  
 For brevity, we focus on the log-likelihood emulation setting here, as the definitions are similar in the forward 
 model emulation case. 
 We thus consider the random variables $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
@@ -548,7 +563,8 @@ An alternative is to sample the log-likelihood values independently, without con
 We refer to the resulting algorithm as \textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-ind)}. Analogously to the 
 joint case, the transition kernel of this algorithm is given by \ref{MCWMH-joint-kernel} but with the marginal acceptance probabilities computed
 with respect to $\Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}\right)$
-in place of the full joint distribution. 
+in place of the full joint distribution. The \textit{MCWMH-ind} algorithm is utilized to calibrate expensive ecosystem models 
+in \cite{FerEmulation}. 
 
 \paragraph{Pseudo-Marginal Metropolis-Hastings}
 Note that the two previous algorithms produce new log-likelihood samples at both the current $\Par$ and proposed 
@@ -579,6 +595,15 @@ $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_ll
 
 % Appendix 
 \section{Appendix}
+
+\subsection{Marginal Acceptance Probability}
+In this section we derive an expression for 
+\begin{align}
+\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
+&= \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right], 
+\end{align}
+as considered in \ref{acc_prob_joint_marg}. 
+
 
 \subsection{Transition Kernels of Approximate MCMC Algorithms} \label{transition_kernel_derivations}
 We derive the expression for the \textit{MCWMH-joint} transition 
