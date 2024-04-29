@@ -7,8 +7,9 @@
 \usepackage[utf8]{inputenc}
 \usepackage[pdftex]{graphicx}
 \usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
-\usepackage{algorithmic}
-\usepackage[ruled,vlined,commentsnumbered,titlenotnumbered]{algorithm2e}
+\usepackage{algorithm}
+\usepackage{algpseudocode} % Note that this also loads algorithmicx
+\usepackage{cleveref}
 \usepackage{bbm}
 
 % Plotting
@@ -372,7 +373,7 @@ inflation in regions where the GP is uncertain. As compared with $\llikEmMeanDen
 induces a ``softer'' form of uncertainty inflation, with the inflation factor scaling with the exponentiated GP standard 
 deviation instead of the variance. 
 
-\subsection{Noisy MCMC}
+\subsection{Approximate MCMC}
 We now interpret the approximate posteriors introduced in the previous section as inducing different 
 approximations of the Metropolis-Hastings (MH) acceptance probability. This perspective motivates 
 an alternative approach to GP-induced posterior approximation; instead of first deriving an 
@@ -382,10 +383,124 @@ noisy approximations to the MH acceptance probability, and thus fall into the no
 framework which has been considered in the literature 
 \cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}.  
 
-\subsubsection{Exact Metropolis-Hastings}
-We start by briefly reviewing the MH algorithm. 
+\subsubsection{Deterministic Metropolis-Hastings Approximations}
+We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
+$\propDens(\Par, \cdot)$. If the Markov chain is in the current state $\Par \in \parSpace$ then 
+the next state is defined by sampling a proposal $\propPar \sim \propDens(\Par, \cdot)$ which is 
+accepted with probability $\accProbMH(\Par, \propPar)$, defined by 
 
+\begin{align}
+&\accProbMH(\Par, \propPar) = 
+\max\left\{1,  \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}
+{\priorDens(\Par)  \propDens(\Par, \propPar)} \accProbRatio(\Par, \propPar)  \right\}, 
+&&\accProbRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}}.
+\label{MH_acc_prob_exact}
+\end{align}
+If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
+This procedure is summarized in \Cref{alg:MH}. 
+We refer to $\accProbRatio(\Par, \propPar)$ and $\accProbMH(\Par, \propPar)$ as the likelihood 
+ratio and acceptance probability, respectively. 
 
+\begin{algorithm}
+    \caption{Metropolis-Hastings}
+    \label{alg:MH}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
+        \For{$\mcmcIndex \gets1,\NMCMC$} 
+        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ \Comment{Proposal}
+		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \max\left\{1, \frac{\priorDens(\propPar)\Exp{\llik(\propPar)}
+				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) \Exp{\llik(\indexMCMC{\Par})}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
+		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
+		\If{$b = 1$}
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
+		\Else
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
+		\EndIf
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+We can define approximate surrogate-based MCMC algorithms by utilizing $\llikEm[\Ndesign]$ 
+or $\llikEmFwd[\Ndesign]$ to approximate $\accProbRatio(\Par, \propPar)$ or $\accProbMH(\Par, \propPar)$. 
+For brevity, we focus on the log-likelihood emulation setting here, as the definitions are similar in the forward 
+model emulation case. 
+We thus consider the random variables $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
+$\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ defined by inserting the emulated log-likelihoods 
+$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ in place of their exact counterparts
+in \ref{MH_acc_prob_exact}. The mean, marginal, and quantile approximate posteriors introduced in the previous 
+section correspond to the following deterministic, plug-in estimates of $\accProbRatio(\Par, \propPar)$:
+\begin{align}
+\llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+:= \Exp{\emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par)} \\
+\llikEmMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+:= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) - \emKer[\Ndesign]{\llik}(\Par)\right]} \\
+\llikEmQ[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+:= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+\Exp{\GaussianCDF^{-1}(\quantileProb)  \left[\sqrt{\emKer[\Ndesign]{\llik}(\propPar)} - \sqrt{\emKer[\Ndesign]{\llik}(\Par)}\right]}.
+\end{align}
+Notice that the marginal and quantile approximations inflate the probability of acceptance when the 
+uncertainty at the proposed state $\propPar$ is greater than at the current state $\Par$.
+All three of these approximations are derived by independently approximating the numerator and denominator 
+in the ratio $\Exp{\llik(\propPar)} / \Exp{\llik(\Par)}$ and then dividing the two approximations.
+However, the GP emulator $\llikEm[\Ndesign]$ is a random function, meaning that 
+$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ are typically correlated, the covariance
+being given by $\emKer[\Ndesign]{\llik}(\propPar, \Par)$. It is therefore natural to consider incorporating 
+this information into approximations of the likelihood ratio. We define a second marginal approximation 
+by marginalizing $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ with respect to the \textit{joint} 
+distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which gives 
+\begin{align}
+\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+&:= \E_{\llikEm[\Ndesign]} \left[\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \right] \\
+&= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
+&=  \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  
+\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
+\end{align} 
+The joint marginal approximation, inflates the acceptance probability when the GP is uncertain about the 
+\textit{difference} in log-likelihood values at the locations $\propPar$ and $\Par$. For example, it is possible
+that the marginal uncertainty at each location is large, but a large covariance between the locations 
+might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par)$. 
+
+We conclude this section by noting that the joint marginal approximation can be taken one step further by considering 
+\begin{align}
+\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
+&= \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right],
+\label{acc_prob_joint_marginal}
+\end{align} 
+whereby the expectation has been moved outside of the maximum. The expectation in \ref{acc_prob_joint_marginal}
+is of the form $\E \max\left\{1, Y \right\}$ where $Y$ is log-normally distributed, and hence can be written (almost)
+in closed form with respect to elementary functions and the Gaussian distribution function. See the appendix for 
+details. \todo
+
+\subsubsection{Noisy Metropolis-Hastings Approximations}
+The previous section considered deterministic approximations to the MH acceptance probability. Here we turn 
+to random approximations, thus entering the realm of so-called ``noisy'' MCMC algorithms 
+\cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}. The general framework,
+summarized in \Cref{alg:noisy-MH}, is characterized by the choice of distribution $\llikSampDist_{\Par, \propPar}$
+from which to sample log-likelihood values $\llikSamp$ and $\llikSampProp$ which replace the exact 
+log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ when computing the MH acceptance probability. 
+
+\begin{algorithm}
+    \caption{Noisy Metropolis-Hastings}
+    \label{alg:noisy-MH}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{noisyMH}{$\indexMCMC[0]{\Par}, \NMCMC, \propDens, \llikSampDist$}     
+        \For{$\mcmcIndex \gets1,\NMCMC$} 
+        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ 
+		\State $(\llikSamp, \llikSampProp) \sim \llikSampDist_{\indexMCMC{\Par}, \propPar}$  \Comment{Sample log-likelihood values}
+		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \max\left\{1, \frac{\priorDens(\propPar)e^{\llikSampProp} 
+				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) e^{\llikSamp}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
+		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
+		\If{$b = 1$}
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
+		\Else
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
+		\EndIf
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
 
 
 

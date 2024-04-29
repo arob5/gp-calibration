@@ -50,7 +50,7 @@
 \newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
 \newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
 \newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
-\newcommand{\llikEmGeneric}[1][\Ndesign]{\tilde{\llik}_{#1}}
+\newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
 % Mean and kernel functions for log-likelihood and forward model emulators. 
 \newcommand{\emMeanPrior}[1]{\gpMeanPrior^{#1}} 
@@ -85,13 +85,9 @@
 \newcommand{\llikEmQDens}[1][\Ndesign]{\llikEmQ[#1]{\postDens}} 
 \newcommand{\fwdEmQDens}[1][\Ndesign]{\fwdEmQ[#1]{\postDens}} 
 
-
-\newcommand{\emPostDens}[1][]{\postDens_{#1}}
-\newcommand{\emApprox}[2][]{{#2}_{#1}}
-\newcommand{\emMeanApprox}[2][]{{#2}^{\text{mean}}_{#1}}
-\newcommand{\emMargApprox}[2][]{{#2}^{\text{marg}}_{#1}}
-\newcommand{\emPostDensMean}[1][]{\emMeanApprox[#1]{\postDens}}
-\newcommand{\emPostDensMarg}[1][]{\emMargApprox[#1]{\postDens}}
+% Joint marginal approximations. 
+\newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\text{joint-marg}}}
+\newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,joint-marg}}}
 
 % Design. 
 \newcommand{\NBatch}{B}
@@ -116,7 +112,18 @@
 
 % Generic MCMC commands. 
 \newcommand{\propDens}{q} % Proposal density
+\newcommand{\propPar}{\tilde{\Par}} % Proposal density
+\newcommand{\llikSamp}{\ell} 
+\newcommand{\llikSampProp}{\tilde{\ell}} 
+\newcommand{\llikSampDist}{\nu}
 \newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
-\newcommand{\NMCMC}{T_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\NMCMC}{K_{\text{MCMC}}} % Proposal covariance matrix
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
+\newcommand{\accProbRatio}{r}
+\newcommand{\mcmcIndex}{k}
+\newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
+
+
+
+
 
