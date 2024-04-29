@@ -89,6 +89,10 @@
 \newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\text{joint-marg}}}
 \newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,joint-marg}}}
 
+% Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
+\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\text{mcwmh-joint}}}
+\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mcwmh-joint}}}
+
 % Design. 
 \newcommand{\NBatch}{B}
 \newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
@@ -119,7 +123,9 @@
 \newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
 \newcommand{\NMCMC}{K_{\text{MCMC}}} % Proposal covariance matrix
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
+\newcommand{\avgAccProbMH}{a}
 \newcommand{\accProbRatio}{r}
+\newcommand{\MarkovKernel}{P}
 \newcommand{\mcmcIndex}{k}
 \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
 

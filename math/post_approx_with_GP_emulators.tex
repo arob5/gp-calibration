@@ -459,6 +459,7 @@ distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which 
 &= \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
 &=  \llikEmMean[\Ndesign]{\accProbRatio}(\Par, \propPar)  
 \Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
+\label{lik_ratio_joint_marg}
 \end{align} 
 The joint marginal approximation, inflates the acceptance probability when the GP is uncertain about the 
 \textit{difference} in log-likelihood values at the locations $\propPar$ and $\Par$. For example, it is possible
@@ -469,9 +470,9 @@ We conclude this section by noting that the joint marginal approximation can be 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
 &= \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right],
-\label{acc_prob_joint_marginal}
+\label{acc_prob_joint_marg}
 \end{align} 
-whereby the expectation has been moved outside of the maximum. The expectation in \ref{acc_prob_joint_marginal}
+whereby the expectation has been moved outside of the maximum. The expectation in \ref{acc_prob_joint_marg}
 is of the form $\E \max\left\{1, Y \right\}$ where $Y$ is log-normally distributed, and hence can be written (almost)
 in closed form with respect to elementary functions and the Gaussian distribution function. See the appendix for 
 details. \todo
@@ -483,6 +484,8 @@ to random approximations, thus entering the realm of so-called ``noisy'' MCMC al
 summarized in \Cref{alg:noisy-MH}, is characterized by the choice of distribution $\llikSampDist_{\Par, \propPar}$
 from which to sample log-likelihood values $\llikSamp$ and $\llikSampProp$ which replace the exact 
 log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ when computing the MH acceptance probability. 
+For brevity we will continue to specialize the definitions to the log-likelihood emulation setting, but the forward model 
+emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$. 
 
 \begin{algorithm}
     \caption{Noisy Metropolis-Hastings}
@@ -505,29 +508,56 @@ log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ when computing th
     \end{algorithmic}
 \end{algorithm}
 
-We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$. Let
-$\parMat := \{\Par, \propPar\}$, we consider: 
-\begin{enumerate}
-\item Joint Monte Carlo Within Metropolis-Hastings (\textbf{MCWMH-joint}): 
+We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$. Letting
+$\parMat := \{\Par, \propPar\}$, we consider the following choices. 
+
+\paragraph{Joint Monte Carlo Within Metropolis-Hastings}
+We first consider setting $\llikSampDist_{\Par, \propPar}$ to be the joint distribution of 
+$[\llikEm[\Ndesign](\Par), \llikEm[\Ndesign](\propPar)]$: 
 \begin{align}
-\llikSampDist_{\Par, \propPar} = \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))
+\llikSampDist_{\Par, \propPar} = \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)).
+\label{llik_dist_MCWMH-joint}
 \end{align}
-\item Independent Monte Carlo Within Metropolis-Hastings (\textbf{MCWMH-ind})
+We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings (MCWMH-joint)}. 
+Like the deterministic joint marginal approximations \ref{lik_ratio_joint_marg} and \ref{acc_prob_joint_marg}, 
+the \textit{MCWMH-joint} algorithm takes into account the GP covariance structure. Note that since the log-likelihood
+values are sampled independently across iterations, then the \textit{MCWMH-joint} does indeed define a valid 
+Markov chain. The transition kernel of this Markov chain is given by 
+\begin{align}
+\llikEmJointMCWMH[\Ndesign]{\MarkovKernel}(\Par, A) 
+&= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar 
++ \delta_{\Par}(A) \left[1 - \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar \right]
+\label{MCWMH-joint-kernel}
+\end{align}
+which is derived in the appendix (\todo). This is precisely the transition kernel of the Markov chain defined by the deterministic 
+approximation joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. 
+
+\paragraph{Independent Monte Carlo Within Metropolis-Hastings}
+An alternative is to sample the log-likelihood values independently, without considering the GP covariance; i.e., 
 \begin{align}
 \llikSampDist_{\Par, \propPar} 
-= \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\})
+= \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}).
+\label{llik_dist_MCWMH-ind}
 \end{align}
-\item Pseudo-Marginal (\textbf{pseudo-marg})
+We refer to the resulting algorithm as \textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-ind)}. 
+
+\paragraph{Pseudo-Marginal Metropolis-Hastings}
+Note that the two previous algorithms produce new log-likelihood samples at both the current $\Par$ and proposed 
+$\propPar$ locations at each iteration of the algorithm. An alternative is to draw a new sample only at the 
+proposed location, while recycling the sample at the current location from the previous iteration. Formally, this procedure
+implies the product measure 
 \begin{align}
 \llikSampDist_{\Par, \propPar} 
-= \delta_{\Par} \otimes  
-\Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)).
+= \delta_{\llikSamp} \otimes  
+\Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)), \label{llik_dist_pseudo_marg}
 \end{align}
-\end{enumerate}
-
-Note that we have continued to specialize the definitions to the log-likelihood emulation setting, but the forward model 
-emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$. 
-
+which precisely falls into the pseudo-marginal MCMC framework \cite{pseudoMarginalMCMC}. We thus term 
+this algorithm \textit{Pseudo-Marginal Metropolis-Hastings (MH-pseudo-marg)}. Given a log-likelihood sample 
+$\llikSamp$, by definition the unnormalized posterior approximation $\priorDens(\Par) \Exp{\llikSamp}$ is 
+an unbiased estimator of 
+$\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
+This implies that the \textit{MH-pseudo-marg} algorithm defines a Markov chain with target distribution 
+$\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
 
 
 % Sequential Design
@@ -540,6 +570,61 @@ emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$.
 
 % Appendix 
 \section{Appendix}
+
+\subsection{Transition Kernels of Approximate MCMC Algorithms}
+We derive the expression for the \textit{MCWMH-joint} transition 
+kernel $\llikEmJointMCWMH[\Ndesign]{\MarkovKernel}$ given in \ref{MCWMH-joint-kernel}. 
+Let $\Par \in \parSpace$ and $A \subset \parSpace$ a Borel set. 
+We recall that the kernel for a standard MH algorithm is given by 
+\begin{align}
+\MarkovKernel(\Par, A)
+&= \int_{A} \propDens(\Par, \propPar) \accProbMH(\Par, \propPar) d\propPar
++ [1 - \avgAccProbMH(\Par)] \delta_{\Par}(A) \label{MH-kernel}, 
+\end{align}
+where $\avgAccProbMH(\Par)$ is the overall acceptance probability, averaged over all proposals,
+\begin{align}
+\avgAccProbMH(\Par)
+&= \int_{\parSpace} \propDens(\Par, \propPar) \accProbMH(\Par, \propPar) d\propPar. 
+\end{align}
+Denote $\parMat := \{\Par, \propPar\}$. 
+The \textit{MCWMH-joint} algorithm replaces the exact log-likelihood evaluations 
+$\llik(\parMat) := [\llik(\Par), \llik(\propPar)]^\top$ used to define $\propDens(\Par, \propPar)$ by 
+sampled approximate values 
+\begin{align}
+\llikSamp_{\parMat} := [\llikSamp, \llikSampProp]^\top \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)). 
+\end{align}
+We let $\Em[\Ndesign]{\accProbMH}(\Par, \propPar | \llikSamp_{\parMat})$ denote the approximate acceptance probability defined using 
+the sampled values $\llikSamp_{\parMat}$. The probability of accepting a state in the set $A$, conditional on the sample $\llikSamp_{\parMat}$, 
+is thus 
+\begin{align}
+\Prob(\indexMCMC[\mcmcIndex+1]{\Par} \in A | \Par, \llikSamp_{\parMat})
+&=  \int_{A} \propDens(\Par, \propPar) \Em[\Ndesign]{\accProbMH}(\Par, \propPar | \llikSamp_{\parMat}) d\propPar. 
+\end{align}
+The unconditional probability follows from the law of total probability:
+\begin{align}
+\Prob(\indexMCMC[\mcmcIndex+1]{\Par} \in A | \Par)
+&= \int_{\R^2} \Prob(\indexMCMC[\mcmcIndex+1]{\Par} \in A | \Par, \llikSamp_{\parMat}) \Gaussian(\llikSamp_{\parMat} | \emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)) d\llikSamp_{\parMat} \\
+&= \int_{\R^2} \int_{A} \propDens(\Par, \propPar) \Em[\Ndesign]{\accProbMH}(\Par, \propPar | \llikSamp_{\parMat})  
+\Gaussian(\llikSamp_{\parMat} | \emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)) d\propPar \ d\llikSamp_{\parMat} \\
+&= \int_{A} \propDens(\Par, \propPar) \int_{\R^2}  \Em[\Ndesign]{\accProbMH}(\Par, \propPar | \llikSamp_{\parMat})  
+\Gaussian(\llikSamp_{\parMat} | \emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)) d\llikSamp_{\parMat} \ d\propPar \label{flip_integral_order} \\
+&= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)  d\propPar
+\end{align}
+where \ref{flip_integral_order} follows from Tonelli's theorem, and using the definition of $\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)$
+in \ref{acc_prob_joint_marg}. Setting $A := \parSpace$ in the above integral yields the overall acceptance probability 
+\begin{align}
+\llikEmJointMarg[\Ndesign]{\avgAccProbMH}(\Par) := \int_{\parSpace} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)  d\propPar. 
+\end{align}
+These quantities thus give 
+\begin{align}
+\llikEmJointMCWMH[\Ndesign]{\MarkovKernel}(\Par, A)
+&= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar
++ [1 - \llikEmJointMarg[\Ndesign]{\avgAccProbMH}(\Par)] \delta_{\Par}(A) \label{MH-kernel}, 
+\end{align}
+which follows from same derivations for the standard MH kernel \ref{MH-kernel} with the marginal acceptance probabilities substituted for
+the original ones. 
+
+
 
 % Questions and TODOs
 \section{Questions and TODOs}
