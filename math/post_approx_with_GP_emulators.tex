@@ -508,8 +508,14 @@ emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$.
     \end{algorithmic}
 \end{algorithm}
 
-We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$. Letting
-$\parMat := \{\Par, \propPar\}$, we consider the following choices. 
+We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$.
+Below we consider three such choices. In each case, we show that the transition kernel defining the Markov chain 
+of the respective algorithm coincides with that of one of the deterministic approximations considered in the previous 
+section. Thus, the noisy MCMC algorithms provide alternative inference algorithms for sampling from the previously 
+considered approximate posteriors. Moreover, in the forward model emulation setting, they also generalize to 
+situations in which the deterministic approximations yield intractable integrals. For example, these algorithms are 
+not restricted to the setting of a Gaussian likelihood.  
+We use the notation $\parMat := \{\Par, \propPar\}$ in the below definitions. 
 
 \paragraph{Joint Monte Carlo Within Metropolis-Hastings}
 We first consider setting $\llikSampDist_{\Par, \propPar}$ to be the joint distribution of 
@@ -526,20 +532,23 @@ Markov chain. The transition kernel of this Markov chain is given by
 \begin{align}
 \llikEmJointMCWMH[\Ndesign]{\MarkovKernel}(\Par, A) 
 &= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar 
-+ \delta_{\Par}(A) \left[1 - \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar \right]
++ \delta_{\Par}(A) \left[1 - \int_{\parSpace} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar \right],
 \label{MCWMH-joint-kernel}
 \end{align}
-which is derived in the appendix (\todo). This is precisely the transition kernel of the Markov chain defined by the deterministic 
-approximation joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. 
+which is derived in the appendix, \Cref{transition_kernel_derivations}. This is precisely the transition kernel of the Markov chain 
+defined by the deterministic joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. 
 
 \paragraph{Independent Monte Carlo Within Metropolis-Hastings}
 An alternative is to sample the log-likelihood values independently, without considering the GP covariance; i.e., 
 \begin{align}
 \llikSampDist_{\Par, \propPar} 
-= \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}).
+= \Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}\right).
 \label{llik_dist_MCWMH-ind}
 \end{align}
-We refer to the resulting algorithm as \textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-ind)}. 
+We refer to the resulting algorithm as \textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-ind)}. Analogously to the 
+joint case, the transition kernel of this algorithm is given by \ref{MCWMH-joint-kernel} but with the marginal acceptance probabilities computed
+with respect to $\Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}\right)$
+in place of the full joint distribution. 
 
 \paragraph{Pseudo-Marginal Metropolis-Hastings}
 Note that the two previous algorithms produce new log-likelihood samples at both the current $\Par$ and proposed 
@@ -571,7 +580,7 @@ $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_ll
 % Appendix 
 \section{Appendix}
 
-\subsection{Transition Kernels of Approximate MCMC Algorithms}
+\subsection{Transition Kernels of Approximate MCMC Algorithms} \label{transition_kernel_derivations}
 We derive the expression for the \textit{MCWMH-joint} transition 
 kernel $\llikEmJointMCWMH[\Ndesign]{\MarkovKernel}$ given in \ref{MCWMH-joint-kernel}. 
 Let $\Par \in \parSpace$ and $A \subset \parSpace$ a Borel set. 
@@ -622,7 +631,9 @@ These quantities thus give
 + [1 - \llikEmJointMarg[\Ndesign]{\avgAccProbMH}(\Par)] \delta_{\Par}(A) \label{MH-kernel}, 
 \end{align}
 which follows from same derivations for the standard MH kernel \ref{MH-kernel} with the marginal acceptance probabilities substituted for
-the original ones. 
+the original ones. The transition kernel for the \textit{MCWMH-ind} algorithm follows immediately by marginalizing with respect 
+to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
+in place of the full joint distribution. 
 
 
 
