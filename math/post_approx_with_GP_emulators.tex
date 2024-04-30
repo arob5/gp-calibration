@@ -611,8 +611,13 @@ In this section we derive an expression for
 as considered in \ref{acc_prob_joint_marg}. We start by noting 
 \begin{align}
 \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)
-&\sim \LN\left(\log C + \emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par), \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right] \right).
+&\sim \LN\left(\log C + \emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par), \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right] \right),
+\label{acc_ratio_LN}
 \end{align}
+where 
+\begin{align*}
+C \Def \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)}.
+\end{align*}
 Thus, the required computation reduces to computing the expectation of $\min\left\{1, Y \right\}$, where $Y$ is a log-normally distributed 
 random variable. 
 
@@ -643,6 +648,39 @@ This yields
 &= \Exp{m + \frac{1}{2}s^2} \GaussianCDF\left(-\frac{m+s^2}{s}\right).
 \end{align*}
 Plugging this back into \ref{second_integral} completes the proof. 
+\end{proof}
+
+We now apply \Cref{lemma:exp_max_one_LN} to obtain the expression for the marginal acceptance probability. 
+\begin{prop} 
+\begin{align*}
+\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
+&= \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] 
+= w_1 + w_2 \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar), 
+\end{align*}
+where 
+\begin{align*}
+w_1 &= \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
+w_2 &= \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right).
+\end{align*}
+\end{prop}
+
+\begin{proof}
+We recall from \ref{acc_ratio_LN} that $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \sim \LN(m, s^2)$, with 
+\begin{align*}
+m &= \log C + \emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par) \\
+s^2 &= \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]. 
+\end{align*}
+We thus have 
+\begin{align*}
+e^{m + \frac{1}{2}s^2} = \E_{\llikEm}\left[\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \right] 
+=  \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar). 
+\end{align*}
+It remains to verify the expressions for the weights $w_1$ and $w_2$. Letting $Z \sim \Gaussian(0,1)$, 
+we apply \Cref{lemma:exp_max_one_LN} to obtain
+\begin{align*}
+w_1 &= \GaussianCDF(m/s) = \Prob(Z \leq m/s) = \Prob(\Exp{m+sZ} \geq 1) = \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
+w_2 &= \GaussianCDF(-(m+s^2)/s) = \Prob(\Exp{m + sZ} \leq e^{-s}) = \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq e^{-s}).
+\end{align*}
 \end{proof}
 
 
