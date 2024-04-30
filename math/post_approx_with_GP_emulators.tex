@@ -403,7 +403,7 @@ accepted with probability $\accProbMH(\Par, \propPar)$, defined by
 
 \begin{align}
 &\accProbMH(\Par, \propPar) = 
-\max\left\{1, \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)} \right\}.
+\min\left\{1, \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)} \right\}.
 \label{MH_acc_prob_exact}
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
@@ -425,7 +425,7 @@ as the likelihood ratio, acceptance ratio, and acceptance probability, respectiv
     \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
         \For{$\mcmcIndex \gets1,\NMCMC$} 
         		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ \Comment{Proposal}
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \max\left\{1, \frac{\priorDens(\propPar)\Exp{\llik(\propPar)}
+		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\priorDens(\propPar)\Exp{\llik(\propPar)}
 				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) \Exp{\llik(\indexMCMC{\Par})}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
 		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
 		\If{$b = 1$}
@@ -474,7 +474,7 @@ distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which 
 &\Def \E_{\llikEm[\Ndesign]} \left[\Em[\Ndesign]{\likRatio}(\Par, \propPar) \right] \\
 &= \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
 &=  \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  
-\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
+\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - 2\emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
 \label{lik_ratio_joint_marg}
 \end{align} 
 The joint marginal approximation inflates the acceptance probability when the GP is uncertain about the 
@@ -490,11 +490,11 @@ $C \times \Em[\Ndesign]{\likRatio}(\Par, \propPar)$, where $C$ is a constant wit
 focus on the latter case, defining 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
-&\Def \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right].
+&\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right].
 \label{acc_prob_joint_marg}
 \end{align} 
 The expectation in \ref{acc_prob_joint_marg}
-is of the form $\E\left[\max\left\{1, Y \right\}\right]$ where $Y$ is log-normally distributed, and hence can be written (almost)
+is of the form $\E\left[\min\left\{1, Y \right\}\right]$ where $Y$ is log-normally distributed, and hence can be written (almost)
 in closed form with respect to elementary functions and the Gaussian distribution function. See the appendix for 
 details. \todo
 
@@ -516,7 +516,7 @@ emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$.
         \For{$\mcmcIndex \gets1,\NMCMC$} 
         		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ 
 		\State $(\llikSamp, \llikSampProp) \sim \llikSampDist_{\indexMCMC{\Par}, \propPar}$  \Comment{Sample log-likelihood values}
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \max\left\{1, \frac{\priorDens(\propPar)e^{\llikSampProp} 
+		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\priorDens(\propPar)e^{\llikSampProp} 
 				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) e^{\llikSamp}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
 		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
 		\If{$b = 1$}
@@ -606,9 +606,45 @@ $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_ll
 In this section we derive an expression for 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
-&= \E_{\llikEm[\Ndesign]} \left[\max\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right], 
+&= \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right], 
 \end{align}
-as considered in \ref{acc_prob_joint_marg}. 
+as considered in \ref{acc_prob_joint_marg}. We start by noting 
+\begin{align}
+\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)
+&\sim \LN\left(\log C + \emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par), \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right] \right).
+\end{align}
+Thus, the required computation reduces to computing the expectation of $\min\left\{1, Y \right\}$, where $Y$ is a log-normally distributed 
+random variable. 
+
+\begin{lemma} \label{lemma:exp_max_one_LN}
+Let $Y \sim \LN(m, s^2)$. Then, 
+\begin{align}
+\E\left[\min\left\{1, Y \right\} \right] &= \GaussianCDF\left(\frac{m}{s} \right) + \GaussianCDF\left(-\frac{m + s^2}{s} \right) e^{m + \frac{1}{2}s^2}
+\end{align}
+\end{lemma}
+
+\begin{proof}
+We have 
+\begin{align}
+\E\left[\min\left\{1, Y \right\} \right]
+&= \int_{0}^{\infty} \min\{1, y\} \LN(y | m, s^2) dy \nonumber \\
+&= \int_{-\infty}^{\infty} \min\{1, e^x\} \Gaussian(x | m, s^2) dx \nonumber \\
+&= \int_{0}^{\infty} \Gaussian(x | m, s^2) dx +  \int_{-\infty}^{0} e^x \Gaussian(x | m, s^2) dx \nonumber \\
+&= \GaussianCDF(m/s) + \int_{-\infty}^{0} e^x \Gaussian(x | m, s^2) dx. \nonumber \\
+&= \GaussianCDF(m/s) + \int_{-\infty}^{0} \frac{1}{\sqrt{2\pi s^2}} e^x \Exp{-\frac{1}{2s^2} (x - m)^2} dx.  
+\label{second_integral} 
+\end{align}
+For the integral in \ref{second_integral} we combine the exponential terms and complete the square. 
+This yields 
+\begin{align*}
+&\int_{-\infty}^{0} \frac{1}{\sqrt{2\pi s^2}} e^x \Exp{-\frac{1}{2s^2} (x - m)^2} dx \\
+&= \Exp{-\frac{m^2}{2s^2}} \int_{-\infty}^{0} \frac{1}{\sqrt{2\pi s^2}} \Exp{-\frac{1}{2} \left[\frac{x^2}{2} - 2\left(\frac{m}{s^2} + 1\right)x  \right]} dx \\
+&= \Exp{-\frac{m^2}{2s^2} + \frac{[m + s^2]^2}{2s^2}} \int_{-\infty}^{0} \frac{1}{\sqrt{2\pi s^2}} \Exp{-\frac{1}{2s^2}(x - [m+s^2])^2} dx \\
+&= \Exp{m + \frac{1}{2}s^2} \GaussianCDF\left(-\frac{m+s^2}{s}\right).
+\end{align*}
+Plugging this back into \ref{second_integral} completes the proof. 
+\end{proof}
+
 
 
 \subsection{Transition Kernels of Approximate MCMC Algorithms} \label{transition_kernel_derivations}
