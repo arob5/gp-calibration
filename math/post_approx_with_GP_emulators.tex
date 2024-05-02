@@ -50,6 +50,9 @@
 
 \maketitle
 
+% Use citep and citet
+% Write w_1 and w_2 as functions of u and u-tilde 
+% Email Amy 
 
 % Introduction 
 \section{Introduction}
@@ -484,19 +487,36 @@ might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - 
 
 The marginal approximation can be taken a step further by integrating $\llikEm$ out of 
 $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ or $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead of 
-$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. Generalizing to the $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$
-case is trivial, given that $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ is of the form 
-$C \times \Em[\Ndesign]{\likRatio}(\Par, \propPar)$, where $C$ is a constant with respect to $\llikEm$. We thus 
-focus on the latter case, defining 
+$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. The former case 
+\begin{align}
+\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+&= \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
+\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)
+\label{acc_ratio_joint_marg}
+\end{align}
+follows immediately from \ref{lik_ratio_joint_marg}, 
+given that $\accProbRatio(\Par, \propPar)$ differs from $\likRatio(\Par, \propPar)$ only by a multiplicative 
+constant (with respect to the emulator). Thus, the approximations 
+$\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
+$\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)$ induce identical inference algorithms. 
+Marginalizing the acceptance probability directly proves more interesting, yielding
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
-&\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right].
+&\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] \\
+&= w_1 + w_2 \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar),
 \label{acc_prob_joint_marg}
 \end{align} 
-The expectation in \ref{acc_prob_joint_marg}
-is of the form $\E\left[\min\left\{1, Y \right\}\right]$ where $Y$ is log-normally distributed, and hence can be written (almost)
-in closed form with respect to elementary functions and the Gaussian distribution function. See the appendix for 
-details. \todo
+where 
+\begin{align*}
+w_1 &= \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
+w_2 &= \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right).
+\end{align*}
+This is derived in \Cref{prop:joint-marg-accept-prob} in the appendix. While the plug-in acceptance probability 
+approximation based on $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ yields 
+$\min\left\{1, \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) \right\}$, 
+$\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead takes the form of a linear combination of 
+$1$ and $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$, with weights given by the probabilities $w_1$, $w_2$.
+
 
 \subsubsection{Noisy Metropolis-Hastings Approximations}
 The previous section considered deterministic approximations to the MH acceptance probability. Here we turn 
@@ -651,7 +671,7 @@ Plugging this back into \ref{second_integral} completes the proof.
 \end{proof}
 
 We now apply \Cref{lemma:exp_max_one_LN} to obtain the expression for the marginal acceptance probability. 
-\begin{prop} 
+\begin{prop} \label{prop:joint-marg-accept-prob}
 \begin{align*}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
 &= \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] 
@@ -682,8 +702,6 @@ w_1 &= \GaussianCDF(m/s) = \Prob(Z \leq m/s) = \Prob(\Exp{m+sZ} \geq 1) = \Prob(
 w_2 &= \GaussianCDF(-(m+s^2)/s) = \Prob(\Exp{m + sZ} \leq e^{-s}) = \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq e^{-s}).
 \end{align*}
 \end{proof}
-
-
 
 \subsection{Transition Kernels of Approximate MCMC Algorithms} \label{transition_kernel_derivations}
 We derive the expression for the \textit{MCWMH-joint} transition 
@@ -740,25 +758,26 @@ the original ones. The transition kernel for the \textit{MCWMH-ind} algorithm fo
 to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
 in place of the full joint distribution. 
 
-
-
 % Questions and TODOs
 \section{Questions and TODOs}
 \subsection{Notation}
 \begin{enumerate}
-\item Cleanest way to handle notation for llik emulation vs. forward model emulation? 
-\item Should I define $\postDens$ to be unnormalized, or introduce separate notation for the unnormalized density. 
-\item Should I define everything in terms of the potential (i.e. negative llik) instead of the llik? 
-\item Think about how to define the domain/co-domain of the forward model; should this differ from the par/observation space? 
-\item Perhaps give some context by discuss connections to Bayesian optimization and to log-likelihood approximation used in 
+\item How to clean up notation for all of the different approximations being considered here? 
+\end{enumerate}
+
+\subsection{Need to add}
+\begin{enumerate}
+\item Summary of results from noisy MCMC literature. 
+\end{enumerate}
+
+\subsection{Things to consider trying}
+\begin{enumerate}
+\item Perhaps give some context by discussing connections to Bayesian optimization and to log-likelihood approximation used in 
 simulation-based inference. 
 \item Hyperparameter marginalization: need to look into opportunities for closed-form hyperparameter marginalization during 
 sequential design phase. 
-\item Notation questions: $\llik^{\fwd}_{\Ndesign}(u)$ or $\llik(u; \fwd_{N})$? Other? Define marginal approximation separately 
-for the two or can I use one notation that encompasses both? 
 \item Think about comparing the two forms of variance inflation in the frequency domain. 
 \end{enumerate}
-
 
 
 \bibliography{post_approx_with_GP_emulators} 
