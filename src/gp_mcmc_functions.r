@@ -1135,6 +1135,64 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
 }
 
 
+mcmc_gp_1d_discretization <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
+                                      sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
+                                      log_scale_prop=NULL, N_grid_points=NULL,
+                                      adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
+                                      adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
+                                      adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
+  # `N_grid_points` is the number of grid points in the discretization. 
+  
+  # This should be moved to the argument validation function, once it is written. 
+  if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  
+  # Objects to store samples. 
+  d <- llik_emulator$dim_input
+  par_samp <- matrix(nrow=N_itr, ncol=d)
+  colnames(par_samp) <- llik_emulator$input_names
+  
+  # Setup for `sig2` (observation variances). Safe to assume that all of the 
+  # non-fixed likelihood parameters are `sig2` since this is verified by 
+  # `validate_args_mcmc_gp_noisy()` above. 
+  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
+  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
+  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
+  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
+  
+  if(include_sig2_Gibbs_step) {
+    .NotYetImplemented()
+    
+    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
+    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
+    sig2_samp[1,] <- sig2_curr
+  } else {
+    sig2_curr <- NULL
+    sig2_samp <- NULL
+  }
+  
+  # Set initial conditions. 
+  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
+  par_samp[1,] <- drop(par_init)
+  par_curr <- par_samp[1,]
+  lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
+  
+  # Proposal covariance.
+  if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
+  if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
+  L_cov_prop <- t(chol(cov_prop))
+  accept_count <- 0
+  times_adapted <- 0
+  
+  # Grid points for GP discretization. 
+  grid <- get_tensor_product_grid(N_batch, prior_dist_info=par_prior_params)
+                          
+  # Gibbs step: GP. 
+  
+  
+  # MH step: par. 
+  
+}
+
 
 
 # ---------------------------------------------------------------------

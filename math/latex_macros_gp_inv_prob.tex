@@ -94,15 +94,31 @@
 \newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mcwmh-joint}}}
 
 % Design. 
-\newcommand{\NBatch}{B}
+\newcommand{\Nbatch}{B}
+\newcommand{\Nrounds}{K_{\text{design}}}
+\newcommand{\designIndex}{k}
+\newcommand{\Naugment}{\Ndesign + \Nbatch}
 \newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
 \newcommand{\parMat}{U} % Generic matrix of input parameter points. 
 \newcommand{\designIn}[1][\Ndesign]{U_{#1}} % Design inputs. 
 \newcommand{\designOutLlik}[1][\Ndesign]{\ell_{#1}}
 \newcommand{\designOutFwd}[1][\Ndesign]{g_{#1}}
-\newcommand{\designBatchIn}{U_{\NBatch}}
-\newcommand{\designBatchLlik}{\ell_{\NBatch}}
-\newcommand{\designBatchFwd}{g_{\NBatch}}
+\newcommand{\designBatchIn}{U_{\Nbatch}}
+\newcommand{\designBatchLlik}{\ell_{\Nbatch}}
+\newcommand{\designBatchFwd}{g_{\Nbatch}}
+\newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
+\newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
+
+% Acquisition functions 
+\newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\text{#2}}}
+\newcommand{\maxvarLabel}{\text{max-var}}
+\newcommand{\maxentLabel}{\text{max-ent}}
+\newcommand{\intvarLabel}{\text{int-var}}
+\newcommand{\intentLabel}{\text{int-ent}}
+\newcommand{\maxexpvarLabel}{\text{max-exp-var}}
+\newcommand{\maxexpentLabel}{\text{max-exp-ent}}
+\newcommand{\Ent}{H} % Entropy 
+\newcommand{\weightDens}{\rho}
 
 % Basis function emulation. 
 \newcommand{\basisVec}{\phi}

@@ -148,6 +148,9 @@ get_tensor_product_grid <- function(N_batch, prior_dist_info=NULL, bounds=NULL,
                              prior_dist_info[j,"param2"])
         bounds[2,j] <- qnorm(tail_prob_excluded/2, prior_dist_info[j,"param1"], 
                              prior_dist_info[j,"param2"], lower.tail=FALSE)
+      } else if(dist_name == "Truncated_Gaussian") {
+        bounds[1,j] <- prior_dist_info[j,"bound_lower"]
+        bounds[2,j] <- prior_dist_info[j,"bound_upper"]
       } else {
         stop("Unsupported prior distribution: ", dist_name)
       }
