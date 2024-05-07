@@ -728,22 +728,28 @@ to the current GP $\funcEm[\Ndesign]$. This result is also provided in \cite{Veh
 \begin{lemma} \label{lemma:pred-mean-dist}
 Let $(\designBatchIn, \designBatchFunc)$ be a new batch of $\Nbatch$ design points, with 
 $\designBatchFunc \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
-Then for an arbitrary set of inputs $\parMat$, the predictive mean $\gpMean[\Naugment](\parMat)$
+Let  
+\begin{align}
+\gpMean[\Naugment](\parMat | \designBatchFunc) 
+\Def \E[\funcEm[\Ndesign](\parMat) | (\designBatchIn, \designBatchFunc)] \label{conditional-mean-notation}
+\end{align}
+denote the predictive mean at inputs $\parMat$ after conditioning $\funcEm[\Ndesign]$ on 
+$(\designBatchIn, \designBatchFunc)$. Then, the predictive mean $\gpMean[\Naugment](\parMat)$
 (viewed as a function of the random variable $\designBatchFunc$), satisfies 
 \begin{align}
-\gpMean[\Naugment](\parMat)
-\sim \Gaussian\left(\E[\funcEm[\Ndesign](\parMat) | \gpMean[\Ndesign](\designBatchIn)], 
-                               \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat) \right) \label{pred-mean-dist}
+\gpMean[\Naugment](\parMat | \designBatchFunc)
+\sim \Gaussian\left(\gpMean[\Naugment](\parMat | \gpMean[\Ndesign](\designBatchIn)), 
+                               \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat) \right) \label{pred-mean-dist},
 \end{align}
 \end{lemma}
-We see that the mean (with respect to $\designBatchFunc$) of $\gpMean[\Naugment](\parMat)$ is equal to the mean of
+We see that the mean (with respect to $\designBatchFunc$) of $\gpMean[\Naugment](\parMat | \designBatchFunc)$ is equal to the mean of
 the conditional 
 $\funcEm[\Ndesign](\parMat) | (\designBatchIn, \gpMean[\Ndesign](\designBatchIn))$, which treats the current 
 predictive mean $\gpMean[\Ndesign](\designBatchIn)$ as if it were the true response; i.e., the GP $\funcEm[\Ndesign]$
 has been conditioned on the ``pseudo-data'' $(\designBatchIn, \gpMean[\Ndesign](\designBatchIn))$. 
 The variance of 
-$\gpMean[\Naugment](\parMat)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
-of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Naugment](\parMat)$ 
+$\gpMean[\Naugment](\parMat | \designBatchFunc)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
+of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Naugment](\parMat | \designBatchFunc)$ 
 is large when the design points $\designBatchIn$ are more ``influential.''
 
 \subsection{Goal-Oriented Acquisition Functions: Posterior Approximation}
