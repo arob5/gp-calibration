@@ -734,7 +734,8 @@ forward models of significant computational expense, such as those that motivate
 We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
 are tailored to the goal of posterior approximation. The main idea is to define acquisition functions based on 
 the unnormalized posterior density emulator ($\fwdEmRdm[\Ndesign]{\postDens}(\Par)$ or $\llikEmRdmDens[\Ndesign](\Par)$), 
-rather than the underlying GPs themselves. This problem has gained recent attention, and is addressed in 
+rather than the underlying GPs themselves. The problem of GP-based sequential design tailored to posterior approximation 
+has gained recent attention, and is addressed in 
 \cite{SinsbeckNowak, Surer2023sequential, VehtariParallelGP, briol2017sampling, ranjan2016inverse, 
 	landslideCalibration, KandasamyActiveLearning2015, Kandasamy_2017, wang2018adaptive,   
 	weightedIVAR, quantileApprox, hydrologicalModel, briol2017sampling}. 
@@ -747,7 +748,105 @@ the log-likelihood emulation setting. Their natural analogs in this setting are
 \end{align} 
 The ``exp'' in the naming convention highlights that these criteria are being applied to the exponentiated GP 
 $\Exp{\llikEm(\Par)}$ (ignoring the scaling by the prior). Thus, many of the acquisition functions considered here can be 
-generically viewed as the analogs of existing GP acquisition functions to log-normal processes (LNPs). 
+generically viewed as the analogs of existing GP acquisition functions for log-normal processes (LNPs). Since the 
+variance and entropy of a log-normal random variable are well-known, the acquisitions \ref{acq_max_exp_var_ent}
+are easily computable in closed-form. The $\maxexpvarLabel$ acquisition is considered in 
+\cite{, KandasamyActiveLearning2015, Kandasamy_2017}, 
+while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
+[\todo: discuss generalization to batch setting]. 
+
+\subsubsection{Expected Integrated Variance}
+We now focus on adapting the integrated variance criterion \ref{acq_int_var} to LNPs. 
+In the log-likelihood emulation 
+setting, we will be able to derive a closed-form integrand, as was the case in \ref{acq_int_var}. In the special case 
+of a Gaussian likelihood, the analogous criterion in the forward model emulation setting also admits a closed-form 
+integrand. 
+
+\paragraph{Log-Likelihood Emulation}
+We begin with the log-likelihood emulation case. Recall that the 
+$\intvarLabel$ criterion relied on the GP property that the predictive variance $\emKer[\Naugment]{\llik}(\Par)$
+does not depend on the response $\llik(\designBatchIn)$. This is no longer the case for 
+$\Var[\llikEmRdmDens[\Naugment](\Par)]$, given that this quantity depends on $\emMean[\Naugment]{\llik}(\Par)$, 
+which in turn depends on $\llik(\designBatchIn)$ (see \ref{kriging_eqns}). 
+However, under the current GP model we have that 
+$\llik(\designBatchIn) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$.
+The dependence of $\emMean[\Naugment]{\llik}(\Par)$ on $\llik(\designBatchIn)$ is summarized in the below 
+result, which is also given in \cite{VehtariParallelGP}.
+
+\begin{lemma} \label{lemma:pred-mean-dist}
+Let $(\designBatchIn, \designBatchLlik)$ be a new batch of $\Nbatch$ design points, with 
+$\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
+Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Naugment]{\llik}(\parMat)$
+(viewed as a function of the random variable $\designBatchLlik$), satisfies 
+\begin{align}
+\emMean[\Naugment]{\llik}(\parMat) 
+\sim \Gaussian\left(\E[\llikEm[\Ndesign](\parMat) | \emMean[\Ndesign]{\llik}(\designBatchIn)], 
+                               \emKer[\Ndesign]{\llik}(\parMat) - \emKer[\Naugment]{\llik}(\parMat)] \right) \label{pred-mean-dist}
+\end{align}
+\end{lemma}
+We see that the mean (with respect to $\designBatchLlik$) of $\emMean[\Naugment]{\llik}(\parMat)$ is equal to the mean of
+$\llikEm[\Ndesign](\parMat) | (\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn))$, which treats the current 
+predictive mean $\emMean[\Ndesign]{\llik}(\designBatchIn)$ as if it were the true response. The variance of 
+$\emMean[\Naugment]{\llik}(\parMat)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
+of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\emMean[\Naugment]{\llik}(\parMat)$ 
+is large when the design points $\designBatchIn$ are more ``influential''. The above lemma allows us to 
+average over the uncertainty in $\Var[\llikEmRdmDens[\Naugment](\Par)]$ stemming from the random 
+quantity $\designBatchLlik$. 
+
+\begin{lemma} \label{lemma:evar}
+Under the same assumptions as \Cref{lemma:pred-mean-dist}, it follows that 
+\begin{align}
+\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par)]
+&= \Var[\llikEmRdmDens[\Ndesign](\Par) | \emMean[\Ndesign]{\llik}(\designBatchIn)]
+	\varInflation(\Par; \designBatchIn), \label{evar-expression}
+\end{align}
+where 
+\begin{align}
+\varInflation(\Par; \designBatchIn)
+&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\parMat) - \emKer[\Naugment]{\llik}(\parMat)\right)}. \label{var_inflation_factor}
+\end{align}
+\end{lemma}
+The interpretation of \Cref{lemma:evar} is similar to that for \Cref{lemma:pred-mean-dist}. 
+The first term in \ref{evar-expression} is the variance of the log-normal random variable
+ $\llikEmRdmDens[\Ndesign](\Par)$ conditioned on the ``pseudo-data''
+ $(\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn))$. The second term 
+ $\varInflation(\Par; \designBatchIn)$, which we refer to as the \textit{variance inflation factor}, 
+ accounts for the uncertainty due to $\designBatchLlik$. We note that 
+$\varInflation(\Par; \designBatchIn) \geq 1$ and the variance inflation is larger when the 
+input batch $\designBatchIn$ is more influential. If $\designBatchIn$ is a subset of the 
+current design $\designIn[\Ndesign]$, then $\varInflation(\Par; \designBatchIn) = 1$ (no 
+variance inflation is applied). 
+
+With these preliminary results established, we define the $\intExpVarLabel$ criterion
+\begin{align}
+\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
+\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par)] \weightDens(\Par) d\Par, 
+\end{align}
+emphasizing the the expectation is still with respect to 
+$\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
+Applying \Cref{lemma:evar} immediately gives the following simplification. 
+\begin{lemma}
+The $\intExpVarLabel$ acquisition function is equal to 
+\begin{align}
+\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) =
+\int_{\parSpace} \Var[\llikEmRdmDens[\Ndesign](\Par) | \emMean[\Ndesign]{\llik}(\designBatchIn)]
+	\varInflation(\Par; \designBatchIn) \weightDens(\Par) d\Par, 
+\end{align}
+where the variance inflation factor $\varInflation(\Par; \designBatchIn)$ is defined in \ref{var_inflation_factor}. 
+\end{lemma}
+This criterion is considered in \cite{VehtariParallelGP} in training a log-likelihood emulator to be used for 
+approximate Bayesian computation. 
+
+\paragraph{Forward Model Emulation}
+The acquisition function is defined identically in the forward model emulation setting, 
+\begin{align}
+\labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
+\int_{\parSpace} \E_{\designBatchLlik} \Var[\fwdEmRdm[\Naugment]{\postDens}(\Par)] \weightDens(\Par) d\Par. \label{fwd-int-exp-var}
+\end{align}
+To our knowledge, 
+the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
+While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
+demonstrates that the integrand admits a closed-form expression when the likelihood is Gaussian. 
 
 
 % Learning Likelihood Parameters
