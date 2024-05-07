@@ -1,6 +1,6 @@
 
 %  ---------------------------------------------------------------------------------------------------
-% General Gaussian Processes (GPs)
+% General Gaussian Processes (GPs) and Bayesian Optimization
 %  ---------------------------------------------------------------------------------------------------
 
 % Gaussian Processes for Machine Learning
@@ -21,6 +21,33 @@ doi="10.1007/978-3-540-28650-9_4",
 url="https://doi.org/10.1007/978-3-540-28650-9_4"
 }
 
+% Review of BayesOpt
+@ARTICLE{reviewBayesOpt,
+  author={Shahriari, Bobak and Swersky, Kevin and Wang, Ziyu and Adams, Ryan P. and de Freitas, Nando},
+  journal={Proceedings of the IEEE}, 
+  title={Taking the Human Out of the Loop: A Review of Bayesian Optimization}, 
+  year={2016},
+  volume={104},
+  number={1},
+  pages={148-175},
+  keywords={Big data;Bayes methods;Linear programming;Decision making;Design of experiments;Optimization;Genomes;Statistical analysis;decision making;design of experiments;optimization;response surface methodology;statistical learning;genomic medicine;Decision making;design of experiments;optimization;response surface methodology;statistical learning},
+  doi={10.1109/JPROC.2015.2494218}}
+
+% Bayesian Quadrature
+@article{BayesQuadrature,
+title = {Bayes–Hermite quadrature},
+journal = {Journal of Statistical Planning and Inference},
+volume = {29},
+number = {3},
+pages = {245-260},
+year = {1991},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/0378-3758(91)90002-V},
+url = {https://www.sciencedirect.com/science/article/pii/037837589190002V},
+author = {A. O'Hagan},
+keywords = {Bayesian quadrature, numerical integration, Gaussian process, product rule, Gaussian quadrature},
+abstract = {Bayesian quadrature treats the problem of numerical integration as one of statistical inference. A prior Gaussian process distribution is assumed for the integrand, observations arise from evaluating the integrand at selected points, and a posterior distribution is derived for the integrand and the integral. Methods are developed for quadrature in Rp. A particular application is integrating the posterior density arising from some other Bayesian analysis. Simulation results are presented, to show that the resulting Bayes–Hermite quadrature rules may perform better than the conventional Gauss–Hermite rules for this application. A key result is derived for product designs, which makes Bayesian quadrature practically useful for integrating in several dimensions. Although the method does not at present provide a solution to the more difficult problem of quadrature in high dimensions, it does seem to offer real improvements over existing methods in relatively low dimensions.}
+}
 
 %  ---------------------------------------------------------------------------------------------------
 % MCMC
@@ -109,6 +136,69 @@ keywords = {computer-aided design, Experimental design, kriging, response surfac
 year = {1989},
 doi = {10.1214/ss/1177012413},
 URL = {https://doi.org/10.1214/ss/1177012413}
+}
+
+@book{gramacy2020surrogates,
+  title = {Surrogates: {G}aussian Process Modeling, Design and \
+    Optimization for the Applied Sciences},
+  author = {Robert B. Gramacy},
+  publisher = {Chapman Hall/CRC},
+  address = {Boca Raton, Florida},
+  note = {\url{http://bobby.gramacy.com/surrogates/}},
+  year = {2020}
+}
+
+@article{design_analysis_computer_experiments,
+author = {Jerome Sacks and William J. Welch and Toby J. Mitchell and Henry P. Wynn},
+title = {{Design and Analysis of Computer Experiments}},
+volume = {4},
+journal = {Statistical Science},
+number = {4},
+publisher = {Institute of Mathematical Statistics},
+pages = {409 -- 423},
+keywords = {computer-aided design, Experimental design, kriging, response surface, spatial statistics},
+year = {1989},
+doi = {10.1214/ss/1177012413},
+URL = {https://doi.org/10.1214/ss/1177012413}
+}
+
+@article{SanterCompExp,
+author = {Thomas J. Satner and Brian J. Williams and William I. Notz},
+title = {{The Design and Analysis of Computer Experiments}},
+publisher = {Springer},
+address = {New York, NY},
+note = {\url{https://doi.org/10.1007/978-1-4939-8847-1}},
+year = {2018}
+}
+
+% Entropy-based adaptive design for contour finding
+@misc{cole2021entropybased,
+      title={Entropy-based adaptive design for contour finding and estimating reliability}, 
+      author={D. Austin Cole and Robert B. Gramacy and James E. Warner and Geoffrey F. Bomarito and Patrick E. Leser and William P. Leser},
+      year={2021},
+      eprint={2105.11357},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Contour Estimation
+@article{contourEstimation,
+author = {Pritam Ranjan, Derek Bingham and George Michailidis},
+title = {Sequential Experiment Design for Contour Estimation From Complex Computer Codes},
+journal = {Technometrics},
+volume = {50},
+number = {4},
+pages = {527--541},
+year = {2008},
+publisher = {Taylor \& Francis},
+doi = {10.1198/004017008000000541},
+URL = { 
+        https://doi.org/10.1198/004017008000000541
+},
+eprint = { 
+    
+        https://doi.org/10.1198/004017008000000541
+}
 }
 
 
@@ -666,6 +756,22 @@ numpages = {7},
 location = {Buenos Aires, Argentina},
 series = {IJCAI'15}
 }
+
+% Lot's of closed-form IVAR calculations. 
+@article{Binois_2018,
+   title={Replication or Exploration? Sequential Design for Stochastic Simulation Experiments},
+   volume={61},
+   ISSN={1537-2723},
+   url={http://dx.doi.org/10.1080/00401706.2018.1469433},
+   DOI={10.1080/00401706.2018.1469433},
+   number={1},
+   journal={Technometrics},
+   publisher={Informa UK Limited},
+   author={Binois, Mickaël and Huang, Jiangeng and Gramacy, Robert B. and Ludkovski, Mike},
+   year={2018},
+   month=sep, pages={7–23} 
+  }
+
 
 
 

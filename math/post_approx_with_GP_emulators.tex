@@ -613,9 +613,14 @@ $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_ll
 
 % Sequential Design
 \section{Sequential Design}
-In applications, the GP emulator is typically constructed sequentially. \todo: finish intro here 
+In applications, the GP emulator is often constructed sequentially. In this section, we consider augmenting the 
+initial design $\designIn[\Ndesign]$ with new input points that are chosen to yield maximal improvement in the 
+GP-induced posterior approximation. This can be thought of as a question of experimental design for the 
+solution of a Bayesian inverse problem. We begin by reviewing the relevant background on GP-based 
+sequential design, and then proceed to discuss design methods that are tailored to the goal of 
+posterior approximation.  
 
-\subsection{Background}
+\subsection{Background: Sequential Design for Gaussian Processes}
 
 \subsubsection{The Sequential Design Loop}
 Sequential design algorithms for GPs have been studied extensively across several fields. We introduce this topic 
@@ -630,7 +635,7 @@ Conditioning on the augmented design results in the updated GP
 \begin{align}
 \funcEm[\Naugment] \Def \func|\design[\Naugment] = \funcEm[\Ndesign] | \func(\designIn[\Nbatch])   \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
 \end{align}
-where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ are given by \ref{kriging_eqns}
+where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ functions are given by \ref{kriging_eqns}
 with $\{\designIn, \func(\designIn)\}$ replaced by $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$. This update 
 can be computed in $\BigO(\Nbatch^3)$ operations, a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
 implementation (\todo: add appendix on fast GP updates). Naturally, the new batch $\designBatchIn$ should be chosen to 
@@ -641,7 +646,7 @@ This idea naturally leads to an optimization problem of the form
 \end{align}
 where $\acq[\Ndesign]: \parSpace^{\Nbatch} \to \R$ is an \textit{acquisition function} (i.e., \textit{design criterion}) that 
 encodes the quality of a batch of design points in terms of the task at hand. Iterating this procedure $\Nrounds$ times yields the so-called 
-\textit{sequential design} (also called \textit{active learning}) loop, summarized in \Cref{alg:seq_des_loop}.  
+\textit{sequential design} (a.k.a., \textit{active learning}) loop, summarized in \Cref{alg:seq_des_loop}.  
 
 \begin{algorithm}
     \caption{Gaussian Process Sequential Design Loop}
@@ -666,7 +671,7 @@ point before considering the subsequent acquisition. The \textit{batch} sequenti
 owing to the fact that $\func$ is only evaluated after an entire batch $\designBatchIn$ has been acquired, meaning that inputs must 
 be selected without observing the outputs of the other points in the batch. The applications motivating this work render the 
 pure sequential design setting completely infeasible, as a single function evaluation $f(\Par)$ may require thousands of CPU hours. 
-However, computing resources often allow $\BigO(100)$ function evaluations to be performed in parallel. Such constraints imply a 
+However, computing resources often allow $\BigO(10^2)$ function evaluations to be performed in parallel. Such constraints imply a 
 ``large batch, few iterations'' setting which poses a greater challenge than the one-at-a-time pure sequential design that is 
 often considered in the literature.
 
@@ -674,31 +679,30 @@ often considered in the literature.
 We now summarize some particular choices of acquisition function $\acq[\Ndesign]$ which are popular in practice. These will form 
 the basis for extensions that target the specific goal of GP-induced posterior approximation. We begin by emphasizing that the 
 choice of acquisition function should reflect how the GP is being used in downstream tasks. Perhaps the most common goal is that 
-of optimization. The field of \textit{Bayesian optimization} is dedicated to this question, resulting in a wide variety of 
-proposed acquisition functions that are tailored to the task of optimizing expensive black-box functions $\func$; 
-see \cite{gramacy2020surrogates} and [\todo: include other citation] textbook treatments. 
-The related field of \textit{Bayesian quadrature} \cite{BayesQuadrature, BayesQuadRatios} [\todo: other references]
+of optimization. The field of \textit{Bayesian optimization} is dedicated to this question, which has produced a wide variety
+acquisition functions that are tailored to the task of optimizing expensive black-box functions $\func$; 
+see \cite{reviewBayesOpt, gramacy2020surrogates} for in-depth reviews.  
+The related field of \textit{Bayesian quadrature} \cite{BayesQuadrature, BayesQuadrature, BayesQuadRatios}
 instead focuses on the goal of approximating integrals with expensive integrands. The computer experiments community 
-focuses on various tasks, including contour estimation [\todo: cite] and sensitivity analysis [\todo: cite]. However, perhaps the 
-most common goal considered in the sequential design of computer experiments is that of filling the input space $\parSpace$. 
-\todo: the below designs are not necessarily space-filling (depends on the kernel); should make this more clear. Perhaps 
-it is more clear to say that these all target GP predictions over all of the parameter space, which often tends to have a space-filling 
-effect. 
-Such \textit{space-filling} designs seek to spread the design points ``evenly'' over $\parSpace$ in some specific sense. 
-To this end, it seems reasonable to choose points in locations where the GP is uncertain. Defining ``uncertainty'' in terms 
+focuses on various tasks, including contour estimation and reliability analysis \cite{contourEstimation, cole2021entropybased}. 
+Perhaps the most common goal considered in the sequential design of computer experiments is to fit a response surface
+(see \cite{gramacy2020surrogates, SanterCompExp, design_analysis_computer_experiments} for reviews), 
+which typically leads to design procedures 
+that seek to ``evenly'' fill the input space $\parSpace$ in some sense.  
+In such settings, a reasonable approach is to choose points in locations where the GP is most uncertain. 
+Defining ``uncertainty'' in terms 
 of variance or entropy yields the \textit{maximum variance (max-var)} and \textit{maximum entropy (max-ent)} acquisition functions, 
 respectively, 
 \begin{align}
 &\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)] , 
-&&\labelAcq[\Ndesign]{\maxentLabel}(\Par) \Def -\Ent[\funcEm[\Ndesign](\Par)], \label{acq_max_var_ent}
+&&\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)], \label{acq_max_var_ent}
 \end{align} 
 where $\Ent[Z]$ denotes the entropy of a random variable $Z$. The variance and entropy are negated to align with our convention 
-of minimizing acquisition functions. The acquisition functions \ref{acq_max_var_ent} are defined to take a single design point as 
-input, but they can be generalized to operate in the batch setting (\todo: look into this, I think the generalization of maxent leads 
-to the determinant of the covariance matrix; for maxvar is there a generalization?). A noted weakness of these criteria is their locality; 
-they target the single point with maximal uncertainty, ignoring the effect of the acquisition on the remainder of the design space. 
-This often favors points at the boundaries of $\parSpace$, behavior that is often not desirable \cite{gramacy2020surrogates}. 
-Addressing this weakness, an alternative approach is to minimize the \textit{conditional} uncertainty 
+of minimizing acquisition functions. The $\maxvarLabel$ criterion does not have an obvious generalization to the batch setting, 
+so is defined to only accept a single input $\Par$. A noted weakness of these criteria is their locality; 
+they target the single point (sets) with maximal uncertainty, ignoring the effect of the acquisition on the remainder of the design space. 
+This often favors points at the boundaries of $\parSpace$, behavior that is typically not desirable \cite{gramacy2020surrogates}. 
+To address this weakness, an alternative approach is to minimize the \textit{conditional} uncertainty 
 ($\Var[\funcEm[\Ndesign](\Par) | \designBatchIn]$ or $\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn]$), \textit{averaged} over 
 the input space $\parSpace$. The resulting \textit{integrated uncertainty criteria}
 \begin{align}
@@ -708,14 +712,39 @@ the input space $\parSpace$. The resulting \textit{integrated uncertainty criter
 &= \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \designBatchIn] \weightDens(\Par) d\Par, \label{acq_int_ent}
 \end{align}
 are naturally defined in the batch setting and account for the global effect of acquiring new design points. Here $\weightDens$ is 
-a probability density on $\parSpace$. Since $\Var[\funcEm[\Ndesign](\Par) | \designBatchIn] = \gpKer[\Naugment](\Par)$ and 
+a probability density on $\parSpace$, allowing for the expectation over $\parSpace$ to weighted. 
+A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
+in \cite{Mercer_kernels_IVAR}, with an emphasis is on one-shot, rather than sequential, design. 
+Since $\Var[\funcEm[\Ndesign](\Par) | \designBatchIn] = \gpKer[\Naugment](\Par)$ and 
 $\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn] = \frac{1}{2} \log(2\pi e \gpKer[\Naugment](\Par))$, the integrands of 
 \ref{acq_int_var} and \ref{acq_int_ent} are available in closed-form. However, outside of special choices for $\parSpace$ and 
-$\weightDens$ (\todo: cite), the integrals are typically replaced with Monte Carlo approximations. It is worth noting that 
+$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals are typically replaced with Monte Carlo approximations. It is worth noting that 
 these acquisition functions must be computed without observing the function evaluations $\func(\designBatchIn)$, which is 
 not an issue for any of the above acquisitions given that $\gpKer[\Naugment](\Par)$ is independent of $\func(\designBatchIn)$ 
-(see \ref{kriging_eqns}). A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
-in \cite{Mercer_kernels_IVAR}, with an emphasis is on one-shot, rather than sequential, design. 
+(see \ref{kriging_eqns}). However, the predictive mean $\gpMean[\Naugment](\Par)$ does depend on $\func(\designBatchIn)$, 
+a fact which will become relevant in the subsequent section. We therefore state a lemma below which summarizes the 
+dependence of the predictive mean on $\func(\designBatchIn)$, under the assumption that the latter is distributed according 
+to the current GP $\funcEm[\Ndesign]$. This result is also provided in \cite{VehtariParallelGP}. 
+\begin{lemma} \label{lemma:pred-mean-dist}
+Let $(\designBatchIn, \designBatchFunc)$ be a new batch of $\Nbatch$ design points, with 
+$\designBatchFunc \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
+Then for an arbitrary set of inputs $\parMat$, the predictive mean $\gpMean[\Naugment](\parMat)$
+(viewed as a function of the random variable $\designBatchFunc$), satisfies 
+\begin{align}
+\gpMean[\Naugment](\parMat)
+\sim \Gaussian\left(\E[\funcEm[\Ndesign](\parMat) | \gpMean[\Ndesign](\designBatchIn)], 
+                               \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat) \right) \label{pred-mean-dist}
+\end{align}
+\end{lemma}
+We see that the mean (with respect to $\designBatchFunc$) of $\gpMean[\Naugment](\parMat)$ is equal to the mean of
+the conditional 
+$\funcEm[\Ndesign](\parMat) | (\designBatchIn, \gpMean[\Ndesign](\designBatchIn))$, which treats the current 
+predictive mean $\gpMean[\Ndesign](\designBatchIn)$ as if it were the true response; i.e., the GP $\funcEm[\Ndesign]$
+has been conditioned on the ``pseudo-data'' $(\designBatchIn, \gpMean[\Ndesign](\designBatchIn))$. 
+The variance of 
+$\gpMean[\Naugment](\parMat)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
+of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Naugment](\parMat)$ 
+is large when the design points $\designBatchIn$ are more ``influential.''
 
 \subsection{Goal-Oriented Acquisition Functions: Posterior Approximation}
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
@@ -772,24 +801,7 @@ However, under the current GP model we have that
 $\llik(\designBatchIn) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$.
 The dependence of $\emMean[\Naugment]{\llik}(\Par)$ on $\llik(\designBatchIn)$ is summarized in the below 
 result, which is also given in \cite{VehtariParallelGP}.
-
-\begin{lemma} \label{lemma:pred-mean-dist}
-Let $(\designBatchIn, \designBatchLlik)$ be a new batch of $\Nbatch$ design points, with 
-$\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
-Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Naugment]{\llik}(\parMat)$
-(viewed as a function of the random variable $\designBatchLlik$), satisfies 
-\begin{align}
-\emMean[\Naugment]{\llik}(\parMat) 
-\sim \Gaussian\left(\E[\llikEm[\Ndesign](\parMat) | \emMean[\Ndesign]{\llik}(\designBatchIn)], 
-                               \emKer[\Ndesign]{\llik}(\parMat) - \emKer[\Naugment]{\llik}(\parMat)] \right) \label{pred-mean-dist}
-\end{align}
-\end{lemma}
-We see that the mean (with respect to $\designBatchLlik$) of $\emMean[\Naugment]{\llik}(\parMat)$ is equal to the mean of
-$\llikEm[\Ndesign](\parMat) | (\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn))$, which treats the current 
-predictive mean $\emMean[\Ndesign]{\llik}(\designBatchIn)$ as if it were the true response. The variance of 
-$\emMean[\Naugment]{\llik}(\parMat)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
-of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\emMean[\Naugment]{\llik}(\parMat)$ 
-is large when the design points $\designBatchIn$ are more ``influential''. The above lemma allows us to 
+The above lemma allows us to 
 average over the uncertainty in $\Var[\llikEmRdmDens[\Naugment](\Par)]$ stemming from the random 
 quantity $\designBatchLlik$. 
 
@@ -847,6 +859,22 @@ To our knowledge,
 the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
 While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
 demonstrates that the integrand admits a closed-form expression when the likelihood is Gaussian. 
+To derive this result, we begin with an analog to \Cref{lemma:pred-mean-dist}, which describes the 
+dependence of $\emMean[\Naugment]{\fwd}(\parMat)$ on $\fwd(\designBatchIn)$, under the assumption 
+that $\fwd(\designBatchIn)$ is distributed according to the current GP. 
+\begin{lemma} \label{lemma:fwd-pred-mean-dist}
+Let $(\designBatchIn, \designBatchFwd)$ be a new batch of $\Nbatch$ design points, with 
+$\designBatchFwd \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
+Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Naugment]{\fwd}(\parMat)$
+(viewed as a function of the random variable $\designBatchFwd$), satisfies 
+\begin{align}
+\emMean[\Naugment]{\fwd}(\parMat) 
+\sim \Gaussian\left(\E[\llikEmFwd[\Ndesign](\parMat) | \emMean[\Ndesign]{\fwd}(\designBatchIn)], 
+                               \emKer[\Ndesign]{\fwd}(\parMat) - \emKer[\Naugment]{\fwd}(\parMat)] \right) \label{fwd-pred-mean-dist}
+\end{align}
+\end{lemma}
+
+
 
 
 % Learning Likelihood Parameters
