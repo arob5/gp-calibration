@@ -1086,21 +1086,43 @@ inversion identity from \Cref{partitioned-matrix-inverse} yields
 \begin{pmatrix} \tilde{K} & -\kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \\
 -\gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Ndesign,\Nbatch]^\top  \kerMat[\Ndesign]^{-1} & \gpKer[\Ndesign](\designBatchIn)^{-1} \end{pmatrix}.
 \end{align*}
-The predictive mean $\gpMean[\Naugment](\parMat)$ is thus given by 
+Denoting $\funcVal[\Ndesign]^\prime \Def \funcVal[\Ndesign] - \gpMeanPrior(\designIn[\Ndesign])$ and 
+$\funcVal[\Nbatch]^\prime \Def \funcVal[\Nbatch] - \gpMeanPrior(\designIn[\Nbatch])$, the predictive mean $\gpMean[\Naugment](\parMat)$ is thus given by 
 \begin{align*}
 \gpMean[\Naugment](\parMat)
 &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn[\Naugment]) \kerMat[\Naugment]^{-1}[\funcVal[\Naugment] - \gpMeanPrior(\designIn[\Naugment])] \\
-&= \gpKerPrior(\parMat, \designIn[\Ndesign])\kerMat[\Ndesign]^{-1} + \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} - 
-\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} \kerMat[\Nbatch,\Ndesign]\kerMat[\Ndesign]^{-1}.
+&= \gpMeanPrior(\parMat) + \begin{pmatrix} \gpKerPrior(\designIn[\Ndesign], \parMat) \\  \gpKerPrior(\designIn[\Nbatch], \parMat) \end{pmatrix}^\top
+\begin{pmatrix} \tilde{K} & -\kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \\
+-\gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Ndesign,\Nbatch]^\top  \kerMat[\Ndesign]^{-1} & \gpKer[\Ndesign](\designBatchIn)^{-1} \end{pmatrix} 
+\begin{pmatrix}  \funcVal[\Ndesign]^\prime \\  \funcVal[\Nbatch]^\prime \end{pmatrix} \\
+&= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn[\Ndesign])\kerMat[\Ndesign]^{-1}\funcVal[\Ndesign]^\prime + 
+\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} \funcVal[\Nbatch]^\prime - 
+\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} \kerMat[\Ndesign,\Nbatch]^\top \kerMat[\Ndesign]^{-1} \funcVal[\Ndesign]^\prime \\
+&= \gpMean[\Ndesign](\parMat) + \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1}[\funcVal[\Nbatch]^\prime - \kerMat[\Ndesign,\Nbatch]^\top \kerMat[\Ndesign]^{-1} \funcVal[\Ndesign]^\prime] \\
+&= \gpMean[\Ndesign](\parMat) + \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1}[\funcVal[\Nbatch]^\prime - \gpMean[\Ndesign](\designIn[\Nbatch]) + \gpMeanPrior(\designIn[\Nbatch])] \\
+&= \gpMean[\Ndesign](\parMat) + \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1}[\funcVal[\Nbatch] - \gpMean[\Ndesign](\designIn[\Nbatch])] \\
+&= \E[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]] 
 \end{align*}
-
-
-
-We have used the fact that the predictive covariance of the GP $\funcEm[\Ndesign]$ gives 
+where we have used the fact that the predictive covariance of the GP $\funcEm[\Ndesign]$ gives 
 \[
 \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) = \gpKerPrior(\parMat, \designIn[\Nbatch]) - 
 \gpKerPrior(\parMat, \designIn[\Ndesign])\kerMat[\Ndesign]^{-1} \gpKerPrior(\designIn[\Ndesign], \parMat).
 \]
+The covariance calculation proceeds similarly by replacing $\funcVal[\Ndesign]^\prime$ and $\funcVal[\Nbatch]^\prime$ with 
+$\gpKerPrior(\designIn[\Ndesign], \parMat)$ and $\gpKerPrior(\designIn[\Nbatch], \parMat)$, respectively. We obtain 
+\begin{align*}
+\gpKer[\Naugment](\parMat)
+&= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn[\Naugment]) \kerMat[\Naugment]^{-1}[\funcVal[\Naugment] - \gpMeanPrior(\designIn[\Naugment])] \\
+&= \gpKerPrior(\parMat) - \begin{pmatrix} \gpKerPrior(\designIn[\Ndesign], \parMat) \\  \gpKerPrior(\designIn[\Nbatch], \parMat) \end{pmatrix}^\top
+\begin{pmatrix} \tilde{K} & -\kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \\
+-\gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Ndesign,\Nbatch]^\top  \kerMat[\Ndesign]^{-1} & \gpKer[\Ndesign](\designBatchIn)^{-1} \end{pmatrix} 
+\begin{pmatrix}  \gpKerPrior(\designIn[\Ndesign], \parMat) \\  \gpKerPrior(\designIn[\Nbatch], \parMat) \end{pmatrix} \\
+&= \gpKer[\Ndesign](\parMat) - 
+\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} [\gpKerPrior(\designIn[\Nbatch], \parMat) - \kerMat[\Ndesign,\Nbatch]^\top \kerMat[\Ndesign]^{-1}\gpKerPrior(\designIn[\Ndesign], \parMat)] \\
+&= \gpKer[\Ndesign](\parMat) -  \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} \gpKer[\Ndesign](\designIn[\Nbatch], \parMat) \\
+&= \Cov[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]].
+\end{align*}
+
 
 \end{proof}
 
