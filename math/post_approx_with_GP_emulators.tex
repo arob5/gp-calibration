@@ -637,8 +637,9 @@ Conditioning on the augmented design results in the updated GP
 \end{align}
 where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ functions are given by \ref{kriging_eqns}
 with $\{\designIn, \func(\designIn)\}$ replaced by $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$. This update 
-can be computed in $\BigO(\Nbatch^3)$ operations, a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
-implementation (\todo: add appendix on fast GP updates). Naturally, the new batch $\designBatchIn$ should be chosen to 
+can be computed in $\BigO(\Nbatch^3 + \Ndesign^2 \Nbatch)$ operations, a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
+implementation (courtesy of the partitioned matrix inverse identity \Cref{partitioned-matrix-inverse}). 
+Naturally, the new batch $\designBatchIn$ should be chosen to 
 yield maximal improvement in the GP model $\funcEm[\Naugment]$ with respect to the downstream task that is to be performed. 
 This idea naturally leads to an optimization problem of the form 
 \begin{align}
@@ -883,8 +884,6 @@ Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Nau
 \end{lemma}
 
 
-
-
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
 
@@ -1026,6 +1025,93 @@ which follows from same derivations for the standard MH kernel \ref{MH-kernel} w
 the original ones. The transition kernel for the \textit{MCWMH-ind} algorithm follows immediately by marginalizing with respect 
 to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
 in place of the full joint distribution. 
+
+\subsection{Acquisition Function Calculations}
+We start by stating an identity for the inversion of partitioned matrices, which is very useful in updating GPs by 
+conditioning on new design points. The generic result can be found in the lecture notes \cite{MinkaMatrixLectures}, 
+but we specialize the statement to the GP setting.  
+
+\begin{prop} \label{partitioned-matrix-inverse}
+Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior, with 
+$\funcEm[\Ndesign] \Def \func | \func(\designIn) \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$ the 
+GP predictive distribution following conditioning on the design $(\designIn, \func(\designIn))$. Let 
+$\designBatchIn$ be a set of $\Nbatch$ new design points. Define 
+$\kerMat[\Ndesign] \Def \gpKerPrior(\designIn)$, $\kerMat[\Nbatch] \Def \gpKerPrior(\designBatchIn)$,
+and $\kerMat[\Ndesign,\Nbatch] \Def \gpKerPrior(\designIn[\Ndesign], \designBatchIn)$.  
+Then, letting 
+$\designIn[\Naugment] \Def \designIn \cup \designBatchIn$, the inverse of the kernel matrix 
+evaluated on the augmented design satisfies 
+\begin{align}
+\gpKerPrior(\designIn[\Naugment])^{-1}
+&= \begin{pmatrix} \kerMat[\Ndesign] & \kerMat[\Ndesign,\Nbatch] \\
+\kerMat[\Ndesign,\Nbatch]^\top & \kerMat[\Nbatch] \end{pmatrix}^{-1}
+=  \begin{pmatrix} \tilde{K} & -\kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \\
+-\gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Ndesign,\Nbatch]^\top  \kerMat[\Ndesign]^{-1} & \gpKer[\Ndesign](\designBatchIn)^{-1} \end{pmatrix},
+\end{align}
+where 
+\begin{align}
+\tilde{K} = \kerMat[\Ndesign]^{-1} + \kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Nbatch,\Ndesign] \kerMat[\Ndesign]^{-1}.
+\end{align}
+Thus, assuming $\kerMat[\Ndesign]^{-1}$ has already been computed, $\gpKerPrior(\designIn[\Naugment])^{-1}$ can be constructed in an additional 
+$\BigO(\Nbatch^3 + \Nbatch \Ndesign^2)$ operations. 
+\end{prop}
+
+We have casually used the fact $\funcEm[\Naugment] = \func | \func(\designIn[\Naugment]) = \funcEm[\Ndesign] | \func(\designBatchIn)$ throughout 
+our derivations; i.e., the fact that conditioning the GP prior on the entire design is equivalent to sequentially conditioning on subsets of the 
+design. For the sake of completeness, we provide the rigorous justification for this below. 
+\begin{lemma} \label{lemma:gp-condition-order}
+Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior. Consider a set of $\Naugment$ design points $(\designIn[\Naugment], \funcVal[\Naugment])$
+partitioned as $\designIn[\Naugment] = \designIn[\Ndesign] \cup \designBatchIn$ and $\funcVal[\Naugment] = \funcVal[\Ndesign] \cup \funcVal[\Nbatch]$. 
+Then the random process $\func | \func(\designIn[\Naugment]) = \funcVal[\Naugment]$ is equal in distribution to the random process
+$\funcEm[\Ndesign] | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]$. 
+\end{lemma} 
+
+\begin{proof} 
+Recall $\funcEm[\Ndesign] \Def [\func | \func(\designIn[\Ndesign]) = \funcVal[\Ndesign]] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$, so we know that 
+both processes are Gaussian. It thus suffices to check that 
+\begin{align*}
+\E[\func(\parMat) | \func(\designIn[\Naugment]) = \funcVal[\Naugment]] 
+&= \E[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]] \\
+\Cov[\func(\parMat) | \func(\designIn[\Naugment]) = \funcVal[\Naugment]] 
+&= \Cov[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]],
+\end{align*}
+for an arbitrary finite set of inputs $\parMat \subset \parSpace$. The quantities on the lefthand side are 
+$\gpMean[\Naugment](\parMat)$ and $\gpKer[\Naugment](\parMat)$, by definition. We begin by expanding 
+the expression $\gpKerPrior(\parMat, \designIn[\Naugment]) \kerMat[\Naugment]^{-1}$, noting that we 
+are borrowing the notation from \Cref{partitioned-matrix-inverse}. Applying the partitioned matrix 
+inversion identity from \Cref{partitioned-matrix-inverse} yields 
+\begin{align*}
+\gpKerPrior(\parMat, \designIn[\Naugment]) \kerMat[\Naugment]^{-1}
+&= \begin{pmatrix} \gpKerPrior(\parMat, \designIn[\Ndesign]) &  \gpKerPrior(\parMat, \designIn[\Nbatch]) \end{pmatrix}
+\begin{pmatrix} \tilde{K} & -\kerMat[\Ndesign]^{-1} \kerMat[\Ndesign,\Nbatch] \gpKer[\Ndesign](\designBatchIn)^{-1} \\
+-\gpKer[\Ndesign](\designBatchIn)^{-1} \kerMat[\Ndesign,\Nbatch]^\top  \kerMat[\Ndesign]^{-1} & \gpKer[\Ndesign](\designBatchIn)^{-1} \end{pmatrix}.
+\end{align*}
+The predictive mean $\gpMean[\Naugment](\parMat)$ is thus given by 
+\begin{align*}
+\gpMean[\Naugment](\parMat)
+&= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn[\Naugment]) \kerMat[\Naugment]^{-1}[\funcVal[\Naugment] - \gpMeanPrior(\designIn[\Naugment])] \\
+&= \gpKerPrior(\parMat, \designIn[\Ndesign])\kerMat[\Ndesign]^{-1} + \gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} - 
+\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) \gpKer[\Ndesign](\designIn[\Nbatch])^{-1} \kerMat[\Nbatch,\Ndesign]\kerMat[\Ndesign]^{-1}.
+\end{align*}
+
+
+
+We have used the fact that the predictive covariance of the GP $\funcEm[\Ndesign]$ gives 
+\[
+\gpKer[\Ndesign](\parMat, \designIn[\Nbatch]) = \gpKerPrior(\parMat, \designIn[\Nbatch]) - 
+\gpKerPrior(\parMat, \designIn[\Ndesign])\kerMat[\Ndesign]^{-1} \gpKerPrior(\designIn[\Ndesign], \parMat).
+\]
+
+\end{proof}
+
+
+
+\begin{proof} [Proof of \Cref{lemma:pred-mean-dist}]
+
+\end{proof}
+
+
+
 
 % Questions and TODOs
 \section{Questions and TODOs}
