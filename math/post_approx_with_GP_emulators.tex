@@ -914,10 +914,17 @@ Then for $\Par \in \parSpace$,
 \begin{enumerate}
 \item $\E\left[\llikEmFwd[\Naugment](\Par; \designBatchFwd) | \designBatchFwd \right] = \Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))$
 \item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))\right]
-= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right)$
-\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] $
+= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par)\right)$
+\item 
+\begin{align*}
+\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] &= 
+(2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} \cdot \\
+&\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par) - \frac{1}{2} \CovComb[\Naugment](\Par) \right). 
+\end{align*}
 \end{enumerate}
 \end{lemma}
+
+\todo: fix formatting
 
 
 % Learning Likelihood Parameters
@@ -1252,6 +1259,27 @@ Multiplying both sides by $\priorDens(\Par)$ completes the proof.
 
 \subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
 
+We begin with a lemma that will be used in the proof of \Cref{lemma:fwd-Gaussian-density-dist} below. 
+\begin{lemma} \label{lemma:squared_Gaussian_density}
+Let $\Gaussian(m, C)$ be a Gaussian distribution on $\R^{\dimObs}$ with $C$ a symmetric, positive-definite 
+matrix. Then, for $\obs \in \R^{\dimObs}$, 
+\begin{align*}
+\Gaussian(\obs | m, C)^2 
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+\end{align*}
+\end{lemma}
+
+\begin{proof}
+\begin{align*}
+\Gaussian(\obs | m, C)^2 
+&= \det(2\pi C)^{-1} \Exp{-\frac{1}{2} (\obs - m)^\top \left[\frac{1}{2}C \right]^{-1}(\obs - m)} \\
+&= \det(2\pi C)^{-1} \det(2\pi (1/2)C)^{1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right) \\
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+\end{align*}
+\end{proof}
+
+
+
 \begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
 
 \begin{enumerate}
@@ -1268,13 +1296,32 @@ We can thus write the expectation of interest as
 \Gaussian(v | \emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)) dv \\
 &= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
 \end{align*}
-where the final line uses the Gaussian convolution formula in \Cref{Gaussian_convolution}. 
+where the final line uses the Gaussian convolution formula in \Cref{Gaussian_convolution}. Recalling that 
+$\CovComb[\Naugment](\Par) = \likPar + \emKer[\Naugment]{\fwd}(\Par)$, the covariance in the above expression simplifies to 
+$\likPar + \emKer[\Ndesign]{\fwd}(\Par) = \CovComb[\Ndesign](\Par)$. 
 
+\item We start by applying \Cref{lemma:squared_Gaussian_density}, which gives 
+\begin{align*}
+\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2
+&= (2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} 
+\Gaussian\left(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right). 
+\end{align*}
+Just as in part 2 above, the convolution formula in \Cref{Gaussian_convolution} yields 
+\begin{align*}
+\E_{\designBatchFwd}\left[\Gaussian\left(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right) \right] 
+&= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
+\end{align*}
+with the covariance simplifying to 
+\begin{align*}
+\frac{1}{2}\CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)
+&= \frac{1}{2}\likPar + \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par) \\ 
+&= \left[\likPar + \emKer[\Ndesign]{\fwd}(\Par) \right] - \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par) \right] \\
+&= \CovComb[\Ndesign](\Par) - \frac{1}{2} \CovComb[\Naugment](\Par). 
+\end{align*}
+ 
 \end{enumerate}
 
 \end{proof}
-
-
 
 
 
