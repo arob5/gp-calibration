@@ -364,7 +364,8 @@ the expectation admits the closed-form expression
 \label{post_dens_marg_fwd_Gaussian}
 \end{align}
 which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see appendix; \todo). The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
+of two Gaussian densities (see \Cref{Gaussian_convolution}). 
+The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
 can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
 \begin{align}
 \obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
@@ -890,28 +891,32 @@ approximate Bayesian computation. We emphasize that the integrand in \ref{var_in
 computable in closed-form, since the first term is simply the variance of log-normal random variable. 
 
 \paragraph{Forward Model Emulation}
-The acquisition function is defined identically in the forward model emulation setting, 
+The acquisition function is defined analogously in the forward model emulation setting, 
 \begin{align}
 \labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchLlik} \Var[\fwdEmRdm[\Naugment]{\postDens}(\Par; \designBatchLlik)] \weightDens(\Par) d\Par. \label{fwd-int-exp-var}
+\int_{\parSpace} \E_{\designBatchFwd} \Var[\fwdEmRdm[\Naugment]{\postDens}(\Par; \designBatchFwd)] \weightDens(\Par) d\Par. \label{fwd-int-exp-var}
 \end{align}
 To our knowledge, 
 the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
 While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
 demonstrates that the integrand admits a closed-form expression when the likelihood is Gaussian. 
-To derive this result, we begin with an analog to \Cref{lemma:pred-mean-dist}, which describes the 
-dependence of $\emMean[\Naugment]{\fwd}(\parMat)$ on $\fwd(\designBatchIn)$, under the assumption 
-that $\fwd(\designBatchIn)$ is distributed according to the current GP. 
-\begin{lemma} \label{lemma:fwd-pred-mean-dist}
-Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ design points, with 
-$\designBatchFwd \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
-Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Naugment]{\fwd}(\parMat; \designBatchFwd)$
-(viewed as a function of the random variable $\designBatchFwd$), satisfies 
-\begin{align}
-\emMean[\Naugment]{\fwd}(\parMat; \designBatchFwd) 
-\sim \Gaussian\left(\E[\llikEmFwd[\Ndesign](\parMat) | \emMean[\Ndesign]{\fwd}(\designBatchIn)], 
-                               \emKer[\Ndesign]{\fwd}(\parMat) - \emKer[\Naugment]{\fwd}(\parMat)] \right) \label{fwd-pred-mean-dist}
-\end{align}
+To derive this result, we begin by stating a lemma that characterizes the uncertainty in the Gaussian 
+likelihood as a function of the random quantity $\designBatchFwd$, assumed to be distributed according 
+to the current GP predictive distribution. 
+\begin{lemma} \label{lemma:fwd-Gaussian-density-dist}
+Let $\llikEmFwd(\Par) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
+$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
+GPs, one for each model output. Let $\designRand[\Nbatch]{\designBatchFwd} = \{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
+design points, with
+$\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
+Define $\CovComb[\Ndesign](\Par) \Def \likPar + \emKer[\Ndesign]{\fwd}(\Par)$. 
+Then for $\Par \in \parSpace$,
+\begin{enumerate}
+\item $\E\left[\llikEmFwd[\Naugment](\Par; \designBatchFwd) | \designBatchFwd \right] = \Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))$
+\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))\right]
+= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right)$
+\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] $
+\end{enumerate}
 \end{lemma}
 
 
@@ -920,6 +925,22 @@ Then for an arbitrary set of inputs $\parMat$, the predictive mean $\emMean[\Nau
 
 % Appendix 
 \section{Appendix}
+
+\subsection{Convolution of Gaussians}
+
+\begin{prop} \label{Gaussian_convolution}
+Let $\Gaussian(A \Par, \likPar)$ and $\Gaussian(m, C)$ be Gaussian distributions on $\R^{\dimObs}$ and $\R^{\dimPar}$, 
+respectively, with $A \in \R^{\dimObs \times \dimPar}$ and $\likPar, C$ symmetric, positive definite matrices. Then 
+\begin{align*}
+\int_{\R^{\dimPar}} \Gaussian(\obs | A \Par, \likPar) \Gaussian(\Par | m, C) d\Par
+&= \Gaussian(\obs | Am, \likPar + ACA^\top). 
+\end{align*}
+\end{prop}
+
+\begin{proof} 
+\todo
+\end{proof}
+
 
 \subsection{Marginal Acceptance Probability}
 In this section we derive an expression for 
@@ -1057,10 +1078,12 @@ the original ones. The transition kernel for the \textit{MCWMH-ind} algorithm fo
 to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
 in place of the full joint distribution. 
 
-\subsection{Acquisition Function Calculations}
+\subsection{Sequential Design Calculations}
 We start by stating an identity for the inversion of partitioned matrices, which is very useful in updating GPs by 
 conditioning on new design points. The generic result can be found in the lecture notes \cite{MinkaMatrixLectures}, 
 but we specialize the statement to the GP setting.  
+
+\subsubsection{Useful Lemmas}
 
 \begin{prop} \label{partitioned-matrix-inverse}
 Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior, with 
@@ -1087,9 +1110,9 @@ Thus, assuming $\kerMat[\Ndesign]^{-1}$ has already been computed, $\gpKerPrior(
 $\BigO(\Nbatch^3 + \Nbatch \Ndesign^2 + \Nbatch^2 \Ndesign)$ operations. 
 \end{prop}
 
-We have casually used the fact $\funcEm[\Naugment] = \func | \func(\designIn[\Naugment]) = \funcEm[\Ndesign] | \func(\designBatchIn)$ throughout 
-our derivations; i.e., the fact that conditioning the GP prior on the entire design is equivalent to sequentially conditioning on subsets of the 
-design. For the sake of completeness, we provide the rigorous justification for this below. 
+We repeatedly use the fact that $\func|\design[\Naugment]$ and $\funcEm[\Ndesign] | \design[\Nbatch]$ are equal in distribution 
+($\emLaw[{\design[\Naugment]}]{\func} = \emLaw[{\design[\Nbatch]}]{\funcEm}$); i.e., conditioning the GP prior on the entire design 
+is equivalent to sequentially conditioning on subsets of the design. For the sake of completeness, we provide the rigorous justification for this below.
 \begin{lemma} \label{lemma:gp-condition-order}
 Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior. Consider a set of $\Naugment$ design points $(\designIn[\Naugment], \funcVal[\Naugment])$
 partitioned as $\designIn[\Naugment] = \designIn[\Ndesign] \cup \designBatchIn$ and $\funcVal[\Naugment] = \funcVal[\Ndesign] \cup \funcVal[\Nbatch]$. 
@@ -1154,9 +1177,10 @@ $\gpKerPrior(\designIn[\Ndesign], \parMat)$ and $\gpKerPrior(\designIn[\Nbatch],
 &= \Cov[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]].
 \end{align*}
 
-
 \end{proof}
 
+
+\subsubsection{Uncertainty in GP Predictive Mean Due to Unobserved Response}
 
 \begin{proof} [Proof of \Cref{lemma:pred-mean-dist}]
 We recall that 
@@ -1176,6 +1200,8 @@ we see that $\gpMean[\Naugment](\parMat; \designBatchFunc)$ is a linear function
 &= \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat).
 \end{align*}
 \end{proof}
+
+\subsubsection{Integrated Conditional Variance Calculations: Log-Likelihood Emulation}
 
 \begin{proof} [Proof of \Cref{lemma:evar}]
 We start by noting that 
@@ -1223,6 +1249,31 @@ into \ref{formula_plug_in} gives
 \end{align*}
 Multiplying both sides by $\priorDens(\Par)$ completes the proof. 
 \end{proof}
+
+\subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
+
+\begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
+
+\begin{enumerate}
+\item The first result follows immediately from \Cref{post_dens_marg_fwd_Gaussian}. 
+\item From \Cref{lemma:pred-mean-dist}, we know that 
+\begin{align*}
+\emMean[\Naugment]{\fwd}(\Par; \designBatchFwd)
+&\sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)). 
+\end{align*}
+We can thus write the expectation of interest as 
+\begin{align*}
+\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par) \right]
+&= \int_{\R^{\dimObs}} \Gaussian(\obs| v, \CovComb[\Naugment](\Par)) 
+\Gaussian(v | \emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)) dv \\
+&= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
+\end{align*}
+where the final line uses the Gaussian convolution formula in \Cref{Gaussian_convolution}. 
+
+\end{enumerate}
+
+\end{proof}
+
 
 
 
