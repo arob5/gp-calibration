@@ -846,7 +846,7 @@ Let $\{\designBatchIn, \designBatchLlik\}$ be a new batch of $\Nbatch$ design po
 $\designBatchLlik | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
 For an arbitrary $\Par \in \parSpace$, it then follows that 
 \begin{align}
-\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik)]
+\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik) | \designBatchLlik]
 &= \Var\left[\llikEmRdmDens[\Naugment](\Par; \emMean[\Ndesign]{\llik}(\designBatchIn))\right]
 	\varInflation(\Par; \designBatchIn), \label{evar-expression}
 \end{align}
@@ -871,7 +871,7 @@ variance inflation is applied).
 With these preliminary results established, we define the $\intExpVarLabel$ criterion
 \begin{align}
 \labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik)] \weightDens(\Par) d\Par, 
+\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik) | \designBatchLlik] \weightDens(\Par) d\Par, 
 \end{align}
 emphasizing the the expectation is still with respect to 
 $\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
@@ -1175,8 +1175,55 @@ we see that $\gpMean[\Naugment](\parMat; \designBatchFunc)$ is a linear function
 &=  \gpKer[\Ndesign](\parMat, \designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1} \gpKer[\Ndesign](\designBatchIn, \parMat) \\
 &= \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat).
 \end{align*}
-
 \end{proof}
+
+\begin{proof} [Proof of \Cref{lemma:evar}]
+We start by noting that 
+\begin{align*}
+\Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik)]
+&= \Var[\priorDens(\Par) \Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}] 
+&= \priorDens(\Par)^2 \Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}],
+\end{align*}
+so we will focus on the likelihood emulator, ignoring the prior for now. Since 
+\begin{align*}
+\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}|\designBatchLlik \sim 
+\LN(\emMean[\Naugment]{\llik}(\Par; \designBatchLlik), \emKer[\Naugment]{\llik}(\Par)),
+\end{align*}
+we apply the formula for a log-normal variance to obtain 
+\begin{align}
+\Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)} | \designBatchLlik] 
+&= \cst \Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)}, \label{formula_plug_in}
+\end{align}
+where 
+\begin{align*}
+\cst \Def \left[\Exp{\emKer[\Naugment]{\llik}(\Par)} -1 \right] \Exp{\emKer[\Naugment]{\llik}(\Par)}
+\end{align*}
+is not a function of the random variable $\designBatchLlik$. \Cref{lemma:pred-mean-dist} gives 
+\begin{align*}
+\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)
+&\sim \LN(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)), 
+\end{align*}
+which implies 
+\begin{align*}
+\Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)}
+&\sim \LN(2\emMean[\Ndesign]{\llik}(\Par), 4[\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)]).
+\end{align*}
+Applying the formula for a log-normal mean thus yields 
+\begin{align*}
+\E\left[\Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)} \right]
+&= \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \Exp{2[\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)]} \\
+&=  \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \varInflation(\Par; \designBatchIn), 
+\end{align*}
+where $\varInflation(\Par; \designBatchIn)$ is defined in \ref{var_inflation_factor}. Plugging this expression back 
+into \ref{formula_plug_in} gives 
+\begin{align*}
+\E_{\designBatchLlik} \Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)} | \designBatchLlik] 
+&= \cst \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \varInflation(\Par; \designBatchIn) \\
+&= \Var[\Exp{\llikEm[\Naugment](\Par; \emMean[\Ndesign]{\llik}(\Par)}] \varInflation(\Par; \designBatchIn).
+\end{align*}
+Multiplying both sides by $\priorDens(\Par)$ completes the proof. 
+\end{proof}
+
 
 
 
