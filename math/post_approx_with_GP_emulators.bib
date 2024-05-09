@@ -60,6 +60,31 @@ keywords = {Bayesian quadrature, numerical integration, Gaussian process, produc
 abstract = {Bayesian quadrature treats the problem of numerical integration as one of statistical inference. A prior Gaussian process distribution is assumed for the integrand, observations arise from evaluating the integrand at selected points, and a posterior distribution is derived for the integrand and the integral. Methods are developed for quadrature in Rp. A particular application is integrating the posterior density arising from some other Bayesian analysis. Simulation results are presented, to show that the resulting Bayes–Hermite quadrature rules may perform better than the conventional Gauss–Hermite rules for this application. A key result is derived for product designs, which makes Bayesian quadrature practically useful for integrating in several dimensions. Although the method does not at present provide a solution to the more difficult problem of quadrature in high dimensions, it does seem to offer real improvements over existing methods in relatively low dimensions.}
 }
 
+% Stepwise uncertainty reduction 
+@article{SURThesis,
+author = {Chevalier, Clément},
+year = {2013},
+month = {09},
+pages = {},
+title = {Fast uncertainty reduction strategies relying on Gaussian process models}
+}
+
+% Supermartingale approach to stepwise uncertainty reduction for GPs. 
+@article{supermartingaleSUR,
+author = {Julien Bect and Fran{\c{c}}ois Bachoc and David Ginsbourger},
+title = {{A supermartingale approach to Gaussian process based sequential design of experiments}},
+volume = {25},
+journal = {Bernoulli},
+number = {4A},
+publisher = {Bernoulli Society for Mathematical Statistics and Probability},
+pages = {2883 -- 2919},
+keywords = {Active learning, convergence, sequential design of experiments, stepwise uncertainty reduction, supermartingale, uncertainty functional},
+year = {2019},
+doi = {10.3150/18-BEJ1074},
+URL = {https://doi.org/10.3150/18-BEJ1074}
+}
+
+
 %  ---------------------------------------------------------------------------------------------------
 % MCMC
 %  ---------------------------------------------------------------------------------------------------
@@ -783,6 +808,26 @@ series = {IJCAI'15}
    month=sep, pages={7–23} 
   }
 
+
+% Some closed-form IVAR expressions
+% TODO: need to read this more closely 
+@article{parallelSURExcursionSet,
+author = {Clément Chevalier, Julien Bect, David Ginsbourger, Emmanuel Vazquez, Victor Picheny and Yann Richet},
+title = {Fast Parallel Kriging-Based Stepwise Uncertainty Reduction With Application to the Identification of an Excursion Set},
+journal = {Technometrics},
+volume = {56},
+number = {4},
+pages = {455--465},
+year = {2014},
+publisher = {Taylor \& Francis},
+doi = {10.1080/00401706.2013.860918},
+URL = { 
+        https://doi.org/10.1080/00401706.2013.860918
+},
+eprint = { 
+        https://doi.org/10.1080/00401706.2013.860918
+}
+}
 
 
 

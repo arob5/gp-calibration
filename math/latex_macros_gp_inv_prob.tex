@@ -41,6 +41,10 @@
 \newcommand{\gpKer}[1][\Ndesign]{\gpKerPrior_{#1}}
 \newcommand{\nuggetSD}{\eta}
 \newcommand{\kerMat}[1][\Ndesign]{K_{#1}}
+\newcommand{\emLawPrior}[1]{{\Pi}^{#1}} % The prior law/distribution of an emulator.
+\newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
+\newcommand{\designRand}[2][\Nbatch]{\mathcal{D}_{#1}^{#2}} % When the response is unobserved/random. 
+\newcommand{\emLaw}[2][\design]{{\Pi}^{#2}_{#1}} % The conditional law/distribution of an emulator (may or may not be Gaussian). 
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
@@ -110,7 +114,6 @@
 \newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
 \newcommand{\designBatchFwd}{g_{\Nbatch}}
 \newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
-\newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
 
 % Acquisition functions 
 \newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\text{#2}}}
