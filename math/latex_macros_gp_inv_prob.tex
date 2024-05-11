@@ -7,6 +7,7 @@
 % --------------------------------------------------------------------------------------------------
 
 \newcommand{\cst}{C}
+\newcommand{\eqDist}{\overset{d}{=}} % Equality in distribution 
 
 
 % --------------------------------------------------------------------------------------------------
@@ -41,6 +42,8 @@
 \newcommand{\GP}{\mathcal{GP}} % GP distribution.
 \newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
 \newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
+\newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
+\newcommand{\funcValExact}[1][\Ndesign]{\varphi_{#1}^{*}}
 \newcommand{\gpMeanPrior}{\mu}
 \newcommand{\gpKerPrior}{k}
 \newcommand{\gpMean}[1][\Ndesign]{\gpMeanPrior_{#1}}
@@ -115,10 +118,11 @@
 \newcommand{\designIn}[1][\Ndesign]{U_{#1}} % Design inputs. 
 \newcommand{\designOutLlik}[1][\Ndesign]{\ell_{#1}}
 \newcommand{\designOutFwd}[1][\Ndesign]{g_{#1}}
+\newcommand{\designOutLlikExact}[1][\Ndesign]{\ell^*_{#1}}
+\newcommand{\designOutFwdExact}[1][\Ndesign]{g^*_{#1}}
 \newcommand{\designBatchIn}{U_{\Nbatch}}
 \newcommand{\designBatchLlik}{\ell_{\Nbatch}}
 \newcommand{\designBatchFunc}{\varphi_{\Nbatch}}
-\newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
 \newcommand{\designBatchFwd}{g_{\Nbatch}}
 \newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
 
