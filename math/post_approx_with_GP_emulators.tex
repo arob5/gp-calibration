@@ -119,33 +119,43 @@ to derive emulators for the forward model or log-likelihood.
 \subsection{Gaussian Processes}
 In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer readers to 
 \cite{gramacy2020surrogates, StuartTeck2, gpML}. A \textit{Gaussian process} (GP) is a probability 
-distribution over a set of functions $\func: \parSpace \to \R$, defined by the property that 
-the random vector $[\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top$ has
+distribution over a set of functions $\funcPrior: \parSpace \to \R$, defined by the property that 
+the random vector $[\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top$ has
 a joint Gaussian distribution for any set of inputs $\parMat \Def \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
 A GP is defined by its \textit{mean function} $\gpMeanPrior: \parSpace \to \R$ and positive-definite \textit{kernel} 
 (i.e., \textit{covariance function}) $\gpKerPrior: \parSpace \times \parSpace \to \R$ and is thus denoted by 
 $\GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows. Letting 
 $\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
-$\func(\parMat) \Def [\func(\Par_1), \dots, \func(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
+$\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
 \footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
 $\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
 and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
 the defining property of the GP can be written as 
 \begin{align}
-\func(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
+\funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
 \end{align}
-Now suppose that, at a set of \textit{design points} $\designIn$, we have observed the (noiseless) function evaluations 
-$\funcValExact$; i.e., a realization of $\func(\designIn)$. 
-It is well-known \cite{gpML} that the conditional distribution $\func|[\func(\designIn)=\funcValExact]$ is also a GP
+For our purposes, the GP $\funcPrior$ will be a prior distribution for a \textit{deterministic} function $\func: \parSpace \to \R$. 
+However, the underlying ideas explored here can be extended to the setting where the evaluations of $\func$ 
+are corrupted by noise. 
+Now suppose that, at a set of \textit{design points} $\designIn$, we have computed the noiseless function values
+$\func(\designIn)$. Viewing these values as a realization of the random variable $\funcPrior(\designIn)$, we can 
+consider the conditional (i.e., \textit{predictive}) distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
+\cite{gpML} that this conditional distribution is also a GP
 \begin{align}
-\funcEm[\Ndesign] \Def \func|[\func(\designIn)=\funcValExact]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
+\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
 \end{align}
-with mean and kernel given by 
+with mean and kernel given by
+\footnote{The GP conditional mean and covariance equations apply more generally when conditioning on 
+$\{\designIn[\Ndesign], \funcVal[\Ndesign]\}$, regardless of whether $\funcVal[\Ndesign]$ is interpreted as 
+a set of noiseless function evaluations or not. However, in our setting we reserve the notation $\gpMean[\Ndesign]$
+for the case when $\funcVal[\Ndesign] = \func(\designIn[\Ndesign])$; i.e., conditioning on the exact function 
+evaluations. Note that $\gpKer[\Ndesign]$ is independent of $\funcVal[\Ndesign]$ so this distinction is only 
+relevant for the mean.} 
 \begin{align}
-\gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\funcValExact - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
+\gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\func(\designIn) - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
 \gpKer[\Ndesign](\parMat) &= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} \gpKerPrior(\designIn, \parMat). \nonumber
 \end{align}
-The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \funcValExact$), with 
+The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \func(\designIn[\Ndesign])$), with 
 the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). To break these interpolation properties,
 a constant can be added to the diagonal of the kernel matrix so that $(\gpKerPrior(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
 $\gpKerPrior(\designIn)^{-1}$ in \ref{kriging_eqns}. In the present context, the maps $\fwd$ and $\llik$ are assumed to be deterministic functions 
@@ -164,7 +174,7 @@ $\Par - \tilde{\Par}$. To complete the GP prior specification, we typically take
 function to be a constant or quadratic. We opt for the common empirical Bayes approach of fixing all mean and kernel hyperparameters 
 at their maximum (marginal) likelihood estimates.
 
-Finally, we consider the extension to multi-output functions $\func: \parSpace \to \R^{\dimObs}$. There is a large literature on multi-output 
+Finally, we consider the extension to multi-output functions $\funcPrior: \parSpace \to \R^{\dimObs}$. There is a large literature on multi-output 
 kernels (\todo: cite), but we focus here on the simplest case in which each output is modeled separately as an independent GP. 
 In this setting, the notation $\gpKerPrior(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ diagonal matrix collecting the variance of each 
 independent GP. Similarly, for a set of inputs $\parMat \in \R^{M \times \dimPar}$, $\gpKerPrior(\parMat)$ is now the 
@@ -175,23 +185,22 @@ We now consider modeling either $\fwd$ or $\llik$ with a GP, referring to these 
 \textit{log-likelihood} emulation, respectively. As mentioned previously, computationally costly forward models render 
 standard inference algorithms intractable for solving Bayesian inverse problems due to the large number of model 
 evaluations that must be conducted iteratively. The main idea of model emulation is to front-load the forward model 
-runs, which can often be computed in parallel, to obtain a design $\{\designIn, \designOutFwdExact\}$ or 
-$\{\designIn, \designOutLlikExact\}$ which can then be used to train a model that 
-approximates $\fwd$ or $\llik$. Here, $\designOutFwdExact$ and $\designOutLlikExact$ denote the vectors containing the 
-$\Ndesign$ forward model and log-likelihood evaluations at inputs $\designIn$, respectively. 
+runs, which can often be computed in parallel, to obtain a design $\{\designIn, \fwd(\designIn)\}$ or 
+$\{\designIn, \llik(\designIn)\}$ which can then be used to train a model that 
+approximates $\fwd$ or $\llik$.
 
 \subsubsection{Forward Model Emulation}
 If the output dimension $\dimObs$ is reasonably small, then a common approach is to specify an independent 
-multi-output GP prior directly for the forward model, $\fwd \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd})$. 
+multi-output GP prior directly for the forward model, $\fwdPrior \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd})$. 
 Conditioning on this design yields the predictive distribution 
-$\fwdEm[\Ndesign]  \Def \fwd|[\fwd(\designIn) = \designOutFwdExact] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
+$\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
 which constitutes the emulator for $\fwd. $
 We emphasize that $\fwdEm[\Ndesign]$ is a \textit{stochastic} surrogate; 
 the model predictions at inputs $\parMat$ are given by the entire distribution 
 $\fwdEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\parMat), \emKer[\Ndesign]{\fwd}(\parMat))$. 
 Thus, the mean $\emMean[\Ndesign]{\fwd}(\parMat)$ provides a point estimate while the covariance 
 $\emKer[\Ndesign]{\fwd}(\parMat)$ summarizes the uncertainty in the estimate. This is useful for the purpose
-of uncertainty quantification, in that the additional uncertainty introduced as a consequence of the surrogate 
+of uncertainty quantification in that the additional uncertainty introduced as a consequence of the surrogate 
 approximation can be propagated to the approximate posterior distribution. We note that plugging the random 
 function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces an approximation of the log-likelihood,
 which we denote by $\llikEmFwd$. 
@@ -201,8 +210,8 @@ In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approxi
 \end{align}
 We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFwd[\Ndesign](\Par)$ is also 
 stochastic, but no longer Gaussian in general; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
-the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by ``plugging in'' the 
-forward model emulator.
+the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by plugging the 
+conditioned forward model emulator into the log-likelihood function. 
 This represents a modular surrogate-modeling approach \cite{modularization}. 
 Emulating expensive models using GPs is one of the central questions 
 studied in the computer experiments literature; see \cite{gramacy2020surrogates} and 
@@ -228,12 +237,12 @@ We observe in \ref{post_dens} that the forward model evaluations appear in the p
 likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate $\llik(\Par)$ without 
 obtaining an approximation of the forward model. It is typically preferable to focus on approximating the logarithm 
 of the likelihood, which usually results in a smoother response surface more amenable to GP emulation [\todo: cite]. 
-The emulator construction proceeds as before; a GP prior $\llik \sim \GP(\emMeanPrior{\llik}, \emKerPrior{\llik})$ 
+The emulator construction proceeds as before; a GP prior $\llikPrior \sim \GP(\emMeanPrior{\llik}, \emKerPrior{\llik})$ 
 is specified and the predictive distribution 
 \begin{align*}
-\llikEm[\Ndesign] \Def \llik | [\llik(\designIn) = \designOutLlikExact[\Ndesign]] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})
+\llikEm[\Ndesign] \Def \llikPrior | [\llikPrior(\designIn) = \llik(\designIn)] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})
 \end{align*}
-is obtained by conditioning on the design $\{\designIn, \designOutLlikExact[\Ndesign]\}$. 
+is obtained by conditioning on the design $\{\designIn, \llik(\designIn)\}$. 
 The distribution of $\llikEm[\Ndesign]$ is Gaussian, unlike
 the log-likelihood surrogate $\llikEmFwd[\Ndesign]$ in the forward model emulation setting. 
 The use of GPs to approximate log-likelihoods has been widely used in approximate Bayesian inference 
@@ -403,10 +412,11 @@ We now interpret the approximate posteriors introduced in the previous section a
 approximations of the Metropolis-Hastings (MH) acceptance probability. This perspective motivates 
 an alternative approach to GP-induced posterior approximation; instead of first deriving an 
 approximation of the unnormalized posterior density, we consider the approximation to the MCMC 
-scheme as the starting point. We consider a class of MCMC algorithms which produce 
-noisy approximations to the MH acceptance probability, and thus fall into the noisy MCMC 
+scheme as the starting point. In addition to deterministic approximations,
+we consider a class of MCMC algorithms which produce stochastic approximations to the MH acceptance 
+probability, and thus fall into the noisy MCMC 
 framework which has been considered in the literature 
-\cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}.  
+\cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}. 
 
 \subsubsection{Deterministic Metropolis-Hastings Approximations}
 We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
@@ -425,7 +435,7 @@ of the acceptance probability, we define
 \begin{align}
 &\accProbRatio(\Par, \propPar) 
 = \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)}, 
-&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}}.
+&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}},
 \label{MH_acc_prob_exact}
 \end{align}
 and refer to $\accProbRatio(\Par, \propPar)$ and $\likRatio(\Par, \propPar)$ 
@@ -578,8 +588,9 @@ $[\llikEm[\Ndesign](\Par), \llikEm[\Ndesign](\propPar)]$,
 We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings (MCWMH-joint)}. 
 Like the deterministic joint marginal approximations \ref{lik_ratio_joint_marg} and \ref{acc_prob_joint_marg}, 
 the \textit{MCWMH-joint} algorithm takes into account the GP covariance structure. Note that since the log-likelihood
-values are sampled independently across iterations, the \textit{MCWMH-joint} does indeed define a valid 
+values are sampled independently across iterations, the \textit{MCWMH-joint} algorithm does indeed define a valid 
 Markov chain. The transition kernel of this Markov chain is given by 
+\footnote{We denote by $\delta_{x}$ the Dirac measure centered at a point $x$, which assigns a unit point mass to $x$.}
 \begin{align}
 \llikEmJointMCWMH[\Ndesign]{\MarkovKernel}(\Par, A) 
 &= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar 
@@ -613,7 +624,6 @@ implies the product measure
 \Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)), \label{llik_dist_pseudo_marg}
 \end{align}
 which precisely falls into the pseudo-marginal MCMC framework \cite{pseudoMarginalMCMC}. 
-\footnote{We denote by $\delta_{x}$ the Dirac measure centered at a point $x$, which assigns a unit point mass to $x$.}
 We thus term 
 this algorithm \textit{Pseudo-Marginal Metropolis-Hastings (MH-pseudo-marg)}. Given a log-likelihood sample 
 $\llikSamp$, then by definition the unnormalized posterior approximation $\priorDens(\Par) \Exp{\llikSamp}$ is 
@@ -636,30 +646,28 @@ posterior approximation.
 
 \subsubsection{The Sequential Design Loop}
 Sequential design algorithms for GPs have been studied extensively across several fields. We introduce this topic 
-for a generic GP predictive distribution $\funcEm[\Ndesign] \Def \func|[\func(\designIn) = \funcValExact]$, as defined in 
+for a generic GP predictive distribution $\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn) = \func(\designIn)]$, as defined in 
 \ref{generic_gp_conditional}. We now consider the question of identifying a new set of $\Nbatch$
-inputs $\designBatchIn$ to augment the initial design. We let $\funcValExact[\Nbatch]$ denote the true, noiseless 
-function evaluations at $\designBatchIn$. The augmented design is thus given by 
-$\{\designIn[\Naugment], \funcValExact[\Naugment]\}$, where 
-$\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$ and $\funcValExact[\Naugment]$ is 
-the observed realization of $\func(\designIn[\Naugment])$. 
+inputs $\designBatchIn$ to augment the initial design. The augmented design is thus given by 
+$\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$, where 
+$\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$. 
 Conditioning on the augmented design results in the updated GP
 \begin{align}
-\funcEm[\Naugment] \Def \func|[\func(\designIn[\Naugment]) = \funcValExact[\Naugment]] \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
+\funcEm[\Naugment] \Def \funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
 \end{align}
 where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ functions are given by \ref{kriging_eqns}
-with $\{\designIn, \funcValExact[\Ndesign]\}$ replaced by $\{\designIn[\Naugment], \funcValExact[\Naugment]\}$. 
+with $\{\designIn, \func(\designIn)\}$ replaced by $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$. 
 We note that conditioning in stages is equivalent to conditioning on the entire design at once; i.e.,
-$\func|[\func(\designIn[\Naugment]) = \funcValExact[\Naugment]] \eqDist 
-\funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \funcValExact[\Nbatch]]$, which is justified 
+$\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \eqDist 
+\funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \func(\designBatchIn)]$, which is justified 
 by \Cref{lemma:gp-condition-order} in the appendix. 
 The update $\funcEm[\Ndesign] \to \funcEm[\Naugment]$ 
 can be computed in $\BigO(\Nbatch^3 + \Ndesign^2 \Nbatch + \Nbatch^2 \Ndesign)$ operations, 
 a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
 implementation (courtesy of the partitioned matrix inverse identity stated in \Cref{partitioned-matrix-inverse}). 
 Naturally, the new batch $\designBatchIn$ should be chosen to 
-yield maximal improvement in the GP model $\funcEm[\Naugment]$ with respect to the downstream task that is to be performed. 
-This idea naturally leads to an optimization problem of the form 
+yield maximal improvement in the GP model with respect to the downstream task that is to be performed. 
+This idea is formalized by an optimization problem of the form 
 \begin{align}
 \designBatchIn = \argmin_{\designBatchIn^\prime \subset \parSpace} \acq[\Ndesign](\designBatchIn^\prime), \label{acq_func_opt}
 \end{align}
@@ -671,13 +679,12 @@ encodes the quality of a batch of design points in terms of the task at hand. It
     \caption{Gaussian Process Sequential Design Loop}
     \label{alg:seq_des_loop}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{SeqDesign}{$\design[\Ndesign], \Nrounds$}     
-    	\State $\design[] \gets \design[\Ndesign]$ \Comment{Initial Design}
-	\State $\hat{f} \gets f|\design[] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$
+    \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
+	\State $\hat{\func} \gets \funcPrior|[\funcPrior(\designIn[\Ndesign]) = \func(\designIn[\Ndesign])] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$
+	\Comment{Initial Design}
         \For{$\designIndex \gets 1,\Nrounds$} \Comment{Sequential Design Loop}
         		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \subset \parSpace} \acq[\Ndesign](\designBatchIn^\prime)$ 
-		\State $\design[] \gets \design[] \cup \{\designBatchIn, \func(\designBatchIn)\}$
-		\State $\hat{f} \gets \hat{f} | \design[]$
+		\State $\hat{f} \gets \hat{f} | [\hat{f}(\designBatchIn) = \func(\designBatchIn)]$
 	\EndFor
 	\EndFunction
     \end{algorithmic}
@@ -688,11 +695,9 @@ varying the batch size $\Nbatch$ across the $\Nrounds$ iterations, but to simpli
 special case $\Nbatch = 1$ corresponds to the pure sequential design setting, in which the function $\func$ is evaluated at each acquired 
 point before considering the subsequent acquisition. The \textit{batch} sequential design setting $\Nbatch > 1$ is more challenging,  
 owing to the fact that $\func$ is only evaluated after an entire batch $\designBatchIn$ has been acquired, meaning that inputs must 
-be selected without observing the outputs of the other points in the batch. The applications motivating this work render the 
-pure sequential design setting completely infeasible, as a single function evaluation $f(\Par)$ may require thousands of CPU hours. 
-However, computing resources often allow $\BigO(10^2)$ function evaluations to be performed in parallel. Such constraints imply a 
-``large batch, few iterations'' setting, posing additional challenges not faced in the pure sequential design context. We note that, 
-while the design framework summarized in \Cref{alg:seq_des_loop} does allow for consideration of within-batch interactions between design points, 
+be selected without observing the outputs of the other points in the batch. 
+We note that, while the design framework summarized in \Cref{alg:seq_des_loop} does allow for consideration 
+of within-batch interactions between design points, 
 it is still ``myopic'' in the sense that it disregards the potential for future acquisitions. Non-myopic strategies have been considered
 through a dynamic programming lens, though they typically come at the cost of significant 
 computational expense \cite{SURThesis, supermartingaleSUR}.
@@ -730,18 +735,19 @@ To address this weakness, an alternative approach is to minimize the \textit{con
 the input space $\parSpace$. The resulting \textit{integrated uncertainty criteria}
 \begin{align}
 \labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
-&= \int_{\parSpace} \Var[\funcEm[\Ndesign](\Par) | \designBatchIn] \weightDens(\Par) d\Par, \label{acq_int_var} \\ 
+&= \int_{\parSpace} \Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par, \label{acq_int_var} \\ 
 \labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
-&= \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \designBatchIn] \weightDens(\Par) d\Par, \label{acq_int_ent}
+&= \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par, \label{acq_int_ent}
 \end{align}
 are naturally defined in the batch setting and account for the global effect of acquiring new design points. Here $\weightDens$ is 
 a probability density on $\parSpace$, allowing for the expectation over $\parSpace$ to weighted. 
 A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
-in \cite{Mercer_kernels_IVAR}, with an emphasis is on one-shot, rather than sequential, design. 
-Since $\Var[\funcEm[\Ndesign](\Par) | \designBatchIn] = \gpKer[\Naugment](\Par)$ and 
-$\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn] = \frac{1}{2} \log(2\pi e \gpKer[\Naugment](\Par))$, the integrands of 
+in \cite{Mercer_kernels_IVAR}, with an emphasis on one-shot, rather than sequential, design. 
+Since $\Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] = \gpKer[\Naugment](\Par)$ and 
+$\Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] = \frac{1}{2} \log(2\pi e \gpKer[\Naugment](\Par))$, the integrands of 
 \ref{acq_int_var} and \ref{acq_int_ent} are available in closed-form. However, outside of special choices for $\parSpace$ and 
-$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals are typically replaced with Monte Carlo approximations. It is worth noting that 
+$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
+approximations. It is worth noting that 
 these acquisition functions must be computed without observing the function evaluations $\func(\designBatchIn)$, which is 
 not an issue for any of the above acquisitions given that $\gpKer[\Naugment](\Par)$ is independent of $\func(\designBatchIn)$ 
 (see \ref{kriging_eqns}). However, the predictive mean $\gpMean[\Naugment](\Par)$ does depend on $\func(\designBatchIn)$, 
@@ -749,30 +755,31 @@ a fact which will become relevant in the subsequent section. We therefore state 
 dependence of the predictive mean on $\func(\designBatchIn)$, under the assumption that the latter is distributed according 
 to the current GP $\funcEm[\Ndesign]$. A similar result is also provided in \cite{VehtariParallelGP}. 
 \begin{lemma} \label{lemma:pred-mean-dist}
-Let $\designRand{\designBatchFunc} \Def \{\designBatchIn, \designBatchFunc\}$ be a new batch of $\Nbatch$ design points, with 
+Let $\{\designBatchIn, \funcVal[\Nbatch]\}$ be a new batch of $\Nbatch$ design points, with
 $\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
 Let  
 \begin{align}
-\gpMean[\Naugment](\parMat ; \designBatchFunc) 
-\Def \E[\funcEm[\Ndesign](\parMat) | \designRand{\designBatchFunc}] \label{conditional-mean-notation}
+\gpMean[\Ndesign](\Par | \designBatchFunc) 
+\Def \E[\funcEm[\Ndesign](\Par) | \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc] \label{conditional-mean-notation}
 \end{align}
-denote the predictive mean at inputs $\parMat$ after conditioning $\funcEm[\Ndesign]$ on 
-$\designRand{\designBatchFunc}$. Then, the predictive mean $\gpMean[\Naugment](\parMat; \designBatchFunc)$
-(viewed as a function of the random variable $\designBatchFunc$), satisfies 
+denote the predictive mean after conditioning $\funcEm[\Ndesign]$ on 
+$\{\designBatchIn, \funcVal[\Nbatch]\}$. Then, viewed as a function of the random variable 
+$\designBatchFunc$, the conditional mean $\gpMean[\Ndesign](\Par| \designBatchFunc)$ is 
+distributed as 
 \begin{align}
-\gpMean[\Naugment](\parMat ; \designBatchFunc)
-\sim \Gaussian\left(\gpMean[\Ndesign](\parMat), 
-                               \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat) \right) \label{pred-mean-dist}.
+\gpMean[\Ndesign](\Par | \designBatchFunc)
+\sim \Gaussian\left(\gpMean[\Ndesign](\Par), 
+                               \gpKer[\Ndesign](\Par) - \gpKer[\Naugment](\Par) \right) \label{pred-mean-dist}.
 \end{align}
 \end{lemma}
-We see that the expectation (with respect to $\designBatchFunc$) of $\gpMean[\Naugment](\parMat ; \designBatchFunc)$ 
-is equal to the current predictive mean $\gpMean[\Ndesign](\parMat)$. Since 
-$\gpMean[\Ndesign](\parMat) = \gpMean[\Naugment](\parMat ; \gpMean[\Ndesign](\designBatchIn))$, this can also be 
+We see that the expectation (with respect to $\designBatchFunc$) of $\gpMean[\Ndesign](\Par| \designBatchFunc)$ 
+is equal to the current predictive mean $\gpMean[\Ndesign](\Par)$. Since 
+$\gpMean[\Ndesign](\Par) = \gpMean[\Ndesign](\Par | \gpMean[\Ndesign](\designBatchIn))$, this can also be 
 interpreted as the predictive mean resulting from the conditioning of $\funcEm[\Ndesign]$ on the ``pseudo-data''
 $\{\designBatchIn, \gpMean[\Ndesign](\designBatchIn)\}$; i.e., treating the current GP predictive mean as if it were 
 the true response. The variance of 
-$\gpMean[\Naugment](\parMat ; \designBatchFunc)$ is equal to the change in GP variance at the inputs $\parMat$ due to the act 
-of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Naugment](\parMat ; \designBatchFunc)$ 
+$\gpMean[\Ndesign](\Par | \designBatchFunc)$ is equal to the change in GP variance at the input $\Par$ due to the act 
+of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Ndesign](\Par | \designBatchFunc)$ 
 is large when the design points $\designBatchIn$ are more ``influential.''
 
 \subsection{Acquisition Functions for Posterior Approximation}

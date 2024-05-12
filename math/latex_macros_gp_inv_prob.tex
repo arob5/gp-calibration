@@ -42,12 +42,15 @@
 \newcommand{\GP}{\mathcal{GP}} % GP distribution.
 \newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
 \newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
+\newcommand{\funcPrior}{\func_{0}}
 \newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
 \newcommand{\funcValExact}[1][\Ndesign]{\varphi_{#1}^{*}}
-\newcommand{\gpMeanPrior}{\mu}
-\newcommand{\gpKerPrior}{k}
-\newcommand{\gpMean}[1][\Ndesign]{\gpMeanPrior_{#1}}
-\newcommand{\gpKer}[1][\Ndesign]{\gpKerPrior_{#1}}
+\newcommand{\gpMeanBase}{\mu} % The base notation used for GP mean (no sub/superscripts). 
+\newcommand{\gpKerBase}{k}
+\newcommand{\gpMeanPrior}{\gpMeanBase_0}
+\newcommand{\gpKerPrior}{\gpKerBase_0}
+\newcommand{\gpMean}[1][\Ndesign]{\gpMeanBase_{#1}}
+\newcommand{\gpKer}[1][\Ndesign]{\gpKerBase_{#1}}
 \newcommand{\nuggetSD}{\eta}
 \newcommand{\kerMat}[1][\Ndesign]{K_{#1}}
 \newcommand{\emLawPrior}[1]{{\Pi}^{#1}} % The prior law/distribution of an emulator.
@@ -57,9 +60,11 @@
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
-\newcommand{\margSD}{\sigma_{\gpKerPrior}}
+\newcommand{\margSD}{\sigma_{\gpKerBase}}
 
 % Log-likelihood and forward model emulators. 
+\newcommand{\fwdPrior}{\fwd_{0}}
+\newcommand{\llikPrior}{\llik_{0}}
 \newcommand{\funcEm}[1][\Ndesign]{\func_{#1}}
 \newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
 \newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
@@ -69,8 +74,8 @@
 % Mean and kernel functions for log-likelihood and forward model emulators. 
 \newcommand{\emMeanPrior}[1]{\gpMeanPrior^{#1}} 
 \newcommand{\emKerPrior}[1]{\gpKerPrior^{#1}}
-\newcommand{\emMean}[2][\Ndesign]{\gpMeanPrior^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
-\newcommand{\emKer}[2][\Ndesign]{\gpKerPrior^{#2}_{#1}}
+\newcommand{\emMean}[2][\Ndesign]{\gpMeanBase^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
+\newcommand{\emKer}[2][\Ndesign]{\gpKerBase^{#2}_{#1}}
 
 % Random (sample) approximations. 
 \newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
