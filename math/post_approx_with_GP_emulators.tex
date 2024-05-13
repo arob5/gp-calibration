@@ -89,8 +89,8 @@ with normalizing constant given by
 \normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
 \end{align}
 We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. When relevant, we will make explicit the likelihood dependence on the forward 
-model by writing $\llik(\Par; \fwd)$. In addition to considering 
+posterior density. When relevant, we will make explicit the dependence on the forward 
+model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to considering 
 generic likelihoods, we will give special attention to the additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
@@ -895,10 +895,25 @@ This criterion is considered in \cite{VehtariParallelGP} in training a log-likel
 approximate Bayesian computation.
 
 \paragraph{Forward Model Emulation}
-In the forward model emulation setting, we similarly define 
+To define a similar criterion in the forward model emulation setting, we first recall that we are considering ``plug-in'' forward model emulators. 
+Thus, the unnormalized posterior density emulator is conditioned on a new batch $\{\designBatchIn, \designBatchFwd\}$ and then 
+the updated emulator is plugged into the density in place of the true forward model. This implies that the analogous expression to 
+the expected variance in \ref{def:int_exp_var_llik}, 
+\begin{align*}
+\E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd],
+\end{align*}
+does \textit{not} correctly convey how the emulator is updated in this setting. To correctly specify the expected variance in this 
+context, we define $\fwdEmCond{\designBatchFwd} \Def \fwdEm | [\fwdEm(\designBatchIn) = \designBatchFwd]$
+\footnote{Note that $\fwdEmCond{\designBatchFwd}$ is conditioned on $\{\designBatchIn, \designBatchFwd\}$, though the 
+dependence on the inputs $\designBatchIn$ is suppressed in the notation.}, so that 
+$\postDens(\Par; \fwdEmCond{\designBatchFwd})$ represents the unnormalized posterior density 
+with the updated emulator plugged in. Following the convention from previous sections, we let 
+$\emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd)$ denote the expectation of 
+$\fwdEm(\Par) | [\fwdEm(\designBatchIn) = \designBatchFwd]$.
+We can now define the integrated variance criterion as 
 \begin{align}
 \labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd]\weightDens(\Par) d\Par, \label{fwd-int-exp-var}
+\int_{\parSpace} \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]\weightDens(\Par) d\Par, \label{fwd-int-exp-var}
 \end{align}
 under the assumption $\designBatchFwd|\designBatchIn \sim \Gaussian(\emMean{\fwd}(\designBatchIn), \emKer{\fwd}(\designBatchIn))$.
 To our knowledge, 
@@ -910,7 +925,7 @@ likelihood as a function of the random quantity $\designBatchFwd$, assumed to be
 to the current GP predictive distribution. 
 
 \begin{lemma} \label{lemma:fwd-Gaussian-density-dist}
-Let $\llikEmFwd(\Par) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
+Let $\llik(\Par; \fwdEm) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
 $\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
 GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
 design points, with
@@ -918,7 +933,8 @@ $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\design
 Define $\CovComb[\Ndesign](\Par) \Def \likPar + \emKer[\Ndesign]{\fwd}(\Par)$. 
 Then for $\Par \in \parSpace$,
 \begin{enumerate}
-\item $\E \left[\Exp{\llikEmFwd[\Ndesign](\Par)} | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd \right] = \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))$
+\item $\E \left[\Exp{\llik(\Par; \fwdEmCond{\designBatchFwd})} | \designBatchFwd \right] 
+= \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))$
 \item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))\right]
 = \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par)\right)$
 \item 
@@ -929,11 +945,7 @@ Then for $\Par \in \parSpace$,
 \end{align*}
 \end{enumerate}
 \end{lemma}
-
-\todo: fix formatting and need to clear up some ambiguous points in the notation; is it clear the first expectation is wrt the emulator? 
-And need to make clear in the notation that the G emulator is being plugged-in. 
-
-
+ 
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
 
@@ -1199,18 +1211,19 @@ $\gpKerPrior(\designIn[\Ndesign], \parMat)$ and $\gpKerPrior(\designIn[\Nbatch],
 \subsubsection{Uncertainty in GP Predictive Mean Due to Unobserved Response}
 
 \begin{proof} [Proof of \Cref{lemma:pred-mean-dist}]
+Though the result is only required for a single input $\Par$, it is no more difficult to establish for a set of inputs $\parMat$. 
 We recall that 
 \begin{align*}
-\gpMean[\Naugment](\parMat; \designBatchFunc) 
-&= \E[\funcEm[\Ndesign](\parMat) | (\designBatchIn, \designBatchFunc)] \\
+\gpMean[\Ndesign](\parMat | \designBatchFunc) 
+&= \E[\funcEm[\Ndesign](\parMat) | \funcEm(\designBatchIn) = \designBatchFunc] \\
 &= \gpMean[\Ndesign](\parMat) + \gpKer[\Ndesign](\parMat, \designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1} [\designBatchFunc - \gpMean[\Ndesign](\designBatchIn)],
 \end{align*}
 following from the GP predictive equations \ref{kriging_eqns}. Since, $\designBatchFunc|\parMat \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$, 
-we see that $\gpMean[\Naugment](\parMat; \designBatchFunc)$ is a linear function of a Gaussian random variable. It is thus Gaussian distributed, with mean and covariance
+we see that $\gpMean[\Ndesign](\parMat | \designBatchFunc)$ is a linear function of a Gaussian random variable. It is thus Gaussian distributed, with mean and covariance
 \begin{align*}
-\E_{\designBatchFunc}[\gpMean[\Naugment](\parMat; \designBatchFunc)]
+\E_{\designBatchFunc}[\gpMean[\Ndesign](\parMat | \designBatchFunc)]
 &= \gpMean[\Ndesign](\parMat) + \gpKer[\Ndesign](\parMat, \designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1} [\gpMean[\Ndesign](\designBatchIn) - \gpMean[\Ndesign](\designBatchIn)] = \gpMean[\Ndesign](\parMat) \\
-\Cov_{\designBatchFunc}[\gpMean[\Naugment](\parMat; \designBatchFunc)]
+\Cov_{\designBatchFunc}[\gpMean[\Ndesign](\parMat | \designBatchFunc)]
 &= \gpKer[\Ndesign](\parMat, \designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1}  \gpKer[\Ndesign](\designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1} \gpKer[\Ndesign](\designBatchIn, \parMat) \\
 &=  \gpKer[\Ndesign](\parMat, \designBatchIn) \gpKer[\Ndesign](\designBatchIn)^{-1} \gpKer[\Ndesign](\designBatchIn, \parMat) \\
 &= \gpKer[\Ndesign](\parMat) - \gpKer[\Naugment](\parMat).
@@ -1222,19 +1235,19 @@ we see that $\gpMean[\Naugment](\parMat; \designBatchFunc)$ is a linear function
 \begin{proof} [Proof of \Cref{lemma:evar}]
 We start by noting that 
 \begin{align*}
-\Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik)]
-&= \Var[\priorDens(\Par) \Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}] 
-&= \priorDens(\Par)^2 \Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}],
+\Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]
+&= \Var[\priorDens(\Par) \Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \\
+&= \priorDens(\Par)^2 \Var[\Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik],
 \end{align*}
 so we will focus on the likelihood emulator, ignoring the prior for now. Since 
 \begin{align*}
-\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)}|\designBatchLlik \sim 
-\LN(\emMean[\Naugment]{\llik}(\Par; \designBatchLlik), \emKer[\Naugment]{\llik}(\Par)),
+\Exp{\llikEm(\Par)} | [\llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \sim 
+\LN(\emMean[\Ndesign]{\llik}(\Par| \designBatchLlik), \emKer[\Naugment]{\llik}(\Par)),
 \end{align*}
 we apply the formula for a log-normal variance to obtain 
 \begin{align}
-\Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)} | \designBatchLlik] 
-&= \cst \Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)}, \label{formula_plug_in}
+\Var[\Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]
+&= \cst \Exp{2\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)}, \label{formula_plug_in}
 \end{align}
 where 
 \begin{align*}
@@ -1242,28 +1255,29 @@ where
 \end{align*}
 is not a function of the random variable $\designBatchLlik$. \Cref{lemma:pred-mean-dist} gives 
 \begin{align*}
-\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)
+\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)
 &\sim \LN(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)), 
 \end{align*}
 which implies 
 \begin{align*}
-\Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)}
-&\sim \LN(2\emMean[\Ndesign]{\llik}(\Par), 4[\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)]).
+\Exp{2\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)}
+&\sim \Gaussian(2\emMean[\Ndesign]{\llik}(\Par), 4[\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)]).
 \end{align*}
 Applying the formula for a log-normal mean thus yields 
 \begin{align*}
-\E\left[\Exp{2\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)} \right]
+\E_{\designBatchLlik} \left[\Exp{2\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)} \right]
 &= \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \Exp{2[\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)]} \\
 &=  \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \varInflation(\Par; \designBatchIn), 
 \end{align*}
 where $\varInflation(\Par; \designBatchIn)$ is defined in \ref{var_inflation_factor}. Plugging this expression back 
 into \ref{formula_plug_in} gives 
 \begin{align*}
-\E_{\designBatchLlik} \Var[\Exp{\llikEm[\Naugment](\Par; \designBatchLlik)} | \designBatchLlik] 
+\E_{\designBatchLlik} \Var[\Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]
 &= \cst \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \varInflation(\Par; \designBatchIn) \\
-&= \Var[\Exp{\llikEm[\Naugment](\Par; \emMean[\Ndesign]{\llik}(\Par)}] \varInflation(\Par; \designBatchIn).
+&= \Var[\Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\Par)] \varInflation(\Par; \designBatchIn).
 \end{align*}
-Multiplying both sides by $\priorDens(\Par)$ completes the proof. 
+Multiplying both sides by $\priorDens(\Par)$ completes the proof, the closed-form expression for the first term following 
+immediately from the formula for a log-normal variance. 
 \end{proof}
 
 \subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
@@ -1288,19 +1302,18 @@ matrix. Then, for $\obs \in \R^{\dimObs}$,
 \end{proof}
 
 
-
 \begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
 
 \begin{enumerate}
 \item The first result follows immediately from \Cref{post_dens_marg_fwd_Gaussian}. 
 \item From \Cref{lemma:pred-mean-dist}, we know that 
 \begin{align*}
-\emMean[\Naugment]{\fwd}(\Par; \designBatchFwd)
+\emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd)
 &\sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)). 
 \end{align*}
 We can thus write the expectation of interest as 
 \begin{align*}
-\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par) \right]
+\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par) \right]
 &= \int_{\R^{\dimObs}} \Gaussian(\obs| v, \CovComb[\Naugment](\Par)) 
 \Gaussian(v | \emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)) dv \\
 &= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
@@ -1311,13 +1324,13 @@ $\likPar + \emKer[\Ndesign]{\fwd}(\Par) = \CovComb[\Ndesign](\Par)$.
 
 \item We start by applying \Cref{lemma:squared_Gaussian_density}, which gives 
 \begin{align*}
-\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2
+\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par))^2
 &= (2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} 
-\Gaussian\left(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right). 
+\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right). 
 \end{align*}
 Just as in part 2 above, the convolution formula in \Cref{Gaussian_convolution} yields 
 \begin{align*}
-\E_{\designBatchFwd}\left[\Gaussian\left(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right) \right] 
+\E_{\designBatchFwd}\left[\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right) \right] 
 &= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
 \end{align*}
 with the covariance simplifying to 
