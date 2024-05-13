@@ -370,7 +370,7 @@ the expectation admits the closed-form expression
 \label{post_dens_marg_fwd_Gaussian}
 \end{align}
 which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see \Cref{Gaussian_convolution} in the appendix). 
+of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix). 
 The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
 can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
 \begin{align}
@@ -945,6 +945,13 @@ Then for $\Par \in \parSpace$,
 \end{align*}
 \end{enumerate}
 \end{lemma}
+
+\begin{prop} \label{prop:evar-fwd-emulation}
+Under the same assumptions as \Cref{lemma:fwd-Gaussian-density-dist} it follows that
+\begin{align}
+\E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]
+\end{align}
+\end{prop}
  
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
@@ -952,15 +959,33 @@ Then for $\Par \in \parSpace$,
 % Appendix 
 \section{Appendix}
 
-\subsection{Convolution of Gaussians}
+\subsection{Marginal Approximation with Gaussian Likelihood: Forward Model Emulation}
+The closed-form computations related to the marginal approximation with a Gaussian 
+likelihood follow from standard results regarding the convolution of Gaussian densities.  
 
 \begin{prop} \label{Gaussian_convolution}
-Let $\Gaussian(A \Par, \likPar)$ and $\Gaussian(m, C)$ be Gaussian distributions on $\R^{\dimObs}$ and $\R^{\dimPar}$, 
+Let $\Gaussian(A \mu, \likPar)$ and $\Gaussian(m, C)$ be Gaussian distributions on $\R^{\dimObs}$ and $\R^{\dimPar}$, 
 respectively, with $A \in \R^{\dimObs \times \dimPar}$ and $\likPar, C$ symmetric, positive definite matrices. Then 
 \begin{align*}
-\int_{\R^{\dimPar}} \Gaussian(\obs | A \Par, \likPar) \Gaussian(\Par | m, C) d\Par
+\int_{\R^{\dimPar}} \Gaussian(\obs | A \mu, \likPar) \Gaussian(\mu | m, C) d\mu
 &= \Gaussian(\obs | Am, \likPar + ACA^\top). 
 \end{align*}
+\end{prop}
+
+\begin{proof} 
+\todo
+\end{proof}
+
+The Gaussian convolution formula is used to prove the following proposition. 
+\begin{prop} \label{prop:Gaussian_marginal_moments}
+Assume $\obs | \mu \sim \Gaussian(A \mu, \likPar)$ and $\mu \sim \Gaussian(m, C)$, where $\mu \in \R^{\dimPar}$, 
+$A \in \R^{\dimPar \times \dimObs}$, and $\likPar$, $C$ are both symmetric, positive definite. Then 
+\begin{align}
+\E\left[\Gaussian(\obs | A \mu, \likPar) \right] &= \Gaussian(\obs | Am, \likPar + ACA^\top) \\
+\Var\left[\Gaussian(\obs | A \mu, \likPar) \right] 
+&= \frac{\Gaussian\left(\obs | Am, \frac{1}{2} \likPar + ACA^\top \right)}{\det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top] \right)}{\det(2\pi[\likPar + ACA^\top])^{1/2}}
+\end{align}
 \end{prop}
 
 \begin{proof} 
@@ -1346,13 +1371,17 @@ with the covariance simplifying to
 \end{proof}
 
 
-
-
 % Questions and TODOs
 \section{Questions and TODOs}
 \subsection{Notation}
 \begin{enumerate}
 \item How to clean up notation for all of the different approximations being considered here? 
+\end{enumerate}
+
+\subsection{Numerical Experiments}
+\begin{enumerate}
+\item Banana, unimodal, bimodal, unidentifiable
+\item Heat equation (see Sinsbeck and Nowak) 
 \end{enumerate}
 
 \subsection{Need to add}
