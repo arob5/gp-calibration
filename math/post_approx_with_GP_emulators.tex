@@ -785,8 +785,8 @@ is large when the design points $\designBatchIn$ are more ``influential.''
 \subsection{Acquisition Functions for Posterior Approximation}
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
 design point batches that cause large reductions of uncertainty in the GP predictive distribution. While such criteria may be appropriate 
-when good predictions are required across all of $\parSpace$, this may not align well with the goal of constructing a GP emulator 
-which induces a quality posterior approximation. In the Bayesian inverse problem setting, it has repeatedly been noted that the 
+when quality predictions are required across all of $\parSpace$, this may not align well with the goal of constructing a GP emulator 
+which induces an accurate posterior approximation. In the Bayesian inverse problem setting, it has repeatedly been noted that the 
 posterior is often highly concentrated relative to the prior. Intuitively, one would therefore expect that the GP emulator need only 
 achieve a high predictive accuracy in the region with high posterior mass, and avoid wasteful acquisition of design points in 
 regions with negligible mass. This intuition is placed on more rigorous ground in \cite{StuartTeck2}, in which bounds on the 
@@ -797,7 +797,7 @@ often require $\BigO(10^3)$ sequential forward model evaluations, a significant 
 forward models of significant computational expense, such as those that motivated the present work. 
 
 We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
-are tailored to the goal of posterior approximation. The main idea is to define acquisition functions based on 
+are tailored to the goal of posterior approximation. One such approach is to define acquisition functions based on 
 the unnormalized posterior density emulator ($\fwdEmRdm[\Ndesign]{\postDens}(\Par)$ or $\llikEmRdmDens[\Ndesign](\Par)$), 
 rather than the underlying GPs themselves. The problem of GP-based sequential design for Bayesian inverse problems  
 has gained recent attention, and is addressed in 
@@ -821,7 +821,7 @@ are easily computable in closed-form. The $\maxexpvarLabel$ acquisition is consi
 \cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
 while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
 
-\subsubsection{Expected Integrated Variance}
+\subsubsection{Integrated Expected Variance}
 We now focus on adapting the integrated variance criterion \ref{acq_int_var} to LNPs. 
 In the log-likelihood emulation 
 setting, we will be able to derive a closed-form integrand, as was the case in \ref{acq_int_var}. In the special case 
@@ -836,36 +836,41 @@ $\Var[\llikEmRdmDens[\Naugment](\Par)]$, given that $\llikEmRdmDens[\Naugment](\
 random variable and hence its variance depends on $\emMean[\Naugment]{\llik}(\Par)$,  
 which in turn depends on $\llik(\designBatchIn)$ (see \ref{kriging_eqns}). 
 We follow the approach of \cite{VehtariParallelGP} and assume that the unobserved response follows the 
-current GP predictive distribution. To avoid confusion with the true log-likelihood evaluations, we denote the 
-new design batch (with unobserved response) by 
-$\designRand{\designBatchLlik} \Def \{\designBatchIn, \designBatchLlik\}$, which is assumed 
+current GP predictive distribution; that is, we consider conditioning on a new design batch 
+$\{\designBatchIn, \designBatchLlik\}$ which is assumed 
 to satisfy 
 \begin{align}
 \designBatchLlik | \designBatchIn &\sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn)).
 \end{align}
-We define 
+Following the notation in \Cref{conditional-mean-notation}, we will denote 
 \begin{align}
-\llikEmRdmDens[\Naugment](\Par; \designBatchLlik) \Def \llikEmRdmDens[\Ndesign](\Par) | \designRand{\designBatchLlik}
+\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)
+&\Def \E\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik \right]. 
 \end{align}
-\todo: need to be more precise here.  
-The dependence of $\emMean[\Naugment]{\llik}(\Par; \designBatchLlik)$ on $\designBatchLlik$ is given in 
+The dependence of $\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)$ on $\designBatchLlik$ is given in 
 \Cref{lemma:pred-mean-dist}. This lemma allows us to average over the uncertainty in  
-$\Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik)]$ stemming from the random quantity $\designBatchLlik$. 
+$\Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]$ stemming from the
+ random quantity $\designBatchLlik$. 
+ 
 \begin{lemma} \label{lemma:evar}
 Let $\{\designBatchIn, \designBatchLlik\}$ be a new batch of $\Nbatch$ design points, with 
 $\designBatchLlik | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
-For an arbitrary $\Par \in \parSpace$, it then follows that 
+For any $\Par \in \parSpace$, it then follows that 
 \begin{align}
-\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik) | \designBatchLlik]
-&= \Var\left[\llikEmRdmDens[\Naugment](\Par; \emMean[\Ndesign]{\llik}(\designBatchIn))\right]
+\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]
+&= \Var\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
 	\varInflation(\Par; \designBatchIn), \label{evar-expression}
 \end{align}
 where 
 \begin{align}
+\Var\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par| \emMean[\Ndesign]{\llik}(\designBatchIn)\right) + \emKer[\Naugment]{\llik}(\Par)} 
+\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right], \nonumber \\
 \varInflation(\Par; \designBatchIn)
 &= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}. \label{var_inflation_factor}
 \end{align}
 \end{lemma}
+
 A similar result is derived in \cite{VehtariParallelGP}.
 The interpretation of \Cref{lemma:evar} is similar to that of \Cref{lemma:pred-mean-dist}. 
 The first term in \ref{evar-expression} is the variance of the log-normal random variable
@@ -881,30 +886,21 @@ variance inflation is applied).
 With these preliminary results established, we define the $\intExpVarLabel$ criterion
 \begin{align}
 \labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Naugment](\Par; \designBatchLlik) | \designBatchLlik] \weightDens(\Par) d\Par, 
+\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \weightDens(\Par) d\Par, \label{def:int_exp_var_llik}
 \end{align}
 emphasizing the the expectation is still with respect to 
 $\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
-Applying \Cref{lemma:evar} immediately gives the following simplification. 
-\begin{lemma}
-The $\intExpVarLabel$ acquisition function is equal to 
-\begin{align}
-\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) =
-\int_{\parSpace} \Var[\llikEmRdmDens[\Ndesign](\Par; \emMean[\Ndesign]{\llik}(\designBatchIn))]
-	\varInflation(\Par; \designBatchIn) \weightDens(\Par) d\Par, 
-\end{align}
-where the variance inflation factor $\varInflation(\Par; \designBatchIn)$ is defined in \ref{var_inflation_factor}. 
-\end{lemma}
+Applying \Cref{lemma:evar} immediately gives the closed-form expression for the integrand in \ref{def:int_exp_var_llik}. 
 This criterion is considered in \cite{VehtariParallelGP} in training a log-likelihood emulator to be used for 
-approximate Bayesian computation. We emphasize that the integrand in \ref{var_inflation_factor} is 
-computable in closed-form, since the first term is simply the variance of log-normal random variable. 
+approximate Bayesian computation.
 
 \paragraph{Forward Model Emulation}
-The acquisition function is defined analogously in the forward model emulation setting, 
+In the forward model emulation setting, we similarly define 
 \begin{align}
 \labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchFwd} \Var[\fwdEmRdm[\Naugment]{\postDens}(\Par; \designBatchFwd) | \designBatchFwd] \weightDens(\Par) d\Par. \label{fwd-int-exp-var}
+\int_{\parSpace} \E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd]\weightDens(\Par) d\Par, \label{fwd-int-exp-var}
 \end{align}
+under the assumption $\designBatchFwd|\designBatchIn \sim \Gaussian(\emMean{\fwd}(\designBatchIn), \emKer{\fwd}(\designBatchIn))$.
 To our knowledge, 
 the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
 While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
@@ -912,28 +908,30 @@ demonstrates that the integrand admits a closed-form expression when the likelih
 To derive this result, we begin by stating a lemma that characterizes the uncertainty in the Gaussian 
 likelihood as a function of the random quantity $\designBatchFwd$, assumed to be distributed according 
 to the current GP predictive distribution. 
+
 \begin{lemma} \label{lemma:fwd-Gaussian-density-dist}
 Let $\llikEmFwd(\Par) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
 $\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
-GPs, one for each model output. Let $\designRand[\Nbatch]{\designBatchFwd} = \{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
+GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
 design points, with
 $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
 Define $\CovComb[\Ndesign](\Par) \Def \likPar + \emKer[\Ndesign]{\fwd}(\Par)$. 
 Then for $\Par \in \parSpace$,
 \begin{enumerate}
-\item $\E\left[\llikEmFwd[\Naugment](\Par; \designBatchFwd) | \designBatchFwd \right] = \Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))$
-\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))\right]
+\item $\E \left[\Exp{\llikEmFwd[\Ndesign](\Par)} | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd \right] = \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))$
+\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))\right]
 = \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par)\right)$
 \item 
 \begin{align*}
-\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Naugment]{\fwd}(\Par; \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] &= 
+\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] &= 
 (2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} \cdot \\
 &\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par) - \frac{1}{2} \CovComb[\Naugment](\Par) \right). 
 \end{align*}
 \end{enumerate}
 \end{lemma}
 
-\todo: fix formatting
+\todo: fix formatting and need to clear up some ambiguous points in the notation; is it clear the first expectation is wrt the emulator? 
+And need to make clear in the notation that the G emulator is being plugged-in. 
 
 
 % Learning Likelihood Parameters
@@ -1102,9 +1100,9 @@ but we specialize the statement to the GP setting.
 \subsubsection{Useful Lemmas}
 
 \begin{prop} \label{partitioned-matrix-inverse}
-Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior, with 
-$\funcEm[\Ndesign] \Def \func | \func(\designIn) \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$ the 
-GP predictive distribution following conditioning on the design $(\designIn, \func(\designIn))$. Let 
+Let $\funcPrior \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior, with 
+$\funcEm[\Ndesign] \Def \funcPrior | [\funcPrior(\designIn) = \func(\designIn)] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$  
+the GP predictive distribution after conditioning on the design $(\designIn, \func(\designIn))$. Let 
 $\designBatchIn$ be a set of $\Nbatch$ new design points. Define 
 $\kerMat[\Ndesign] \Def \gpKerPrior(\designIn)$, $\kerMat[\Nbatch] \Def \gpKerPrior(\designBatchIn)$,
 and $\kerMat[\Ndesign,\Nbatch] \Def \gpKerPrior(\designIn[\Ndesign], \designBatchIn)$.  
@@ -1126,23 +1124,25 @@ Thus, assuming $\kerMat[\Ndesign]^{-1}$ has already been computed, $\gpKerPrior(
 $\BigO(\Nbatch^3 + \Nbatch \Ndesign^2 + \Nbatch^2 \Ndesign)$ operations. 
 \end{prop}
 
-We repeatedly use the fact that $\func|\design[\Naugment]$ and $\funcEm[\Ndesign] | \design[\Nbatch]$ are equal in distribution 
-($\emLaw[{\design[\Naugment]}]{\func} = \emLaw[{\design[\Nbatch]}]{\funcEm}$); i.e., conditioning the GP prior on the entire design 
+We repeatedly use the fact that $\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])]$ and 
+$\funcEm[\Ndesign] | [\funcEm[\Ndesign](\designBatchIn) = \func(\designBatchIn)]$ are equal in distribution ; 
+i.e., conditioning the GP prior on the entire design 
 is equivalent to sequentially conditioning on subsets of the design. For the sake of completeness, we provide the rigorous justification for this below.
+
 \begin{lemma} \label{lemma:gp-condition-order}
-Let $\func \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior. Consider a set of $\Naugment$ design points $(\designIn[\Naugment], \funcVal[\Naugment])$
-partitioned as $\designIn[\Naugment] = \designIn[\Ndesign] \cup \designBatchIn$ and $\funcVal[\Naugment] = \funcVal[\Ndesign] \cup \funcVal[\Nbatch]$. 
-Then the random process $\func | \func(\designIn[\Naugment]) = \funcVal[\Naugment]$ is equal in distribution to the random process
-$\funcEm[\Ndesign] | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]$. 
+Let $\funcPrior \sim \GP(\gpMeanPrior, \gpKerPrior)$ be a GP prior. Consider a set of $\Naugment$ design points $\{\designIn[\Naugment], \funcVal[\Naugment]\}$
+partitioned as $\designIn[\Naugment] = \designIn[\Ndesign] \cup \designBatchIn$ and $\funcVal[\Naugment] = \funcVal[\Ndesign] \cup \funcVal[\Nbatch]$.
+Let $\funcEm[\Ndesign] \Def \func | [\func(\designIn[\Ndesign]) = \funcVal[\Ndesign]] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$. 
+Then the random process $\funcPrior | [\funcPrior(\designIn[\Naugment]) = \funcVal[\Naugment]]$ is equal in distribution to the random process
+$\funcEm[\Ndesign] | [\funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]]$. 
 \end{lemma} 
 
 \begin{proof} 
-Recall $\funcEm[\Ndesign] \Def [\func | \func(\designIn[\Ndesign]) = \funcVal[\Ndesign]] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$, so we know that 
-both processes are Gaussian. It thus suffices to check that 
+Since both processes in question are Gaussian it suffices to check that 
 \begin{align*}
-\E[\func(\parMat) | \func(\designIn[\Naugment]) = \funcVal[\Naugment]] 
+\E[\funcPrior(\parMat) | \funcPrior(\designIn[\Naugment]) = \funcVal[\Naugment]] 
 &= \E[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]] \\
-\Cov[\func(\parMat) | \func(\designIn[\Naugment]) = \funcVal[\Naugment]] 
+\Cov[\funcPrior(\parMat) | \funcPrior(\designIn[\Naugment]) = \funcVal[\Naugment]] 
 &= \Cov[\funcEm[\Ndesign](\parMat) | \funcEm[\Ndesign](\designIn[\Nbatch]) = \funcVal[\Nbatch]],
 \end{align*}
 for an arbitrary finite set of inputs $\parMat \subset \parSpace$. The quantities on the lefthand side are 
