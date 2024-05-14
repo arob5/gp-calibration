@@ -1,0 +1,98 @@
+---
+title: "One-Dimensional Input Example for Basic Visualization"
+author: "Andrew Roberts"
+date: '2024-05-12'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(gridExtra)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_visualization")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+
+```{r}
+#
+# Define inverse problem
+#
+
+seed_inv_prob <- 35
+set.seed(seed_inv_prob)
+
+# Forward model. 
+N_obs <- 20
+fwd_model <- function(u) exp(u) + cos(2*u)
+
+# Priors and true parameter values. 
+par_prior_params <- data.frame(dist="Uniform", param1=-10, param2=10)
+rownames(par_prior_params) <- "u"
+u_true <- 3.0
+sig2_true <- 1
+y <- fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+
+# Exact likelihood. 
+default_conditional <- TRUE
+default_normalize <- FALSE
+llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
+                                         y_obs=y, dim_par=1L, use_fixed_lik_par=TRUE,
+                                         sig2=sig2_true, par_names=rownames(par_prior_params), 
+                                         default_conditional=default_conditional, 
+                                         default_normalize=default_normalize)
+inv_prob <- list(llik=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
+
+# Create grid for plotting. 
+N_grid <- 101
+u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
+test_info <- list(input=u_grid)
+test_info$fwd <- llik_exact$run_fwd_model(test_info$input)
+test_info$llik <- llik_exact$assemble_llik(test_info$input)
+test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+test_info$lpost <- test_info$llik + test_info$lprior
+
+# Plot true unnormalized posterior density. 
+plot(test_info$input, exp(test_info$lpost), type="l", 
+     main="True unnormalized posterior density", xlab="u", ylab="density")
+plot(test_info$input, test_info$fwd, type="l", 
+     main="True forward model evaluations", xlab="u", ylab="G(u)")
+plot(test_info$input, test_info$llik, type="l", 
+     main="True unnormalized log-likelihood", xlab="u", ylab="density")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

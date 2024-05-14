@@ -913,13 +913,19 @@ llikEmulatorExactGauss$methods(
 #    be diagonal, so the `lik_par` for this class is defined to be the vector 
 #    corresponding to the diagonal of this covariance matrix.`lik_par` may 
 #    also be provided as a single value, which is interpreted as a 
-#    homoskedastic variance. 
+#    homoskedastic variance.
+#
+# TODO: need to generalize this to have `N_outputs`, which may differ 
+# from `N_obs`. `N_obs` is then interpreted as `N_obs` independent replicates 
+# with the same covariance diag(sig2). Can then replace `y` with `Y`, which 
+# is `N_obs x N_outputs`. 
 # -----------------------------------------------------------------------------
 
 llikEmulatorExactGaussDiag <- setRefClass(
   Class = "llikEmulatorExactGaussDiag", 
   contains = "llikEmulator",
-  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", N_obs="integer")
+  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", 
+                N_obs="integer")
 )
 
 llikEmulatorExactGaussDiag$methods(

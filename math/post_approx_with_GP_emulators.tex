@@ -947,7 +947,12 @@ Then for $\Par \in \parSpace$,
 \end{lemma}
 
 \begin{prop} \label{prop:evar-fwd-emulation}
-Under the same assumptions as \Cref{lemma:fwd-Gaussian-density-dist} it follows that
+Let $\llik(\Par; \fwdEm) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
+$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
+GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
+design points, with
+$\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$.
+Then for $\Par \in \parSpace$, 
 \begin{align}
 \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]
 \end{align}
@@ -976,20 +981,57 @@ respectively, with $A \in \R^{\dimObs \times \dimPar}$ and $\likPar, C$ symmetri
 \todo
 \end{proof}
 
-The Gaussian convolution formula is used to prove the following proposition. 
+We next prove a lemma that will be used in the proofs of \Cref{prop:Gaussian_marginal_moments} 
+and \Cref{lemma:fwd-Gaussian-density-dist} below. 
+\begin{lemma} \label{lemma:squared_Gaussian_density}
+Let $\Gaussian(m, C)$ be a Gaussian distribution on $\R^{\dimObs}$ with $C$ a symmetric, positive-definite 
+matrix. Then, for $\obs \in \R^{\dimObs}$, 
+\begin{align*}
+\Gaussian(\obs | m, C)^2 
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+\end{align*}
+\end{lemma}
+
+\begin{proof}
+\begin{align*}
+\Gaussian(\obs | m, C)^2 
+&= \det(2\pi C)^{-1} \Exp{-\frac{1}{2} (\obs - m)^\top \left[\frac{1}{2}C \right]^{-1}(\obs - m)} \\
+&= \det(2\pi C)^{-1} \det(2\pi (1/2)C)^{1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right) \\
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+\end{align*}
+\end{proof}
+
 \begin{prop} \label{prop:Gaussian_marginal_moments}
 Assume $\obs | \mu \sim \Gaussian(A \mu, \likPar)$ and $\mu \sim \Gaussian(m, C)$, where $\mu \in \R^{\dimPar}$, 
-$A \in \R^{\dimPar \times \dimObs}$, and $\likPar$, $C$ are both symmetric, positive definite. Then 
+$A \in \R^{\dimObs \times \dimPar}$, and $\likPar$, $C$ are both symmetric, positive definite. Then 
 \begin{align}
 \E\left[\Gaussian(\obs | A \mu, \likPar) \right] &= \Gaussian(\obs | Am, \likPar + ACA^\top) \\
 \Var\left[\Gaussian(\obs | A \mu, \likPar) \right] 
-&= \frac{\Gaussian\left(\obs | Am, \frac{1}{2} \likPar + ACA^\top \right)}{\det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top] \right)}{\det(2\pi[\likPar + ACA^\top])^{1/2}}
+&= \frac{\Gaussian\left(\obs | Am, \frac{1}{2} \likPar + ACA^\top \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top] \right)}{2^{\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{1/2}}
 \end{align}
 \end{prop}
 
 \begin{proof} 
-\todo
+The first result follows immediately from \Cref{Gaussian_convolution}. For the variance, we have 
+\begin{align}
+\Var\left[\Gaussian(\obs | A \mu, \likPar) \right] 
+&= \E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right] - \E\left[\Gaussian(\obs | A \mu, \likPar) \right]^2 \nonumber \\
+&= \E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right] - \Gaussian(\obs | Am, \likPar + ACA^\top)^2. \label{two_terms_variance}
+\end{align}
+Starting with the first term, we apply \Cref{lemma:squared_Gaussian_density} and 
+\Cref{Gaussian_convolution}, respectively, to obtain 
+\begin{align*}
+\E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right]
+&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \E\left[\Gaussian\left(\obs | A\mu, \frac{1}{2}\likPar \right)\right] \\
+&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \Gaussian\left(\obs | Am, \frac{1}{2}\likPar + ACA^\top \right).
+\end{align*}
+For the second term in \ref{two_terms_variance}, another application of \Cref{lemma:squared_Gaussian_density} gives
+\begin{align*}
+\Gaussian(\obs | Am, \likPar + ACA^\top)^2
+&= 2^{-\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{-1/2} \Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top]\right).
+\end{align*}
+Plugging these expressions back into \ref{two_terms_variance} completes the proof. 
 \end{proof}
 
 
@@ -1306,26 +1348,6 @@ immediately from the formula for a log-normal variance.
 \end{proof}
 
 \subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
-
-We begin with a lemma that will be used in the proof of \Cref{lemma:fwd-Gaussian-density-dist} below. 
-\begin{lemma} \label{lemma:squared_Gaussian_density}
-Let $\Gaussian(m, C)$ be a Gaussian distribution on $\R^{\dimObs}$ with $C$ a symmetric, positive-definite 
-matrix. Then, for $\obs \in \R^{\dimObs}$, 
-\begin{align*}
-\Gaussian(\obs | m, C)^2 
-&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
-\end{align*}
-\end{lemma}
-
-\begin{proof}
-\begin{align*}
-\Gaussian(\obs | m, C)^2 
-&= \det(2\pi C)^{-1} \Exp{-\frac{1}{2} (\obs - m)^\top \left[\frac{1}{2}C \right]^{-1}(\obs - m)} \\
-&= \det(2\pi C)^{-1} \det(2\pi (1/2)C)^{1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right) \\
-&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
-\end{align*}
-\end{proof}
-
 
 \begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
 
