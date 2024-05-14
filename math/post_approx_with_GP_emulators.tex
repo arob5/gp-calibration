@@ -947,15 +947,19 @@ Then for $\Par \in \parSpace$,
 \end{lemma}
 
 \begin{prop} \label{prop:evar-fwd-emulation}
-Let $\llik(\Par; \fwdEm) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
-$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
+Consider 
+$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, interpreted as a set of $\dimObs$ independent 
 GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
 design points, with
 $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$.
 Then for $\Par \in \parSpace$, 
-\begin{align}
-\E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]
-\end{align}
+\begin{align*}
+\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd] \\
+&= \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \frac{1}{2}\likPar + \emKer{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer{\fwd}(\Par)\right] - \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}} \\
+&= \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}}.
+\end{align*}
 \end{prop}
  
 % Learning Likelihood Parameters
@@ -1420,6 +1424,12 @@ sequential design phase.
 \item Think about comparing the two forms of variance inflation in the frequency domain. 
 \end{enumerate}
 
+\subsection{Limitations of existing literature}
+\begin{enumerate}
+\item Very little discussion of case where likelihood parameters are unknown. 
+\item Lack of emphasis on batch design (with some exceptions).
+\item Little guidance on which approximation/design criterion to choose.
+\end{enumerate}
 
 \bibliography{post_approx_with_GP_emulators} 
 \bibliographystyle{ieeetr}
