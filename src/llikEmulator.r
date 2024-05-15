@@ -134,25 +134,56 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  calc_confidence_interval = function(input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                                      normalize=default_normalize, llik_pred_list=NULL, CI_prob=0.9, ...) {
-
-    if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)
+  
+  get_pred_interval = function(input, lik_par_val=NULL, emulator_pred_list=NULL, target_pred_list=NULL, target="llik",  
+                               method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                               conditional=default_conditional, normalize=default_normalize, include_nugget=TRUE, ...) {
+    # Options for `target`: "llik" and "lik". 
+    # Options for `method`: "pm_std_dev" (pm = "plus-minus"), "CI". The former computes the bounds by 
+    # adding and subtracting `N_std_dev` standard deviations from the predictive mean. The latter 
+    # computes a 100*`CI_prob`% confidence interval.
+    # `target_pred_list` is either the pred list returned by `predict` or `predict_lik`; which one it is 
+    # should align with the value of `target`. 
+    
+    assert_that(target %in% c("llik", "lik"))
+    assert_that(method %in% c("pm_std_dev", "CI"))
+    interval_list <- list()
+    
+    # Log likelihood or likelihood predictions. 
+    if(is.null(target_pred_list)) {
+      if(target == "llik") {
+        target_pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                          return_mean=TRUE, return_var=TRUE, conditional=conditional,
+                                          normalize=normalize, log_scale=FALSE, ...)
+      } else {
+        target_pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                              return_mean=TRUE, return_var=TRUE, conditional=conditional,
+                                              normalize=normalize, ...)
+      }
+    } else {
+      assert_that(!is.null(target_pred_list$mean) && !is.null(target_pred_list$var))
     }
     
-    CI_list <- list()
-    CI_tail_prob <- 0.5 * (1-CI_prob)
-    CI_list$upper <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val,  
-                                          conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list,
-                                          lower_tail=TRUE, ...)
-    CI_list$lower <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val,  
-                                          conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list,
-                                          lower_tail=FALSE, ...)
+    # Plus/minus standard deviation method 
+    if(method == "pm_std_dev") {
+      interval_list$lower <- target_pred_list$mean - N_std_dev * sqrt(target_pred_list$var)
+      interval_list$upper <- target_pred_list$mean + N_std_dev * sqrt(target_pred_list$var)
+    } else {
+      CI_tail_prob <- 0.5 * (1-CI_prob)
+      interval_list$lower <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val, 
+                                                  emulator_pred_list=emulator_pred_list, 
+                                                  target=target, conditional=conditional, normalize=normalize, 
+                                                  lower_tail=FALSE, include_nugget=include_nugget, ...)
+      interval_list$upper <- .self$calc_quantiles(p=CI_tail_prob, input=input, lik_par_val=lik_par_val, 
+                                                  emulator_pred_list=emulator_pred_list, 
+                                                  target=target, conditional=conditional, normalize=normalize, 
+                                                  lower_tail=TRUE, include_nugget=include_nugget, ...)
+    }
     
-    return(CI_list)
+    return(interval_list)
+    
   },
-
+  
   get_design_inputs = function(...) {
     .NotYetImplemented()
   },
@@ -209,8 +240,9 @@ llikEmulator$methods(
   
   
   plot_pred_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, plot_type="llik", 
-                          conditional=default_conditional, normalize=default_normalize,  
-                          include_CI=FALSE, CI_prob=0.9, true_llik=NULL, 
+                          conditional=default_conditional, normalize=default_normalize,
+                          include_interval=TRUE, interval_method="pm_std_dev",
+                          N_std_dev=1, CI_prob=0.9, true_llik=NULL, 
                           include_design=TRUE, xlab=input_names, ylab=plot_type, plot_title=NULL, ...) {
     
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
@@ -236,20 +268,20 @@ llikEmulator$methods(
     if(is.null(plot_title)) {
       plot_title <- "Likelihood Emulator Predictions"
       if(plot_type == "llik") plot_title <- paste0("Log ", plot_title)
-      if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+      if(include_interval && (interval_method=="CI")) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+      if(include_interval && (interval_method=="pm_std_dev")) plot_title <- paste0(plot_title, ", +/- ", N_std_dev, " std dev")
     }
     
     if(!normalize) {
       ylab <- paste0(ylab, ", ", ifelse(conditional, "unnormalized/conditional", "unnormalized"))
     }
 
-    # Compute confidence interval. 
-    # TODO: need to generalize this to likelihood case. Should probably have a function like: 
-    # get_pred_intervals(input, lik_par_val, emulator_pred_list, quantity="llik", mode="pm_std_dev", 
-    #                    N_std_dev=1, CI_prob=0.9)
-    if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=pred_list, CI_prob=CI_prob)
-    else CI_list <- NULL
-    
+    # Compute prediction interval.  
+    if(include_interval) interval_list <- .self$get_pred_interval(input, lik_par_val=lik_par_val, target_pred_list=pred_list, 
+                                                                  target=plot_type, method=interval_method, N_std_dev=N_std_dev,
+                                                                  CI_prob=CI_prob, conditional=conditional, normalize=normalize, ...)
+    else interval_list <- NULL
+
     # Design points. 
     design_inputs <- NULL
     design_response_vals <- NULL 
@@ -261,9 +293,9 @@ llikEmulator$methods(
     
     # Produce plot. 
     plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(pred_list$mean), 
-                               include_CI=include_CI, CI_lower=CI_list$lower, CI_upper=CI_list$upper, 
-                               y_new=drop(true_vals), X_design=design_inputs, 
-                               y_design=design_response_vals, 
+                               include_CI=include_interval, CI_lower=interval_list$lower,  
+                               CI_upper=interval_list$upper, y_new=drop(true_vals), 
+                               X_design=design_inputs, y_design=design_response_vals, 
                                plot_title=plot_title, xlab=xlab, ylab=ylab)
     
     return(plt)                     
@@ -743,19 +775,30 @@ llikEmulatorGP$methods(
   }, 
   
   
-  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                            normalize=default_normalize, llik_pred_list=NULL,
-                            lower_tail=TRUE, include_nugget=TRUE, ...) {
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, emulator_pred_list=NULL, llik_pred_list=NULL,
+                             target="llik", conditional=default_conditional, normalize=default_normalize, 
+                             lower_tail=TRUE, include_nugget=TRUE, ...) {
+    # The log-likelihood emulator distribution is Gaussian, and the likelihood emulator is log-normal.
+    # Both the Gaussian and Log-normal quantile functions are parameterized in terms of the underlying 
+    # Gaussian mean/variance, so only `llik_pred_list` is required, regardless of whether `target`
+    # is "llik" or "lik". 
     
+    assert_that(target %in% c("llik", "lik"))
+    
+    # Log-likelihood or likelihood predictions. 
     if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE,  
-                                      return_var=TRUE, conditional=conditional,  
-                                      normalize=normalize, include_nugget=include_nugget, ...)
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                      return_mean=TRUE, return_var=TRUE, conditional=conditional,
+                                      normalize=normalize, log_scale=FALSE, ...)
     } else {
-      .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+      assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
     }
     
-    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    # Log-likelihood emulator distribution is Gaussian. Likelihood emulator is log-normal. 
+    if(target == "llik") q <- qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    else q <- qlnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    
+    return(q)
   }
   
 )
@@ -863,16 +906,31 @@ llikEmulatorMultGausGP$methods(
     return(pred_list)
   },
 
-  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
-                            normalize=default_normalize, llik_pred_list=NULL,
-                            lower_tail=TRUE, include_nugget=TRUE, ...) {
+  
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, emulator_pred_list=NULL, llik_pred_list=NULL,
+                             target="llik", conditional=default_conditional, normalize=default_normalize, 
+                             lower_tail=TRUE, include_nugget=TRUE, ...) {
+    # The log-likelihood emulator distribution is Gaussian, and the likelihood emulator is log-normal. 
+    # Both the Gaussian and Log-normal quantile functions are parameterized in terms of the underlying 
+    # Gaussian mean/variance, so only `llik_pred_list` is required, regardless of whether `target`
+    # is "llik" or "lik". 
+    
+    assert_that(target %in% c("llik", "lik"))
+    
+    # Log-likelihood or likelihood predictions. 
     if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                      conditional=conditional, normalize=normalize, 
-                                      include_nugget=include_nugget, ...)
+      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                      return_mean=TRUE, return_var=TRUE, conditional=conditional,
+                                      normalize=normalize, log_scale=FALSE, ...)
+    } else {
+      assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
     }
     
-    qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    # Log-likelihood emulator distribution is Gaussian. Likelihood emulator is log-normal. 
+    if(target == "llik") q <- qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    else q <- qlnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
+    
+    return(q)
   }
   
 )
