@@ -128,6 +128,13 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
+  predict_lik = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                         conditional=default_conditional, normalize=default_normalize, 
+                         log_scale=FALSE, ...) {
+    .NotYetImplemented()
+  },
+  
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
                             normalize=default_normalize, llik_pred_list=NULL,
                             lower_tail=TRUE, ...) {
@@ -161,27 +168,41 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  plot_llik_samp_1d = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
-                               normalize=default_normalize, true_llik=NULL, include_design=FALSE, ...) {
+  plot_samp_1d = function(input, lik_par_val=NULL, N_samp=1, plot_type="llik", conditional=default_conditional, 
+                          normalize=default_normalize, true_llik=NULL, include_design=FALSE, use_cov=TRUE, ...) {
+    # `plot_type` options: "llik", "lik". 
     
     assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
+    assert_that(plot_type %in% c("llik", "lik"))
     
     input <- get_input(input)
-    llik_samp <- .self$sample(input, lik_par=lik_par_val, N_samp=N_samp, ...)
+    samp <- .self$sample(input, lik_par=lik_par_val, N_samp=N_samp, use_cov=use_cov, ...)
     
-    plt <- ggmatplot(input, llik_samp, plot_type="line", color="gray") + 
-            theme(legend.position = "none") + 
-            ggtitle("Log Likelihood Samples") + 
-            xlab(input_names) + ylab(paste0("Log Likelihood: ", llik_label))
+    # Adjustments in plotting likelihood (not log-likelihood). 
+    if(plot_type == "lik") {
+      samp <- exp(samp)
+      base_plot_title <- "Likelihood"
+      true_vals <- exp(true_llik)
+    } else {
+      base_plot_title <- "Log Likelihood"
+      true_vals <- true_llik
+    }
+    
+    plt <- ggmatplot(input, samp, plot_type="line", color="gray") + 
+                theme(legend.position = "none") + 
+                ggtitle(paste0(base_plot_title, " Samples")) + 
+                xlab(input_names) + ylab(paste0(base_plot_title, ": ", llik_label))
 
     if(!is.null(true_llik)) {
-      df <- data.frame(x=input[,1], y=drop(true_llik))
+      df <- data.frame(x=input[,1], y=drop(true_vals))
       plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
     }
     
     if(include_design) {
-      design_df <- data.frame(x=drop(get_design_inputs()), 
-                              y=drop(get_design_llik(lik_par_val, conditional, normalize)))
+      design_response_vals <- drop(get_design_llik(lik_par_val, conditional, normalize))
+      if(plot_type == "lik") design_response_vals <- exp(design_response_vals)
+      
+      design_df <- data.frame(x=drop(get_design_inputs()), y=design_response_vals)
       plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color="red")
     }
 
@@ -425,6 +446,8 @@ llikSumEmulator$methods(
                  sum_terms=sum_terms, labels=labels)
   }, 
   
+  # TODO: need to update this to reflect changes in `llikEmulator$plot_llik_samp_1d`; i.e. the 
+  # addition of `plot_type` argument and the changes due to this. 
   plot_llik_samp_1d = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
                                normalize=default_normalize, true_llik=NULL, include_design=FALSE, 
                                labels=llik_label, sum_terms=TRUE, ...) {
@@ -571,14 +594,14 @@ llikSumEmulator$methods(
 # These must be set when creating the class; e.g., if the GP emulator was
 # fit to normalized log likelihood values, then the class should be 
 # initialized with `default_conditional=TRUE`, `default_normalize=TRUE`. 
-# Unlike in other llikEmulator classes, if the user calles a method and 
+# Unlike in other llikEmulator classes, if the user calls a method and 
 # tries to pass a value for `normalize` or `conditional` that differs 
 # from the default, then an error is thrown. While `lik_par` is not 
 # required for any computations in this class, it is still required 
 # for reference and validation purposes. Similar to 
 # `normalize` and `conditional`, an error is thrown 
 # if the user tries to pass a likelihood parameter that differs from the 
-# fixed value set when initializing the class. 
+# fixed value set when initializing the class.
 # -----------------------------------------------------------------------------
 
 llikEmulatorGP <- setRefClass(
@@ -645,7 +668,7 @@ llikEmulatorGP$methods(
                           N_samp=N_samp, ...)[,,1,drop=FALSE]             
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
+  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
@@ -1016,7 +1039,211 @@ llikEmulatorExactGaussDiag$methods(
 )
 
 
+# -----------------------------------------------------------------------------
+# llikEmulatorFwdGauss class.
+#
+# Implements a surrogate likelihood for the Gaussian inverse problem 
+# y|u ~ N(G(u), Sig) where the forward model G is replaced by a 
+# Gaussian process (GP) emulator. The forward model may have multiple 
+# outputs, in which case independent GP emulators are fit for 
+# each output. The `lik_par` here is defined to be the covariance
+# matrix `Sig`.
+# -----------------------------------------------------------------------------
 
+llikEmulatorFwdGauss <- setRefClass(
+  Class = "llikEmulatorFwdGauss", 
+  contains = "llikEmulator",
+  fields = list(y="ANY", N_output="integer", N_obs="integer", L_cov="matrix")
+                
+)
+
+llikEmulatorFwdGauss$methods(
+  
+  initialize = function(llik_lbl, gp_model, y_obs, Cov=NULL, default_conditional=FALSE, 
+                        default_normalize=FALSE, use_fixed_lik_par=FALSE, par_names=NULL, ...) {
+    
+    assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
+    assert_that(is.numeric(y_obs) || is.matrix(y_obs))
+    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, ncol=1, dimnames=list(NULL, "y"))
+    assert_that(ncol(y_obs) == gp_model$Y_dim)
+    initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
+    
+    # Set parameter names. 
+    dim_par <- gp_model$X_dim
+    if(is.null(par_names)) par_names <- paste0("input", 1:dim_par)
+    assert_that(length(par_names) == dim_par)
+    
+    # Covariance matrix of Gaussian likelihood. 
+    if(!is.null(Cov)) {
+      assert_that(is.matrix(Cov) && (nrow(Cov)==N_output) && (ncol(Cov)==N_output),
+                  msg="`Cov` must be a positive definite matrix with dim `N_output` x `N_output`")
+      initFields(L_Cov=t(chol(Cov))) 
+    }
+    
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=Cov, dim_input=dim_par,
+              default_conditional=default_conditional, input_names=par_names,
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              lik_description="Gaussian likelihood",
+              emulator_description="Forward model GP emulator", exact_llik=FALSE, ...)
+              
+  },
+  
+  get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
+    if(use_fixed_lik_par) {
+      if(return_chol) return(L_Cov)
+      else return(lik_par)
+    }
+    
+    assert_that(!is.null(lik_par_val), 
+                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+    if(return_chol) return(t(chol(lik_par_val)))
+    else return(lik_par_val)
+  },
+  
+  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    # `fwd_model_vals` should be of dimension `N_inputs` x `N_output`.
+    
+    # Fetch the lower triangular Cholesky factor of the covariance matrix.
+    L <- get_lik_par(lik_par_val, return_chol=TRUE)
+    
+    # Construct log likelihood.
+    llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
+    for(i in seq_along(llik)) {
+      llik[i] <- -0.5 * sum(solve(L, t(y - fwd_model_vals[i,]))^2, na.rm=TRUE)
+      if(normalize || !conditional) llik <- llik - N_obs*sum(log(diag(L)))
+      if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
+    }
+    
+    return(llik)
+  }, 
+  
+  sample_emulator = function(input, N_samp=1, use_cov=FALSE, ...) {
+    # Sample the forward model emulator at specified inputs. 
+    
+    emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
+                          N_samp=N_samp, ...)
+  },
+  
+  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, 
+                    conditional=default_conditional, normalize=default_normalize, ...) {
+    
+    if(N_samp != 1) .NotYetImplemented()
+    
+    fwd_model_samp <- .self$sample_emulator(get_input(input), N_samp=N_samp, use_cov=use_cov, ...)[,1,,drop=FALSE]
+    matrix(assemble_llik(fwd_model_samp, lik_par_val, conditional, normalize), 
+                         nrow=nrow(input), ncol=N_samp)
+  }
+  
+)
+
+
+# -----------------------------------------------------------------------------
+# llikEmulatorFwdGaussDiag class.
+#
+# A special case of `llikEmulatorFwdGauss` where the covariance matrix is 
+# assumed to be diagonal. The `lik_par` here is defined to be the 
+# vector of variances `sig2`. If `sig2` is passed as a scalar value (but 
+# `N_output` is greater than 1), then the same variance is used for all outputs. 
+# -----------------------------------------------------------------------------
+
+llikEmulatorFwdGaussDiag <- setRefClass(
+  Class = "llikEmulatorFwdGaussDiag", 
+  contains = "llikEmulator",
+  fields = list(y="ANY", N_output="integer", N_obs="integer")
+  
+)
+
+llikEmulatorFwdGaussDiag$methods(
+  
+  initialize = function(llik_lbl, gp_model, y_obs, sig2=NULL, default_conditional=FALSE, 
+                        default_normalize=FALSE, use_fixed_lik_par=FALSE, par_names=NULL, ...) {
+    
+    assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
+    assert_that(is.numeric(y_obs) || is.matrix(y_obs))
+    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, ncol=1, dimnames=list(NULL, "y"))
+    assert_that(ncol(y_obs) == gp_model$Y_dim)
+    initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
+    
+    # Set parameter names. 
+    dim_par <- gp_model$X_dim
+    if(is.null(par_names)) par_names <- paste0("input", 1:dim_par)
+    assert_that(length(par_names) == dim_par)
+    
+    # Variance parameters for Gaussian likelihood. 
+    if(!is.null(sig2)) {
+      assert_that(is.numeric(sig2) && ((length(sig2)==N_output) || (length(sig2)==1)) && all(sig2>0),
+                  msg="`sig2` must be either vector of length `N_output` or 1 and only contain positive numbers.")
+    }
+    
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, dim_input=dim_par,
+              default_conditional=default_conditional, input_names=par_names,
+              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              lik_description="Gaussian likelihood, diagonal covariance.",
+              emulator_description="Forward model GP emulator", exact_llik=FALSE, ...)
+  },
+  
+  get_lik_par = function(lik_par_val=NULL, ...) {
+    if(use_fixed_lik_par) lik_par_val <- lik_par
+    
+    assert_that(!is.null(lik_par_val), 
+                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+    
+    if(length(lik_par_val)==1) return(rep(lik_par_val, N_output))
+    
+    assert_that(length(lik_par_val)==N_output, msg="`lik_par_val` length not equal to 1 or `N_output`.")
+    return(lik_par_val)
+  },
+  
+  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    # `fwd_model_vals` should be of dimension `M` x `N_output`, where `M` corresponds to the number of 
+    # instances of forward model output; e.g., might be the forward model evaluated at `M` different inputs, 
+    # or `M` samples from the forward model at the same input, or some combination. Returns numeric vector of length `M`. 
+    
+    # Fetch the variance parameters. 
+    sig2_val <- get_lik_par(lik_par_val)
+    
+    # Construct log likelihood.
+    llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
+    for(i in seq_along(llik)) {
+      llik[i] <- -0.5 * rowSums((t(y) - fwd_model_vals[i,])^2) / sig2_val
+      if(normalize || !conditional) llik <- llik - 0.5 * N_obs * sum(log(sig2_val))
+      if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
+    }
+    
+    return(llik)
+  }, 
+  
+  get_design_inputs = function(...) {
+    emulator_model$X
+  },
+  
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+    assemble_llik(emulator_model$Y, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)
+  },
+  
+  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+    # Sample the forward model emulator at specified inputs. 
+    
+    emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
+                          N_samp=N_samp, ...)
+  },
+  
+  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=TRUE, 
+                    conditional=default_conditional, normalize=default_normalize, ...) {
+    
+    input <- get_input(input)
+    fwd_model_samp <- .self$sample_emulator(input, N_samp=N_samp, use_cov=use_cov, ...)
+    llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
+
+    for(i in 1:N_samp) {
+      llik_samp[,i] <- assemble_llik(matrix(fwd_model_samp[,i,], nrow=nrow(input), ncol=N_output), 
+                                     lik_par_val, conditional, normalize)
+    }
+    
+    return(llik_samp)
+  }
+  
+)
 
 
 

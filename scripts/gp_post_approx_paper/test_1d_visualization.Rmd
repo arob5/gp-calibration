@@ -35,22 +35,24 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 
 ```{r}
 #
-# Define inverse problem
+# Define inverse problem: 
+#    nonlinear forward model, Gaussian likelihood with known variance, 
+#    uniform prior, so focus on the likelihood as the prior does not affect things. 
 #
 
 seed_inv_prob <- 35
 set.seed(seed_inv_prob)
 
 # Forward model. 
-N_obs <- 20
-fwd_model <- function(u) exp(u) + cos(2*u)
+N_obs <- 1
+fwd_model <- function(u) sin(u) + 0.1*u
 
 # Priors and true parameter values. 
 par_prior_params <- data.frame(dist="Uniform", param1=-10, param2=10)
 rownames(par_prior_params) <- "u"
 u_true <- 3.0
 sig2_true <- 1
-y <- fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+y <- 0 # fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
 
 # Exact likelihood. 
 default_conditional <- TRUE
@@ -63,26 +65,67 @@ llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model,
 inv_prob <- list(llik=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
 
 # Create grid for plotting. 
-N_grid <- 101
+N_grid <- 201
 u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
 test_info <- list(input=u_grid)
-test_info$fwd <- llik_exact$run_fwd_model(test_info$input)
+test_info$fwd <- llik_exact$run_fwd_model(test_info$input)[1,] # TODO: don't need this indexing once I update the llikEmulator class. 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
 test_info$lpost <- test_info$llik + test_info$lprior
 
 # Plot true unnormalized posterior density. 
-plot(test_info$input, exp(test_info$lpost), type="l", 
-     main="True unnormalized posterior density", xlab="u", ylab="density")
 plot(test_info$input, test_info$fwd, type="l", 
      main="True forward model evaluations", xlab="u", ylab="G(u)")
 plot(test_info$input, test_info$llik, type="l", 
      main="True unnormalized log-likelihood", xlab="u", ylab="density")
-
+plot(test_info$input, exp(test_info$llik), type="l", 
+     main="True unnormalized likelihood", xlab="u", ylab="density")
 
 ```
 
+```{r}
+# 
+# Initial design and fit emulators. 
+#
+#
 
+seed_init_design <- 23
+set.seed(seed_init_design)
+
+# Probability for confidence intervals to use in plots. 
+CI_prob <- pnorm(1) - pnorm(-1) # i.e., plot +/- 1 std dev 
+
+# Generate design. 
+N_design <- 7
+design_info <- list()
+design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
+design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[1,]
+design_info$llik <- llik_exact$assemble_llik(design_info$input)
+design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
+design_info$lpost <- design_info$llik + design_info$lprior
+
+# Log-likelihood emulator. 
+em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
+                          default_normalize=default_normalize, lik_par=inv_prob$sig2_true, 
+                          use_fixed_lik_par=TRUE)
+em_llik$plot_llik_pred_1d(test_info$input, include_CI=TRUE, true_llik=test_info$llik, CI_prob=CI_prob)
+em_llik$plot_samp_1d(test_info$input, lik_par_val=inv_prob$sig2_true, N_samp=5, 
+                     plot_type="lik", true_llik=test_info$llik, include_design=TRUE)
+
+# Forward model emulator.
+em_fwd_gp <- gpWrapperHet(design_info$input, matrix(design_info$fwd, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, y, sig2=inv_prob$sig2_true, 
+                                   default_conditional=default_conditional, 
+                                   default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
+                                   par_names=rownames(par_prior_params))
+em_fwd$emulator_model$plot_pred_1d(test_info$input, CI_prob=CI_prob, Y_new=matrix(test_info$fwd, ncol=1))[[1]]
+em_fwd$plot_samp_1d(test_info$input, N_samp=5, plot_type="lik", true_llik=test_info$llik, include_design=TRUE)
+
+test <- em_fwd$sample_emulator(test_info$input, N_samp=5, use_cov=TRUE)
+```
 
 
 

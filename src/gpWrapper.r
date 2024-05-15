@@ -204,7 +204,8 @@ gpWrapper$methods(
   
   sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, pred_list=NULL, adjustment="none", ...) {
     # If `pred_list` is passed, it should have all the required components. 
-    
+    # Returns array of dimension (num input, num samp, Y_dim). 
+
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
