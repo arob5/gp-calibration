@@ -210,6 +210,8 @@ gpWrapper$methods(
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
                            include_nugget=include_nugget)
+    } else {
+      if(use_cov) assert_that(!is.null(pred_list$cov))
     }
     
     # Compute lower Cholesky factors of the predictive covariance matrices. 

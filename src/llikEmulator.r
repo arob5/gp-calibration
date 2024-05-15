@@ -22,17 +22,13 @@ library(abind)
 # with sum of squares emulated by GPs). This class is primarily intended 
 # to encapsulate a stochastic approximation to the log-likelihood, but 
 # it can be set up to function with a deterministic approximation (or 
-# just the exact likelihood, which is useful for testing code). Given the 
-# generality, not all of the core methods may apply to all approximate 
-# likelihoods. For example, the `mean_lik()` method is intended to return 
-# the expectation of the likelihood (i.e. the expectation of the 
-# exponentiated log-likelihood). In certain cases, there may not be a closed
-# form for this expression and the user may just implement this method 
-# to return an error if it is called. Alternatively, the user may want to 
-# implement this function to return a numerical approximation of this 
-# quantity. The field `model` is intended to be a model object of some 
-# sort (e.g. a gpWrapper instance) which is used to define the llik 
-# approximation. `lik_par` is stores the likelihood parameters. These 
+# just the exact likelihood, which is useful for testing code). 
+# The llik emulator is assumed to be defined by some underlying 
+# surrogate/emulator model, which is stored in the field 
+# `emulator_model` of the class. Currently, this model is almost 
+# always a Gaussian process (GP), in which case `emulator_model`
+# is a `gpWrapper` object. 
+# `lik_par` is stores the likelihood parameters. These 
 # can be stored in advance if the likelihood parameters will be fixed
 # throughout an analysis; otherwise, this field can be left NULL. Note 
 # that the likelihood approximation may be a function of the likelihood 
@@ -40,21 +36,18 @@ library(abind)
 # a GP emulator). 
 #
 # This class organizes the pieces comprising the likelihood into 
-# (1) "inputs": the primary parameters of interest; e.g. the parameters 
-# characterizing the forward model in an inverse problem; (2) "lik_par", 
+# (1) "inputs" or "par": the primary parameters of interest; e.g. the parameters 
+# characterizing the forward model in an inverse problem; and (2) "lik_par", 
 # other likelihood parameters (e.g. variance parameters) that define 
-# the observation model, may be unknown, but are not of primary interest; 
-# and (3) "lik_components", which are fixed quantities such as a 
-# sample size. 
+# the observation model, may be unknown, but are not of primary interest. 
+#
+# The core methods for the `llikEmulator` class are `get_lik_par()`, 
+# `get_input()`, `assemble_llik()`, `sample()`, and `predict()`. 
 # 
 # Implementing a deterministic approximation: 
-# There are different ways to approach this. One is to just have the 
-# methods `mean_log()`, `mean_lik()`, `sample()` all return the 
-# determistic approximation. It may make sense to implement 
-# `var_log()` and `var_lik()` to return 0 or throw an error, depending 
-# on the specific needs. Note that this same method could be used 
-# to implement the exact (not approximate) likelihood as well, which 
-# could then be used for testing purposes. 
+#    TODO
+# Implementing an exact llik:
+#    TODO
 # -----------------------------------------------------------------------------
 
 llikEmulator <- setRefClass(
@@ -128,10 +121,10 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  predict_lik = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                         return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                         conditional=default_conditional, normalize=default_normalize, 
-                         log_scale=FALSE, ...) {
+  predict_lik = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
+                         return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                         input_cross=NULL, conditional=default_conditional,  
+                         normalize=default_normalize, log_scale=FALSE, ...) {
     .NotYetImplemented()
   },
   
@@ -164,19 +157,23 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
+  
   get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
     .NotYetImplemented()
   },
   
-  plot_samp_1d = function(input, lik_par_val=NULL, N_samp=1, plot_type="llik", conditional=default_conditional, 
-                          normalize=default_normalize, true_llik=NULL, include_design=FALSE, use_cov=TRUE, ...) {
+  
+  plot_samp_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, plot_type="llik",  
+                          conditional=default_conditional, normalize=default_normalize, 
+                          true_llik=NULL, include_design=TRUE, use_cov=TRUE, ...) {
     # `plot_type` options: "llik", "lik". 
     
     assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
     assert_that(plot_type %in% c("llik", "lik"))
     
     input <- get_input(input)
-    samp <- .self$sample(input, lik_par=lik_par_val, N_samp=N_samp, use_cov=use_cov, ...)
+    samp <- .self$sample(input, lik_par=lik_par_val, emulator_pred_list=emulator_pred_list,
+                         N_samp=N_samp, use_cov=use_cov, ...)
     
     # Adjustments in plotting likelihood (not log-likelihood). 
     if(plot_type == "lik") {
@@ -210,42 +207,65 @@ llikEmulator$methods(
     
   },
   
-  plot_llik_pred_1d = function(input, lik_par_val=NULL, conditional=default_conditional,
-                               normalize=default_normalize, include_CI=FALSE, 
-                               CI_prob=0.9, llik_pred_list=NULL, true_llik=NULL, 
-                               xlab=input_names, ylab="llik", plot_title=NULL, ...) {
+  
+  plot_pred_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, plot_type="llik", 
+                          conditional=default_conditional, normalize=default_normalize,  
+                          include_CI=FALSE, CI_prob=0.9, true_llik=NULL, 
+                          include_design=TRUE, xlab=input_names, ylab=plot_type, plot_title=NULL, ...) {
+    
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
+    assert_that(plot_type %in% c("llik", "lik"))
     
     input <- .self$get_input(input)
     
     # Compute required predictive quantities if not already provided. 
-    if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                      conditional=conditional, normalize=normalize, ...)
+    if(plot_type == "llik") {
+      pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
+                                 return_mean=TRUE, return_var=TRUE, conditional=conditional, normalize=normalize, ...)
+      true_vals <- true_llik
+    }
+    
+    if(plot_type == "lik") {
+      pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
+                                     return_mean=TRUE, return_var=TRUE, conditional=conditional, 
+                                     normalize=normalize, log_scale=FALSE, ...)
+      true_vals <- exp(true_llik)
     }
     
     # Plot title and labels.
     if(is.null(plot_title)) {
-      plot_title <- "Log Likelihood Emulator Predictions"
+      plot_title <- "Likelihood Emulator Predictions"
+      if(plot_type == "llik") plot_title <- paste0("Log ", plot_title)
       if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
     }
+    
     if(!normalize) {
       ylab <- paste0(ylab, ", ", ifelse(conditional, "unnormalized/conditional", "unnormalized"))
     }
-    
+
     # Compute confidence interval. 
-    if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=llik_pred_list, CI_prob=CI_prob)
+    # TODO: need to generalize this to likelihood case. Should probably have a function like: 
+    # get_pred_intervals(input, lik_par_val, emulator_pred_list, quantity="llik", mode="pm_std_dev", 
+    #                    N_std_dev=1, CI_prob=0.9)
+    if(include_CI) CI_list <- .self$calc_confidence_interval(llik_pred_list=pred_list, CI_prob=CI_prob)
     else CI_list <- NULL
-      
+    
+    # Design points. 
+    design_inputs <- NULL
+    design_response_vals <- NULL 
+    if(include_design) {
+      design_inputs <- drop(.self$get_design_inputs(...))
+      design_response_vals <- drop(get_design_llik(lik_par_val, conditional, normalize, ...))
+      if(plot_type == "lik") design_response_vals <- exp(design_response_vals)
+    } 
+    
     # Produce plot. 
-    plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(llik_pred_list$mean), 
+    plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(pred_list$mean), 
                                include_CI=include_CI, CI_lower=CI_list$lower, CI_upper=CI_list$upper, 
-                               y_new=drop(true_llik), X_design=drop(.self$get_design_inputs(...)), 
-                               y_design=drop(.self$get_design_llik(lik_par_val=lik_par_val, 
-                                                                   conditional=conditional, 
-                                                                   normalize=normalize, ...)), 
+                               y_new=drop(true_vals), X_design=design_inputs, 
+                               y_design=design_response_vals, 
                                plot_title=plot_title, xlab=xlab, ylab=ylab)
-                        
+    
     return(plt)                     
   }
   
@@ -255,6 +275,13 @@ llikEmulator$methods(
 # -----------------------------------------------------------------------------
 # llikSumEmulator Class 
 # -----------------------------------------------------------------------------
+
+#
+# TODO: this needs lots of updates
+#    - Add argument `emulator_pred_list` to the relevant functions. 
+#    - Update quantile/CI functions. 
+#    - Update plotting functions. 
+#
 
 llikSumEmulator <- setRefClass(
   Class = "llikSumEmulator", 
@@ -663,27 +690,58 @@ llikEmulatorGP$methods(
     return(emulator_model$Y)
   },
   
-  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                          N_samp=N_samp, ...)[,,1,drop=FALSE]             
+                          N_samp=N_samp, pred_list=emulator_pred_list, ...)[,,1,drop=FALSE]             
   },
   
-  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
-                    conditional=default_conditional, normalize=default_normalize, ...) {
+  sample = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, 
+                    include_nugget=TRUE, conditional=default_conditional, normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    sample_emulator(input, N_samp, use_cov, include_nugget, ...)
+    sample_emulator(input, emulator_pred_list, N_samp, use_cov, include_nugget, ...)
   }, 
   
-  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                     conditional=default_conditional, normalize=default_normalize,
-                     include_nugget=TRUE, ...) {
+  predict = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE, 
+                     return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                     input_cross=NULL, conditional=default_conditional, 
+                     normalize=default_normalize, include_nugget=TRUE, ...) {
+    # Log-likelihood emulator mean/var/cov predictions. Since the GP directly emulates 
+    # the log-likelihood, then simply return the GP predictions directly. 
+    
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    
+    if(!is.null(emulator_pred_list)) return(emulator_pred_list)
+    
     .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
                                  return_cov=return_cov, return_cross_cov=return_cross_cov,
                                  X_cross=input_cross, include_nugget=include_nugget, ...)
   }, 
+  
+  predict_lik = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
+                         return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                         input_cross=NULL, conditional=default_conditional, 
+                         normalize=default_normalize, include_nugget=TRUE, log_scale=FALSE, ...) {
+    # Likelihood emulator mean/var/cov predictions. For this class (under direct GP emulation
+    # of the log-likelihood), the likelihood emulator is a log-normal process. Thus, 
+    # the GP log-likelihood predictions can simply be transformed to obtain log-normal 
+    # likelihood predictions. 
+    # Currently `return_cross_cov` is not supported. 
+    
+    if(return_cross_cov) {
+      stop("`return_cross_cov` is not yet supported for `llikEmulatorGP$predict_lik()`.")
+    }
+    
+    llik_pred <- .self$predict(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                               return_mean=return_mean, return_var=return_var, return_cov=return_cov,  
+                               return_cross_cov=return_cross_cov, input_cross=input_cross, 
+                               conditional=conditional, normalize=normalize, include_nugget=include_nugget, ...)
+                               
+    convert_Gaussian_to_LN(mean_Gaussian=llik_pred$mean, var_Gaussian=llik_pred$var, 
+                           cov_Gaussian=llik_pred$cov, return_mean=return_mean,
+                           return_var=return_var, return_cov=return_cov, log_scale=log_scale)
+  }, 
+  
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
                             normalize=default_normalize, llik_pred_list=NULL,
@@ -705,6 +763,8 @@ llikEmulatorGP$methods(
 
 # -----------------------------------------------------------------------------
 # llikEmulatorMultGausGP class
+#    Surrogate for a multiplicative Gaussian likelihood with a single variance
+#    parameter. A GP emulator models the map u -> ||y - G(u)||^2.
 # -----------------------------------------------------------------------------
 
 llikEmulatorMultGausGP <- setRefClass(
@@ -757,28 +817,33 @@ llikEmulatorMultGausGP$methods(
     assemble_llik(emulator_model$Y, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize)
   },
   
-  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, adjustment="rectified", ...) {
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, 
+                             include_nugget=TRUE, adjustment="rectified", ...) {
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                          N_samp=N_samp, adjustment=adjustment)[,,1,drop=FALSE]             
+                          N_samp=N_samp, adjustment=adjustment, pred_list=emulator_pred_list)[,,1,drop=FALSE]             
   },
   
-  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE,
-                    conditional=default_conditional, normalize=default_normalize, ...) {
+  sample = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, 
+                    include_nugget=TRUE, conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
-    samp <- sample_emulator(input, N_samp, use_cov, include_nugget, ...)
+    samp <- sample_emulator(input, emulator_pred_list, N_samp, use_cov, include_nugget, ...)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par_val, conditional, normalize)
   }, 
   
-  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
-                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                     conditional=default_conditional, 
+  predict = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE, 
+                     return_var=TRUE,  return_cov=FALSE, return_cross_cov=FALSE, 
+                     input_cross=NULL, conditional=default_conditional, 
                      normalize=default_normalize, include_nugget=TRUE, ...) {
     
-    pred_list <- .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
-                                              return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                              X_cross=input_cross, include_nugget=include_nugget, ...)
+    if(is.null(emulator_pred_list)) {
+      pred_list <- .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
+                                                return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                                X_cross=input_cross, include_nugget=include_nugget, ...)
+    } else {
+      pred_list <- emulator_pred_list
+    }
     
     if(return_mean) {
       pred_list$mean <- .self$assemble_llik(pred_list$mean, lik_par=lik_par_val, conditional, normalize)
@@ -912,14 +977,16 @@ llikEmulatorExactGauss$methods(
     return(drop(llik))
   }, 
   
-  sample_emulator = function(input, N_samp=1, ...) {
-    # No emulator to sample from, simply return input. 
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, ...) {
+    # No emulator to sample from, simply return input. The argument 
+    # `emulator_pred_list` is only present for consistency with other llikEmulator
+    # classes. 
+    
     input
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional,
-                    normalize=default_normalize, ...) {
-    
+  sample = function(input, lik_par=NULL, emulator_pred_list=NULL, N_samp=1, 
+                    conditional=default_conditional, normalize=default_normalize, ...) {
     # Compute unnormalized or normalized log-likelihood (exact, deterministic 
     # calculation - no sampling is actually performed). For consistency with 
     # other classes, duplicates the exact likelihood calculation when `N_samp`>1.
@@ -1021,13 +1088,16 @@ llikEmulatorExactGaussDiag$methods(
     return(drop(llik))
   }, 
   
-  sample_emulator = function(input, N_samp=1, ...) {
-    # No emulator to sample from, simply return input. 
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, ...) {
+    # No emulator to sample from, simply return input. The argument 
+    # `emulator_pred_list` is only present for consistency with other llikEmulator
+    # classes. 
+    
     input
   },
   
-  sample = function(input, lik_par=NULL, N_samp=1, conditional=default_conditional,
-                    normalize=default_normalize, ...) {
+  sample = function(input, lik_par=NULL, emulator_pred_list=NULL, N_samp=1, 
+                    conditional=default_conditional, normalize=default_normalize, ...) {
     
     # Compute unnormalized or normalized log-likelihood (exact, deterministic 
     # calculation - no sampling is actually performed). For consistency with 
@@ -1117,21 +1187,27 @@ llikEmulatorFwdGauss$methods(
     return(llik)
   }, 
   
-  sample_emulator = function(input, N_samp=1, use_cov=FALSE, ...) {
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, ...) {
     # Sample the forward model emulator at specified inputs. 
     
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                          N_samp=N_samp, ...)
+                          N_samp=N_samp, pred_list=emulator_pred_list, ...)
   },
   
-  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=FALSE, 
+  sample = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, 
                     conditional=default_conditional, normalize=default_normalize, ...) {
     
-    if(N_samp != 1) .NotYetImplemented()
+    input <- get_input(input)
+    fwd_model_samp <- .self$sample_emulator(input, emulator_pred_list, N_samp=N_samp, 
+                                            use_cov=use_cov, ...)
+    llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
     
-    fwd_model_samp <- .self$sample_emulator(get_input(input), N_samp=N_samp, use_cov=use_cov, ...)[,1,,drop=FALSE]
-    matrix(assemble_llik(fwd_model_samp, lik_par_val, conditional, normalize), 
-                         nrow=nrow(input), ncol=N_samp)
+    for(i in 1:N_samp) {
+      llik_samp[,i] <- assemble_llik(matrix(fwd_model_samp[,i,], nrow=nrow(input), ncol=N_output), 
+                                     lik_par_val, conditional, normalize, ...)
+    }
+    
+    return(llik_samp)
   }
   
 )
@@ -1221,18 +1297,18 @@ llikEmulatorFwdGaussDiag$methods(
     assemble_llik(emulator_model$Y, lik_par_val=lik_par_val, conditional=conditional, normalize=normalize, ...)
   },
   
-  sample_emulator = function(input, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+  sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
     # Sample the forward model emulator at specified inputs. 
     
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                          N_samp=N_samp, ...)
+                          N_samp=N_samp, pred_list=emulator_pred_list, ...)
   },
   
-  sample = function(input, lik_par_val=NULL, N_samp=1, use_cov=TRUE, 
+  sample = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, use_cov=TRUE, 
                     conditional=default_conditional, normalize=default_normalize, ...) {
     
     input <- get_input(input)
-    fwd_model_samp <- .self$sample_emulator(input, N_samp=N_samp, use_cov=use_cov, ...)
+    fwd_model_samp <- .self$sample_emulator(input, emulator_pred_list, N_samp=N_samp, use_cov=use_cov, ...)
     llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
 
     for(i in 1:N_samp) {

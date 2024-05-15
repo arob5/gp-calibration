@@ -59,23 +59,32 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
                                 y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
                                 xlab="x", ylab="y") {
   # This is used by the `gpWrapper` and `llikEmulator` classes to produce plots 
-  # summarizing the predictive distribution in the case of a 1d input space. 
+  # summarizing the predictive distribution in the case of a 1d input space. It provides 
+  # a generic interface to plot the fit to a curve over a one-dimensional input space 
+  # that includes: 1.) predictive mean (point estimate); 2.) error bars; 
+  # 3.) design points; 4.) ground truth curve. 
   
   # Set default title, if not provided. 
   if(is.null(plot_title)) plot_title <- "Model Predictions"
   
-  # Base plot: mean at prediction locations. 
+  plt <- ggplot()
+  
+  # Predictive mean is always plotted. 
   df_pred <- data.frame(x=drop(X_new), y_mean=drop(pred_mean))
-  plt <- ggplot() + geom_line(aes(x, y_mean), df_pred, color="blue") + 
-    ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Confidence intervals. 
   if(include_CI) {
     df_pred$CI_upper <- CI_upper
     df_pred$CI_lower <- CI_lower
-    plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + 
-      geom_line(aes(x, CI_lower), df_pred, color="gray")
+    plt <- plt + geom_ribbon(aes(x=x, ymin=CI_lower, ymax=CI_upper), df_pred, fill="gray")
+    
+    # plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + 
+    #              geom_line(aes(x, CI_lower), df_pred, color="gray")
   }
+  
+  # Base plot: mean at prediction locations.
+  plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue") + 
+               ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # True values at prediction locations. 
   if(!is.null(y_new)) {
