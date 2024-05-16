@@ -253,13 +253,14 @@ llikEmulator$methods(
     # Compute required predictive quantities if not already provided. 
     if(plot_type == "llik") {
       pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
-                                 return_mean=TRUE, return_var=TRUE, conditional=conditional, normalize=normalize, ...)
+                                 return_mean=TRUE, return_var=include_interval, 
+                                 conditional=conditional, normalize=normalize, ...)
       true_vals <- true_llik
     }
     
     if(plot_type == "lik") {
       pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
-                                     return_mean=TRUE, return_var=TRUE, conditional=conditional, 
+                                     return_mean=TRUE, return_var=include_interval, conditional=conditional, 
                                      normalize=normalize, log_scale=FALSE, ...)
       true_vals <- exp(true_llik)
     }
@@ -1328,10 +1329,27 @@ llikEmulatorFwdGaussDiag$methods(
     return(lik_par_val)
   },
   
-  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, conditional=default_conditional, 
+                           normalize=default_normalize, var_inflation_vals=NULL, ...) {
     # `fwd_model_vals` should be of dimension `M` x `N_output`, where `M` corresponds to the number of 
     # instances of forward model output; e.g., might be the forward model evaluated at `M` different inputs, 
     # or `M` samples from the forward model at the same input, or some combination. Returns numeric vector of length `M`. 
+    # `var_inflation_vals` allows adds values to `sig2`, and is used in computing the marginal likelihood 
+    # approximation. If shape (`M`, `N_output`) then each row of `var_inflation_vals` to `sig2` for the 
+    # corresponding row of `fwd_model_vals`. If a numeric vector of length `N_output`, then the same variance 
+    # inflation is applied to the likelihood evaluations at all `M` values of the forward model output. 
+    
+    # Validate variance inflation argument. 
+    inflate_var <- FALSE
+    if(!is.null(var_inflation_vals)) {
+      inflate_var <- TRUE
+      if(is.null(dim(var_inflation_vals))) {
+        assert_that(length(var_inflation_vals) == N_output)
+        var_inflation_vals <- matrix(var_inflation_vals, nrow=nrow(fwd_model_vals), 
+                                     ncol=N_output, byrow=TRUE)
+      }
+      assert_that(all(dim(var_inflation_vals) == dim(fwd_model_vals)))
+    }
     
     # Fetch the variance parameters. 
     sig2_val <- get_lik_par(lik_par_val)
@@ -1339,8 +1357,9 @@ llikEmulatorFwdGaussDiag$methods(
     # Construct log likelihood.
     llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
     for(i in seq_along(llik)) {
-      llik[i] <- -0.5 * rowSums((t(y) - fwd_model_vals[i,])^2) / sig2_val
-      if(normalize || !conditional) llik <- llik - 0.5 * N_obs * sum(log(sig2_val))
+      sig2_val_i <- ifelse(inflate_var, sig2_val + var_inflation_vals[i,], sig2_val)
+      llik[i] <- -0.5 * rowSums((t(y) - fwd_model_vals[i,])^2) / sig2_val_i
+      if(normalize || !conditional) llik <- llik - 0.5 * N_obs * sum(log(sig2_val_i))
       if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
     }
     
@@ -1375,7 +1394,53 @@ llikEmulatorFwdGaussDiag$methods(
     }
     
     return(llik_samp)
+  }, 
+  
+  
+  # TODO: need to think about normalization here. For the marginal approximation, the 
+  # determinant part of the Gaussian likelihood depends on u through the GP predictive 
+  # variance. 
+  predict_lik = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
+                         return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                         input_cross=NULL, conditional=default_conditional,  
+                         normalize=default_normalize, log_scale=FALSE, ...) {
+    # The mean/variance of the likelihood emulator in this case are available in closed-form, though 
+    # note that the distribution is not known, so the mean and variance might not provide a full 
+    # characterization of the emulator distribution. The mean returned here corresponds to the 
+    # "marginal" likelihood approximation under a Gaussian error model, which implies that the 
+    # forward model GP variance is simply added to the likelihood variance. 
+    
+    if(return_cross_cov || return_cov) {
+      stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict_lik()`.")
+    }
+    
+    # Forward model emulator predictions. 
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$emulator_model$predict(get_input(input), return_mean=TRUE, return_var=TRUE,
+                                                         return_cov=return_cov, return_cross_cov=return_cross_cov,
+                                                         X_cross=input_cross, include_nugget=include_nugget, ...)
+    } else {
+      assert_that(!is.null(emulator_pred_list$mean) && !is.null(emulator_pred_list$var), 
+                  msg="Likelihood predictive quantities require forward model emulator mean and variance.")
+    }
+    
+    # Compute induced likelihood emulator predictions. 
+    lik_pred_list <- list()
+    if(return_mean) {
+      lik_pred_list$mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=.self$get_lik_par(lik_par_val), 
+                                          conditional=default_conditional, normalize=default_normalize, 
+                                          var_inflation_vals=emulator_pred_list$var, ...)
+    }
+    
+    if(return_var) {
+      .NotYetImplemented()
+    }
+  
+    return(lik_pred_list)
+      
   }
+  
+  
   
 )
 

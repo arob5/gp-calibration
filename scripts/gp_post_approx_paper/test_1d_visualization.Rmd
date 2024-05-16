@@ -55,8 +55,8 @@ sig2_true <- 1
 y <- 0 # fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
 
 # Exact likelihood. 
-default_conditional <- TRUE
-default_normalize <- FALSE
+default_conditional <- FALSE
+default_normalize <- TRUE
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
                                          y_obs=y, dim_par=1L, use_fixed_lik_par=TRUE,
                                          sig2=sig2_true, par_names=rownames(par_prior_params), 
@@ -77,9 +77,9 @@ test_info$lpost <- test_info$llik + test_info$lprior
 plot(test_info$input, test_info$fwd, type="l", 
      main="True forward model evaluations", xlab="u", ylab="G(u)")
 plot(test_info$input, test_info$llik, type="l", 
-     main="True unnormalized log-likelihood", xlab="u", ylab="density")
+     main="True log-likelihood", xlab="u", ylab="density")
 plot(test_info$input, exp(test_info$llik), type="l", 
-     main="True unnormalized likelihood", xlab="u", ylab="density")
+     main="True likelihood", xlab="u", ylab="density")
 
 ```
 
@@ -113,7 +113,7 @@ em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_con
 emulator_pred_llik <- em_llik$emulator_model$predict(test_info$input, return_cov=TRUE)
 
 em_llik$plot_pred_1d(test_info$input, include_interval=TRUE, true_llik=test_info$llik, 
-                     CI_prob=CI_prob, plot_type="llik", emulator_pred_list=emulator_pred_llik, interval_method="CI")
+                     CI_prob=CI_prob, plot_type="lik", emulator_pred_list=emulator_pred_llik, interval_method="pm_std_dev")
 em_llik$plot_samp_1d(test_info$input, lik_par_val=inv_prob$sig2_true, N_samp=5, 
                      plot_type="lik", true_llik=test_info$llik, include_design=TRUE, 
                      emulator_pred_list=emulator_pred_llik)
@@ -127,6 +127,9 @@ em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, y, sig2=inv_prob$sig2_tr
                                    par_names=rownames(par_prior_params))
 emulator_pred_fwd <- em_fwd$emulator_model$predict(test_info$input, return_cov=TRUE)
 
+# TODO: check `true_llik` in the plotting function. 
+em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
+                    plot_type="lik", include_interval=FALSE, true_llik=test_info$llik)
 em_fwd$emulator_model$plot_pred_1d(test_info$input, CI_prob=CI_prob, Y_new=matrix(test_info$fwd, ncol=1), pred_list=emulator_pred_fwd)[[1]]
 em_fwd$plot_samp_1d(test_info$input, N_samp=5, plot_type="lik", true_llik=test_info$llik, 
                     include_design=TRUE, emulator_pred_list=emulator_pred_fwd)
