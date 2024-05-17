@@ -1359,9 +1359,9 @@ llikEmulatorFwdGaussDiag$methods(
     for(i in seq_along(llik)) {
       sig2_val_i <- ifelse(inflate_var, sig2_val + var_inflation_vals[i,], sig2_val)
       llik[i] <- -0.5 * rowSums((t(y) - fwd_model_vals[i,])^2) / sig2_val_i
-      if(normalize || !conditional) llik <- llik - 0.5 * N_obs * sum(log(sig2_val_i))
-      if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
+      if(normalize || !conditional) llik[i] <- llik[i] - 0.5 * N_obs * sum(log(sig2_val_i))
     }
+    if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
     
     return(llik)
   }, 
@@ -1427,9 +1427,9 @@ llikEmulatorFwdGaussDiag$methods(
     # Compute induced likelihood emulator predictions. 
     lik_pred_list <- list()
     if(return_mean) {
-      lik_pred_list$mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=.self$get_lik_par(lik_par_val), 
-                                          conditional=default_conditional, normalize=default_normalize, 
-                                          var_inflation_vals=emulator_pred_list$var, ...)
+      lik_pred_list$mean <- exp(assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
+                                              conditional=conditional, normalize=normalize, 
+                                              var_inflation_vals=emulator_pred_list$var, ...))
     }
     
     if(return_var) {
