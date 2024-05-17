@@ -103,7 +103,20 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  assemble_llik = function(input, lik_par_val=NULL, N_samp=1, conditional=default_conditional, 
+  predict_emulator = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE, 
+                              return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL, ...) {
+    # This default method assumes the emulator inherits from `gpWrapper`, but different llikEmulator 
+    # classes may want to override this default method. 
+    
+    assert_that(inherits(.self$emulator_model, "gpWrapper"))
+    if(!is.null(emulator_pred_list)) return(emulator_pred_list)
+    
+    .self$emulator_model$predict(.self$get_input(input), return_mean=return_mean, 
+                                 return_var=return_var, return_cov=return_cov, 
+                                 return_cross_cov=return_cross_cov, input_cross=input_cross)
+  },
+  
+  assemble_llik = function(input, lik_par_val=NULL, conditional=default_conditional, 
                            normalize=default_normalize, ...) {
     # Since a log-likelihood is scalar-valued, this should always return a numeric vector
     # of length equal to the number of rows in `input`. 
@@ -134,6 +147,26 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
+  predict_lik_mean_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
+                                     normalize=default_normalize, log_scale=FALSE, ...) {
+    # `Mean approx` means that the `emulator_model` predictive mean is computed at inputs `input`, then 
+    # the predictive mean is passed to `assemble_llik()` and the result is exponentiated (if 
+    # `log_scale` is FALSE). This implements the "plug-in emulator mean" approximation. This default method 
+    # can be written for llikEmulator classes with special structure that differs from this. 
+    
+    input <- .self$get_input(input)
+    
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, return_var=FALSE, ...)
+    } else {
+      assert_that(!is.null(emulator_pred_list$mean))
+    }
+      
+    llik_pred <- .self$assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
+                                     conditional=conditional, normalize=normalize)
+    if(log_scale) return(llik_pred)
+    return(exp(llik_pred))
+  },
   
   get_pred_interval = function(input, lik_par_val=NULL, emulator_pred_list=NULL, target_pred_list=NULL, target="llik",  
                                method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
@@ -1438,8 +1471,24 @@ llikEmulatorFwdGaussDiag$methods(
   
     return(lik_pred_list)
       
-  }
+  }, 
   
+  
+  get_lik_approx = function(input, approx_type, lik_par_val=NULL, emulator_pred_list=NULL,
+                            conditional=default_conditional, normalize=default_normalize,
+                            log_scale=FALSE, ...) {
+    
+    if(approx_type == "marginal") {
+      return(predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                         return_mean=TRUE, return_var=FALSE, conditional=conditional,  
+                         normalize=normalize, log_scale=FALSE, ...)$mean)
+    } else if(approx_type == "mean") {
+      return(predict_lik_mean_approx(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                     conditional=conditional, normalize=normalize, log_scale=log_scale, ...))
+    } else {
+      stop("Invalid likelihood `approx_type` ", approx_type, " passed to class llikEmulatorFwdGaussDiag.")
+    }
+  }
   
   
 )

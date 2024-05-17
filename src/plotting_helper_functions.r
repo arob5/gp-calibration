@@ -103,6 +103,46 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 }
 
 
+plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design), 
+                                  y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
+                                  xlab="x", ylab="y") {
+  # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
+  # multiple curves. This is useful for comparing multiple approximations to a function. 
+  # Can still plot design points, just like `plot_pred_1d_helper`. 
+  # `pred` is a matrix of dimension `(nrow(X_new), K)`, where `K` is the number of curves
+  # to plot. A baseline curve will also be plotted if `y_new` is provided. 
+  
+  # Set default title, if not provided. 
+  if(is.null(plot_title)) plot_title <- "Approximations"
+  
+  # Column names of `pred` are used for plot labels. 
+  if(is.null(dim(pred))) pred <- matrix(pred, ncol=1)
+  if(is.null(colnames(pred))) colnames(pred) <- paste0("y", 1:ncol(pred))
+  
+  df_pred <- cbind(x=drop(X_new), as.data.frame(pred))
+  df_pred <- melt(df_pred, id.vars="x", variable.name="approx", value.name="y")
+  
+  plt <- ggplot() + 
+          geom_line(aes(x=x, y=y, col=approx), df_pred) + 
+          ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  
+  # True values at prediction locations. 
+  if(!is.null(y_new)) {
+    df_true <- data.frame(x=drop(X_new), y=drop(y_new))
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color="red") # TODO: need to make sure this color is different from the others. 
+  }
+  
+  # Design points. 
+  if(include_design) {
+    df_design <- data.frame(x=drop(X_design), y=drop(y_design))
+    plt <- plt + geom_point(aes(x,y), df_design, color="black")
+  }
+  
+  return(plt)
+  
+}
+
+
 plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,  
                          raster=FALSE, point_coords=NULL, main_title="Heatmap", 
                          invert_colors=TRUE, legend_label="y",
