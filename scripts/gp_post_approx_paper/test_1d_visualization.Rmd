@@ -139,8 +139,8 @@ em_fwd$plot_samp_1d(test_info$input, N_samp=5, plot_type="lik", true_llik=test_i
                     include_design=TRUE, emulator_pred_list=emulator_pred_fwd)
 
 
-pred_marg <- em_fwd$get_lik_approx(test_info$input, approx_type="marginal", emulator_pred_list=emulator_pred_fwd)
-pred_mean <- em_fwd$get_lik_approx(test_info$input, approx_type="mean", emulator_pred_list=emulator_pred_fwd)
+pred_marg <- em_fwd$calc_lik_approx(test_info$input, approx_type="marginal", emulator_pred_list=emulator_pred_fwd)
+pred_mean <- em_fwd$calc_lik_approx(test_info$input, approx_type="mean", emulator_pred_list=emulator_pred_fwd)
 plot(test_info$input, pred_marg, type="l", col="green")
 lines(test_info$input, pred_mean)
 lines(test_info$input, exp(test_info$llik), col="red")

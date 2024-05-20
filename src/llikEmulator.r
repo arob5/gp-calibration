@@ -147,8 +147,43 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  predict_lik_mean_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
-                                     normalize=default_normalize, log_scale=FALSE, ...) {
+  calc_lik_approx = function(input, approx_type, lik_par_val=NULL, emulator_pred_list=NULL,
+                             conditional=default_conditional, normalize=default_normalize,
+                             log_scale=FALSE, ...) {
+    # A helper method that will call the method `calc_lik_<approx_type>_approx()`, which 
+    # returns an approximation of the likelihood function evaluated at the inputs `input`, 
+    # using the likelihood approximation type `approx_type`. 
+    # See description on usingMethods here: 
+    # https://docs.tibco.com/pub/enterprise-runtime-for-R/6.0.0/doc/html/Language_Reference/methods/setRefClass.html
+    
+    # Note that for some reason this doesn't work if called like `.self$usingMethods()`. 
+    usingMethods(calc_lik_marginal_approx, calc_lik_mean_approx, calc_lik_sample_approx)
+    
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
+    }
+
+    lik_approx_method_name <- paste0("calc_lik_", approx_type, "_approx")
+    get(lik_approx_method_name)(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                                conditional=conditional, normalize=normalize, log_scale=log_scale, ...)
+    
+    # do.call(lik_approx_method_name, c(list(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,
+    #                                        conditional=conditional, normalize=normalize, log_scale=log_scale), list(...)))
+    
+  },
+  
+  calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
+                                      normalize=default_normalize, log_scale=FALSE, ...) {
+    .NotYetImplemented()  
+  },
+  
+  calc_lik_sample_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
+                                      normalize=default_normalize, log_scale=FALSE, ...) {
+    .NotYetImplemented()  
+  },
+  
+  calc_lik_mean_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
+                                  normalize=default_normalize, log_scale=FALSE, ...) {
     # `Mean approx` means that the `emulator_model` predictive mean is computed at inputs `input`, then 
     # the predictive mean is passed to `assemble_llik()` and the result is exponentiated (if 
     # `log_scale` is FALSE). This implements the "plug-in emulator mean" approximation. This default method 
@@ -1474,22 +1509,15 @@ llikEmulatorFwdGaussDiag$methods(
   }, 
   
   
-  get_lik_approx = function(input, approx_type, lik_par_val=NULL, emulator_pred_list=NULL,
-                            conditional=default_conditional, normalize=default_normalize,
-                            log_scale=FALSE, ...) {
+  calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, 
+                                      conditional=default_conditional, normalize=default_normalize,
+                                      log_scale=FALSE, ...) {
     
-    if(approx_type == "marginal") {
-      return(predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
-                         return_mean=TRUE, return_var=FALSE, conditional=conditional,  
-                         normalize=normalize, log_scale=FALSE, ...)$mean)
-    } else if(approx_type == "mean") {
-      return(predict_lik_mean_approx(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
-                                     conditional=conditional, normalize=normalize, log_scale=log_scale, ...))
-    } else {
-      stop("Invalid likelihood `approx_type` ", approx_type, " passed to class llikEmulatorFwdGaussDiag.")
-    }
+    predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                return_mean=TRUE, return_var=FALSE, conditional=conditional,  
+                normalize=normalize, log_scale=FALSE, ...)$mean
+    
   }
-  
   
 )
 

@@ -57,7 +57,7 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
 plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_design), 
                                 include_CI=!is.null(CI_lower), CI_lower=NULL, CI_upper=NULL, 
                                 y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                xlab="x", ylab="y") {
+                                xlab="x", ylab="y", ground_truth_col="black") {
   # This is used by the `gpWrapper` and `llikEmulator` classes to produce plots 
   # summarizing the predictive distribution in the case of a 1d input space. It provides 
   # a generic interface to plot the fit to a curve over a one-dimensional input space 
@@ -89,7 +89,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
   # True values at prediction locations. 
   if(!is.null(y_new)) {
     df_pred$y_true <- y_new
-    plt <- plt + geom_line(aes(x, y_new), df_pred, color="red")
+    plt <- plt + geom_line(aes(x, y_new), df_pred, color=ground_truth_col)
   }
   
   # Design points. 
@@ -105,7 +105,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 
 plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design), 
                                   y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y") {
+                                  xlab="x", ylab="y", ground_truth_col="black") {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
@@ -129,7 +129,7 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   # True values at prediction locations. 
   if(!is.null(y_new)) {
     df_true <- data.frame(x=drop(X_new), y=drop(y_new))
-    plt <- plt + geom_line(aes(x=x, y=y), df_true, color="red") # TODO: need to make sure this color is different from the others. 
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col)  
   }
   
   # Design points. 
