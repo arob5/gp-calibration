@@ -259,7 +259,7 @@ gpWrapper$methods(
     stop(err_msg)
   },
   
-  plot_pred_1d = function(X_new, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL, Y_new=NULL) {
+  plot_pred_1d = function(X_new, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL, Y_new=NULL, ...) {
   
     assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
     
@@ -273,7 +273,7 @@ gpWrapper$methods(
     for(i in 1:Y_dim) {
       plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], pred_var=pred_list$var[,i], 
                                          CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], y_design=Y[,i], 
-                                         xlab=X_names, ylab=Y_names[i])
+                                         xlab=X_names, ylab=Y_names[i], ...)
     }
     
     return(plts)

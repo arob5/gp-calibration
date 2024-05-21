@@ -166,11 +166,29 @@ llikEmulator$methods(
     lik_approx_method_name <- paste0("calc_lik_", approx_type, "_approx")
     get(lik_approx_method_name)(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
                                 conditional=conditional, normalize=normalize, log_scale=log_scale, ...)
-    
-    # do.call(lik_approx_method_name, c(list(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,
-    #                                        conditional=conditional, normalize=normalize, log_scale=log_scale), list(...)))
-    
   },
+  
+  calc_lik_approx_comparison = function(input, approx_types, lik_par_val=NULL, emulator_pred_list=NULL,
+                                        conditional=default_conditional, normalize=default_normalize,
+                                        log_scale=FALSE, ...) {
+    # A wrapper around `calc_lik_approx` that allows multiple likelihood approximation types 
+    # to be computed. Returns a matrix of dimension `(nrow(input), length(approx_types))`, 
+    # each column containing a different likelihood approximation type. 
+    
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
+    }
+    
+    lik_approx_vals <- matrix(nrow=nrow(input), ncol=length(approx_types),
+                              dimnames=list(NULL, approx_types))
+    for(i in seq_along(approx_types)) {
+      lik_approx_vals[,i] <-   calc_lik_approx(input=input, approx_type=approx_types[i], lik_par_val=lik_par_val, 
+                                               emulator_pred_list=emulator_pred_list, conditional=conditional, 
+                                               normalize=normalize, log_scale=log_scale, ...)
+    }
+    
+    return(lik_approx_vals)
+  },  
   
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
                                       normalize=default_normalize, log_scale=FALSE, ...) {
@@ -264,7 +282,8 @@ llikEmulator$methods(
   
   plot_samp_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, plot_type="llik",  
                           conditional=default_conditional, normalize=default_normalize, 
-                          true_llik=NULL, include_design=TRUE, use_cov=TRUE, ...) {
+                          true_llik=NULL, include_design=TRUE, use_cov=TRUE, ground_truth_col="black",
+                          design_col="black", ...) {
     # `plot_type` options: "llik", "lik". 
     
     assert_that(dim_input==1, msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
@@ -285,13 +304,13 @@ llikEmulator$methods(
     }
     
     plt <- ggmatplot(input, samp, plot_type="line", color="gray") + 
-                theme(legend.position = "none") + 
-                ggtitle(paste0(base_plot_title, " Samples")) + 
-                xlab(input_names) + ylab(paste0(base_plot_title, ": ", llik_label))
+                  theme(legend.position = "none") + 
+                  ggtitle(paste0(base_plot_title, " Samples")) + 
+                  xlab(input_names) + ylab(paste0(base_plot_title, ": ", llik_label))
 
     if(!is.null(true_llik)) {
       df <- data.frame(x=input[,1], y=drop(true_vals))
-      plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color="red")
+      plt <- plt + geom_line(aes(x=x, y=y), df, inherit.aes=FALSE, color=ground_truth_col)
     }
     
     if(include_design) {
@@ -299,7 +318,7 @@ llikEmulator$methods(
       if(plot_type == "lik") design_response_vals <- exp(design_response_vals)
       
       design_df <- data.frame(x=drop(get_design_inputs()), y=design_response_vals)
-      plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color="red")
+      plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, color=design_col)
     }
 
     return(plt)
@@ -324,9 +343,7 @@ llikEmulator$methods(
                                  return_mean=TRUE, return_var=include_interval, 
                                  conditional=conditional, normalize=normalize, ...)
       true_vals <- true_llik
-    }
-    
-    if(plot_type == "lik") {
+    } else {
       pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
                                      return_mean=TRUE, return_var=include_interval, conditional=conditional, 
                                      normalize=normalize, log_scale=FALSE, ...)
@@ -365,7 +382,7 @@ llikEmulator$methods(
                                include_CI=include_interval, CI_lower=interval_list$lower,  
                                CI_upper=interval_list$upper, y_new=drop(true_vals), 
                                X_design=design_inputs, y_design=design_response_vals, 
-                               plot_title=plot_title, xlab=xlab, ylab=ylab)
+                               plot_title=plot_title, xlab=xlab, ylab=ylab, ...)
     
     return(plt)                     
   }
@@ -1484,9 +1501,9 @@ llikEmulatorFwdGaussDiag$methods(
     
     # Forward model emulator predictions. 
     if(is.null(emulator_pred_list)) {
-      emulator_pred_list <- .self$emulator_model$predict(get_input(input), return_mean=TRUE, return_var=TRUE,
-                                                         return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                                         X_cross=input_cross, include_nugget=include_nugget, ...)
+      emulator_pred_list <- .self$predict_emulator(get_input(input), return_mean=TRUE, return_var=TRUE,
+                                                   return_cov=return_cov, return_cross_cov=return_cross_cov, 
+                                                   input_cross=input_cross, include_nugget=include_nugget, ...)
     } else {
       assert_that(!is.null(emulator_pred_list$mean) && !is.null(emulator_pred_list$var), 
                   msg="Likelihood predictive quantities require forward model emulator mean and variance.")

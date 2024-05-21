@@ -131,28 +131,22 @@ em_llik$plot_samp_1d(test_info$input, lik_par_val=inv_prob$sig2_true, N_samp=5,
                      plot_type="lik", true_llik=test_info$llik, include_design=TRUE, 
                      emulator_pred_list=emulator_pred_llik)
 
-# TODO: check `true_llik` in the plotting function. 
 em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
                     plot_type="lik", include_interval=FALSE, true_llik=test_info$llik)
-em_fwd$emulator_model$plot_pred_1d(test_info$input, CI_prob=CI_prob, Y_new=matrix(test_info$fwd, ncol=1), pred_list=emulator_pred_fwd)[[1]]
+em_fwd$emulator_model$plot_pred_1d(test_info$input, CI_prob=CI_prob, Y_new=matrix(test_info$fwd, ncol=1),
+                                   pred_list=emulator_pred_fwd)[[1]]
 em_fwd$plot_samp_1d(test_info$input, N_samp=5, plot_type="lik", true_llik=test_info$llik, 
                     include_design=TRUE, emulator_pred_list=emulator_pred_fwd)
 
 
-pred_marg <- em_fwd$calc_lik_approx(test_info$input, approx_type="marginal", emulator_pred_list=emulator_pred_fwd)
-pred_mean <- em_fwd$calc_lik_approx(test_info$input, approx_type="mean", emulator_pred_list=emulator_pred_fwd)
-plot(test_info$input, pred_marg, type="l", col="green")
-lines(test_info$input, pred_mean)
-lines(test_info$input, exp(test_info$llik), col="red")
-
-
-plot_curves_1d_helper(test_info$input, cbind(marginal=pred_marg, mean=pred_mean), 
-                      y_new=exp(test_info$llik), X_design=design_info$input, 
-                      y_design=exp(design_info$llik), plot_title="Likelihood Approximations",
-                      xlab="u", ylab="Likelihood")
-
-
-
+# Comparison of different likelihood approximations. 
+lik_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
+                                                    emulator_pred_list=emulator_pred_fwd)
+lik_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=exp(test_info$llik),
+                                            X_design=design_info$input, y_design=exp(design_info$llik),
+                                            plot_title="Likelihood Approximations",
+                                            xlab="u", ylab="Likelihood")
+plot(lik_approx_fwd_plt)
 
 ```
 

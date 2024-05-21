@@ -10,7 +10,8 @@ library(reshape2)
 plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_design=!is.null(X_design), 
                                   include_CI=!is.null(pred_var), CI_prob=0.9, y_new=NULL,
                                   X_design=NULL, y_design=NULL, transformation=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y") {
+                                  xlab="x", ylab="y", ground_truth_col="black", design_col="black") {
+                                  
   # Produces a Gaussian process prediction plot for one-dimensional input space. 
   #
   # Args:
@@ -49,7 +50,8 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
   
   plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_CI,
                              CI_lower=CI_lower, CI_upper=CI_upper, y_new=y_new, X_design=X_design,
-                             y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab) 
+                             y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab, 
+                             ground_truth_col=ground_truth_col, design_col=design_col) 
   return(plt)
 }
 
@@ -57,7 +59,8 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
 plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_design), 
                                 include_CI=!is.null(CI_lower), CI_lower=NULL, CI_upper=NULL, 
                                 y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                xlab="x", ylab="y", ground_truth_col="black") {
+                                xlab="x", ylab="y", ground_truth_col="black", 
+                                design_col="black") {
   # This is used by the `gpWrapper` and `llikEmulator` classes to produce plots 
   # summarizing the predictive distribution in the case of a 1d input space. It provides 
   # a generic interface to plot the fit to a curve over a one-dimensional input space 
@@ -72,30 +75,27 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
   # Predictive mean is always plotted. 
   df_pred <- data.frame(x=drop(X_new), y_mean=drop(pred_mean))
   
-  # Confidence intervals. 
+  # Plot confidence intervals first, so they don't cover up other layers. 
   if(include_CI) {
     df_pred$CI_upper <- CI_upper
     df_pred$CI_lower <- CI_lower
     plt <- plt + geom_ribbon(aes(x=x, ymin=CI_lower, ymax=CI_upper), df_pred, fill="gray")
-    
-    # plt <- plt + geom_line(aes(x, CI_upper), df_pred, color="gray") + 
-    #              geom_line(aes(x, CI_lower), df_pred, color="gray")
+  }
+  
+  # True values at prediction locations. 
+  if(!is.null(y_new)) {
+    df_pred$y_true <- y_new
+    plt <- plt + geom_line(aes(x=x, y=y_true), df_pred, color=ground_truth_col, linetype="dashed")
   }
   
   # Base plot: mean at prediction locations.
   plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue") + 
                ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
-  # True values at prediction locations. 
-  if(!is.null(y_new)) {
-    df_pred$y_true <- y_new
-    plt <- plt + geom_line(aes(x, y_new), df_pred, color=ground_truth_col)
-  }
-  
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
-    plt <- plt + geom_point(aes(x,y), df_design, color="black")
+    plt <- plt + geom_point(aes(x,y), df_design, color=design_col)
   }
   
   return(plt)
@@ -105,7 +105,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 
 plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design), 
                                   y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y", ground_truth_col="black") {
+                                  xlab="x", ylab="y", ground_truth_col="black", design_col="black") {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
@@ -122,20 +122,22 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   df_pred <- cbind(x=drop(X_new), as.data.frame(pred))
   df_pred <- melt(df_pred, id.vars="x", variable.name="approx", value.name="y")
   
-  plt <- ggplot() + 
-          geom_line(aes(x=x, y=y, col=approx), df_pred) + 
-          ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  plt <- ggplot()
   
   # True values at prediction locations. 
   if(!is.null(y_new)) {
     df_true <- data.frame(x=drop(X_new), y=drop(y_new))
-    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col)  
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, linetype="dashed")  
   }
+  
+  plt <- plt + 
+          geom_line(aes(x=x, y=y, col=approx), df_pred) + 
+          ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
-    plt <- plt + geom_point(aes(x,y), df_design, color="black")
+    plt <- plt + geom_point(aes(x,y), df_design, color=design_col)
   }
   
   return(plt)
