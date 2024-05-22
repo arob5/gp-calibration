@@ -860,6 +860,15 @@ llikEmulatorGP$methods(
                            return_var=return_var, return_cov=return_cov, log_scale=log_scale)
   }, 
   
+  calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, 
+                                      conditional=default_conditional, normalize=default_normalize,
+                                      log_scale=FALSE, include_nugget=TRUE, ...) {
+    
+    predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
+                return_mean=TRUE, return_var=FALSE, conditional=conditional,  
+                normalize=normalize, log_scale=FALSE, include_nugget=include_nugget, ...)$mean
+    
+  },
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, emulator_pred_list=NULL, llik_pred_list=NULL,
                              target="llik", conditional=default_conditional, normalize=default_normalize, 
@@ -1488,7 +1497,7 @@ llikEmulatorFwdGaussDiag$methods(
   predict_lik = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
                          return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                          input_cross=NULL, conditional=default_conditional,  
-                         normalize=default_normalize, log_scale=FALSE, ...) {
+                         normalize=default_normalize, log_scale=FALSE, include_nugget=TRUE, ...) {
     # The mean/variance of the likelihood emulator in this case are available in closed-form, though 
     # note that the distribution is not known, so the mean and variance might not provide a full 
     # characterization of the emulator distribution. The mean returned here corresponds to the 
@@ -1528,11 +1537,11 @@ llikEmulatorFwdGaussDiag$methods(
   
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, 
                                       conditional=default_conditional, normalize=default_normalize,
-                                      log_scale=FALSE, ...) {
+                                      log_scale=FALSE, include_nugget=TRUE, ...) {
     
     predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
                 return_mean=TRUE, return_var=FALSE, conditional=conditional,  
-                normalize=normalize, log_scale=FALSE, ...)$mean
+                normalize=normalize, log_scale=FALSE, include_nugget=include_nugget, ...)$mean
     
   }
   

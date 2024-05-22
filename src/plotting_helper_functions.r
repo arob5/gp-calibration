@@ -8,10 +8,10 @@
 library(reshape2)
 
 plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_design=!is.null(X_design), 
-                                  include_CI=!is.null(pred_var), CI_prob=0.9, y_new=NULL,
-                                  X_design=NULL, y_design=NULL, transformation=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y", ground_truth_col="black", design_col="black") {
-                                  
+                                  include_interval=TRUE, interval_method="pm_std_dev",
+                                  N_std_dev=1, CI_prob=0.9, y_new=NULL, X_design=NULL, y_design=NULL,
+                                  transformation=NULL, plot_title=NULL, xlab="x", ylab="y",
+                                  ground_truth_col="black", design_col="black") {
   # Produces a Gaussian process prediction plot for one-dimensional input space. 
   #
   # Args:
@@ -19,8 +19,16 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
   #    pred_mean: numeric, or one-column matrix, the predictive mean at the test locations. 
   #    pred_var: numeric, or one-column matrix, the predictive variance at the test locations. 
   #    include_design: logical(1), whether or not to plot the design (i.e. training) points. 
-  #    include_CI: logical(1), whether or not to plot confidence intervals. 
-  #    CI_prob: numeric value in (0,1); e.g. `0.9` corresponds to 90% confidence interval. 
+  #    include_interval: logical(1), whether or not to plot confidence intervals. 
+  #    interval_method: character(1), either "CI" or "pm_std_dev". If "CI", computes 
+  #                     100*`CI_prob`% confidence interval. If "pm_std_dev" (pm="plus-minus"), 
+  #                     the interval is defined by adding/subtracting `N_std_dev` standard 
+  #                     deviations. 
+  #    CI_prob: numeric value in (0,1); e.g. `0.9` corresponds to 90% confidence interval. Only used 
+  #             if `include_interval` is TRUE and `interval_method` is "CI". 
+  #    N_std_dev: integer, the number of standard deviations to add/subtract from the mean to 
+  #               define the interval. Only used if `include_interval` is TRUE and `interval_method` 
+  #               is "pm_std_dev". 
   #    y_new: numeric, or one-column matrix, the true response values at the prediction locations. 
   #    X_design: numeric, or one-column matrix, the design locations. 
   #    y_design: numeric, or one-column matrix, the response values at the design locations. 
@@ -34,21 +42,27 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
   if(!is.null(transformation)) .NotYetImplemented() 
   
   # Set default title, if not provided. 
-  if(is.null(plot_title)) plot_title <- paste0("GP Predictions")
-  if(include_CI) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
-  if(!is.null(transformation)) plot_title <- paste0(plot_title, " ", transformation, "transform")
-  
+  if(is.null(plot_title)) {
+    plot_title <- paste0("GP Predictions")
+    if(include_interval && (interval_method == "CI")) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+    if(include_interval && (interval_method == "pm_std_dev")) plot_title <- paste0(plot_title, ", +/- ", N_std_dev, " std dev")
+    if(!is.null(transformation)) plot_title <- paste0(plot_title, " ", transformation, "transform")
+  }
+
   # Confidence intervals. 
-  if(include_CI) {
+  if(include_interval && (interval_method == "CI")) {
     CI_tail_prob <- 0.5 * (1-CI_prob)
     CI_upper <- qnorm(CI_tail_prob, pred_mean, sqrt(pred_var))
     CI_lower <- qnorm(CI_tail_prob, pred_mean, sqrt(pred_var), lower.tail=FALSE)
+  } else if(include_interval && (interval_method == "pm_std_dev")) {
+    CI_upper <- pred_mean + N_std_dev * sqrt(pred_var)
+    CI_lower <- pred_mean - N_std_dev * sqrt(pred_var)
   } else {
     CI_upper <- NULL
     CI_lower <- NULL
   }
   
-  plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_CI,
+  plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_interval,
                              CI_lower=CI_lower, CI_upper=CI_upper, y_new=y_new, X_design=X_design,
                              y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab, 
                              ground_truth_col=ground_truth_col, design_col=design_col) 

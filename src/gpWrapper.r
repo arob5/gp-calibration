@@ -259,8 +259,9 @@ gpWrapper$methods(
     stop(err_msg)
   },
   
-  plot_pred_1d = function(X_new, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL, Y_new=NULL, ...) {
-  
+  plot_pred_1d = function(X_new, include_nugget=TRUE, include_interval=TRUE, interval_method="pm_std_dev",
+                          N_std_dev=1, CI_prob=0.9, pred_list=NULL, Y_new=NULL, plot_title=NULL, ...) {
+    
     assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
     
     # Compute required predictive quantities if not already provided. 
@@ -268,12 +269,12 @@ gpWrapper$methods(
       pred_list <- predict(X_new, return_mean=TRUE, return_var=TRUE, include_nugget=include_nugget)
     }
     
-    CI_tail_prob <- 0.5 * (1-CI_prob)
     plts <- vector(mode="list", length=Y_dim)
     for(i in 1:Y_dim) {
       plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], pred_var=pred_list$var[,i], 
-                                         CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], y_design=Y[,i], 
-                                         xlab=X_names, ylab=Y_names[i], ...)
+                                         include_interval=include_interval, interval_method=interval_method, 
+                                         N_std_dev=N_std_dev, CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], 
+                                         y_design=Y[,i], xlab=X_names, ylab=Y_names[i], plot_title=plot_title, ...)
     }
     
     return(plts)
@@ -285,7 +286,7 @@ gpWrapper$methods(
     # Returns a list of heatmaps for the predictive mean and standard deviation. 
     
     assert_that(X_dim==2, msg=paste0("plot_pred_2d() requires 1d input space. X_dim = ", X_dim))
-    
+    stop("gpWrapper$plot_pred_2d not yet implemented.")
   },
   
   

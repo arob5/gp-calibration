@@ -91,9 +91,6 @@ plot(test_info$input, exp(test_info$llik), type="l",
 seed_init_design <- 23
 set.seed(seed_init_design)
 
-# Probability for confidence intervals to use in plots. 
-CI_prob <- pnorm(1) - pnorm(-1) # i.e., plot +/- 1 std dev 
-
 # Generate design. 
 N_design <- 7
 design_info <- list()
@@ -123,13 +120,34 @@ emulator_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 
 
 ```{r}
-# Plots 
+#
+# Emulator Distribution plots.  
+#
+
+# Probability for confidence intervals to use in plots. 
+CI_prob <- pnorm(1) - pnorm(-1) # i.e., plot +/- 1 std dev 
+
+# (1): Plot the underlying GP emulator predictive distributions.  
+plt_em_model_llik <- em_llik$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE, interval_method="CI",
+                                                         CI_prob=CI_prob, pred_list=emulator_pred_llik, 
+                                                         Y_new=matrix(test_info$llik, ncol=1), plot_title="GP predictions [llik]")[[1]]
+plot(plt_em_model_llik)
+
+
+# (2): Plot the log-likelihood emulator predictive distributions. 
+
+# (3): Plot the likelihood emulator predictive distributions. 
+
+
 
 em_llik$plot_pred_1d(test_info$input, include_interval=TRUE, true_llik=test_info$llik, 
-                     CI_prob=CI_prob, plot_type="lik", emulator_pred_list=emulator_pred_llik, interval_method="pm_std_dev")
+                     CI_prob=CI_prob, plot_type="lik", emulator_pred_list=emulator_pred_llik, 
+                     interval_method="pm_std_dev", plot_title="log-likelihood emulator distribution (llik emulation)")
 em_llik$plot_samp_1d(test_info$input, lik_par_val=inv_prob$sig2_true, N_samp=5, 
                      plot_type="lik", true_llik=test_info$llik, include_design=TRUE, 
                      emulator_pred_list=emulator_pred_llik)
+
+
 
 em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
                     plot_type="lik", include_interval=FALSE, true_llik=test_info$llik)
@@ -138,14 +156,27 @@ em_fwd$emulator_model$plot_pred_1d(test_info$input, CI_prob=CI_prob, Y_new=matri
 em_fwd$plot_samp_1d(test_info$input, N_samp=5, plot_type="lik", true_llik=test_info$llik, 
                     include_design=TRUE, emulator_pred_list=emulator_pred_fwd)
 
-
+#
 # Comparison of different likelihood approximations. 
+#
+
+# Log-likelihood emulation. 
+lik_approx_llik <- em_llik$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
+                                                      emulator_pred_list=emulator_pred_llik)
+lik_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=exp(test_info$llik),
+                                             X_design=design_info$input, y_design=exp(design_info$llik),
+                                             plot_title="Likelihood Approximations: llik emulation",
+                                             xlab="u", ylab="Likelihood")
+
+# Forward model emulation. 
 lik_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
                                                     emulator_pred_list=emulator_pred_fwd)
 lik_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=exp(test_info$llik),
                                             X_design=design_info$input, y_design=exp(design_info$llik),
-                                            plot_title="Likelihood Approximations",
+                                            plot_title="Likelihood Approximations: fwd emulation",
                                             xlab="u", ylab="Likelihood")
+
+plot(lik_approx_llik_plt)
 plot(lik_approx_fwd_plt)
 
 ```
