@@ -338,16 +338,16 @@ llikEmulator$methods(
     input <- .self$get_input(input)
     
     # Compute required predictive quantities if not already provided. 
+    true_vals <- true_llik
     if(plot_type == "llik") {
       pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
                                  return_mean=TRUE, return_var=include_interval, 
                                  conditional=conditional, normalize=normalize, ...)
-      true_vals <- true_llik
     } else {
       pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
                                      return_mean=TRUE, return_var=include_interval, conditional=conditional, 
                                      normalize=normalize, log_scale=FALSE, ...)
-      true_vals <- exp(true_llik)
+      if(!is.null(true_vals)) true_vals <- exp(true_vals)
     }
     
     # Plot title and labels.
@@ -1269,8 +1269,15 @@ llikEmulatorExactGaussDiag$methods(
 # y|u ~ N(G(u), Sig) where the forward model G is replaced by a 
 # Gaussian process (GP) emulator. The forward model may have multiple 
 # outputs, in which case independent GP emulators are fit for 
-# each output. The `lik_par` here is defined to be the covariance
-# matrix `Sig`.
+# each output. The attribute `N_output` is the number of outputs (i.e. the 
+# dimension of the vector returned by G. This class also allows for independent
+# observations, in which case the likelihood takes the form 
+# prod_{n=1}^{N_obs} N(y_n | G(u), Sig), where `N_obs` is the number of 
+# independent observations. Note that G(u) and Sig are assumed constant over 
+# all observations. The `lik_par` for this class is defined to be the 
+# covariance matrix `Sig`. The attribute `y` is the `N_obs` x `N_output`
+# data matrix. If `y` is a numeric vector, then it is assumed that 
+# `N_obs = 1` and the vector is reshaped into a 1 x `N_output` matrix. 
 # -----------------------------------------------------------------------------
 
 llikEmulatorFwdGauss <- setRefClass(
@@ -1287,7 +1294,7 @@ llikEmulatorFwdGauss$methods(
     
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.numeric(y_obs) || is.matrix(y_obs))
-    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, ncol=1, dimnames=list(NULL, "y"))
+    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, nrow=1)
     assert_that(ncol(y_obs) == gp_model$Y_dim)
     initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
     
@@ -1330,13 +1337,13 @@ llikEmulatorFwdGauss$methods(
     L <- get_lik_par(lik_par_val, return_chol=TRUE)
     
     # Construct log likelihood.
-    llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
-    for(i in seq_along(llik)) {
-      llik[i] <- -0.5 * sum(solve(L, t(y - fwd_model_vals[i,]))^2, na.rm=TRUE)
-      if(normalize || !conditional) llik <- llik - N_obs*sum(log(diag(L)))
-      if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
+    llik <- rep(0, nrow(fwd_model_vals))
+    for(n in seq_along(.self$N_obs)) {
+      llik <- llik + colSums(solve(L, add_vec_to_mat_cols(.self$y[n,], -t(fwd_model_vals)))^2)
     }
-    
+    if(normalize || !conditional) llik <- llik - .self$N_obs * sum(log(diag(L)))
+    if(normalize) llik <- llik - 0.5 * .self$N_obs * .self$N_output * log(2*pi)
+
     return(llik)
   }, 
   
@@ -1389,7 +1396,7 @@ llikEmulatorFwdGaussDiag$methods(
     
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.numeric(y_obs) || is.matrix(y_obs))
-    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, ncol=1, dimnames=list(NULL, "y"))
+    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, nrow=1)
     assert_that(ncol(y_obs) == gp_model$Y_dim)
     initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
     
@@ -1452,10 +1459,12 @@ llikEmulatorFwdGaussDiag$methods(
     llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
     for(i in seq_along(llik)) {
       sig2_val_i <- ifelse(inflate_var, sig2_val + var_inflation_vals[i,], sig2_val)
+      llik[i] <- -0.5 * mult_vec_with_mat_cols(1/sig2_val_i, 
+                                               add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2)  
       llik[i] <- -0.5 * rowSums((t(y) - fwd_model_vals[i,])^2) / sig2_val_i
-      if(normalize || !conditional) llik[i] <- llik[i] - 0.5 * N_obs * sum(log(sig2_val_i))
+      if(normalize || !conditional) llik[i] <- llik[i] - 0.5 * .self$N_obs * sum(log(sig2_val_i))
     }
-    if(normalize) llik <- llik - 0.5*N_obs * N_output * log(2*pi)
+    if(normalize) llik <- llik - 0.5*.self$N_obs * .self$N_output * log(2*pi)
     
     return(llik)
   }, 
@@ -1490,6 +1499,50 @@ llikEmulatorFwdGaussDiag$methods(
     return(llik_samp)
   }, 
   
+  predict = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
+                     return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                     input_cross=NULL, conditional=default_conditional,  
+                     normalize=default_normalize, log_scale=FALSE, include_nugget=TRUE, ...) {
+    
+    if(return_cross_cov || return_cov) {
+      stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict()`.")
+    }
+    
+    # Forward model emulator predictions. 
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$predict_emulator(get_input(input), return_mean=TRUE, return_var=TRUE,
+                                                   return_cov=return_cov, return_cross_cov=return_cross_cov, 
+                                                   input_cross=input_cross, include_nugget=include_nugget, ...)
+    } else {
+      assert_that(!is.null(emulator_pred_list$mean) && !is.null(emulator_pred_list$var), 
+                  msg="Log-likelihood predictive quantities require forward model emulator mean and variance.")
+    }
+    
+    # Compute induced likelihood emulator predictions. 
+    llik_pred_list <- list()
+    sig2_val <- get_lik_par(lik_par_val)
+    
+    if(return_mean) {
+      llik_plug_in_mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
+                                         conditional=conditional, normalize=normalize, ...)
+      llik_var_inflation <- -0.5 * .self$N_obs * rowSums(exp(log(emulator_pred_list$var) - rep(log(sig2_val), each=nrow(input))))
+      llik_pred_list$mean <- llik_plug_in_mean + llik_var_inflation
+    }
+    
+    if(return_var) {
+      vars <- vector(mode="numeric", length=nrow(input))
+      for(i in seq_along(vars)) {
+        mse <- colSums(add_vec_to_mat_rows(-emulator_pred_list$mean[i,], .self$y)^2)
+        vars[i] <- .self$N_obs * sum((emulator_pred_list$var[i,] / sig2_val)^2) + 
+                    sum(mse * emulator_pred_list$var[i,] / sig2_val^2)       
+      }
+      
+      llik_pred_list$var <- vars
+    }
+    
+    return(llik_pred_list)
+    
+  },
   
   # TODO: need to think about normalization here. For the marginal approximation, the 
   # determinant part of the Gaussian likelihood depends on u through the GP predictive 
@@ -1521,9 +1574,10 @@ llikEmulatorFwdGaussDiag$methods(
     # Compute induced likelihood emulator predictions. 
     lik_pred_list <- list()
     if(return_mean) {
-      lik_pred_list$mean <- exp(assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
+      lik_pred_list$log_mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
                                               conditional=conditional, normalize=normalize, 
-                                              var_inflation_vals=emulator_pred_list$var, ...))
+                                              var_inflation_vals=emulator_pred_list$var, ...)
+      if(!log_scale) lik_pred_list$mean <- exp(lik_pred_list$log_mean)
     }
     
     if(return_var) {

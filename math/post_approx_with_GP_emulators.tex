@@ -211,13 +211,34 @@ In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approxi
 We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFwd[\Ndesign](\Par)$ is also 
 stochastic, but no longer Gaussian in general; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
 the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by plugging the 
-conditioned forward model emulator into the log-likelihood function. 
-This represents a modular surrogate-modeling approach \cite{modularization}. 
-Emulating expensive models using GPs is one of the central questions 
-studied in the computer experiments literature; see \cite{gramacy2020surrogates} and 
-\cite{design_analysis_computer_experiments} for detailed treatments. Challenges arise when the output
+conditioned forward model emulator into the log-likelihood function, 
+constituting a modular surrogate-modeling approach \cite{modularization}. While the induced stochastic approximation 
+to the likelihood (and posterior density) cannot in general be described explicitly, the Gaussian likelihood 
+example \ref{induced_llik_emulator} represents an important exception. The mean and variance of the induced
+likelihood approximation are given in the following proposition. 
+
+\begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
+Given a GP forward model emulator $\fwdEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
+the plug-in likelihood estimator $\Exp{\llik(\Par; \fwdEm)} = \Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar)$ has 
+mean and variance given by 
+\begin{align}
+\E_{\fwdEm}\left[\Exp{\llik(\Par; \fwdEm)} \right] 
+&= \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
+\Var_{\fwdEm}\left[\Exp{\llik(\Par; \fwdEm)} \right]
+&= \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par)  \right)}{\det(2\pi \likPar)^{1/2}}
+- \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}
+\end{align}
+\end{prop}
+This follows as a special case of \Cref{prop:Gaussian_marginal_moments}, and its implications will be explored in subsequent sections. 
+
+We note that the emulation of expensive models is one of the central questions studied in the 
+computer experiments literature, with GPs arguably representing the most popular tool 
+for the job; see \cite{gramacy2020surrogates} and 
+\cite{design_analysis_computer_experiments} for detailed treatments.
+The forward model emulation strategy detailed above becomes problematic when the output 
 dimension $\dimObs$ is large or the outputs are highly interdependent, rendering the independent GP 
-approach infeasible or ill-advised. For example, the output may correspond to the numerical solution of 
+approach infeasible or ill-advised.
+For example, the forward model output may correspond to the numerical solution of 
 a differential equation and thus may take the form of a time series or spatiotemporal grid. 
 A great deal of literature has addressed these challenges, including approaches tailored to forward models
 with dynamical structure 

@@ -4,12 +4,37 @@
 # Andrew Roberts
 #
 
-add_vec_to_mat_rows <- function() {
-  .NotYetImplemented()
+add_vec_to_mat_rows <- function(v, M) {
+  # `v`: numeric vector of length `n`. 
+  # `M`: matrix with `n` columns. 
+  
+  assert_that(length(v) == ncol(M))
+  M + rep(v, each=nrow(M))
 }
 
-add_vec_to_mat_cols <- function() {
-  .NotYetImplemented()
+add_vec_to_mat_cols <- function(v, M) {
+  # `v`: numeric vector of length `n`. 
+  # `M`: matrix with `n` rows 
+  
+  assert_that(length(v) == nrow(M))
+  v + M
+}
+
+mult_vec_with_mat_rows <- function(v, M) {
+  # `v`: numeric vector of length `n`. 
+  # `M`: matrix with `n` rows 
+  
+  assert_that(length(v) == ncol(M))
+  M * rep(v, each=nrow(M))
+  
+}
+
+mult_vec_with_mat_cols <- function(v, M) {
+  # `v`: numeric vector of length `n`. 
+  # `M`: matrix with `n` rows 
+  
+  assert_that(length(v) == nrow(M))
+  v * M
 }
 
 log_exp_minus_1 <- function(x, threshold=100) {
