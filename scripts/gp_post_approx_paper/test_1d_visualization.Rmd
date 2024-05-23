@@ -111,7 +111,7 @@ emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 # Forward model emulator.
 em_fwd_gp <- gpWrapperHet(design_info$input, matrix(design_info$fwd, ncol=1), normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, y, sig2=inv_prob$sig2_true, 
+em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, matrix(y), sig2=inv_prob$sig2_true, 
                                    default_conditional=default_conditional, 
                                    default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
                                    par_names=rownames(par_prior_params))
@@ -158,8 +158,9 @@ plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=em
                                           plot_type="lik", include_interval=TRUE, interval_method="CI", 
                                           true_llik=test_info$llik, CI_prob=CI_prob,
                                           plot_title="likelihood predictions [llik]")
-plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd,
-                                        plot_type="lik", include_interval=FALSE, interval_method="CI", 
+# TODO: why doesnt this throw an error when using "CI"?
+plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
+                                        plot_type="lik", include_interval=TRUE, interval_method="pm_std_dev", 
                                         true_llik=test_info$llik, CI_prob=CI_prob,
                                         plot_title="likelihood predictions [fwd]")
 

@@ -1385,7 +1385,7 @@ llikEmulatorFwdGauss$methods(
 llikEmulatorFwdGaussDiag <- setRefClass(
   Class = "llikEmulatorFwdGaussDiag", 
   contains = "llikEmulator",
-  fields = list(y="ANY", N_output="integer", N_obs="integer")
+  fields = list(y="matrix", N_output="integer", N_obs="integer")
   
 )
 
@@ -1395,8 +1395,7 @@ llikEmulatorFwdGaussDiag$methods(
                         default_normalize=FALSE, use_fixed_lik_par=FALSE, par_names=NULL, ...) {
     
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
-    assert_that(is.numeric(y_obs) || is.matrix(y_obs))
-    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, nrow=1)
+    assert_that(is.matrix(y_obs))
     assert_that(ncol(y_obs) == gp_model$Y_dim)
     initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
     
@@ -1547,6 +1546,8 @@ llikEmulatorFwdGaussDiag$methods(
   # TODO: need to think about normalization here. For the marginal approximation, the 
   # determinant part of the Gaussian likelihood depends on u through the GP predictive 
   # variance. 
+  # TODO: currently the variance calculations below implicitly assume a normalized 
+  # likelihood; need to fix this. 
   predict_lik = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE,  
                          return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                          input_cross=NULL, conditional=default_conditional,  
@@ -1573,15 +1574,26 @@ llikEmulatorFwdGaussDiag$methods(
     
     # Compute induced likelihood emulator predictions. 
     lik_pred_list <- list()
+    sig2 <- .self$get_lik_par(lik_par_val)
     if(return_mean) {
-      lik_pred_list$log_mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
+      lik_pred_list$log_mean <- assemble_llik(emulator_pred_list$mean, lik_par_val=sig2, 
                                               conditional=conditional, normalize=normalize, 
                                               var_inflation_vals=emulator_pred_list$var, ...)
       if(!log_scale) lik_pred_list$mean <- exp(lik_pred_list$log_mean)
     }
     
     if(return_var) {
-      .NotYetImplemented()
+      log_num1 <- assemble_llik(emulator_pred_list$mean, lik_par_val=0.5 * sig2, 
+                                conditional=conditional, normalize=normalize, 
+                                var_inflation_vals=emulator_pred_list$var, ...)
+      log_num2 <- assemble_llik(emulator_pred_list$mean, lik_par_val=0.5 * sig2, 
+                                conditional=conditional, normalize=normalize, 
+                                var_inflation_vals=0.5 * emulator_pred_list$var, ...)
+      log_2pi_term <- 0.5 * .self$N_obs * .self$N_output * log(2*pi)
+      log_denom1 <-  log_2pi_term  + 0.5 * .self$N_obs * sum(log(sig2))
+      log_denom2 <- log_2pi_term + 0.5 * .self$N_obs * rowSums(log(add_vec_to_mat_rows(sig2, emulator_pred_list$var)))
+      lik_pred_list$log_var <- log_diff_exp(log_num1 - log_denom1, log_num2 - log_denom2)
+      if(!log_scale) lik_pred_list$var <- exp(lik_pred_list$log_var)
     }
   
     return(lik_pred_list)
