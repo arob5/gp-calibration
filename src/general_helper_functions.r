@@ -52,10 +52,32 @@ log_exp_minus_1 <- function(x, threshold=100) {
   #               point where the approximation is applied. 
   #
   # Returns: 
-  #    The approximated value log(exp(x)-1), which will be the same 
+  #    The approximated value of log(exp(x)-1), which will be the same 
   #    class and shape as `x`. 
   
   idx_small_vals <- (x < threshold)
   x[idx_small_vals] <- log(exp(x[idx_small_vals]) - 1) 
   return(x)
 }
+
+
+log_diff_exp <- function(x, y, threshold=100) {
+  # A numerically stable implementation of log{e^x - e^y}. The expression
+  # is computed using:
+  # log{e^x - e^y} = log{e^y * [e^{x-y} - 1]} = b + log{e^{x-y} - 1} = b + log_exp_minus_1(x-y).
+  # When `x`, `y` are numeric vectors of length greater than 1, then the computation 
+  # is vectorized (computed for each element). 
+  #
+  # Args:
+  #    x,y: numeric vectors of equal length. 
+  #    threshold: numeric(1), passed to `log_exp_minus_1`. 
+  #
+  # Returns: 
+  #    Approximated value of log{e^x - e^y}, which will be the same class and 
+  #    shape as `x` and `y`. 
+  
+  x + log_exp_minus_1(x-y, threshold=threshold)
+}
+
+
+
