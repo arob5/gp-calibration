@@ -8,6 +8,7 @@
 
 \newcommand{\cst}{C}
 \newcommand{\eqDist}{\overset{d}{=}} % Equality in distribution 
+\newcommand{\diag}{\textrm{diag}}
 
 
 % --------------------------------------------------------------------------------------------------
@@ -106,16 +107,16 @@
 \newcommand{\fwdEmQDens}[1][\Ndesign]{\fwdEmQ[#1]{\postDens}} 
 
 % Joint marginal approximations. 
-\newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\text{joint-marg}}}
-\newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,joint-marg}}}
+\newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\textrm{joint-marg}}}
+\newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
 
 % Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
-\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\text{mcwmh-joint}}}
-\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mcwmh-joint}}}
+\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\textrm{mcwmh-joint}}}
+\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,mcwmh-joint}}}
 
 % Design. 
 \newcommand{\Nbatch}{B}
-\newcommand{\Nrounds}{K_{\text{design}}}
+\newcommand{\Nrounds}{K_{\textrm{design}}}
 \newcommand{\designIndex}{k}
 \newcommand{\Naugment}{\Ndesign + \Nbatch}
 \newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
@@ -133,16 +134,16 @@
 \newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
 
 % Acquisition functions 
-\newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\text{#2}}}
-\newcommand{\maxvarLabel}{\text{max-var}}
-\newcommand{\maxentLabel}{\text{max-ent}}
-\newcommand{\intvarLabel}{\text{int-var}}
-\newcommand{\intentLabel}{\text{int-ent}}
-\newcommand{\maxexpvarLabel}{\text{max-exp-var}}
-\newcommand{\maxexpentLabel}{\text{max-exp-ent}}
-\newcommand{\intExpVarLabel}{\text{int-exp-var}}
-\newcommand{\fwdintExpVarLabel}{\fwd \text{,}\intExpVarLabel}
-\newcommand{\intExpEntLabel}{\text{int-exp-ent}}
+\newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\textrm{#2}}}
+\newcommand{\maxvarLabel}{\textrm{max-var}}
+\newcommand{\maxentLabel}{\textrm{max-ent}}
+\newcommand{\intvarLabel}{\textrm{int-var}}
+\newcommand{\intentLabel}{\textrm{int-ent}}
+\newcommand{\maxexpvarLabel}{\textrm{max-exp-var}}
+\newcommand{\maxexpentLabel}{\textrm{max-exp-ent}}
+\newcommand{\intExpVarLabel}{\textrm{int-exp-var}}
+\newcommand{\fwdintExpVarLabel}{\fwd \textrm{,}\intExpVarLabel}
+\newcommand{\intExpEntLabel}{\textrm{int-exp-ent}}
 \newcommand{\Ent}{H} % Entropy 
 \newcommand{\weightDens}{\rho}
 \newcommand{\varInflation}{v}

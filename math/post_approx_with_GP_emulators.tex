@@ -189,7 +189,8 @@ standard inference algorithms intractable for solving Bayesian inverse problems 
 evaluations that must be conducted iteratively. The main idea of model emulation is to front-load the forward model 
 runs, which can often be computed in parallel, to obtain a design $\{\designIn, \fwd(\designIn)\}$ or 
 $\{\designIn, \llik(\designIn)\}$ which can then be used to train a model that 
-approximates $\fwd$ or $\llik$.
+approximates $\fwd$ or $\llik$. A basic illustration of forward model and log-likelihood GP emulators, along with the 
+(log) likelihood approximations they induce, is provided in \Cref{fig:em_dist_1d}. 
 
 \subsubsection{Forward Model Emulation}
 If the output dimension $\dimObs$ is reasonably small, then a common approach is to specify an independent 
@@ -267,7 +268,25 @@ is specified and the predictive distribution
 \end{align*}
 is obtained by conditioning on the design $\{\designIn, \llik(\designIn)\}$. 
 The distribution of $\llikEm[\Ndesign]$ is Gaussian, unlike
-the log-likelihood surrogate $\llikEmFwd[\Ndesign]$ in the forward model emulation setting. 
+the log-likelihood surrogate $\llikEmFwd[\Ndesign]$ in the forward model emulation setting. The analog to 
+\Cref{fwd_em_lik_emulator_moments_Gaussian} is stated below. In this case, the distribution of the induced likelihood 
+surrogate is immediately seen to be log-normal
+\footnote{If $f \sim \GP(\gpMean, \gpKer)$ then we refer to the exponential of $f$ as a \textit{log-normal process}, 
+denoted by $\Exp{f} \sim \LNP(\gpMean, \gpKer)$.}.
+
+\begin{prop} \label{llik_em_lik_emulator_moments}
+Given a GP log-likelihood emulator $\llikEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$, 
+the induced likelihood surrogate is a log-normal process
+$\Exp{\llikEm[\Ndesign]} \sim \LNP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$, with mean and variance given 
+by 
+\begin{align}
+\E_{\llikEm}\left[\Exp{\llikEm(\Par)} \right] 
+&= \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} \\
+\Var_{\llikEm}\left[\Exp{\llikEm(\Par)} \right] 
+&= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par) - 1} \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
+\end{align}
+\end{prop}
+
 The use of GPs to approximate log-likelihoods has been widely used in approximate Bayesian inference 
 (\cite{VehtariParallelGP, Kandasamy_2017, llikRBF, trainDynamics, quantileApprox, wang2018adaptive, landslideCalibration})
 and Bayesian quadrature (\cite{BayesQuadrature, BayesQuadRatios}). In the context of inverse problems with 
@@ -286,7 +305,7 @@ case, a surrogate can be constructed to approximate the sufficient statistic $\n
 which does not depend on the likelihood parameter $\sigma^2$. 
 Finally, we note that it may be difficult to incorporate prior domain knowledge 
 into the GP prior for the log-likelihood, whereas in certain settings it is easier to do so when constructing a forward model 
-surrogate \cite{GP_PDE_priors}. The paper \ref{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
+surrogate \cite{GP_PDE_priors}. The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
 work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
 a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
 Despite all of these challenges, we emphasize that the reduction to a scalar-valued output space is a significant benefit which 
@@ -334,13 +353,14 @@ may outweigh the downsides of log-likelihood emulation in many applications.
          \caption{$\Exp{\llikEm}$}
          \label{fig:five over x}
      \end{subfigure}
-        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$).
+        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$)
+        with $\fwd(\Par) = \sin(\Par) + 0.1 \Par$ and a single observation $\obs = 0$. 
         The top and bottom rows correspond to the forward model emulation and log-likelihood emulation settings, respectively. 
         The columns correspond to (1) the underlying GP emulator; (2) the log-likelihood emulator induced by the underlying GP; 
         (3) the likelihood emulator induced by the underlying GP. Note that in the log-likelihood emulation case (1) and (2)
         are identical. The blue dashed black line is the ground truth forward model or (log) likelihood and the red points are the 
         design points used for emulator training. The blue line is the mean of the respective emulators, and the gray area 
-        covers the area within one standard deviation of the mean.}
+        covers the region within one standard deviation of the mean.}
         \label{fig:em_dist_1d}
 \end{figure}
 
@@ -413,12 +433,8 @@ We refer to these posteriors as \textit{marginal approximations} following the t
 
 Marginal approximations can be justified in various ways. \todo
 
-We now consider performing inference for the approximations \ref{post_dens_marg_fwd} and \ref{post_dens_marg_llik}. 
-In the log-likelihood emulation setting, observe that the induced likelihood approximation is log-normally distributed
-\begin{align}
-\Exp{\llikEm[\Ndesign](\Par)} &\sim \LN(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par)), 
-\end{align}
-which implies that \ref{post_dens_marg_llik} simplifies to 
+In the log-likelihood emulation setting, the expectation in \ref{post_dens_marg_llik} is provided by 
+\Cref{llik_em_lik_emulator_moments}, which yields 
 \begin{align}
 \llikEmMargDens[\Ndesign](\Par) 
 &\Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} 
@@ -428,15 +444,17 @@ which implies that \ref{post_dens_marg_llik} simplifies to
 \end{align}
 The final expression \ref{post_dens_marg_var_inflation} can be interpreted as a form of posterior inflation 
 in regions where the emulator is uncertain. When $\emKer[\Ndesign]{\llik}(\Par) = 0$ the marginal approximation 
-reduces to the mean approximation. While the unnormalized posterior density \ref{post_dens_marg_var_inflation}
+reduces to the mean approximation. Otherwise, the inflation factor is an increasing function of 
+$\emKer[\Ndesign]{\llik}(\Par)$, irrespective of the mean $\emMean[\Ndesign]{\llik}(\Par)$. 
+While the unnormalized posterior density \ref{post_dens_marg_var_inflation}
 can be plugged into off-the-shelf sampling algorithms, the uncertainty inflation term can cause highly multi-modal 
 distributions which prove difficult for standard MCMC schemes. (\todo: add plot) This difficulty is noted in the 
 supplement of \cite{VehtariParallelGP}. 
 
 The expectation in the forward model emulation case 
 \ref{post_dens_marg_fwd} is generally intractable, though pseudo-marginal MCMC methods offer a potential 
-avenue for inference \cite{pseudoMarginalMCMC}. In the special case of a Gaussian likelihood \ref{llik_Gaussian}, 
-the expectation admits the closed-form expression
+avenue for inference \cite{pseudoMarginalMCMC}. \Cref{fwd_em_lik_emulator_moments_Gaussian} provides the 
+following closed-form expression in the special case of a Gaussian likelihood
 \begin{align}
 \fwdEmMargDens[\Ndesign](\Par) 
 &= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right]
@@ -456,7 +474,9 @@ v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
 \end{align}
 where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
 \ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
-from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}. 
+from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
+[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
+of distance from $\obs$ to the GP mean prediction].  
 The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
 \cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}. 
 
@@ -594,7 +614,7 @@ given that $\accProbRatio(\Par, \propPar)$ differs from $\likRatio(\Par, \propPa
 constant (with respect to the emulator). Thus, the approximations 
 $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
 $\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)$ induce identical inference algorithms. 
-Marginalizing the acceptance probability directly proves more interesting, yielding
+Marginalizing the acceptance probability directly instead yields 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
 &\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] \\
@@ -645,19 +665,19 @@ emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$.
 \end{algorithm}
 
 We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$.
-Below we consider three such choices. In each case, we show that the transition kernel defining the Markov chain 
-of the respective algorithm coincides with that of one of the deterministic approximations considered in the previous 
+Below we consider various choices, and show that the transition kernel defining the Markov chain of the 
+respective algorithm coincides with that of one of the deterministic approximations considered in the previous 
 section. Thus, the noisy MCMC algorithms provide alternative inference algorithms for sampling from the previously 
 considered approximate posteriors. Moreover, in the forward model emulation setting, they also generalize to 
 situations in which the deterministic approximations yield intractable integrals. For example, these algorithms are 
-not restricted to the setting of a Gaussian likelihood when using forward model surrogates. 
+not restricted to the setting of a Gaussian likelihood when using forward model emulators. 
 We use the notation $\parMat \Def \{\Par, \propPar\}$ in the below definitions. 
 
 \paragraph{Joint Monte Carlo Within Metropolis-Hastings.}
 We first consider setting $\llikSampDist_{\Par, \propPar}$ to be the joint distribution of 
 $[\llikEm[\Ndesign](\Par), \llikEm[\Ndesign](\propPar)]$, 
 \begin{align}
-\llikSampDist_{\Par, \propPar} = \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)).
+\llikSampDist_{\Par, \propPar} \Def \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)).
 \label{llik_dist_MCWMH-joint}
 \end{align}
 We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings (MCWMH-joint)}. 
@@ -673,19 +693,14 @@ Markov chain. The transition kernel of this Markov chain is given by
 \label{MCWMH-joint-kernel}
 \end{align}
 which is derived in the appendix, \Cref{transition_kernel_derivations}. This is precisely the transition kernel of the Markov chain 
-defined by the deterministic joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. 
-
-\paragraph{Independent Monte Carlo Within Metropolis-Hastings.}
-An alternative is to sample the log-likelihood values independently, without considering the GP covariance; i.e., 
-\begin{align}
-\llikSampDist_{\Par, \propPar} 
-= \Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}\right).
-\label{llik_dist_MCWMH-ind}
-\end{align}
-We refer to the resulting algorithm as \textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-ind)}. Analogously to the 
-joint case, the transition kernel of this algorithm is given by \ref{MCWMH-joint-kernel} but with the marginal acceptance probabilities computed
-with respect to $\Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar)\right\}\right)$
-in place of the full joint distribution. The \textit{MCWMH-ind} algorithm is utilized to calibrate expensive ecosystem models 
+defined by the deterministic joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. We note that 
+one might also consider setting 
+$\llikSampDist_{\Par, \propPar} 
+\Def \Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \diag\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$; 
+that is, ignore the GP covariance structure. We refer to the resulting algorithm
+\textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-Ind)} and consider this choice as a basis for 
+comparison to assess the influence of incorporating the GP covariance in the approximate posterior [\todo]. 
+An algorithm similar to \textit{MCWMH-ind} is utilized to calibrate expensive ecosystem models 
 in \cite{FerEmulation}. 
 
 \paragraph{Pseudo-Marginal Metropolis-Hastings.}
@@ -1247,7 +1262,7 @@ These quantities thus give
 \end{align}
 which follows from same derivations for the standard MH kernel \ref{MH-kernel} with the marginal acceptance probabilities substituted for
 the original ones. The transition kernel for the \textit{MCWMH-ind} algorithm follows immediately by marginalizing with respect 
-to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \text{diag}\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
+to $\Gaussian(\emMean[\Ndesign]{\llik}\left(\parMat), \diag\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$
 in place of the full joint distribution. 
 
 \subsection{Sequential Design Calculations}
