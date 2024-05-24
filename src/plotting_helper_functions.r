@@ -11,7 +11,7 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
                                   include_interval=TRUE, interval_method="pm_std_dev",
                                   N_std_dev=1, CI_prob=0.9, y_new=NULL, X_design=NULL, y_design=NULL,
                                   transformation=NULL, plot_title=NULL, xlab="x", ylab="y",
-                                  ground_truth_col="black", design_col="black") {
+                                  ground_truth_col="black", design_color="black", ...) {
   # Produces a Gaussian process prediction plot for one-dimensional input space. 
   #
   # Args:
@@ -65,7 +65,7 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
   plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_interval,
                              CI_lower=CI_lower, CI_upper=CI_upper, y_new=y_new, X_design=X_design,
                              y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab, 
-                             ground_truth_col=ground_truth_col, design_col=design_col) 
+                             ground_truth_col=ground_truth_col, design_color=design_color, ...) 
   return(plt)
 }
 
@@ -74,7 +74,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
                                 include_CI=!is.null(CI_lower), CI_lower=NULL, CI_upper=NULL, 
                                 y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
                                 xlab="x", ylab="y", ground_truth_col="black", 
-                                design_col="black") {
+                                design_color="black", design_pt_size=1.5, line_thickness=1.0) {
   # This is used by the `gpWrapper` and `llikEmulator` classes to produce plots 
   # summarizing the predictive distribution in the case of a 1d input space. It provides 
   # a generic interface to plot the fit to a curve over a one-dimensional input space 
@@ -99,17 +99,18 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
   # True values at prediction locations. 
   if(!is.null(y_new)) {
     df_pred$y_true <- y_new
-    plt <- plt + geom_line(aes(x=x, y=y_true), df_pred, color=ground_truth_col, linetype="dashed")
+    plt <- plt + geom_line(aes(x=x, y=y_true), df_pred, color=ground_truth_col, 
+                           linetype="dashed", linewidth=line_thickness)
   }
   
   # Base plot: mean at prediction locations.
-  plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue") + 
+  plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue", linewidth=line_thickness) + 
                ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
-    plt <- plt + geom_point(aes(x,y), df_design, color=design_col)
+    plt <- plt + geom_point(aes(x,y), df_design, color=design_color, size=design_pt_size)
   }
   
   return(plt)
@@ -119,7 +120,8 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 
 plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design), 
                                   y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y", ground_truth_col="black", design_col="black") {
+                                  xlab="x", ylab="y", ground_truth_col="black", design_color="black", 
+                                  design_pt_size=1.5, line_thickness=1.0) {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
@@ -141,17 +143,18 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   # True values at prediction locations. 
   if(!is.null(y_new)) {
     df_true <- data.frame(x=drop(X_new), y=drop(y_new))
-    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, linetype="dashed")  
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, 
+                           linetype="dashed", linewidth=line_thickness)  
   }
   
   plt <- plt + 
-          geom_line(aes(x=x, y=y, col=approx), df_pred) + 
+          geom_line(aes(x=x, y=y, col=approx, linewidth=line_thickness), df_pred) + 
           ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
-    plt <- plt + geom_point(aes(x,y), df_design, color=design_col)
+    plt <- plt + geom_point(aes(x,y), df_design, color=design_color, size=design_pt_size)
   }
   
   return(plt)
@@ -300,23 +303,29 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
 
 
 # -----------------------------------------------------------------------------
-# ggplot themes 
+# ggplot themes and formatting functions. 
 # -----------------------------------------------------------------------------
 
-ggtheme_journal <- function(legend_position="none") {
+ggtheme_journal <- function(legend_position="none", title_size=35) {
   
-  theme(legend.position=legend_position, 
-        panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
-        panel.background=element_blank(), panel.border=element_blank(), 
-        axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
-        axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
-        plot.background=element_blank(), 
-        axis.title=element_text(size=22), 
-        plot.title=element_text(size=35))
+  theme_journal <- theme(legend.position=legend_position, 
+                    panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
+                    panel.background=element_blank(), panel.border=element_blank(), 
+                    axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
+                    axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
+                    plot.background=element_blank(), 
+                    axis.title=element_text(size=22), 
+                    plot.title=element_text(size=title_size))
   
+  return(theme_journal)
 }
 
-
+ggformat_journal <- function(plt, remove_title=TRUE, ...) {
+  
+  if(remove_title) plt <- plt + ggtitle(NULL)
+  
+  plt + ggtheme_journal(...)
+}
 
 
 

@@ -297,44 +297,50 @@ may outweigh the downsides of log-likelihood emulation in many applications.
      \begin{subfigure}[b]{0.3\textwidth} % GP dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_fwdem.png}}
-         \caption{$y=x$}
+         \caption{$\fwdEm$}
          \label{fig:y equals x}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_fwdem.png}}
-         \caption{$y=3\sin x$}
+         \caption{$\llikEmFwd$}
          \label{fig:three sin x}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_fwdem.png}}
-         \caption{$y=5/x$}
+         \caption{$\Exp{\llikEmFwd}$}
          \label{fig:five over x}
      \end{subfigure}
           \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_llikem.png}}
-         \caption{$y=x$}
+         \caption{$\llikEm$}
          \label{fig:y equals x}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_llikem.png}}
-         \caption{$y=3\sin x$}
+         \caption{$\llikEm$}
          \label{fig:three sin x}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_llikem.png}}
-         \caption{$y=5/x$}
+         \caption{$\Exp{\llikEm}$}
          \label{fig:five over x}
      \end{subfigure}
-        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$).}
+        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$).
+        The top and bottom rows correspond to the forward model emulation and log-likelihood emulation settings, respectively. 
+        The columns correspond to (1) the underlying GP emulator; (2) the log-likelihood emulator induced by the underlying GP; 
+        (3) the likelihood emulator induced by the underlying GP. Note that in the log-likelihood emulation case (1) and (2)
+        are identical. The blue dashed black line is the ground truth forward model or (log) likelihood and the red points are the 
+        design points used for emulator training. The blue line is the mean of the respective emulators, and the gray area 
+        covers the area within one standard deviation of the mean.}
         \label{fig:em_dist_1d}
 \end{figure}
 

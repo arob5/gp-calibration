@@ -260,7 +260,8 @@ gpWrapper$methods(
   },
   
   plot_pred_1d = function(X_new, include_nugget=TRUE, include_interval=TRUE, interval_method="pm_std_dev",
-                          N_std_dev=1, CI_prob=0.9, pred_list=NULL, Y_new=NULL, plot_title=NULL, ...) {
+                          N_std_dev=1, CI_prob=0.9, pred_list=NULL, Y_new=NULL, plot_title=NULL, 
+                          xlab=NULL, ylab=NULL, ...) {
     
     assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
     
@@ -269,12 +270,19 @@ gpWrapper$methods(
       pred_list <- predict(X_new, return_mean=TRUE, return_var=TRUE, include_nugget=include_nugget)
     }
     
+    # Default x-axis label.
+    if(is.null(xlab)) xlab <- X_names
+
     plts <- vector(mode="list", length=Y_dim)
     for(i in 1:Y_dim) {
+      
+      # Default y-axis label. 
+      if(is.null(ylab)) ylab <- Y_names[i]
+      
       plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], pred_var=pred_list$var[,i], 
                                          include_interval=include_interval, interval_method=interval_method, 
                                          N_std_dev=N_std_dev, CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], 
-                                         y_design=Y[,i], xlab=X_names, ylab=Y_names[i], plot_title=plot_title, ...)
+                                         y_design=Y[,i], xlab=xlab, ylab=ylab, plot_title=plot_title, ...)
     }
     
     return(plts)

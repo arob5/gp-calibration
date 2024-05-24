@@ -330,12 +330,16 @@ llikEmulator$methods(
                           conditional=default_conditional, normalize=default_normalize,
                           include_interval=TRUE, interval_method="pm_std_dev",
                           N_std_dev=1, CI_prob=0.9, true_llik=NULL, 
-                          include_design=TRUE, xlab=input_names, ylab=plot_type, plot_title=NULL, ...) {
+                          include_design=TRUE, xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
     
     assert_that(dim_input==1, msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
     assert_that(plot_type %in% c("llik", "lik"))
     
     input <- .self$get_input(input)
+    
+    # Default axis labels. 
+    if(is.null(xlab)) xlab <- input_names
+    if(is.null(ylab)) ylab <- plot_type
     
     # Compute required predictive quantities if not already provided. 
     true_vals <- true_llik
