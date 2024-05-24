@@ -137,6 +137,8 @@ plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_i
 
 plot(plt_gp_dist_llik)
 plot(plt_gp_dist_fwd)
+ggsave(file.path(output_dir, "gp_dist_llikem.png"), plt_gp_dist_llik)
+ggsave(file.path(output_dir, "gp_dist_fwdem.png"), plt_gp_dist_fwd)
 
 
 # (2): Plot the log-likelihood emulator predictive distributions. 
@@ -151,6 +153,8 @@ plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emu
 
 plot(plt_llik_dist_llik)
 plot(plt_llik_dist_fwd)
+ggsave(file.path(output_dir, "llik_dist_llikem.png"), plt_llik_dist_llik)
+ggsave(file.path(output_dir, "llik_dist_fwdem.png"), plt_llik_dist_fwd)
 
 
 # (3): Plot the likelihood emulator predictive distributions. 
@@ -162,10 +166,12 @@ plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=em
 plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
                                         plot_type="lik", include_interval=TRUE, interval_method="pm_std_dev", 
                                         true_llik=test_info$llik, CI_prob=CI_prob,
-                                        plot_title="likelihood predictions [fwd]")
+                                        plot_title="likelihood predictions [fwd]") + ggtheme_journal()
 
 plot(plt_lik_dist_llik)
 plot(plt_lik_dist_fwd)
+ggsave(file.path(output_dir, "lik_dist_llikem.png"), plt_lik_dist_llik)
+ggsave(file.path(output_dir, "lik_dist_fwdem.png"), plt_lik_dist_fwd)
 ```
 
 ```{r}

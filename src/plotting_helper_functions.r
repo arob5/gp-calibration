@@ -298,3 +298,32 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   return(plt)
 }
 
+
+# -----------------------------------------------------------------------------
+# ggplot themes 
+# -----------------------------------------------------------------------------
+
+ggtheme_journal <- function(legend_position="none") {
+  
+  theme(legend.position=legend_position, 
+        panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
+        panel.background=element_blank(), panel.border=element_blank(), 
+        axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
+        axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
+        plot.background=element_blank(), 
+        axis.title=element_text(size=22), 
+        plot.title=element_text(size=35))
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+

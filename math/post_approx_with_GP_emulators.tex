@@ -11,6 +11,8 @@
 \usepackage{algpseudocode} % Note that this also loads algorithmicx
 \usepackage{cleveref}
 \usepackage{bbm}
+\usepackage{caption, subcaption} % Captions and sub-figures. 
+% \usepackage[demo]{graphicx}
 
 % Plotting
 \usepackage{pgfplots}
@@ -30,7 +32,7 @@
 \setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
 
 % For embedding images
-\graphicspath{ {./images/} }
+\graphicspath{{../output/gp_post_approx_paper/}}
 
 % Specifically for paper formatting 
 \renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
@@ -289,6 +291,52 @@ work well for log-likelihood emulation, perhaps reflecting the fact that many lo
 a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
 Despite all of these challenges, we emphasize that the reduction to a scalar-valued output space is a significant benefit which 
 may outweigh the downsides of log-likelihood emulation in many applications. 
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.3\textwidth} % GP dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_fwdem.png}}
+         \caption{$y=x$}
+         \label{fig:y equals x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_fwdem.png}}
+         \caption{$y=3\sin x$}
+         \label{fig:three sin x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_fwdem.png}}
+         \caption{$y=5/x$}
+         \label{fig:five over x}
+     \end{subfigure}
+          \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_llikem.png}}
+         \caption{$y=x$}
+         \label{fig:y equals x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_llikem.png}}
+         \caption{$y=3\sin x$}
+         \label{fig:three sin x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_llikem.png}}
+         \caption{$y=5/x$}
+         \label{fig:five over x}
+     \end{subfigure}
+        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$).}
+        \label{fig:em_dist_1d}
+\end{figure}
 
 % Posterior Approximation
 \section{Posterior Approximation}
