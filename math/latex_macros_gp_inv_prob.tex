@@ -111,8 +111,11 @@
 \newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
 
 % Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
-\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\textrm{mcwmh-joint}}}
-\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,mcwmh-joint}}}
+\newcommand{\mcwmhJointLabel}{\textrm{mcwmh-joint}}
+\newcommand{\mcwmhIndLabel}{\textrm{mcwmh-ind}}
+\newcommand{\mhPseudoMargLabel}{\textrm{mh-pseudo-marg}}
+\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\mcwmhJointLabel}}
+\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,\mcwmhJointLabel}}}
 
 % Design. 
 \newcommand{\Nbatch}{B}

@@ -680,10 +680,10 @@ $[\llikEm[\Ndesign](\Par), \llikEm[\Ndesign](\propPar)]$,
 \llikSampDist_{\Par, \propPar} \Def \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)).
 \label{llik_dist_MCWMH-joint}
 \end{align}
-We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings (MCWMH-joint)}. 
+We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings} ($\mcwmhJointLabel$). 
 Like the deterministic joint marginal approximations \ref{lik_ratio_joint_marg} and \ref{acc_prob_joint_marg}, 
-the \textit{MCWMH-joint} algorithm takes into account the GP covariance structure. Note that since the log-likelihood
-values are sampled independently across iterations, the \textit{MCWMH-joint} algorithm does indeed define a valid 
+the $\mcwmhJointLabel$ algorithm takes into account the GP covariance structure. Note that since the log-likelihood
+values are sampled independently across iterations, the $\mcwmhJointLabel$ algorithm does indeed define a valid 
 Markov chain. The transition kernel of this Markov chain is given by 
 \footnote{We denote by $\delta_{x}$ the Dirac measure centered at a point $x$, which assigns a unit point mass to $x$.}
 \begin{align}
@@ -698,9 +698,9 @@ one might also consider setting
 $\llikSampDist_{\Par, \propPar} 
 \Def \Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \diag\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$; 
 that is, ignore the GP covariance structure. We refer to the resulting algorithm
-\textit{Independent Monte Carlo Within Metropolis-Hastings (MCWMH-Ind)} and consider this choice as a basis for 
+\textit{Independent Monte Carlo Within Metropolis-Hastings} ($\mcwmhIndLabel$) and consider this choice as a basis for 
 comparison to assess the influence of incorporating the GP covariance in the approximate posterior [\todo]. 
-An algorithm similar to \textit{MCWMH-ind} is utilized to calibrate expensive ecosystem models 
+An algorithm similar to $\mcwmhIndLabel$ is utilized to calibrate expensive ecosystem models 
 in \cite{FerEmulation}. 
 
 \paragraph{Pseudo-Marginal Metropolis-Hastings.}
@@ -715,11 +715,11 @@ implies the product measure
 \end{align}
 which precisely falls into the pseudo-marginal MCMC framework \cite{pseudoMarginalMCMC}. 
 We thus term 
-this algorithm \textit{Pseudo-Marginal Metropolis-Hastings (MH-pseudo-marg)}. Given a log-likelihood sample 
+this algorithm \textit{Pseudo-Marginal Metropolis-Hastings} ($\mhPseudoMargLabel$). Given a log-likelihood sample 
 $\llikSamp$, then by definition the unnormalized posterior approximation $\priorDens(\Par) \Exp{\llikSamp}$ is 
 an unbiased estimator of 
 $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
-This implies that the \textit{MH-pseudo-marg} algorithm defines a Markov chain with target distribution 
+This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
 $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
 
 
@@ -752,9 +752,11 @@ $\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \eq
 \funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \func(\designBatchIn)]$, which is justified 
 by \Cref{lemma:gp-condition-order} in the appendix. 
 The update $\funcEm[\Ndesign] \to \funcEm[\Naugment]$ 
-can be computed in $\BigO(\Nbatch^3 + \Ndesign^2 \Nbatch + \Nbatch^2 \Ndesign)$ operations, 
+can be computed in $\BigO(\Nbatch^3 + \Nbatch^2 \Ndesign + \Nbatch \Ndesign^2)$ operations, 
 a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
-implementation (courtesy of the partitioned matrix inverse identity stated in \Cref{partitioned-matrix-inverse}). 
+implementation (courtesy of the partitioned matrix inverse identity stated in \Cref{partitioned-matrix-inverse})
+[\todo: probably will want an entire section on algorithm complexity, and will want to better explain where 
+these Big O results come from]. 
 Naturally, the new batch $\designBatchIn$ should be chosen to 
 yield maximal improvement in the GP model with respect to the downstream task that is to be performed. 
 This idea is formalized by an optimization problem of the form 
@@ -788,7 +790,8 @@ owing to the fact that $\func$ is only evaluated after an entire batch $\designB
 be selected without observing the outputs of the other points in the batch. 
 We note that, while the design framework summarized in \Cref{alg:seq_des_loop} does allow for consideration 
 of within-batch interactions between design points, 
-it is still ``myopic'' in the sense that it disregards the potential for future acquisitions. Non-myopic strategies have been considered
+it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
+Non-myopic strategies have been considered
 through a dynamic programming lens, though they typically come at the cost of significant 
 computational expense \cite{SURThesis, supermartingaleSUR}.
 
@@ -809,11 +812,11 @@ which typically leads to design procedures
 that seek to ``evenly'' fill the input space $\parSpace$ in some sense.  
 In such settings, a reasonable approach is to choose points in locations where the GP is most uncertain. 
 Defining ``uncertainty'' in terms 
-of variance or entropy yields the \textit{maximum variance (max-var)} and \textit{maximum entropy (max-ent)} acquisition functions, 
-respectively, 
+of variance or entropy yields the \textit{maximum variance} ($\maxvarLabel$) and \textit{maximum entropy}
+($\maxentLabel$) acquisition functions, respectively, 
 \begin{align}
-&\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)] , 
-&&\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)], \label{acq_max_var_ent}
+&\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par) \\ 
+&\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] = -\frac{1}{2} \log\det(2\pi e \gpKer(\designBatchIn)), \label{acq_max_var_ent}
 \end{align} 
 where $\Ent[Z]$ denotes the entropy of a random variable $Z$. The variance and entropy are negated to align with our convention 
 of minimizing acquisition functions. The $\maxvarLabel$ criterion does not have an obvious generalization to the batch setting, 
@@ -821,29 +824,32 @@ so is defined to only accept a single input $\Par$. A noted weakness of these cr
 they target the single point (sets) with maximal uncertainty, ignoring the effect of the acquisition on the remainder of the design space. 
 This often favors points at the boundaries of $\parSpace$, behavior that is typically not desirable \cite{gramacy2020surrogates}. 
 To address this weakness, an alternative approach is to minimize the \textit{conditional} uncertainty 
-($\Var[\funcEm[\Ndesign](\Par) | \designBatchIn]$ or $\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn]$), \textit{averaged} over 
+$\Var[\funcEm[\Ndesign](\Par) | \designBatchIn]$ or $\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn]$), averaged over 
 the input space $\parSpace$. The resulting \textit{integrated uncertainty criteria}
 \begin{align}
 \labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
-&= \int_{\parSpace} \Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par, \label{acq_int_var} \\ 
+&\Def \int_{\parSpace} \Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par
+= \int_{\parSpace} \gpKer[\Naugment](\Par) \weightDens(\Par) d\Par, \label{acq_int_var} \\ 
 \labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
-&= \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par, \label{acq_int_ent}
+&\Def \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par
+= \frac{1}{2} \int_{\parSpace} \log(2\pi e \gpKer[\Naugment](\Par)) \weightDens(\Par) d\Par, \label{acq_int_ent}
 \end{align}
 are naturally defined in the batch setting and account for the global effect of acquiring new design points. Here $\weightDens$ is 
-a probability density on $\parSpace$, allowing for the expectation over $\parSpace$ to weighted. 
+a probability density on $\parSpace$, which can be chosen to favor certain portions of the design space. 
 A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
 in \cite{Mercer_kernels_IVAR}, with an emphasis on one-shot, rather than sequential, design. 
-Since $\Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] = \gpKer[\Naugment](\Par)$ and 
-$\Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] = \frac{1}{2} \log(2\pi e \gpKer[\Naugment](\Par))$, the integrands of 
-\ref{acq_int_var} and \ref{acq_int_ent} are available in closed-form. However, outside of special choices for $\parSpace$ and 
+The closed-form expressions for the integrands in \ref{acq_int_var} and \ref{acq_int_ent} follow directly from the Gaussian conditioning 
+formulas \ref{kriging_eqns} and known expression for Gaussian entropy. 
+However, outside of special choices for $\parSpace$ and 
 $\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
 approximations. It is worth noting that 
 these acquisition functions must be computed without observing the function evaluations $\func(\designBatchIn)$, which is 
 not an issue for any of the above acquisitions given that $\gpKer[\Naugment](\Par)$ is independent of $\func(\designBatchIn)$ 
 (see \ref{kriging_eqns}). However, the predictive mean $\gpMean[\Naugment](\Par)$ does depend on $\func(\designBatchIn)$, 
-a fact which will become relevant in the subsequent section. We therefore state a lemma below which summarizes the 
+a fact which will become relevant in the subsequent section. We therefore state a lemma below that summarizes the 
 dependence of the predictive mean on $\func(\designBatchIn)$, under the assumption that the latter is distributed according 
-to the current GP $\funcEm[\Ndesign]$. A similar result is also provided in \cite{VehtariParallelGP}. 
+to the current GP $\funcEm[\Ndesign]$. A similar result is provided in \cite{VehtariParallelGP}, and a proof is given in 
+the appendix.
 \begin{lemma} \label{lemma:pred-mean-dist}
 Let $\{\designBatchIn, \funcVal[\Nbatch]\}$ be a new batch of $\Nbatch$ design points, with
 $\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
@@ -876,15 +882,13 @@ is large when the design points $\designBatchIn$ are more ``influential.''
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
 design point batches that cause large reductions of uncertainty in the GP predictive distribution. While such criteria may be appropriate 
 when quality predictions are required across all of $\parSpace$, this may not align well with the goal of constructing a GP emulator 
-which induces an accurate posterior approximation. In the Bayesian inverse problem setting, it has repeatedly been noted that the 
-posterior is often highly concentrated relative to the prior. Intuitively, one would therefore expect that the GP emulator need only 
+that induces an accurate posterior approximation. In the Bayesian inverse problem setting, it has repeatedly been noted that the 
+posterior is often highly concentrated relative to the prior [\todo: citations]. Intuitively, one would therefore expect that the GP emulator need only 
 achieve a high predictive accuracy in the region with high posterior mass, and avoid wasteful acquisition of design points in 
 regions with negligible mass. This intuition is placed on more rigorous ground in \cite{StuartTeck2}, in which bounds on the 
 posterior error are given in terms of the likelihood approximation error in a $L^2_{\postDens}(\parSpace)$ sense. The authors 
 stated motivation was to provide rigorous justification for the use of ensemble Kalman methods as a cheap experimental 
-design method for the training of GP emulators \cite{CES, idealizedGCM}. These so-called ensemble Kalman inversion methods 
-often require $\BigO(10^3)$ sequential forward model evaluations, a significant improvement over MCMC but still intractable for 
-forward models of significant computational expense, such as those that motivated the present work. 
+design method for the training of GP emulators \cite{CES, idealizedGCM}. 
 
 We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
 are tailored to the goal of posterior approximation. One such approach is to define acquisition functions based on 
@@ -898,16 +902,18 @@ has gained recent attention, and is addressed in
 As an initial example, we consider tailoring the $\maxvarLabel$ and $\maxentLabel$ criteria to the task of posterior approximation 
 using a log-likelihood emulator. The natural analogs of these acquisition functions in this setting are 
 \begin{align}
-&\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)] , 
-&&\labelAcq[\Ndesign]{\maxexpentLabel}(\designBatchIn) \Def -\Ent[\llikEmRdmDens[\Ndesign](\designBatchIn)]. \label{acq_max_exp_var_ent}
+&\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)] 
+= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par) - 1} \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}, \\ 
+&\labelAcq[\Ndesign]{\maxexpentLabel}(\designBatchIn) \Def -\Ent[\llikEmRdmDens[\Ndesign](\designBatchIn)]
+= \todo. \label{acq_max_exp_var_ent}
 \end{align} 
+The closed-form expressions given follow from the Gaussian conditioning identities \ref{kriging_eqns}, the log-normal 
+variance expression in \Cref{llik_em_lik_emulator_moments}, and the known expression for log-normal entropy. 
 The ``exp'' in the naming convention highlights that these criteria are being applied to
 $\llikEmRdmDens[\Ndesign](\Par) = \priorDens(\Par) \Exp{\llikEm(\Par)}$, which is an exponentiated GP. 
 Thus, many of the acquisition functions 
 considered here can be viewed as the analogs of existing GP acquisition functions instead applied to log-normal 
-processes (LNP). Since the 
-variance and entropy of a log-normal random variable are well-known, the acquisitions \ref{acq_max_exp_var_ent}
-are easily computable in closed-form. The $\maxexpvarLabel$ acquisition is considered in 
+processes (LNP). The $\maxexpvarLabel$ acquisition is considered in 
 \cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
 while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
 
@@ -1368,7 +1374,6 @@ $\gpKerPrior(\designIn[\Ndesign], \parMat)$ and $\gpKerPrior(\designIn[\Nbatch],
 
 \end{proof}
 
-
 \subsubsection{Uncertainty in GP Predictive Mean Due to Unobserved Response}
 
 \begin{proof} [Proof of \Cref{lemma:pred-mean-dist}]
@@ -1437,14 +1442,14 @@ into \ref{formula_plug_in} gives
 &= \cst \Exp{2\emMean[\Ndesign]{\llik}(\Par)} \varInflation(\Par; \designBatchIn) \\
 &= \Var[\Exp{\llikEm(\Par)} | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\Par)] \varInflation(\Par; \designBatchIn).
 \end{align*}
-Multiplying both sides by $\priorDens(\Par)$ completes the proof, the closed-form expression for the first term following 
+Multiplying both sides by $\priorDens(\Par)$ completes the proof, with the closed-form expression for the first term following 
 immediately from the formula for a log-normal variance. 
 \end{proof}
 
 \subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
 
 \begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
-
+\todo: remove the below proof and write new proof leveraging the new lemma. 
 \begin{enumerate}
 \item The first result follows immediately from \Cref{post_dens_marg_fwd_Gaussian}. 
 \item From \Cref{lemma:pred-mean-dist}, we know that 
@@ -1454,7 +1459,7 @@ immediately from the formula for a log-normal variance.
 \end{align*}
 We can thus write the expectation of interest as 
 \begin{align*}
-\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par) \right]
+\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par)) \right]
 &= \int_{\R^{\dimObs}} \Gaussian(\obs| v, \CovComb[\Naugment](\Par)) 
 \Gaussian(v | \emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)) dv \\
 &= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
@@ -1494,10 +1499,18 @@ with the covariance simplifying to
 \item How to clean up notation for all of the different approximations being considered here? 
 \end{enumerate}
 
-\subsection{Numerical Experiments}
+\subsection{Numerical experiments:}
+\begin{enumerate}
+\item Sequential design performance at different levels of posterior concentration. 
+\item Integrated uncertainty criterion: incorporating the current posterior via the integrand or the measure? 
+(4 different combinations we could consider) 
+\end{enumerate}
+
+\subsection{Potential examples:}
 \begin{enumerate}
 \item Banana, unimodal, bimodal, unidentifiable
 \item Heat equation (see Sinsbeck and Nowak) 
+\item VSEM
 \end{enumerate}
 
 \subsection{Need to add}
