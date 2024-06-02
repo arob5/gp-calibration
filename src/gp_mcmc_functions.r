@@ -815,8 +815,8 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       SSR_idx <- 1
     } else {
       # Sample log-likelihood emulator. 
-      llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par_val=sig2_curr, conditional=TRUE,
-                                               normalize=FALSE)
+      llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, lik_par_val=sig2_curr) #, conditional=TRUE,  normalize=FALSE)
+                                              
 
       # Accept-Reject step.
       lpost_par_curr <- lprior_par_curr + llik_samp[1]

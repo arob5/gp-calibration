@@ -248,7 +248,7 @@ with dynamical structure
 (e.g., \cite{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}).
 A popular alternative is to first approximately express the high-dimensional output as a linear combination of basis vectors 
 \begin{align}
-\fwd(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec},
+\fwd(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec}, \label{fwd_model_basis_func}
 \end{align}
 and then model the coefficients $\basisWeight_{\idxBasis}(\Par)$ using independent GPs. The basis vectors 
 are typically found via a singular value decomposition, though other bases have been explored 
@@ -992,12 +992,10 @@ approximate Bayesian computation.
 
 \paragraph{Forward Model Emulation}
 To define a similar criterion in the forward model emulation setting, we first recall that we are considering ``plug-in'' forward model emulators. 
-Thus, the unnormalized posterior density emulator is conditioned on a new batch $\{\designBatchIn, \designBatchFwd\}$ and then 
+Thus, the forward model emulator $\fwdEm$ is conditioned on a new batch $\{\designBatchIn, \designBatchFwd\}$ and then 
 the updated emulator is plugged into the density in place of the true forward model. This implies that the analogous expression to 
 the expected variance in \ref{def:int_exp_var_llik}, 
-\begin{align*}
-\E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd],
-\end{align*}
+$\E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd]$
 does \textit{not} correctly convey how the emulator is updated in this setting. To correctly specify the expected variance in this 
 context, we define $\fwdEmCond{\designBatchFwd} \Def \fwdEm | [\fwdEm(\designBatchIn) = \designBatchFwd]$
 \footnote{Note that $\fwdEmCond{\designBatchFwd}$ is conditioned on $\{\designBatchIn, \designBatchFwd\}$, though the 
@@ -1016,32 +1014,9 @@ To our knowledge,
 the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
 While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
 demonstrates that the integrand admits a closed-form expression when the likelihood is Gaussian. 
-To derive this result, we begin by stating a lemma that characterizes the uncertainty in the Gaussian 
-likelihood as a function of the random quantity $\designBatchFwd$, assumed to be distributed according 
-to the current GP predictive distribution. 
-
-\begin{lemma} \label{lemma:fwd-Gaussian-density-dist}
-Let $\llik(\Par; \fwdEm) = \Gaussian(\obs | \fwdEm(\Par), \likPar)$, with 
-$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$ interpreted as a set of $\dimObs$ independent 
-GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
-design points, with
-$\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
-Define $\CovComb[\Ndesign](\Par) \Def \likPar + \emKer[\Ndesign]{\fwd}(\Par)$. 
-Then for $\Par \in \parSpace$,
-\begin{enumerate}
-\item $\E \left[\Exp{\llik(\Par; \fwdEmCond{\designBatchFwd})} | \designBatchFwd \right] 
-= \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))$
-\item $\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd), \CovComb[\Naugment](\Par))\right]
-= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par)\right)$
-\item 
-\begin{align*}
-\E_{\designBatchFwd} \left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par))^2\right] &= 
-(2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} \cdot \\
-&\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Ndesign](\Par) - \frac{1}{2} \CovComb[\Naugment](\Par) \right). 
-\end{align*}
-\end{enumerate}
-\end{lemma}
-
+While their result is tailored to the basis function approach for forward model emulation (see \ref{fwd_model_basis_func}), 
+we state the result generically for multi-output forward models emulated by independent GPs, with the basis 
+function setting following as a corollary [\todo: add the corollary in the appendix].  
 \begin{prop} \label{prop:evar-fwd-emulation}
 Consider 
 $\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, interpreted as a set of $\dimObs$ independent 
@@ -1057,6 +1032,8 @@ Then for $\Par \in \parSpace$,
 \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}}.
 \end{align*}
 \end{prop}
+
+\todo: add proof to appendix and define notation used above. 
  
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
@@ -1501,8 +1478,12 @@ with the covariance simplifying to
 
 \subsection{Numerical experiments:}
 \begin{enumerate}
+\item 1D example for basic illustration. 
+\item 2D examples for basic illustration and consideration of different posterior characteristics: Gaussian, banana, unidentifiable, concentration level, bimodal. 
+\item Extension of 2D densities to 6-10 dims (see Vehtari paper numerical experiments) 
 \item Sequential design performance at different levels of posterior concentration. 
-\item Integrated uncertainty criterion: incorporating the current posterior via the integrand or the measure? 
+\item Integrated uncertainty criterion: incorporating the current posterior via the integrand or the measure?
+\item Large batch, few iteration sequential design experiment. 
 (4 different combinations we could consider) 
 \end{enumerate}
 
@@ -1524,7 +1505,7 @@ with the covariance simplifying to
 simulation-based inference. 
 \item Hyperparameter marginalization: need to look into opportunities for closed-form hyperparameter marginalization during 
 sequential design phase. 
-\item Think about comparing the two forms of variance inflation in the frequency domain. 
+\item Developing a design criterion that better aligns with the MHWMC procedure; e.g., something that targets the likelihood ratio. 
 \end{enumerate}
 
 \subsection{Limitations of existing literature}
@@ -1532,7 +1513,21 @@ sequential design phase.
 \item Very little discussion of case where likelihood parameters are unknown. 
 \item Lack of emphasis on batch design (with some exceptions).
 \item Little guidance on which approximation/design criterion to choose.
+\item Vehtari fixes the marginal approx, and focuses instead on varying the design criterion, but notes that sampling from the marginal approx is problematic. 
 \end{enumerate}
+
+\subsection{Conjectures}
+\begin{enumerate}
+\item The MCWMH algorithms will perform better than sampling from the marginal approx in the log-likelihood emulation setting, especially when the GP is very uncertain. 
+\end{enumerate}
+
+\subsection{Consideration}
+\begin{enumerate}
+\item Literature typically focuses on convergence of the approx posterior. But in cases with very expensive computer models, one might have to stop pre-convergence. 
+In these settings the comparison between the approximate posteriors becomes even more important. 
+\end{enumerate}
+
+
 
 \bibliography{post_approx_with_GP_emulators} 
 \bibliographystyle{ieeetr}

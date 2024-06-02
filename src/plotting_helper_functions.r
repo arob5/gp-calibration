@@ -148,7 +148,7 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   }
   
   plt <- plt + 
-          geom_line(aes(x=x, y=y, col=approx, linewidth=line_thickness), df_pred) + 
+          geom_line(aes(x=x, y=y, col=approx), df_pred, linewidth=line_thickness) + 
           ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Design points. 
@@ -309,20 +309,22 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
 ggtheme_journal <- function(legend_position="none", title_size=35) {
   
   theme_journal <- theme(legend.position=legend_position, 
-                    panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
-                    panel.background=element_blank(), panel.border=element_blank(), 
-                    axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
-                    axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
-                    plot.background=element_blank(), 
-                    axis.title=element_text(size=22), 
-                    plot.title=element_text(size=title_size))
+                         panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
+                         panel.background=element_blank(), panel.border=element_blank(), 
+                         axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
+                         axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
+                         plot.background=element_blank(), 
+                         axis.title=element_text(size=22), 
+                         plot.title=element_text(size=title_size))
   
   return(theme_journal)
 }
 
-ggformat_journal <- function(plt, remove_title=TRUE, ...) {
+ggformat_journal <- function(plt, remove_title=TRUE, xlim=NULL, ylim=NULL, ...) {
   
   if(remove_title) plt <- plt + ggtitle(NULL)
+  if(!is.null(xlim)) plt <- plt + xlim(xlim)
+  if(!is.null(ylim)) plt <- plt + ylim(ylim)
   
   plt + ggtheme_journal(...)
 }
