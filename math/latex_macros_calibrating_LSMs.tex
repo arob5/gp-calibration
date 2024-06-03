@@ -11,14 +11,22 @@
 \newcommand{\diag}{\textrm{diag}}
 
 % --------------------------------------------------------------------------------------------------
-% Land Surface Models (LSMs) 
+% Land Surface Models (LSMs) / Dynamic Models 
 % --------------------------------------------------------------------------------------------------
 
 \newcommand{\state}{x}
+\newcommand{\Time}{t}
+\newcommand{\timeInit}{\Time_0}
+\newcommand{\stateInit}{\state_0}
 \newcommand{\timeIdx}{k}
+\newcommand{\funcODE}{f}
+\newcommand{\forcing}{w}
 \newcommand{\indexTime}[2][\timeIdx]{{#2}_{#1}}
-\newcommand{\stateTime}[\timeIdx]{\indexTime[{#1}]{#2}}
-
+\newcommand{\stateTime}[2][\timeIdx]{\indexTime[{#1}]{#2}}
+\newcommand{\fwdOne}{g} % One-step forward operator (flow map) 
+\newcommand{\dimState}{P}
+\newcommand{\stateIdx}{p}
+\newcommand{\indexState}[2][\stateIdx]{{#2}^{(#1)}}
 
 
 

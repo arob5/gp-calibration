@@ -23,7 +23,7 @@
 
 % Local custom commands. 
 \include{latex_macros_general}
-\include{latex_macros_gp_inv_prob}
+\include{latex_macros_calibrating_LSMs}
 \newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
@@ -53,10 +53,27 @@
 
 % The Structure of Land Surface Models
 \section{The Structure of Land Surface Models}
-
-
-
-
+Unlike the typical PDE models used in atmospheric and oceanic modeling, the standard toolkit in land surface modeling 
+consists primarily of ODEs describing time evolution at a single location. While LSMs can incorporate a wide 
+variety of terrestrial processes, we will focus on models of the carbon cycle when providing concrete examples. 
+LSMs model the carbon cycle as consisting of a set of states (i.e., \textit{pools}; soil, roots, above-ground vegetation, atmosphere, etc.),
+along with processes that transfer carbon between these states (i.e., \textit{fluxes}; photosynthesis, respiration, etc.). 
+We denote the state vector at time $\Time$ by 
+\begin{align}
+\state(\Time) \Def [\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)]^\top \in \R^{\dimState}.
+\end{align}
+Carbon fluxes between these states are then described by an ODE model of the form 
+\begin{align}
+&\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInit) = \stateInit, 
+\end{align}
+where $\funcODE(\cdot, \forcing): \R^{\dimState} \to \R^{\dimState}$ is typically a nonlinear function, and $\stateInit$ is the \textit{initial condition}, 
+the value of the state at some initial time $\timeInit$. The forward dynamics encoded by $\funcODE_{\Par}$ are dependent both on a set of 
+\textit{parameters} $\Par \in \parSpace \subset \R^{\dimPar}$, as well as a \textit{forcing} (or \textit{driving}) function $\forcing(\Time)$.
+In practice, $\forcing(\Time)$ is typically given by a sequence of (noisy) observations of meteorological variables (e.g., photosynthetically-active 
+radiation). In general, the parameters $\Par$ are not physical constants; rather, they provide a means to empirically parameterize ecosystem 
+processes, which may vary in space and time.   
+We emphasize that the solution $\state_{\Par}(\Time)$ of the ODE is a function of the parameters $\Par$, driver $\forcing(\Time)$, and 
+initial condition $\stateInit$, though only the first is made explicit in the notation since the parameters are the main point of interest in this document.
 
 \end{document} 
 
