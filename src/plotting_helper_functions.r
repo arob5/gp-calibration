@@ -330,7 +330,25 @@ ggformat_journal <- function(plt, remove_title=TRUE, xlim=NULL, ylim=NULL, ...) 
 }
 
 
-
+get_common_lims <- function(...) {
+  # Given ggplot objects as arguments, returns the smallest xlim and ylim 
+  # that includes all of the plots xlims/ylims without cutting anything out. 
+  # See https://stackoverflow.com/questions/7705345/how-can-i-extract-plot-axes-ranges-for-a-ggplot2-object
+  # for code on extracting xlim/ylim from plot. 
+  
+  plt_list <- list(...)
+  
+  xlims <- lapply(plt_list, function(plt) layer_scales(plt)$x$range$range)
+  ylims <- lapply(plt_list, function(plt) layer_scales(plt)$y$range$range)
+  
+  xmin <- min(sapply(xlims, function(x) x[1]))
+  xmax <- max(sapply(xlims, function(x) x[2]))
+  ymin <- min(sapply(ylims, function(y) y[1]))
+  ymax <- max(sapply(ylims, function(y) y[2]))
+  
+  return(list(xlim=c(xmin, xmax), ylim=c(ymin, ymax)))
+  
+}
 
 
 
