@@ -1,5 +1,5 @@
 #
-# gp.r
+# llikEmulator.r
 # Class definitions for the `llikEmulator`, `llikSumEmulator`, and classes which 
 # inherit from these classes. All classes defined using reference classes. 
 #
@@ -1438,10 +1438,23 @@ llikEmulatorFwdGaussDiag$methods(
     # `fwd_model_vals` should be of dimension `M` x `N_output`, where `M` corresponds to the number of 
     # instances of forward model output; e.g., might be the forward model evaluated at `M` different inputs, 
     # or `M` samples from the forward model at the same input, or some combination. Returns numeric vector of length `M`. 
+    # Note that `sample_emulator` returns an array of dimension `M` x `N_samp` x `N_output`. Therefore, this 
+    # function also allows `fwd_model_vals` to have three dimensions, as long as the second dimension 
+    # equals 1 (as is the case with a default call to `sample_emulator`). 
     # `var_inflation_vals` allows adds values to `sig2`, and is used in computing the marginal likelihood 
     # approximation. If shape (`M`, `N_output`) then each row of `var_inflation_vals` to `sig2` for the 
     # corresponding row of `fwd_model_vals`. If a numeric vector of length `N_output`, then the same variance 
     # inflation is applied to the likelihood evaluations at all `M` values of the forward model output. 
+
+    # If `fwd_model_vals` has three dimensions, with second dimension equal to 1, then collapse 
+    # to a matrix along this dimension. 
+    if(length(dim(fwd_model_vals)) == 3L) {
+      if(dim(fwd_model_vals)[2] != 1L) stop("`fwd_model_vals` does not have correct dimensions.")
+      fwd_model_vals <- matrix(fwd_model_vals[,1,], nrow=dim(fwd_model_vals)[1], ncol=dim(fwd_model_vals)[3])
+    }
+    
+    assert_that(length(dim(fwd_model_vals)) == 2L)
+    assert_that(ncol(fwd_model_vals) == .self$N_output)
     
     # Validate variance inflation argument. 
     inflate_var <- FALSE
@@ -1483,6 +1496,7 @@ llikEmulatorFwdGaussDiag$methods(
   sample_emulator = function(input, emulator_pred_list=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
     # Sample the forward model emulator at specified inputs. 
     
+    # TODO: figure out dimensions.
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
                           N_samp=N_samp, pred_list=emulator_pred_list, ...)
   },

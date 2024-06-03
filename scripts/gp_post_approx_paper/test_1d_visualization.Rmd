@@ -265,7 +265,7 @@ plot(lik_approx_llik_plt)
 # Forward model emulation. 
 lik_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
                                                     emulator_pred_list=emulator_pred_fwd)
-lik_approx_fwd <- apply(lik_approx_fwd, 2, function(x) normalize(x, dx))
+lik_approx_fwd <- apply(lik_approx_fwd, 2, function(x) normalize_lik(x, dx))
 lik_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=test_info$post,
                                             X_design=design_info$input, y_design=design_info$post,
                                             plot_title="Likelihood Approximations [fwd]",
@@ -298,6 +298,16 @@ samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik"
 # Forward model emulator. 
 #
 
+# MCWMH-Ind. 
+mcmh_nocov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
+                                     use_gp_cov=FALSE, par_init=mcmc_par_init)
+samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_fwd_list, test_label="nocov-fwd")
+
+# MCWMH-Joint. 
+mcmh_cov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
+                                   use_gp_cov=TRUE, par_init=mcmc_par_init)
+samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list, test_label="cov-fwd")
+
 ```
 
 
@@ -307,7 +317,7 @@ samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik"
 trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start) 
 for(plt in trace_plots) plot(plt) 
 
-get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov-llik")[[1]]
+get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov-llik")
 ```
 
 ```{r}
@@ -321,12 +331,24 @@ get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_basel
 #
 
 # MCWMH-Ind. 
-kde_fit_mcwmh_ind <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="nocov-llik")$sample)
-lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind))
+kde_fit_mcwmh_ind_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="nocov-llik")$sample)
+lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_llik))
 
 # MCWMH-Joint. 
-kde_fit_mcwmh_joint <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="cov-llik")$sample)
-lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint))
+kde_fit_mcwmh_joint_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="cov-llik")$sample)
+lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_llik))
+
+#
+# Forward model emulator. 
+#
+
+# MCWMH-Ind. 
+kde_fit_mcwmh_ind_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="nocov-fwd")$sample)
+lik_approx_fwd <- cbind(lik_approx_fwd, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_fwd))
+
+# MCWMH-Joint. 
+kde_fit_mcwmh_joint_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="cov-fwd")$sample)
+lik_approx_fwd <- cbind(lik_approx_fwd, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_fwd))
 
 
 ```
@@ -334,18 +356,31 @@ lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-joint`=dkde1d(test_info$input, 
 
 ```{r}
 #
-# Plot: comparison of likelihood approximations. 
+# Plot: comparison of posterior approximations. 
 #
 
 # Log-likelihood emulator. 
-lik_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=test_info$post,
+post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=test_info$post,
+                                              X_design=design_info$input, y_design=design_info$post,
+                                              plot_title="Posterior Approximations [llik]",
+                                              line_thickness=line_thickness, design_color=design_color,
+                                              design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
+                                              ggformat_journal(legend_position="bottom", 
+                                                               legend.text=element_text(size=20))
+
+# Forward model emulator. 
+post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=test_info$post,
                                              X_design=design_info$input, y_design=design_info$post,
                                              plot_title="Posterior Approximations [llik]",
                                              line_thickness=line_thickness, design_color=design_color,
                                              design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
-                                             ggformat_journal(legend_position="none")
-plot(lik_approx_llik_plt)
+                                             ggformat_journal(legend_position="bottom", 
+                                                               legend.text=element_text(size=20))
 
+plot(post_approx_llik_plt)
+plot(post_approx_fwd_plt)
+ggsave(file.path(output_dir, "post_approx_llikem.png"), post_approx_llik_plt)
+ggsave(file.path(output_dir, "post_approx_fwdem.png"), post_approx_fwd_plt)
 
 ```
 

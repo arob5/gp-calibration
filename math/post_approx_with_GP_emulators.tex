@@ -358,7 +358,7 @@ may outweigh the downsides of log-likelihood emulation in many applications.
         The top and bottom rows correspond to the forward model emulation and log-likelihood emulation settings, respectively. 
         The columns correspond to (1) the underlying GP emulator; (2) the log-likelihood emulator induced by the underlying GP; 
         (3) the likelihood emulator induced by the underlying GP. Note that in the log-likelihood emulation case (1) and (2)
-        are identical. The blue dashed black line is the ground truth forward model or (log) likelihood and the red points are the 
+        are identical. The dashed black line is the ground truth forward model or (log) likelihood and the red points are the 
         design points used for emulator training. The blue line is the mean of the respective emulators, and the gray area 
         covers the region within one standard deviation of the mean.}
         \label{fig:em_dist_1d}
@@ -395,7 +395,34 @@ approximation of the posterior. Given that it is not obvious how to perform infe
 proceeds by choosing a single, deterministic posterior approximation that somehow summarizes the uncertainty in the 
 random posterior measure. Popular choices for such deterministic approximations are described below. Going forward, 
 for succinctness we will specify only the \textit{unnormalized} posterior densities, with the associated normalizing constants  
-implicitly defined. 
+implicitly defined. \Cref{fig:post_approx_1d} provides a one-dimensional illustration of the posterior approximations 
+discussed below, utilizing the same emulators from \Cref{fig:em_dist_1d}. 
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/post_approx_fwdem.png}}
+         \caption{$\postDensNorm(\Par)$ approximation using $\fwdEm$}
+         \label{fig:y equals x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/post_approx_llikem.png}}
+         \caption{$\postDensNorm(\Par)$ approximation using $\llikEm$}
+         \label{fig:three sin x}
+     \end{subfigure}
+        \caption{Posterior density approximations derived from the emulators in \Cref{fig:em_dist_1d}. The left and right 
+        figures plot the approximations derived from the forward model emulator and log-likelihood emulator, 
+        respectively. The dashed black line is the true posterior density (no emulation). The exact posterior, as well 
+        as the mean and marginal approximations, are normalized by approximating the normalizing constant using 
+        numerical integration. The $\mcwmhJointLabel$ and $\mcwmhIndLabel$ densities are kernel density estimates 
+        constructed from MCMC samples. Note that in general the normalized posterior density approximations do not 
+        interpolate the design points due to differences in normalizing constants. The mean approximation in the 
+        forward model emulation Gaussian setting is an exception in which the normalizing constants align.}
+        \label{fig:post_approx_1d}
+\end{figure}
 
 \subsection{Approximating the Unnormalized Posterior Density}
 Arguably the simplest approach to constructing a deterministic approximation is to reduce the random emulator 
