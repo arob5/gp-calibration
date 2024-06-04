@@ -21,7 +21,7 @@
 \newcommand{\stateApprox}{\hat{\state}}
 \newcommand{\timeEnd}{T}
 \newcommand{\timeIdx}{k}
-\newcommand{\lastTimeIdx}{K}
+\newcommand{\Ntime}{K}
 \newcommand{\timeStep}{h}
 \newcommand{\funcODE}{f}
 \newcommand{\forcing}{w}
@@ -33,30 +33,35 @@
 \newcommand{\stateIdx}{p}
 \newcommand{\indexState}[2][\stateIdx]{{#2}^{(#1)}}
 
-
-
 % --------------------------------------------------------------------------------------------------
-% Bayesian inverse problem: general setup 
+% Inverse problems: general setup 
 % --------------------------------------------------------------------------------------------------
 
 % General inverse problems.
 \newcommand{\Par}{\theta}
-\newcommand{\parSpace}{\mathcal{U}} % Parameter space
+\newcommand{\parSpace}{\Theta} % Parameter space
 \newcommand{\dimPar}{D} % Parameter dimension 
 \newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
 \newcommand{\obs}{y} % Data observation (response) vector
 \newcommand{\noise}{\epsilon} % Random variable representing noise, typically in additive noise model. 
 \newcommand{\obsSpace}{\mathcal{Y}} % Output space
-\newcommand{\dimObs}{P} % Dimension of data observation vector
-\newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
+\newcommand{\dimObs}{Q} % Dimension of data observation vector
+\newcommand{\obsIdx}{q} % Primary symbol used to index each data dimension. 
 \newcommand{\fwd}{G} % Forward model
+
+% Optimization-based. 
+\newcommand{\loss}{L}
+\newcommand{\parEst}{\hat{\Par}}
+
+% MLE. 
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood 
+\newcommand{\obsCov}{\Sigma} % Covariance matrix for Gaussian likelihood. 
+
+% Bayesian. 
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Unnormalized posterior density.
 \newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
-\newcommand{\likPar}{\Sigma} % Likelihood parameter
-
 
 % --------------------------------------------------------------------------------------------------
 % Gaussian Process Emulators

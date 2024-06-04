@@ -43,6 +43,7 @@
 \newtheorem{lemma}{Lemma}
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
+\newtheorem{example}{Example}
 
 % Title and author
 \title{Parameter Calibration for Land Surface Models}
@@ -82,16 +83,16 @@ initial condition $\stateInit$, though only the first is made explicit in the no
 \subsection{The Forward Problem}
 The \textit{forward problem} consists of recovering the solution $\state_{\Par}(\Time)$ over some time interval $[\timeInit, \timeEnd]$ for given 
 values of $\Par$, $\stateInit$, and $\forcing(\cdot)$. Given the nonlinearity of $\funcODE_{\Par}$, this solution is typically approximated 
-numerically at a finite set of times $\{\indexTime{\Time}\}_{\timeIdx=0}^{\lastTimeIdx} \subset [\timeInit, \timeEnd]$. We 
+numerically at a finite set of times $\{\indexTime{\Time}\}_{\timeIdx=0}^{\Ntime-1} \subset [\timeInit, \timeEnd]$. We 
 let $\stateApprox_{\Par}(\indexTime{\Time})$ denote the approximation of $\state_{\Par}(\indexTime{\Time})$ for each 
-$\timeIdx = 0, \dots, \lastTimeIdx$. Also, let $\indexTime{\timeStep} \Def \indexTime[\timeIdx+1]{\Time} - \indexTime{\Time}$ denote the 
+$\timeIdx = 0, \dots, \Ntime-1$. Also, let $\indexTime{\timeStep} \Def \indexTime[\timeIdx+1]{\Time} - \indexTime{\Time}$ denote the 
 time step used by the numerical solver at the $\timeIdx^{\text{th}}$ iteration. Standard ODE solvers are time-stepping algorithms of the 
 form 
 \begin{align}
 &\stateApprox_{\Par}(\indexTime[\timeIdx+1]{\Time}) \Def \fwdOne_{\Par}(\stateApprox_{\Par}(\indexTime{\Time}), \forcing(\indexTime{\Time}); \indexTime{\timeStep}), 
 &&\stateApprox_{\Par}(\indexTime[0]{\Time}) = \stateInit, \label{ode_discrete}
 \end{align}
-for $\timeIdx = 1, \dots, \lastTimeIdx$. Setting a constant step size $\timeStep \equiv \indexTime{\timeStep}$ is a common choice, though 
+for $\timeIdx = 1, \dots, \Ntime-1$. Setting a constant step size $\timeStep \equiv \indexTime{\timeStep}$ is a common choice, though 
 algorithms that adapt the step size are also quite standard. In practice, the model drivers $\forcing(\indexTime{\Time})$
 are typically given by a sequence of (noisy) observations of meteorological variables (e.g., photosynthetically-active radiation).
 Going forward, we will treat the discrete dynamical system \ref{ode_discrete} as 
@@ -99,18 +100,102 @@ the true model and starting point for subsequent analysis, thus neglecting discr
 
 % The Inverse Problem
 \subsection{The Inverse Problem}
-As noted above, the forward solution of the ODE depends on the chosen value of the parameters $\Par$. In the LSM context, the values 
-of these parameters are not known, and moreover, cannot always be observed directly. In other words, offline estimation of $\Par$
+Naturally, one must recognize that the predictions of the model \ref{ode_discrete} are subject to many sources of uncertainty. 
+The simulated trajectory $\{\stateApprox_{\Par}(\indexTime{\Time})\}_{\timeIdx=1}^{\Ntime-1}$ is a function of  
+the chosen value of the parameters $\Par$, the model drivers  $\{\indexTime{\obs}\}_{\timeIdx=1}^{\Ntime-1}$, the initial condition $\stateInit$, 
+and the model processes encoded by $\fwdOne_{\Par}$ (irrespective of the parameter value). In the LSM context, 
+all of these quantities contribute non-negligible uncertainty. 
+In this document, we restrict ourselves to the consideration of parameter uncertainty. 
+
+The values of LSM parameters are not known exactly, and moreover, cannot always be observed directly. In other words, offline estimation of $\Par$
 using a separate dataset is typically not possible for all of the parameters of interest. Historically, the choice of parameter settings 
 was commonly performed on an ad hoc basis using expert judgement; simulating the models parameterized in this way is often 
-referred to as performing ``free runs.'' 
-
+referred to as performing ``free runs.'' [\todo: or does free runs refer to not constraining the states?]
 Given that $\Par$ consists of empirical parameters 
 (not physical constants) the concept of ``true'' parameter values is largely ill-defined. It is perhaps most conceptually useful to draw an 
-analogy with empirically-determined parameters of a statistical model, in which ``true values'' implies best-fit in a regression sense. 
+analogy with empirically-determined parameters of a statistical model, in which ``true values'' is interpreted as best-fit in a regression sense.
+Therefore, a natural solution is to learn the parameter values from data. For example, suppose we have access to noisy observations 
+$\{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$ of the true states $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$. 
+We can then consider tuning (i.e., \textit{calibrating}), the value of $\Par$ such that $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$
+is ``close'' to $\{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$  in some well-defined sense. We will refer to the 
+general problem of learning parameters from data as \textit{parameter calibration} or \textit{parameter estimation}. We make this 
+problem precise in the following section, which casts parameter calibration within the generic framework of \textit{inverse problems}. 
+Before doing so, we introduce one more piece of notation. 
+
+Given that we are interested in the dependence of the model predictions 
+on the parameter value, it is natural to introduce the map 
+\begin{align}
+&\fwd: \parSpace \to \R^{\Ntime \times \dimState}, && \fwd(\Par) 
+\Def [\stateApprox_{\Par}(\indexTime[0]{\Time})^\top, \dots, \stateApprox_{\Par}(\indexTime[\Ntime-1]{\Time})^\top]^\top. \label{fwd_model}.
+\end{align}
+
+\todo: the output of this map should really be whatever quantity is being calibrated to. I'm not sure if it is best to just wait to define this. 
+
+
+% Inverse problems 
+\section{Inverse Problems}
+In this section, we provide a brief introduction to inverse problems from a generic perspective. The following section 
+interprets these ideas in the context of parameter calibration for LSMs. 
+
+\subsection{Basic Setup}
+We start by considering a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing some 
+process of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose we have noisy 
+observations $\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ approximates. 
+We seek to invert the process to infer the parameter values that produced the data; loosely speaking, the 
+\textit{inverse problem} consists of identifying $\Par$ such that $\fwd(\Par) \approx \obs$. 
+
+\begin{example}
+There are many ways we might define the forward model in the dynamical setting \ref{ode_discrete}, which we recall 
+conceptualizes an LSM at a single spatial location. Suppose we have noisy observations 
+$\obs \Def \{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$ 
+of the true states $\{\indexState[1]{\state}_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$; that is, we have observations of 
+the first state variable (e.g., above-ground biomass). It is then natural to define the forward model as 
+\begin{align}
+&\fwd: \parSpace \to \R^{\Ntime}, && \fwd(\Par) 
+\Def [\indexState[1]{\stateApprox}_{\Par}(\indexTime[0]{\Time}), \dots, \indexState[1]{\stateApprox}_{\Par}(\indexTime[\Ntime-1]{\Time})]^\top. \label{fwd_model}
+\end{align}
+In words, $\fwd(\Par)$ is the simulated trajectory of the first state variable given the parameter value $\Par$. In this context, achieving 
+the approximation $\fwd(\Par) \approx \obs$ implies that this simulated trajectory agrees with the noisy state observations. We also 
+see that $\dimObs = \Ntime$; i.e., the output dimension of the forward model equals the number of time steps. 
+\end{example}
+
+\subsection{Loss Minimization}
+It is typically impossible (or undesirable) to seek an exact solution $\fwd(\Par) = \obs$. An alternative is to cast 
+model inversion as an optimization problem of the form 
+\begin{align}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \norm{\obs - \fwd(\Par)},
+\end{align}
+where $\norm{\obs - \fwd(\Par)}$ is some measure of the distance between $\fwd(\Par)$ and $\obs$, a common choice being 
+Euclidean distance (i.e., mean squared error),
+\begin{align}
+\norm{\obs - \fwd(\Par)}^2_2 \Def \sum_{\obsIdx=1}^{\dimObs} (\obs_{\obsIdx} - \fwd_{\obsIdx}(\Par))^2. 
+\end{align}
 
 
 
+
+
+\subsection{Maximum Likelihood}
+
+\subsection{Bayesian Methods}
+
+\subsection{Connections with State Estimation}
+
+
+% Parameter calibration 
+\section{Parameter Calibration for LSMs}
+\subsection{Parameter Structure}
+PFTs, identifiability/equifinality, non-linear dependence 
+
+\subsection{Parameter Dimension Reduction}
+Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
+
+\subsection{Spatial and Temporal Variability}
+
+\subsection{Multi-Objective Calibration}
+
+% Surrogate Modeling 
+\section{Surrogate Modeling}
 
 
 \end{document} 
