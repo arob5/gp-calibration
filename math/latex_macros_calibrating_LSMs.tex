@@ -18,11 +18,16 @@
 \newcommand{\Time}{t}
 \newcommand{\timeInit}{\Time_0}
 \newcommand{\stateInit}{\state_0}
+\newcommand{\stateApprox}{\hat{\state}}
+\newcommand{\timeEnd}{T}
 \newcommand{\timeIdx}{k}
+\newcommand{\lastTimeIdx}{K}
+\newcommand{\timeStep}{h}
 \newcommand{\funcODE}{f}
 \newcommand{\forcing}{w}
 \newcommand{\indexTime}[2][\timeIdx]{{#2}_{#1}}
-\newcommand{\stateTime}[2][\timeIdx]{\indexTime[{#1}]{#2}}
+\newcommand{\stateTime}[1][\timeIdx]{\indexTime[{#1}]{\state}}
+\newcommand{\forcingTime}[1][\timeIdx]{\indexTime[{#1}]{\forcing}}
 \newcommand{\fwdOne}{g} % One-step forward operator (flow map) 
 \newcommand{\dimState}{P}
 \newcommand{\stateIdx}{p}
@@ -35,7 +40,7 @@
 % --------------------------------------------------------------------------------------------------
 
 % General inverse problems.
-\newcommand{\Par}{u}
+\newcommand{\Par}{\theta}
 \newcommand{\parSpace}{\mathcal{U}} % Parameter space
 \newcommand{\dimPar}{D} % Parameter dimension 
 \newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
