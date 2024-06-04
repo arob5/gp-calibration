@@ -109,8 +109,7 @@ In this document, we restrict ourselves to the consideration of parameter uncert
 
 The values of LSM parameters are not known exactly, and moreover, cannot always be observed directly. In other words, offline estimation of $\Par$
 using a separate dataset is typically not possible for all of the parameters of interest. Historically, the choice of parameter settings 
-was commonly performed on an ad hoc basis using expert judgement; simulating the models parameterized in this way is often 
-referred to as performing ``free runs.'' [\todo: or does free runs refer to not constraining the states?]
+was commonly performed on an ad hoc basis using expert judgement. 
 Given that $\Par$ consists of empirical parameters 
 (not physical constants) the concept of ``true'' parameter values is largely ill-defined. It is perhaps most conceptually useful to draw an 
 analogy with empirically-determined parameters of a statistical model, in which ``true values'' is interpreted as best-fit in a regression sense.
@@ -120,17 +119,6 @@ We can then consider tuning (i.e., \textit{calibrating}), the value of $\Par$ su
 is ``close'' to $\{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$  in some well-defined sense. We will refer to the 
 general problem of learning parameters from data as \textit{parameter calibration} or \textit{parameter estimation}. We make this 
 problem precise in the following section, which casts parameter calibration within the generic framework of \textit{inverse problems}. 
-Before doing so, we introduce one more piece of notation. 
-
-Given that we are interested in the dependence of the model predictions 
-on the parameter value, it is natural to introduce the map 
-\begin{align}
-&\fwd: \parSpace \to \R^{\Ntime \times \dimState}, && \fwd(\Par) 
-\Def [\stateApprox_{\Par}(\indexTime[0]{\Time})^\top, \dots, \stateApprox_{\Par}(\indexTime[\Ntime-1]{\Time})^\top]^\top. \label{fwd_model}.
-\end{align}
-
-\todo: the output of this map should really be whatever quantity is being calibrated to. I'm not sure if it is best to just wait to define this. 
-
 
 % Inverse problems 
 \section{Inverse Problems}
@@ -159,28 +147,89 @@ the approximation $\fwd(\Par) \approx \obs$ implies that this simulated trajecto
 see that $\dimObs = \Ntime$; i.e., the output dimension of the forward model equals the number of time steps. 
 \end{example}
 
+We emphasize that this setup is quite general; in particular, the forward model $\fwd$ can conceptualize a wide array 
+of different problems. However, in the present setting, $\fwd$ typically has a variety of characteristics that make 
+the inverse problem especially challenging. We will emphasize forward models that (1) are expensive to evaluate 
+at inputs $\Par$; (2) have high-dimensional, structured output spaces (e.g., time series); and (3) are highly nonlinear. 
+In addition, computing gradients of $\fwd$ may be difficult or impossible in many cases. Given these characteristics, 
+it is desirable to consider algorithms that treat $\fwd$ as a ``black-box''; that is, algorithms that only require the 
+ability to compute evaluations $\fwd(\Par)$, without assuming any additional structure. However, there are certainly 
+cases where additional structure (e.g., derivative information, smoothness, periodicity) can be exploited. 
+
 \subsection{Loss Minimization}
 It is typically impossible (or undesirable) to seek an exact solution $\fwd(\Par) = \obs$. An alternative is to cast 
 model inversion as an optimization problem of the form 
 \begin{align}
-\parEst \Def \text{argmin}_{\Par \in \parSpace} \norm{\obs - \fwd(\Par)},
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \loss(\Par), \label{opt}
 \end{align}
-where $\norm{\obs - \fwd(\Par)}$ is some measure of the distance between $\fwd(\Par)$ and $\obs$, a common choice being 
-Euclidean distance (i.e., mean squared error),
+where $\loss(\Par)$ is a loss function, providing some notion of discrepancy between $\fwd(\Par)$ and $\obs$.
+A common choice is the Euclidean distance (i.e., mean squared error),
 \begin{align}
-\norm{\obs - \fwd(\Par)}^2_2 \Def \sum_{\obsIdx=1}^{\dimObs} (\obs_{\obsIdx} - \fwd_{\obsIdx}(\Par))^2. 
+\loss(\Par) = \norm{\obs - \fwd(\Par)}^2_2 \Def \sum_{\obsIdx=1}^{\dimObs} (\obs_{\obsIdx} - \fwd_{\obsIdx}(\Par))^2. \label{l2_loss}
 \end{align}
+This quadratic loss can be extended to weighted generalizations via 
+\begin{align}
+\loss(\Par) = \norm{\obs - \fwd(\Par)}^2_{\obsCov} \Def (\obs - \fwd(\Par))^\top \obsCov^{-1} (\obs - \fwd(\Par)), \label{l2_loss_weighted}
+\end{align}
+for some positive-definite matrix $\obsCov \in \R^{\dimObs \times \dimObs}$. Note that \ref{l2_loss_weighted} reduces to 
+\ref{l2_loss} by setting $\obsCov$ to the identity matrix. 
 
+In theory, any standard optimization algorithms may be employed to solve this optimization problem. However, 
+the typical black-box structure of $\fwd$ poses a challenge. If gradients are available, then gradient descent or 
+(quasi)-Newton methods are a possibility. However, evaluations of $\fwd(\Par)$ may be prohibitively expensive, 
+requiring specialized optimization routines designed to minimize the required number of model evaluations. 
+So-called \textit{black box}, or \textit{derivative free}, optimization algorithms are designed for the setting 
+in which gradient evaluations are not available. 
 
-
-
+Another issue to contend with is the potential for $\loss(\Par)$ to have many local minima. The phenomenon in which 
+multiple values of $\Par$ explain the observed data equally well is generally referred to as \textit{non-identifiability}, 
+or \textit{equifinality}. One approach to mitigate non-identifiability issues is to incorporate prior information regarding 
+the value of $\Par$. This can be accomplished via the addition of a \textit{regularization} term $\regularizer(\Par)$ in 
+the objective function, yielding 
+\begin{align}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \left[\loss(\Par) + \regularizer(\Par) \right]. \label{opt_reg}
+\end{align}
+A common choice of regularizer is $\regularizer(\Par) = \frac{1}{c^2} \norm{\Par - \priorMean}_2^2$, with $c > 0$ tuning 
+the strength of the regularization. As before, this can be generalized to 
+$\regularizer(\Par) = \norm{\Par - \priorMean}_{\priorCov}^2 = (\Par - \priorMean)^\top \priorCov^{-1} (\Par - \priorMean)$, 
+with $\priorCov$ another positive definite matrix. 
+Choosing both a quadratic loss and quadratic regularization yields the common formulation
+\begin{align}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \left\{\norm{\obs - \fwd(\Par)}^2_{\obsCov} + \norm{\Par - \priorMean}_{\priorCov}^2\right\}. \label{quadratic_opt}
+\end{align}
+The first term quantifies the model fit, while the second encourages agreement between $\Par$ and $\priorMean$.
 
 \subsection{Maximum Likelihood}
+We now consider a frequentist statistical approach to the solution of inverse problems. Instead of defining a loss function, the 
+starting point is now to consider a \textit{likelihood function} $p(\obs | \Par)$ (viewed as a function of $\Par$, with $\obs$ fixed). 
+For example, we might assume that the observations $\obs$ are given by Gaussian perturbations of the underlying signal 
+$\fwd(\Par)$, for some ``true'' value of $\theta$: 
+\begin{align}
+\obs | \Par &\sim \Gaussian(\priorMean, \priorCov). \label{gaussian-lik}
+\end{align}
+In this case, the likelihood function is then given by $p(\obs | \Par) = \Gaussian(\obs | \fwd(\Par), \obsCov)$, with 
+$\Gaussian(\obs | \fwd(\Par), \obsCov)$ denoting the density of $\Gaussian(\fwd(\Par), \obsCov)$ evaluated 
+at $\obs$. As was the case with the loss function, evaluating the likelihood at $\fwd$ requires the forward 
+model evaluation $\fwd(\Par)$. We can then define the solution to the inverse problem as the value 
+of $\Par$ that maximizes the likelihood of the data; that is, 
+\begin{align}
+\parEst \Def \text{argmax}_{\Par \in \parSpace} \ p(\obs | \Par). \label{mle}
+\end{align}
+Maximizing $p(\obs | \Par)$ is equivalent to minimizing $\loss(\Par) \Def -\log p(\obs | \Par)$, so we can view the 
+negative log-likelihood as defining a loss function, thus drawing a connection with the non-statistical optimization 
+framework discussed above. Indeed, if we consider the Gaussian observation model \ref{gaussian-lik}, then we 
+have 
+\begin{align}
+\loss(\Par) = -\log p(\obs | \Par) = \frac{1}{2} \norm{\obs - \fwd(\Par)}_{\obsCov}^2, 
+\end{align}
+which implies that the MLE solution in the Gaussian noise setting is equal to minimizing the minimizer of the loss function 
+\ref{l2_loss_weighted}. 
+
+
 
 \subsection{Bayesian Methods}
 
 \subsection{Connections with State Estimation}
-
 
 % Parameter calibration 
 \section{Parameter Calibration for LSMs}
