@@ -67,7 +67,7 @@ We denote the state vector at time $\Time$ by
 \begin{align}
 \state(\Time) \Def [\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)]^\top \in \R^{\dimState}.
 \end{align}
-Carbon fluxes between these states are then described by an ODE model of the form 
+Carbon fluxes between these states are then described by an ODE model of the form
 \begin{align}
 &\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInit) = \stateInit, 
 \end{align}
@@ -88,6 +88,9 @@ let $\stateApprox_{\Par}(\indexTime{\Time})$ denote the approximation of $\state
 $\timeIdx = 0, \dots, \Ntime-1$. Also, let $\indexTime{\timeStep} \Def \indexTime[\timeIdx+1]{\Time} - \indexTime{\Time}$ denote the 
 time step used by the numerical solver at the $\timeIdx^{\text{th}}$ iteration. Standard ODE solvers are time-stepping algorithms of the 
 form 
+\footnote{The simplest example here is a forward Euler scheme, in which the update assumes the form 
+$\stateApprox_{\Par}(\indexTime[\timeIdx+1]{\Time})
+= \stateApprox_{\Par}(\indexTime{\Time}) + \indexTime{\timeStep} \funcODE(\stateApprox_{\Par}(\indexTime{\Time}), \forcing(\indexTime{\Time}))$.}
 \begin{align}
 &\stateApprox_{\Par}(\indexTime[\timeIdx+1]{\Time}) \Def \fwdOne_{\Par}(\stateApprox_{\Par}(\indexTime{\Time}), \forcing(\indexTime{\Time}); \indexTime{\timeStep}), 
 &&\stateApprox_{\Par}(\indexTime[0]{\Time}) = \stateInit, \label{ode_discrete}
@@ -187,7 +190,7 @@ or \textit{equifinality}. One approach to mitigate non-identifiability issues is
 the value of $\Par$. This can be accomplished via the addition of a \textit{regularization} term $\regularizer(\Par)$ in 
 the objective function, yielding 
 \begin{align}
-\parEst \Def \text{argmin}_{\Par \in \parSpace} \left[\loss(\Par) + \regularizer(\Par) \right]. \label{opt_reg}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \left\{\loss(\Par) + \regularizer(\Par) \right\}. \label{opt_reg}
 \end{align}
 A common choice of regularizer is $\regularizer(\Par) = \frac{1}{c^2} \norm{\Par - \priorMean}_2^2$, with $c > 0$ tuning 
 the strength of the regularization. As before, this can be generalized to 
@@ -205,7 +208,7 @@ starting point is now to consider a \textit{likelihood function} $p(\obs | \Par)
 For example, we might assume that the observations $\obs$ are given by Gaussian perturbations of the underlying signal 
 $\fwd(\Par)$, for some ``true'' value of $\theta$: 
 \begin{align}
-\obs | \Par &\sim \Gaussian(\priorMean, \priorCov). \label{gaussian-lik}
+\obs | \Par &\sim \Gaussian(\fwd(\Par), \obsCov). \label{gaussian-lik}
 \end{align}
 In this case, the likelihood function is then given by $p(\obs | \Par) = \Gaussian(\obs | \fwd(\Par), \obsCov)$, with 
 $\Gaussian(\obs | \fwd(\Par), \obsCov)$ denoting the density of $\Gaussian(\fwd(\Par), \obsCov)$ evaluated 
@@ -217,22 +220,78 @@ of $\Par$ that maximizes the likelihood of the data; that is,
 \end{align}
 Maximizing $p(\obs | \Par)$ is equivalent to minimizing $\loss(\Par) \Def -\log p(\obs | \Par)$, so we can view the 
 negative log-likelihood as defining a loss function, thus drawing a connection with the non-statistical optimization 
-framework discussed above. Indeed, if we consider the Gaussian observation model \ref{gaussian-lik}, then we 
-have 
+framework discussed above. Indeed, if we consider the Gaussian observation model \ref{gaussian-lik}, the log-likelihood
+assumes the form 
 \begin{align}
-\loss(\Par) = -\log p(\obs | \Par) = \frac{1}{2} \norm{\obs - \fwd(\Par)}_{\obsCov}^2, 
+\loss(\Par) = -\log p(\obs | \Par) = \cst + \frac{1}{2} \norm{\obs - \fwd(\Par)}_{\obsCov}^2, 
 \end{align}
-which implies that the MLE solution in the Gaussian noise setting is equal to minimizing the minimizer of the loss function 
-\ref{l2_loss_weighted}. 
-
-
+where $\cst$ is a constant that depends only on $\obsCov$, not $\Par$. 
+This implies that the MLE solution in the Gaussian noise setting is equal to the minimizer of the loss function 
+\ref{l2_loss_weighted}. The observation covariance $\obsCov$ is often not known in practice, and hence can 
+also be jointly optimized along with $\Par$. A regularization term can also be included in the same way as in the 
+loss minimization framework. 
 
 \subsection{Bayesian Methods}
+The frequentist MLE approach views the unknown parameter $\Par$ as a fixed quantity, which we seek to estimate.
+The Bayesian approach instead views $\Par$ as a random variable, and proceeds by defining a joint probability 
+distribution on $(\Par, \obs)$. This is typically defined by noting that the joint distribution can be 
+factored as $p(\Par, \obs) = p(\obs | \Par)p(\Par)$. The first term is the likelihood, which we already considered in 
+the previous section. The new requirement is thus to define the \textit{prior distribution} $p(\Par)$, which encodes
+domain knowledge about $\Par$ prior to observing the data $\obs$. We can now define the solution to the Bayesian 
+inverse problem to be the conditional distribution $p(\Par | \obs)$, known as the \textit{posterior distribution}. 
+Applying Bayes' rule shows that the posterior can be computed via 
+\begin{align}
+p(\Par | \obs) &= \frac{p(\obs | \Par) p(\Par)}{p(\obs)} \propto p(\obs | \Par) p(\Par). 
+\end{align}
+The denominator (known as the \textit{model evidence} or more generically the \textit{normalizing constant}) is 
+not a function of $\Par$. Thus, so long as the data $\obs$ is viewed as fixed throughout the analysis, this constant 
+is not required by most inference algorithms. It is worth emphasizing that the solution to the Bayesian inverse problem 
+is an entire distribution $p(\Par | \obs)$, whereas the loss minimization and MLE approaches instead resulted in point 
+estimates of $\Par$. One can view the posterior $p(\Par | \obs)$ as assigning a weight to each possible value of 
+$\Par$ that encodes both its fit to the data as well as its agreement with the prior.  
+Therefore, the Bayesian approach is viewed as the gold standard for uncertainty quantification. In the Bayesian framework, 
+the prior $p(\Par)$ acts as the regularizer, providing a probabilistic perspective on the regularization terms discussed previously. 
 
-\subsection{Connections with State Estimation}
+Within the loss minimization and MLE frameworks, the act of solving an inverse problem reduced to optimizing some 
+objective function. In the Bayesian case, the key challenge is to extract useful information from the posterior distribution 
+$p(\Par | \obs)$. In rare cases, the posterior assumes a well-understood analytical form (e.g., Gaussian). However, in 
+general we must resort to computational methods. Extracting information from the posterior commonly implies
+computing useful statistics (mean, median, mode, variance, quantiles, etc.) or drawing samples. 
+
+We first consider computing the mode of the posterior distribution, which is known as the 
+\textit{maximum a posteriori (MAP)} estimator. The MAP estimator solves the optimization problem 
+\begin{align}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \left\{-\log p(\obs | \Par) - \log p(\Par) \right\}, \label{map}
+\end{align}
+where we have taken the log, and have again re-written the maximization as a minimization by negating the objective function. 
+We immediately see that \ref{map} is equivalent to the regularized MLE approach with $-\log p(\Par)$ acting as the regularization term.
+Choosing a uniform prior reduces to the classical (un-regularized) MLE setting. If we assume a Gaussian likelihood and prior, 
+\begin{align*}
+\obs | \Par &\sim \Gaussian(\fwd(\Par), \obsCov) \\
+\Par &\sim \Gaussian(\priorMean, \priorCov), 
+\end{align*} 
+then the MAP optimization \ref{map} reduces to 
+\begin{align}
+\parEst \Def \text{argmin}_{\Par \in \parSpace} \left\{\norm{\obs - \fwd(\Par)}^2_{\obsCov} + \norm{\Par - \priorMean}_{\priorCov}^2\right\}, 
+\end{align}
+which is precisely equal to \ref{quadratic_opt}. We have thus established a connection between regularized loss minimization, regularized 
+MLE, and MAP estimation. 
+
+While the MAP estimate provides a nice interpretation of regularization, it again reduces to a single point estimate of $\Par$. The true 
+power of Bayesian methods lies in the information provided by the entire posterior distribution. It is beyond the scope of these notes to 
+summarize the wide array of techniques for interrogating the posterior, but we note that the most common method involves drawing 
+samples from $p(\Par | \obs)$. These samples can then be used to estimate moments (mean, variance, etc.), generate histograms, 
+and produce other posterior summaries. Markov chain Monte Carlo (MCMC) methods is a powerful class of algorithms for producing 
+samples from arbitrary probability distributions. These algorithms are iterative, and simply require the ability to evaluate the 
+unnormalized posterior density $p(\obs | \Par) p(\Par)$ given any value of $\Par$. Similar to standard iterative optimization algorithms, 
+MCMC therefore requires one evaluation of the forward model $\fwd(\Par)$ for each iteration of the algorithm. It is not uncommon for 
+MCMC to require $\BigO(10^5)$ or more iterations, which can render these algorithms infeasible for expensive forward models. 
 
 % Parameter calibration 
 \section{Parameter Calibration for LSMs}
+We now return to the discussion of LSMs, mapping the generic inverse problem concepts introduced above to the problem 
+of calibrating LSM parameters. 
+
 \subsection{Parameter Structure}
 PFTs, identifiability/equifinality, non-linear dependence 
 
@@ -242,6 +301,8 @@ Parameter fixing, potential for more sophisticated methods, scaling factors for 
 \subsection{Spatial and Temporal Variability}
 
 \subsection{Multi-Objective Calibration}
+
+\subsection{Connections with State Estimation}
 
 % Surrogate Modeling 
 \section{Surrogate Modeling}
