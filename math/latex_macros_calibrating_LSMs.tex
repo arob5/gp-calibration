@@ -16,16 +16,21 @@
 
 \newcommand{\state}{x}
 \newcommand{\Time}{t}
-\newcommand{\timeInit}{\Time_0}
-\newcommand{\stateInit}{\state_0}
+\newcommand{\timeIdx}{k}
+\newcommand{\indexTime}[2][\timeIdx]{{#2}_{#1}}
+\newcommand{\firstTimeIdxState}{0}
+\newcommand{\firstTimeIdxObs}{1}
+\newcommand{\timeInitState}{\indexTime[\firstTimeIdxState]{\Time}}
+\newcommand{\timeInitObs}{\indexTime[\firstTimeIdxObs]{\Time}}
+\newcommand{\stateInit}{\state_{\firstTimeIdxState}}
+\newcommand{\stateInitObs}{\state_{\firstTimeIdxObs}}
 \newcommand{\stateApprox}{\hat{\state}}
 \newcommand{\timeEnd}{T}
-\newcommand{\timeIdx}{k}
-\newcommand{\Ntime}{K}
+\newcommand{\Ntime}{K} % Number of time steps 
+\newcommand{\lastTimeIdx}{\Ntime} % May or may not be equal to \Ntime depending on whether indexing starts from one or zero, etc. 
 \newcommand{\timeStep}{h}
 \newcommand{\funcODE}{f}
 \newcommand{\forcing}{w}
-\newcommand{\indexTime}[2][\timeIdx]{{#2}_{#1}}
 \newcommand{\stateTime}[1][\timeIdx]{\indexTime[{#1}]{\state}}
 \newcommand{\forcingTime}[1][\timeIdx]{\indexTime[{#1}]{\forcing}}
 \newcommand{\fwdOne}{g} % One-step forward operator (flow map) 

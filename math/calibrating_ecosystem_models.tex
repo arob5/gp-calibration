@@ -69,10 +69,11 @@ We denote the state vector at time $\Time$ by
 \end{align}
 Carbon fluxes between these states are then described by an ODE model of the form
 \begin{align}
-&\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInit) = \stateInit, 
+&\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInitState) = \stateInit, 
 \end{align}
 where $\funcODE_{\Par}(\cdot, \forcing): \R^{\dimState} \to \R^{\dimState}$ is typically a nonlinear function, and $\stateInit$ is the \textit{initial condition}, 
-the value of the state at some initial time $\timeInit$. The forward dynamics encoded by $\funcODE_{\Par}$ are dependent both on a set of 
+the value of the state at some initial time $\timeInitState$. 
+The forward dynamics encoded by $\funcODE_{\Par}$ are dependent both on a set of 
 \textit{parameters} $\Par \in \parSpace \subset \R^{\dimPar}$, as well as a \textit{forcing} (or \textit{driving}) function $\forcing(\Time)$.
 In general, the parameters $\Par$ are not physical constants; rather, they provide a means to empirically parameterize ecosystem 
 processes, which may vary in space and time.   
@@ -81,11 +82,11 @@ initial condition $\stateInit$, though only the first is made explicit in the no
 
 % The Forward Problem 
 \subsection{The Forward Problem}
-The \textit{forward problem} consists of recovering the solution $\state_{\Par}(\Time)$ over some time interval $[\timeInit, \timeEnd]$ for given 
+The \textit{forward problem} consists of recovering the solution $\state_{\Par}(\Time)$ over some time interval $[\timeInitState, \timeEnd]$ for given 
 values of $\Par$, $\stateInit$, and $\forcing(\cdot)$. Given the nonlinearity of $\funcODE_{\Par}$, this solution is typically approximated 
-numerically at a finite set of times $\{\indexTime{\Time}\}_{\timeIdx=0}^{\Ntime-1} \subset [\timeInit, \timeEnd]$. We 
+numerically at a finite set of times $\{\indexTime{\Time}\}_{\timeIdx=\firstTimeIdxState}^{\lastTimeIdx} \subset [\timeInitState, \timeEnd]$. We 
 let $\stateApprox_{\Par}(\indexTime{\Time})$ denote the approximation of $\state_{\Par}(\indexTime{\Time})$ for each 
-$\timeIdx = 0, \dots, \Ntime-1$. Also, let $\indexTime{\timeStep} \Def \indexTime[\timeIdx+1]{\Time} - \indexTime{\Time}$ denote the 
+$\timeIdx = \firstTimeIdxState, \dots, \lastTimeIdx$. Also, let $\indexTime{\timeStep} \Def \indexTime[\timeIdx+1]{\Time} - \indexTime{\Time}$ denote the 
 time step used by the numerical solver at the $\timeIdx^{\text{th}}$ iteration. Standard ODE solvers are time-stepping algorithms of the 
 form 
 \footnote{The simplest example here is a forward Euler scheme, in which the update assumes the form 
@@ -93,9 +94,9 @@ $\stateApprox_{\Par}(\indexTime[\timeIdx+1]{\Time})
 = \stateApprox_{\Par}(\indexTime{\Time}) + \indexTime{\timeStep} \funcODE(\stateApprox_{\Par}(\indexTime{\Time}), \forcing(\indexTime{\Time}))$.}
 \begin{align}
 &\stateApprox_{\Par}(\indexTime[\timeIdx+1]{\Time}) \Def \fwdOne_{\Par}(\stateApprox_{\Par}(\indexTime{\Time}), \forcing(\indexTime{\Time}); \indexTime{\timeStep}), 
-&&\stateApprox_{\Par}(\indexTime[0]{\Time}) = \stateInit, \label{ode_discrete}
+&&\stateApprox_{\Par}(\indexTime[\firstTimeIdxState]{\Time}) = \stateInit, \label{ode_discrete}
 \end{align}
-for $\timeIdx = 1, \dots, \Ntime-1$. Setting a constant step size $\timeStep \equiv \indexTime{\timeStep}$ is a common choice, though 
+for $\timeIdx = \firstTimeIdxState, \dots, \lastTimeIdx$. Setting a constant step size $\timeStep \equiv \indexTime{\timeStep}$ is a common choice, though 
 algorithms that adapt the step size are also quite standard. In practice, the model drivers $\forcing(\indexTime{\Time})$
 are typically given by a sequence of (noisy) observations of meteorological variables (e.g., photosynthetically-active radiation).
 Going forward, we will treat the discrete dynamical system \ref{ode_discrete} as 
@@ -104,8 +105,8 @@ the true model and starting point for subsequent analysis, thus neglecting discr
 % The Inverse Problem
 \subsection{The Inverse Problem}
 Naturally, one must recognize that the predictions of the model \ref{ode_discrete} are subject to many sources of uncertainty. 
-The simulated trajectory $\{\stateApprox_{\Par}(\indexTime{\Time})\}_{\timeIdx=1}^{\Ntime-1}$ is a function of  
-the chosen value of the parameters $\Par$, the model drivers  $\{\indexTime{\obs}\}_{\timeIdx=1}^{\Ntime-1}$, the initial condition $\stateInit$, 
+The simulated trajectory $\{\stateApprox_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxState}^{\lastTimeIdx}$ is a function of  
+the chosen value of the parameters $\Par$, the model drivers  $\{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxState}^{\lastTimeIdx}$, the initial condition $\stateInit$, 
 and the model processes encoded by $\fwdOne_{\Par}$ (irrespective of the parameter value). In the LSM context, 
 all of these quantities contribute non-negligible uncertainty. 
 In this document, we restrict ourselves to the consideration of parameter uncertainty. 
@@ -117,9 +118,10 @@ Given that $\Par$ consists of empirical parameters
 (not physical constants) the concept of ``true'' parameter values is largely ill-defined. It is perhaps most conceptually useful to draw an 
 analogy with empirically-determined parameters of a statistical model, in which ``true values'' is interpreted as best-fit in a regression sense.
 Therefore, a natural solution is to learn the parameter values from data. For example, suppose we have access to noisy observations 
-$\{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$ of the true states $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$. 
-We can then consider tuning (i.e., \textit{calibrating}), the value of $\Par$ such that $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$
-is ``close'' to $\{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$  in some well-defined sense. We will refer to the 
+$\{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$ of the true states 
+$\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$. 
+We can then consider tuning (i.e., \textit{calibrating}), the value of $\Par$ such that $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$
+is ``close'' to $\{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$  in some well-defined sense. We will refer to the 
 general problem of learning parameters from data as \textit{parameter calibration} or \textit{parameter estimation}. We make this 
 problem precise in the following section, which casts parameter calibration within the generic framework of \textit{inverse problems}. 
 
@@ -129,29 +131,39 @@ In this section, we provide a brief introduction to inverse problems from a gene
 interprets these ideas in the context of parameter calibration for LSMs. 
 
 \subsection{Basic Setup}
-We start by considering a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing some 
+We start by considering a \textit{forward model} 
+\footnote{An alternative name for $\fwd$ is the \textit{parameter-to-observable map}. We favor the shorter term 
+\textit{forward model}, but note that terminology can vary.}
+$\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing some 
 process of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose we have noisy 
 observations $\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ approximates. 
 We seek to invert the process to infer the parameter values that produced the data; loosely speaking, the 
 \textit{inverse problem} consists of identifying $\Par$ such that $\fwd(\Par) \approx \obs$. 
 
-\begin{example}
+\begin{example} \label{ex:lsm-state-obs}
 There are many ways we might define the forward model in the dynamical setting \ref{ode_discrete}, which we recall 
 conceptualizes an LSM at a single spatial location. Suppose we have noisy observations 
-$\obs \Def \{\indexTime{\obs}\}_{\timeIdx=0}^{\Ntime-1}$ 
-of the true states $\{\indexState[1]{\state}_{\Par}(\indexTime{\Time})\}_{\timeIdx=0}^{\Ntime-1}$; that is, we have observations of 
+$\obs \Def \{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$ 
+of the true states $\{\indexState[1]{\state}_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$; that is, we have observations of 
 the first state variable (e.g., above-ground biomass). It is then natural to define the forward model as 
 \begin{align}
 &\fwd: \parSpace \to \R^{\Ntime}, && \fwd(\Par) 
-\Def [\indexState[1]{\stateApprox}_{\Par}(\indexTime[0]{\Time}), \dots, \indexState[1]{\stateApprox}_{\Par}(\indexTime[\Ntime-1]{\Time})]^\top. \label{fwd_model}
+\Def [\indexState[1]{\stateApprox}_{\Par}(\indexTime[\firstTimeIdxObs]{\Time}), \dots, \indexState[1]{\stateApprox}_{\Par}(\indexTime[\lastTimeIdx]{\Time})]^\top. \label{fwd_model}
 \end{align}
 In words, $\fwd(\Par)$ is the simulated trajectory of the first state variable given the parameter value $\Par$. In this context, achieving 
 the approximation $\fwd(\Par) \approx \obs$ implies that this simulated trajectory agrees with the noisy state observations. We also 
-see that $\dimObs = \Ntime$; i.e., the output dimension of the forward model equals the number of time steps. 
+see that $\dimObs = \Ntime$; i.e., the output dimension of the forward model equals the number of time steps.
+\footnote{Note that we have defined $\fwd$ here in such a way that the initial condition $\stateInit$ is excluded from the forward model 
+output, given that we are assuming the initial condition has been fixed. Alternatively, the initial condition can be regarded as an additional 
+parameter to learn from data, in which case we would include the initial condition in the forward model output.} 
 \end{example}
 
-We emphasize that this setup is quite general; in particular, the forward model $\fwd$ can conceptualize a wide array 
-of different problems. However, in the present setting, $\fwd$ typically has a variety of characteristics that make 
+We emphasize that this setup is quite general; in particular, $\fwd$ can conceptualize a wide array 
+of different problems. The forward model is an abstraction that represents the map from parameters to a quantity that
+can be directly compared to the observations $\obs$. We focus on the setting where $\fwd$ is a deterministic, known 
+function. It is often the case that the forward model has no analytical form; rather, $\fwd$ may be given by a complex 
+computer simulation (e.g., an ODE solver). 
+In the setting of interest, $\fwd$ typically has a variety of characteristics that make 
 the inverse problem especially challenging. We will emphasize forward models that (1) are expensive to evaluate 
 at inputs $\Par$; (2) have high-dimensional, structured output spaces (e.g., time series); and (3) are highly nonlinear. 
 In addition, computing gradients of $\fwd$ may be difficult or impossible in many cases. Given these characteristics, 
@@ -212,7 +224,11 @@ $\fwd(\Par)$, for some ``true'' value of $\theta$:
 \end{align}
 In this case, the likelihood function is then given by $p(\obs | \Par) = \Gaussian(\obs | \fwd(\Par), \obsCov)$, with 
 $\Gaussian(\obs | \fwd(\Par), \obsCov)$ denoting the density of $\Gaussian(\fwd(\Par), \obsCov)$ evaluated 
-at $\obs$. As was the case with the loss function, evaluating the likelihood at $\fwd$ requires the forward 
+at $\obs$. Note that \ref{gaussian-lik} can equivalently be written as the additive error model 
+\begin{align}
+\obs &= \fwd(\Par) + \noise, && \noise \sim \Gaussian(0, \obsCov). 
+\end{align}
+As was the case with the loss function, evaluating the likelihood at $\fwd$ requires the forward 
 model evaluation $\fwd(\Par)$. We can then define the solution to the inverse problem as the value 
 of $\Par$ that maximizes the likelihood of the data; that is, 
 \begin{align}
@@ -245,7 +261,7 @@ p(\Par | \obs) &= \frac{p(\obs | \Par) p(\Par)}{p(\obs)} \propto p(\obs | \Par) 
 \end{align}
 The denominator (known as the \textit{model evidence} or more generically the \textit{normalizing constant}) is 
 not a function of $\Par$. Thus, so long as the data $\obs$ is viewed as fixed throughout the analysis, this constant 
-is not required by most inference algorithms. It is worth emphasizing that the solution to the Bayesian inverse problem 
+is not a required input to most statistical inference algorithms. It is worth emphasizing that the solution to the Bayesian inverse problem 
 is an entire distribution $p(\Par | \obs)$, whereas the loss minimization and MLE approaches instead resulted in point 
 estimates of $\Par$. One can view the posterior $p(\Par | \obs)$ as assigning a weight to each possible value of 
 $\Par$ that encodes both its fit to the data as well as its agreement with the prior.  
@@ -261,10 +277,11 @@ computing useful statistics (mean, median, mode, variance, quantiles, etc.) or d
 We first consider computing the mode of the posterior distribution, which is known as the 
 \textit{maximum a posteriori (MAP)} estimator. The MAP estimator solves the optimization problem 
 \begin{align}
-\parEst \Def \text{argmin}_{\Par \in \parSpace} \left\{-\log p(\obs | \Par) - \log p(\Par) \right\}, \label{map}
+\parEst &\Def \text{argmax}_{\Par \in \parSpace} \ p(\Par | \obs), \nonumber \\
+&= \text{argmin}_{\Par \in \parSpace} \left\{-\log p(\obs | \Par) - \log p(\Par) \right\} \label{map}
 \end{align}
 where we have taken the log, and have again re-written the maximization as a minimization by negating the objective function. 
-We immediately see that \ref{map} is equivalent to the regularized MLE approach with $-\log p(\Par)$ acting as the regularization term.
+We immediately see that \ref{map} is equivalent to the regularized MLE approach with $\regularizer(\Par) \Def -\log p(\Par)$ acting as the regularization term.
 Choosing a uniform prior reduces to the classical (un-regularized) MLE setting. If we assume a Gaussian likelihood and prior, 
 \begin{align*}
 \obs | \Par &\sim \Gaussian(\fwd(\Par), \obsCov) \\
@@ -290,7 +307,20 @@ MCMC to require $\BigO(10^5)$ or more iterations, which can render these algorit
 % Parameter calibration 
 \section{Parameter Calibration for LSMs}
 We now return to the discussion of LSMs, mapping the generic inverse problem concepts introduced above to the problem 
-of calibrating LSM parameters. 
+of calibrating LSM parameters. Typically, the data $\obs$ in this setting consists of noisy observations of either carbon states 
+or fluxes (or some function of these quantities). A key point is that the observations typically have a time series structure 
+$\obs = \{\obs_{\indexTime[\firstTimeIdxObs]{\Time}}, \dots, \obs_{\indexTime[\lastTimeIdx]{\Time}}\}$ and may contain widely varying degrees of missing 
+data. This often stems from the fact that the temporal resolution of the data differs from the time step used by the ODE solver.
+This difference can be quite extreme depending on the dataset. For example, the ODE may be solved numerically using a sub-daily 
+time step, while the time resolution of the calibration data products can vary from sub-daily (e.g., eddy covariance flux observations) 
+to annual (e.g., field measurements of soil and leaf litter). It is common to calibrate LSM parameters using multiple data sources of 
+varying temporal resolution, though we defer such discussions of multi-objective calibration to \Cref{multi-objective}. 
+We start by considering the case of a single data source $\obs = \{\obs_{\indexTime[\firstTimeIdxObs]{\Time}}, \dots, \obs_{\indexTime[\lastTimeIdx]{\Time}}\}$, 
+in which some or many of the $\obs_{\indexTime{\Time}}$ may be missing. We then define the forward model 
+$\fwd: \parSpace \to \R^{\Ntime}$ as the map from $\Par$ to the trajectory of model outputs that are directly comparable to 
+$\obs$. \Cref{ex:lsm-state-obs} provides a concrete example where $\obs$ contains noisy observations of the first state variable, 
+in which case $\fwd(\Par)$ returns the predicted model trajectory of the first state. 
+
 
 \subsection{Parameter Structure}
 PFTs, identifiability/equifinality, non-linear dependence 
@@ -298,15 +328,18 @@ PFTs, identifiability/equifinality, non-linear dependence
 \subsection{Parameter Dimension Reduction}
 Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
 
-\subsection{Spatial and Temporal Variability}
+\subsection{Learning Initial Conditions}
 
-\subsection{Multi-Objective Calibration}
+\subsection{Spatial Variability}
+\subsubsection{Change-of-Support}
+\subsubsection{Parameter Variability}
+
+\subsection{Multi-Objective Calibration} \label{multi-objective}
 
 \subsection{Connections with State Estimation}
 
 % Surrogate Modeling 
 \section{Surrogate Modeling}
-
 
 \end{document} 
 
