@@ -109,7 +109,6 @@ inv_prob <- list(par_prior=par_prior)
 df_inv_prob_data <- data.frame(day=seq_len(N_time_step), driver=PAR_driver, 
                                LAI_true=drop(output_true), LAI_obs=drop(output_obs))
                                
-
 plt_driver <- ggplot(data=df_inv_prob_data) + 
                 geom_point(aes(x=day, y=driver), color="black") + 
                 ggtitle("Model Driver (PAR)")

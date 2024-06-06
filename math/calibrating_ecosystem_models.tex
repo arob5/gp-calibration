@@ -130,6 +130,27 @@ doing so, we provide a concrete example of a basic vegetation model.
 
 % Toy Example: Very Simple Ecosystem Model 
 \subsection{Toy Example: Very Simple Ecosystem Model}
+To illustrate the basic structure of LSMs, we consider the \textit{Very Simple Ecosystem Model (VSEM)}, a toy model implemented 
+in the \textit{BayesianTools} R package for this express purpose. In this model, the state vector has dimension $\dimState=3$ and is given by 
+\begin{align*}
+\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R^{3}, 
+\end{align*}
+where the states represent the above-ground vegetation, below-ground vegetation (roots), and soil organic matter 
+carbon pools (\textrm{kg C/$m^2$}), respectively. The model driver $\forcing(\Time)$ is photosynthetically active radiation 
+(PAR; \textrm{MJ/$m^2$/day}). The dynamics describing the carbon fluxes between these pools depend on 
+$\NPP(\Time)$, the Net Primary Productivity (NPP) \textrm{kg C/$m^2$/day} at time $\Time$, 
+which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration.
+GPP quantifies the amount of carbon fixed by vegetation during photosynthesis. Given NPP, the VSEM model 
+calculates Net Ecosystem Exchange (NEE), which is (modulo a sign change) 
+NPP minus heterotrophic respiration. Thus, in the VSEM model this means 
+\begin{align}
+-\text{NEE} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
+\end{align}
+The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
+The state equations describing the carbon dynamics are then given by
+
+
+
 \todo: Discuss that GPP is a nonlinear function of both states and parameters; depends explicitly on some parameters, and implicitly on others through the 
 state variable (which itself depends on all parameters). 
 

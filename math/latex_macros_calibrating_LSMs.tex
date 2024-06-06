@@ -14,6 +14,10 @@
 % Land Surface Models (LSMs) / Dynamic Models 
 % --------------------------------------------------------------------------------------------------
 
+%
+% General ODEs. 
+% 
+
 \newcommand{\state}{x}
 \newcommand{\Time}{t}
 \newcommand{\timeIdx}{k}
@@ -37,6 +41,15 @@
 \newcommand{\dimState}{P}
 \newcommand{\stateIdx}{p}
 \newcommand{\indexState}[2][\stateIdx]{{#2}^{(#1)}}
+
+%
+% Very Simple Ecosystem Model (VSEM)
+%
+\newcommand{\stateV}{\indexState[\textrm{v}]{\state}}
+\newcommand{\stateR}{\indexState[\textrm{r}]{\state}}
+\newcommand{\stateS}{\indexState[\textrm{s}]{\state}}
+\newcommand{\NPP}{\textrm{NPP}}
+\newcommand{\GPP}{\textrm{GPP}}
 
 % --------------------------------------------------------------------------------------------------
 % Inverse problems: general setup 
