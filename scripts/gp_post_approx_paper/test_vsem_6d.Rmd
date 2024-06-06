@@ -1,0 +1,143 @@
+---
+title: "VSEM 6d Emulation Example"
+author: "Andrew Roberts"
+date: '2024-06-05'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(gridExtra)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "vsem_6d")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+
+# Plot settings applied to all plots. 
+design_pt_size <- 4
+line_thickness <- 1.5
+design_color <- "red"
+xlim <- c(-10, 10)
+ylim <- c(0.0777, 0.4)
+
+# Settings for noisy MCMC. 
+N_mcmc <- 50000
+burn_in_start <- N_mcmc/2
+
+# VSEM parameters. 
+N_time_step <- 365*3 # In days. 
+
+
+```
+
+```{r}
+#
+# VSEM setup. 
+#
+
+seed_inv_prob <- 23
+set.seed(seed_inv_prob)
+
+# Model driver: photosynthetically active radiation (PAR). 
+PAR_driver <- VSEMcreatePAR(seq_len(N_time_step))
+
+# Parameters. 
+par_names <- c("KEXT", "LAR", "LUE", "GAMMA", "tauV", "tauS", "tauR", "Av")
+
+# States. 
+state_names <- c("Cv", "Cs", "Cr")
+
+# Output variable (calibration objective). 
+output_vars <- c("LAI")
+
+# Time-independent observation covariance.
+cov_obs <- matrix(0.36)
+
+# Store initial conditions (fixed) and priors on parameters (uniform). 
+vsem_defaults <- VSEMgetDefaults()
+init_cond <- setNames(vsem_defaults[state_names, "best"], state_names)
+par_prior <- vsem_defaults[par_names, c("lower", "upper")]
+colnames(par_prior) <- c("param1", "param2")
+par_prior$dist <- "Uniform"
+
+# Sample true parameter values from prior. 
+par_true <- setNames(sample_prior_theta(par_prior), par_names)
+
+# Define forward model (not vectorized). 
+fwd <- function(par_val) {
+  # Using VSEM default parameter values, only updating parameter values that are being 
+  # calibrated. 
+  
+  all_pars <- setNames(vsem_defaults$best, rownames(vsem_defaults))
+  all_pars[par_names] <- par_val
+  
+  output <- as.matrix(VSEM(all_pars, PAR_driver))
+  LAI <- matrix(all_pars["LAR"] * output[, "Cv"], ncol=1)
+  colnames(LAI) <- "LAI"
+  
+  return(LAI)
+}
+
+# Get ground truth signal.
+output_true <- fwd(par_true)
+
+# Perturb ground truth to generate synthetic observations. 
+output_obs <- output_true + matrix(rnorm(N_time_step), ncol=1) %*% chol(cov_obs)
+
+# Create inverse problem list. 
+inv_prob <- list(par_prior=par_prior)
+
+# Plots. 
+df_inv_prob_data <- data.frame(day=seq_len(N_time_step), driver=PAR_driver, 
+                               LAI_true=drop(output_true), LAI_obs=drop(output_obs))
+                               
+
+plt_driver <- ggplot(data=df_inv_prob_data) + 
+                geom_point(aes(x=day, y=driver), color="black") + 
+                ggtitle("Model Driver (PAR)")
+
+plt_outputs <- ggplot(data=df_inv_prob_data) +
+                geom_point(aes(x=day, y=LAI_obs), color="black") + 
+                geom_line(aes(x=day, y=LAI_true), color="red") + 
+                ylab("LAI") + ggtitle("True and Observed LAI")
+
+plot(plt_driver)
+plot(plt_outputs)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -293,8 +293,8 @@ run_VSEM <- function(theta_vals, computer_model_data = NULL, ref_pars = NULL, pa
 }
 
 
-run_VSEM_single_input <- function(par_val, computer_model_data = NULL, ref_pars = NULL, pars_cal_sel = NULL, 
-                                  PAR_data = NULL, output_vars = NULL) {
+run_VSEM_single_input <- function(par_val, computer_model_data=NULL, ref_pars=NULL, pars_cal_sel=NULL, 
+                                  PAR_data=NULL, output_vars=NULL) {
   # Runs the VSEM model using specified parameter setting, returning the outputs of the model. This runs
   # the computer model as a single input, intended to work as a generic computer model`f()` mapping 
   # as used in the `run_computer_model()` function. 
@@ -1615,7 +1615,7 @@ generate_vsem_test_data <- function(random_seed, N_time_steps, Sig_eps, pars_cal
   # Args:
   #    random_seed: integer, random seed. `generate_vsem_test_data()` should be the first function called that utilizes the random 
   #                 seed after the random seed is set in the main script. 
-  #    N_time_steps: integer, number of time steps to integrate the VSEM ODE system. 
+  #    N_time_steps: integer, number of time steps to integrate the VSEM ODE system. Daily time step. 
   #    Sig_eps: matrix of shape (p, p), where p is the number of output variables. Must have row and column names set to the 
   #             names of the associated output variables. 
   #    pars_cal_names: character(), vector of names of the calibration parameters. 
@@ -1880,7 +1880,7 @@ generate_vsem_test_4 <- function(random_seed) {
 generate_vsem_test_5 <- function(random_seed) {
   # A convenience function to generate the VSEM data for "test case 5". This test is 
   # identical to test case 3, with the addition of a second parameter `Cs` (the 
-  # initial condition for the soil pool). This is also a counterpart ot test case 4, 
+  # initial condition for the soil pool). This is also a counterpart to test case 4, 
   # which calibrates LAR and KEXT, which are completely unidentifiable. In this case
   # the parameters LAR and Cs are less related, so comparing test cases 4 and 5 allow 
   # for different degrees of non-identifiability to be tested. 

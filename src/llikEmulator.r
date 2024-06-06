@@ -1090,7 +1090,7 @@ llikEmulatorExactGauss$methods(
     callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov, dim_input=dim_par,
               default_conditional=default_conditional, input_names=par_names,
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
-              lik_description="Exact linear Gaussian likelihood.",
+              lik_description="Exact Gaussian likelihood.",
               emulator_description="No emulation.", exact_llik=TRUE, ...)
   },
   
@@ -1201,7 +1201,7 @@ llikEmulatorExactGaussDiag$methods(
     callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=sig2, dim_input=dim_par,
               default_conditional=default_conditional, input_names=par_names,
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
-              lik_description="Exact linear Gaussian likelihood, diagonal covariance structure.",
+              lik_description="Exact Gaussian likelihood, diagonal covariance structure.",
               emulator_description="No emulation.", exact_llik=TRUE, ...)
   },
   

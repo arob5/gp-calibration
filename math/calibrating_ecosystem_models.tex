@@ -72,9 +72,10 @@ Carbon fluxes between these states are then described by an ODE model of the for
 &\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInitState) = \stateInit, 
 \end{align}
 where $\funcODE_{\Par}(\cdot, \forcing): \R^{\dimState} \to \R^{\dimState}$ is typically a nonlinear function, and $\stateInit$ is the \textit{initial condition}, 
-the value of the state at some initial time $\timeInitState$. 
+the value of the state at some initial time $\timeInitState$. Models of this form are referred to as \textit{pool-based models}, or more generically 
+\textit{box models}, as they conceptualize the carbon cycle are consisting of a set of carbon pools that are exchanging carbon. 
 The forward dynamics encoded by $\funcODE_{\Par}$ are dependent both on a set of 
-\textit{parameters} $\Par \in \parSpace \subset \R^{\dimPar}$, as well as a \textit{forcing} (or \textit{driving}) function $\forcing(\Time)$.
+\textit{parameters} $\Par \in \parSpace \subset \R^{\dimPar}$, as well as a \textit{forcing} (i.e., \textit{driving}) function $\forcing(\Time)$.
 In general, the parameters $\Par$ are not physical constants; rather, they provide a means to empirically parameterize ecosystem 
 processes, which may vary in space and time.   
 We emphasize that the solution $\state_{\Par}(\Time)$ of the ODE is a function of the parameters $\Par$, driver $\forcing(\Time)$, and 
@@ -100,7 +101,8 @@ for $\timeIdx = \firstTimeIdxState, \dots, \lastTimeIdx$. Setting a constant ste
 algorithms that adapt the step size are also quite standard. In practice, the model drivers $\forcing(\indexTime{\Time})$
 are typically given by a sequence of (noisy) observations of meteorological variables (e.g., photosynthetically-active radiation).
 Going forward, we will treat the discrete dynamical system \ref{ode_discrete} as 
-the true model and starting point for subsequent analysis, thus neglecting discretization error with respect to the true continuous-time solution. 
+the true model and starting point for subsequent analysis, thus neglecting discretization error with respect to the true continuous-time solution.
+
 
 % The Inverse Problem
 \subsection{The Inverse Problem}
@@ -112,7 +114,7 @@ all of these quantities contribute non-negligible uncertainty.
 In this document, we restrict ourselves to the consideration of parameter uncertainty. 
 
 The values of LSM parameters are not known exactly, and moreover, cannot always be observed directly. In other words, offline estimation of $\Par$
-using a separate dataset is typically not possible for all of the parameters of interest. Historically, the choice of parameter settings 
+using a separate data source is typically not possible for all of the parameters of interest. Historically, the choice of parameter settings 
 was commonly performed on an ad hoc basis using expert judgement. 
 Given that $\Par$ consists of empirical parameters 
 (not physical constants) the concept of ``true'' parameter values is largely ill-defined. It is perhaps most conceptually useful to draw an 
@@ -123,7 +125,13 @@ $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}
 We can then consider tuning (i.e., \textit{calibrating}), the value of $\Par$ such that $\{\state_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$
 is ``close'' to $\{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$  in some well-defined sense. We will refer to the 
 general problem of learning parameters from data as \textit{parameter calibration} or \textit{parameter estimation}. We make this 
-problem precise in the following section, which casts parameter calibration within the generic framework of \textit{inverse problems}. 
+problem precise in the following section, which casts parameter calibration within the generic framework of \textit{inverse problems}. Before 
+doing so, we provide a concrete example of a basic vegetation model. 
+
+% Toy Example: Very Simple Ecosystem Model 
+\subsection{Toy Example: Very Simple Ecosystem Model}
+\todo: Discuss that GPP is a nonlinear function of both states and parameters; depends explicitly on some parameters, and implicitly on others through the 
+state variable (which itself depends on all parameters). 
 
 % Inverse problems 
 \section{Inverse Problems}
@@ -330,8 +338,9 @@ Parameter fixing, potential for more sophisticated methods, scaling factors for 
 
 \subsection{Learning Initial Conditions}
 
-\subsection{Spatial Variability}
+\subsection{Spatial Considerations}
 \subsubsection{Change-of-Support}
+\subsubsection{Impure Pixels}
 \subsubsection{Parameter Variability}
 
 \subsection{Multi-Objective Calibration} \label{multi-objective}
