@@ -69,7 +69,7 @@ We denote the state vector at time $\Time$ by
 \end{align}
 Carbon fluxes between these states are then described by an ODE model of the form
 \begin{align}
-&\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInitState) = \stateInit, 
+&\frac{d}{d\Time} \state_{\Par}(\Time) = \funcODE_{\Par}(\state_{\Par}(\Time), \forcing(\Time)), &&\state_{\Par}(\timeInitState) = \stateInit, \label{ode}
 \end{align}
 where $\funcODE_{\Par}(\cdot, \forcing): \R^{\dimState} \to \R^{\dimState}$ is typically a nonlinear function, and $\stateInit$ is the \textit{initial condition}, 
 the value of the state at some initial time $\timeInitState$. Models of this form are referred to as \textit{pool-based models}, or more generically 
@@ -80,6 +80,8 @@ In general, the parameters $\Par$ are not physical constants; rather, they provi
 processes, which may vary in space and time.   
 We emphasize that the solution $\state_{\Par}(\Time)$ of the ODE is a function of the parameters $\Par$, driver $\forcing(\Time)$, and 
 initial condition $\stateInit$, though only the first is made explicit in the notation as the parameters are the main quantity of interest in this document.
+As described here, this model is point-based, in that it is designed to simulate carbon dynamics at a single spatial location. We note that 
+there is a large diversity in LSMs, and other models may be defined to operate over regions (e.g., pixels). 
 
 % The Forward Problem 
 \subsection{The Forward Problem}
@@ -101,7 +103,8 @@ for $\timeIdx = \firstTimeIdxState, \dots, \lastTimeIdx$. Setting a constant ste
 algorithms that adapt the step size are also quite standard. In practice, the model drivers $\forcing(\indexTime{\Time})$
 are typically given by a sequence of (noisy) observations of meteorological variables (e.g., photosynthetically-active radiation).
 Going forward, we will treat the discrete dynamical system \ref{ode_discrete} as 
-the true model and starting point for subsequent analysis, thus neglecting discretization error with respect to the true continuous-time solution.
+the true model and starting point for subsequent analysis, thus neglecting discretization error with respect to the true continuous-time solution. 
+
 
 
 % The Inverse Problem
@@ -129,7 +132,7 @@ problem precise in the following section, which casts parameter calibration with
 doing so, we provide a concrete example of a basic vegetation model. 
 
 % Toy Example: Very Simple Ecosystem Model 
-\subsection{Toy Example: Very Simple Ecosystem Model}
+\subsection{Toy Example: Very Simple Ecosystem Model} \label{vsem}
 To illustrate the basic structure of LSMs, we consider the \textit{Very Simple Ecosystem Model (VSEM)}, a toy model implemented 
 in the \textit{BayesianTools} R package for this express purpose. In this model, the state vector has dimension $\dimState=3$ and is given by 
 \begin{align*}
@@ -137,22 +140,33 @@ in the \textit{BayesianTools} R package for this express purpose. In this model,
 \end{align*}
 where the states represent the above-ground vegetation, below-ground vegetation (roots), and soil organic matter 
 carbon pools (\textrm{kg C/$m^2$}), respectively. The model driver $\forcing(\Time)$ is photosynthetically active radiation 
-(PAR; \textrm{MJ/$m^2$/day}). The dynamics describing the carbon fluxes between these pools depend on 
-$\NPP(\Time)$, the Net Primary Productivity (NPP) \textrm{kg C/$m^2$/day} at time $\Time$, 
+(PAR; \textrm{MJ/$m^2$/day}). The dynamics describing the carbon fluxes between these pools rely on a parameterized model 
+of Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}), 
 which is calculated as the Gross Primary Productivity (GPP) minus carbon released due to autotrophic respiration.
-GPP quantifies the amount of carbon fixed by vegetation during photosynthesis. Given NPP, the VSEM model 
-calculates Net Ecosystem Exchange (NEE), which is (modulo a sign change) 
-NPP minus heterotrophic respiration. Thus, in the VSEM model this means 
-\begin{align}
--\text{NEE} = \text{ GPP } - \text{ Plant Respiration } - \text{ Soil Respiration } 
-\end{align}
-The sign convention is that positive NPP indicates a flux into the ecosystem, while a positive NEE indicates a flux into the atmosphere, hence the addition of the negative. 
+GPP quantifies the amount of carbon fixed by vegetation during photosynthesis.
 The state equations describing the carbon dynamics are then given by
-
-
-
-\todo: Discuss that GPP is a nonlinear function of both states and parameters; depends explicitly on some parameters, and implicitly on others through the 
-state variable (which itself depends on all parameters). 
+\begin{align}
+\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
+\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
+\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
+\end{align}
+with $\NPP(\stateV(\Time), \forcing(\Time))$ modeled as
+\begin{align}
+\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
+\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
+\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
+\end{align} 
+Note that this model is over-parameterized, which can clearly be seen by writing 
+\begin{align}
+\NPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot (1 - \fracRespiration) \left[1 - \exp\left\{-\KEXT \cdot \LAR \cdot \stateV\right\} \right]. 
+\end{align}
+This ODE is of the form \ref{ode}, with parameters
+\begin{align}
+\Par = \{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\} \label{vsem_param}
+\end{align}
+The dimension of this parameter vector can be reduced by accounting for the over-parameterization (e.g., by fixing 
+$\fracRespiration$ and $\LAR$). The dynamics $\funcODE_{\Par}$ are nonlinear in $\state$ and autonomous, in that the 
+time dependence appears only through $\state(\Time)$ and $\forcing(\Time)$. 
 
 % Inverse problems 
 \section{Inverse Problems}
@@ -166,25 +180,46 @@ We start by considering a \textit{forward model}
 $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing some 
 process of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose we have noisy 
 observations $\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ approximates. 
+The canonical noise model is of the additive form 
+\begin{align}
+\obs &= \fwd(\Par) + \noise,
+\end{align}
+though other formulations are possible. 
 We seek to invert the process to infer the parameter values that produced the data; loosely speaking, the 
 \textit{inverse problem} consists of identifying $\Par$ such that $\fwd(\Par) \approx \obs$. 
 
 \begin{example} \label{ex:lsm-state-obs}
 There are many ways we might define the forward model in the dynamical setting \ref{ode_discrete}, which we recall 
-conceptualizes an LSM at a single spatial location. Suppose we have noisy observations 
-$\obs \Def \{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$ 
-of the true states $\{\indexState[1]{\state}_{\Par}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$; that is, we have observations of 
-the first state variable (e.g., above-ground biomass). It is then natural to define the forward model as 
+conceptualizes an LSM at a single spatial location. Commonly, the data 
+$\obs \Def \{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$ in this context consists of noisy observations
+of either carbon states or fluxes. Both cases typically imply that $\obs$ is viewed as some function of the underlying 
+true states, which have been perturbed by noise. As a concrete example, the VSEM parameter inversion might be formulated
+as 
 \begin{align}
-&\fwd: \parSpace \to \R^{\Ntime}, && \fwd(\Par) 
-\Def [\indexState[1]{\stateApprox}_{\Par}(\indexTime[\firstTimeIdxObs]{\Time}), \dots, \indexState[1]{\stateApprox}_{\Par}(\indexTime[\lastTimeIdx]{\Time})]^\top. \label{fwd_model}
+\obs &= \fwd(\Par) + \noise,
 \end{align}
-In words, $\fwd(\Par)$ is the simulated trajectory of the first state variable given the parameter value $\Par$. In this context, achieving 
-the approximation $\fwd(\Par) \approx \obs$ implies that this simulated trajectory agrees with the noisy state observations. We also 
-see that $\dimObs = \Ntime$; i.e., the output dimension of the forward model equals the number of time steps.
-\footnote{Note that we have defined $\fwd$ here in such a way that the initial condition $\stateInit$ is excluded from the forward model 
-output, given that we are assuming the initial condition has been fixed. Alternatively, the initial condition can be regarded as an additional 
-parameter to learn from data, in which case we would include the initial condition in the forward model output.} 
+with $\Par$ given by \ref{vsem_param}. Some options for the definition of $\fwd: \parSpace \to \R^{\Ntime}$ include
+\begin{align}
+\fwd_{\indexTime{\Time}}(\Par) 
+&\Def \LAI(\stateV(\indexTime{\Time})) 
+= \LAR \cdot \stateV(\indexTime{\Time})
+\end{align}
+and
+\begin{align}
+\fwd_{\indexTime{\Time}}(\Par) 
+&\Def \NPP(\stateV(\indexTime{\Time}), \forcing(\indexTime{\Time})) \\
+&= \forcing(\indexTime{\Time}) \cdot \LUE \cdot (1 - \fracRespiration) \left[1 - \exp\left\{-\KEXT \cdot \LAR \cdot \stateV(\indexTime{\Time})\right\} \right], \nonumber
+\end{align}
+for $\timeIdx = \firstTimeIdxObs, \dots, \lastTimeIdx$. These two options are specific examples of pool-based and flux-based 
+calibration, respectively. 
+\footnote{It is also common to calibrate to multiple outputs, including combinations of pools and fluxes, simultaneously. Such multi-objective
+formulations are discussed in \Cref{multi-objective}.}
+Note that in both cases, the forward model is a composition of two maps: (1) the map from parameters to 
+states (given by the forward ODE simulation); and (2) a map from states to observables (in this case LAI or NPP).   
+Finally, we note that the initial conditions 
+$\stateInit$ are typically subject to uncertainty; one approach to deal with this is to view the initial conditions
+$\left\{\stateV(\timeInitState), \stateR(\timeInitState), \stateS(\timeInitState)\right\}$ as additional parameters to be estimated 
+from data, thus incorporating them into the parameter set $\Par$. 
 \end{example}
 
 We emphasize that this setup is quite general; in particular, $\fwd$ can conceptualize a wide array 
