@@ -45,6 +45,9 @@ burn_in_start <- N_mcmc/2
 # VSEM parameters. 
 N_time_step <- 365*3 # In days. 
 
+# Global likelihood normalization settings. 
+default_conditional <- FALSE
+default_normalize <- TRUE
 
 ```
 
@@ -103,7 +106,7 @@ output_true <- fwd(par_true)
 output_obs <- output_true + matrix(rnorm(N_time_step), ncol=1) %*% chol(cov_obs)
 
 # Create inverse problem list. 
-inv_prob <- list(par_prior=par_prior)
+inv_prob <- list(par_prior=par_prior, y=output_obs)
 
 # Plots. 
 df_inv_prob_data <- data.frame(day=seq_len(N_time_step), driver=PAR_driver, 
@@ -123,6 +126,35 @@ plot(plt_outputs)
 
 ```
 
+```{r}
+#
+# Inversion using exact forward model. 
+#
+
+# Exact log-likelihood object. Note that we must pass in the data y as a 
+# 1 x N_time_step matrix here, so `llikEmulatorExactGaussDiag` interprets this 
+# as `N_obs=1` and `N_output=N_time_step`. 
+llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd, 
+                                         y_obs=t(inv_prob$y), dim_par=nrow(inv_prob$par_prior),
+                                         use_fixed_lik_par=TRUE, sig2=diag(cov_obs),
+                                         par_names=rownames(inv_prob$par_prior), 
+                                         default_conditional=default_conditional, 
+                                         default_normalize=default_normalize)
+inv_prob$llik_obj <- llik_exact
+
+
+# Test points. 
+N_grid <- 5000
+u_grid <- get_batch_design("LHS", N_grid, prior_params=inv_prob$par_prior)
+test_info <- list(input=u_grid)
+test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
+test_info$llik <- llik_exact$assemble_llik(test_info$input)
+test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+
+
+
+
+```
 
 
 

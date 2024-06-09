@@ -73,7 +73,7 @@ par_prior_params <- data.frame(dist="Uniform", param1=xlim[1], param2=xlim[2])
 rownames(par_prior_params) <- "u"
 u_true <- 3.0
 sig2_true <- 1
-y <- 0 # fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+y <- matrix(0) # fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
 
 # Exact likelihood. 
 default_conditional <- FALSE
@@ -83,13 +83,13 @@ llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model,
                                          sig2=sig2_true, par_names=rownames(par_prior_params), 
                                          default_conditional=default_conditional, 
                                          default_normalize=default_normalize)
-inv_prob <- list(llik=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
+inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
 
 # Create grid for plotting. 
 N_grid <- 201
 u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
 test_info <- list(input=u_grid)
-test_info$fwd <- llik_exact$run_fwd_model(test_info$input)[1,] # TODO: don't need this indexing once I update the llikEmulator class. 
+test_info$fwd <- llik_exact$run_fwd_model(test_info$input)[,1] 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
 
@@ -115,7 +115,7 @@ set.seed(seed_init_design)
 N_design <- 7
 design_info <- list()
 design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
-design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[1,]
+design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[,1]
 design_info$llik <- llik_exact$assemble_llik(design_info$input)
 design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 
@@ -130,7 +130,7 @@ emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 # Forward model emulator.
 em_fwd_gp <- gpWrapperHet(design_info$input, matrix(design_info$fwd, ncol=1), normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, matrix(y), sig2=inv_prob$sig2_true, 
+em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, y, sig2=inv_prob$sig2_true, 
                                    default_conditional=default_conditional, 
                                    default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
                                    par_names=rownames(par_prior_params))

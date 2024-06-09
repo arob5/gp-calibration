@@ -156,16 +156,17 @@ with $\NPP(\stateV(\Time), \forcing(\Time))$ modeled as
 \GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
 \LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
 \end{align} 
-Note that this model is over-parameterized, which can clearly be seen by writing 
-\begin{align}
-\NPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot (1 - \fracRespiration) \left[1 - \exp\left\{-\KEXT \cdot \LAR \cdot \stateV\right\} \right]. 
-\end{align}
 This ODE is of the form \ref{ode}, with parameters
 \begin{align}
 \Par = \{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\} \label{vsem_param}
 \end{align}
-The dimension of this parameter vector can be reduced by accounting for the over-parameterization (e.g., by fixing 
-$\fracRespiration$ and $\LAR$). The dynamics $\funcODE_{\Par}$ are nonlinear in $\state$ and autonomous, in that the 
+Note that this model is over-parameterized, which can clearly be seen by writing 
+\begin{align}
+\NPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot (1 - \fracRespiration) \left[1 - \exp\left\{-\KEXT \cdot \LAR \cdot \stateV\right\} \right]. 
+\end{align}
+The parameters $\{\LUE, \fracRespiration\}$ are unidentifiable, as are $\{\LAR, \KEXT\}$. The following section will discuss methods 
+to deal with this issue. 
+The dynamics $\funcODE_{\Par}$ are nonlinear in $\state$ and autonomous, in that the 
 time dependence appears only through $\state(\Time)$ and $\forcing(\Time)$. 
 
 % Inverse problems 
@@ -188,7 +189,7 @@ though other formulations are possible.
 We seek to invert the process to infer the parameter values that produced the data; loosely speaking, the 
 \textit{inverse problem} consists of identifying $\Par$ such that $\fwd(\Par) \approx \obs$. 
 
-\begin{example} \label{ex:lsm-state-obs}
+\begin{example} \label{ex:lsm-inv-prob}
 There are many ways we might define the forward model in the dynamical setting \ref{ode_discrete}, which we recall 
 conceptualizes an LSM at a single spatial location. Commonly, the data 
 $\obs \Def \{\indexTime{\obs}\}_{\timeIdx=\firstTimeIdxObs}^{\lastTimeIdx}$ in this context consists of noisy observations
@@ -202,12 +203,12 @@ with $\Par$ given by \ref{vsem_param}. Some options for the definition of $\fwd:
 \begin{align}
 \fwd_{\indexTime{\Time}}(\Par) 
 &\Def \LAI(\stateV(\indexTime{\Time})) 
-= \LAR \cdot \stateV(\indexTime{\Time})
+= \LAR \cdot \stateV(\indexTime{\Time}) \label{lsm-fwd-state}
 \end{align}
 and
 \begin{align}
 \fwd_{\indexTime{\Time}}(\Par) 
-&\Def \NPP(\stateV(\indexTime{\Time}), \forcing(\indexTime{\Time})) \\
+&\Def \NPP(\stateV(\indexTime{\Time}), \forcing(\indexTime{\Time})) \label{lsm-fwd-flux} \\
 &= \forcing(\indexTime{\Time}) \cdot \LUE \cdot (1 - \fracRespiration) \left[1 - \exp\left\{-\KEXT \cdot \LAR \cdot \stateV(\indexTime{\Time})\right\} \right], \nonumber
 \end{align}
 for $\timeIdx = \firstTimeIdxObs, \dots, \lastTimeIdx$. These two options are specific examples of pool-based and flux-based 
@@ -314,19 +315,19 @@ loss minimization framework.
 \subsection{Bayesian Methods}
 The frequentist MLE approach views the unknown parameter $\Par$ as a fixed quantity, which we seek to estimate.
 The Bayesian approach instead views $\Par$ as a random variable, and proceeds by defining a joint probability 
-distribution on $(\Par, \obs)$. This is typically defined by noting that the joint distribution can be 
+distribution on $(\Par, \obs)$. This is typically specified by noting that the joint distribution can be 
 factored as $p(\Par, \obs) = p(\obs | \Par)p(\Par)$. The first term is the likelihood, which we already considered in 
 the previous section. The new requirement is thus to define the \textit{prior distribution} $p(\Par)$, which encodes
 domain knowledge about $\Par$ prior to observing the data $\obs$. We can now define the solution to the Bayesian 
 inverse problem to be the conditional distribution $p(\Par | \obs)$, known as the \textit{posterior distribution}. 
-Applying Bayes' rule shows that the posterior can be computed via 
+Applying Bayes' rule shows that the posterior density can be computed via 
 \begin{align}
 p(\Par | \obs) &= \frac{p(\obs | \Par) p(\Par)}{p(\obs)} \propto p(\obs | \Par) p(\Par). 
 \end{align}
 The denominator (known as the \textit{model evidence} or more generically the \textit{normalizing constant}) is 
 not a function of $\Par$. Thus, so long as the data $\obs$ is viewed as fixed throughout the analysis, this constant 
 is not a required input to most statistical inference algorithms. It is worth emphasizing that the solution to the Bayesian inverse problem 
-is an entire distribution $p(\Par | \obs)$, whereas the loss minimization and MLE approaches instead resulted in point 
+is an entire distribution $p(\Par | \obs)$, whereas the loss minimization and MLE approaches instead result in point 
 estimates of $\Par$. One can view the posterior $p(\Par | \obs)$ as assigning a weight to each possible value of 
 $\Par$ that encodes both its fit to the data as well as its agreement with the prior.  
 Therefore, the Bayesian approach is viewed as the gold standard for uncertainty quantification. In the Bayesian framework, 
@@ -371,35 +372,58 @@ MCMC to require $\BigO(10^5)$ or more iterations, which can render these algorit
 % Parameter calibration 
 \section{Parameter Calibration for LSMs}
 We now return to the discussion of LSMs, mapping the generic inverse problem concepts introduced above to the problem 
-of calibrating LSM parameters. Typically, the data $\obs$ in this setting consists of noisy observations of either carbon states 
-or fluxes (or some function of these quantities). A key point is that the observations typically have a time series structure 
-$\obs = \{\obs_{\indexTime[\firstTimeIdxObs]{\Time}}, \dots, \obs_{\indexTime[\lastTimeIdx]{\Time}}\}$ and may contain widely varying degrees of missing 
-data. This often stems from the fact that the temporal resolution of the data differs from the time step used by the ODE solver.
-This difference can be quite extreme depending on the dataset. For example, the ODE may be solved numerically using a sub-daily 
+of calibrating LSM parameters. We recall from \Cref{ex:lsm-inv-prob} that the observation $\obs$ in this setting typically 
+consists of a noisy time series $\{\obs_{\indexTime[\firstTimeIdxObs]{\Time}}, \dots, \obs_{\indexTime[\lastTimeIdx]{\Time}}\}$
+of observable carbon pool or flux related quantities. These time series may contain widely varying degrees of missing data, 
+stemming from the fact that the temporal resolution of the data may differ significantly from the time step used by the ODE 
+solver. For example, the ODE may be solved numerically using a sub-daily 
 time step, while the time resolution of the calibration data products can vary from sub-daily (e.g., eddy covariance flux observations) 
 to annual (e.g., field measurements of soil and leaf litter). It is common to calibrate LSM parameters using multiple data sources of 
 varying temporal resolution, though we defer such discussions of multi-objective calibration to \Cref{multi-objective}. 
-We start by considering the case of a single data source $\obs = \{\obs_{\indexTime[\firstTimeIdxObs]{\Time}}, \dots, \obs_{\indexTime[\lastTimeIdx]{\Time}}\}$, 
-in which some or many of the $\obs_{\indexTime{\Time}}$ may be missing. We then define the forward model 
-$\fwd: \parSpace \to \R^{\Ntime}$ as the map from $\Par$ to the trajectory of model outputs that are directly comparable to 
-$\obs$. \Cref{ex:lsm-state-obs} provides a concrete example where $\obs$ contains noisy observations of the first state variable, 
-in which case $\fwd(\Par)$ returns the predicted model trajectory of the first state. 
-
-
-\subsection{Parameter Structure}
-PFTs, identifiability/equifinality, non-linear dependence 
-
-\subsection{Parameter Dimension Reduction}
-Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
-
-\subsection{Learning Initial Conditions}
+We therefore start by considering a forward model of the form $\fwd: \parSpace \to \R^{\Ntime}$ mapping from parameters 
+to observables, with \ref{lsm-fwd-state} and \ref{lsm-fwd-flux} providing concrete examples of calibrating to pool and flux 
+data, respectively. The following sections dive deeper into various challenges associated with LSM parameter calibration. 
 
 \subsection{Spatial Considerations}
+Up until this point, we have been considering parameter calibration for an LSM at a single spatial location. In practice, these 
+models are run at many different spatial locations in order to produce regional, continental, or global forecasts of the carbon 
+cycle. We emphasize that this is distinct from the typical models employed in ocean and atmosphere modeling, which are PDEs
+and hence explicitly describe evolution in time and space. By contrast, LSMs are ODEs describing time dependence, that 
+are then simulated independently at a set of spatial locations. For example, LSMs may be run at a set of locations 
+aligning with ground-based data (e.g., the NEON or AMERIFLUX networks) or on a pixel-by-pixel basis if calibrating with 
+respect to satellite observations (e.g., as is done within the CARDAMOM framework). We therefore start by making explicit 
+the dependence of these models on space. We modify the single-location formulation \ref{ode} as
+\begin{align}
+&\frac{d}{d\Time} \indexSpace{\state}(\Time) = \funcODE_{\indexSpace{\Par}}(\indexSpace{\state}(\Time), \indexSpace{\forcing}(\Time)), &&\indexSpace{\state}(\timeInitState) = \stateInitSpace, \label{ode-space}
+\end{align}
+where $\spaceIdx$ is some two-dimensional spatial coordinate (e.g., latitude/longitude or a two-dimensional Euclidean projection). Both the 
+initial condition $\stateInitSpace$ and model driver $\indexSpace{\forcing}(\Time)$ vary in space; in numerically solving 
+the ODE these quantities are typically provided by data sources with explicit spatial identification. Consequently, the discretized state trajectories 
+$\{\indexSpace{\state}(\indexTime{\Time})\}_{\timeIdx=\firstTimeIdxState}^{\lastTimeIdx}$ will also have spatial dependence. Crucially, 
+the parameters $\indexSpace{\Par}$ are also expected to vary in space. For example, plant traits will naturally vary across different ecosystems. 
+To account for such differences, a standard approach is to group plants into broader classes known as \textit{plant functional types (PFTs)}. 
+When such approaches are used, we let $\Npft$ denote the number of PFTs. 
+For example, a single plant trait may contribute $\Npft$ different parameters to $\Par$, one parameter per PFT. Importantly, the use of PFTs is 
+only a coarse surrogate for spatial variation. Parameters may exhibit significant spatial variation even within the same PFT. To be clear on notation, 
+the parameter set $\Par$ is already assumed to contain PFT-specific parameters; therefore, $\indexSpace{\Par}$ identifies the potential for 
+spatial variation even after specifying PFT classifications. PFT considerations are discussed further in 
+\Cref{param-structure}. We also note that not all parameters in LSMs correspond to plant traits, and these 
+additional parameters are typically also subject to spatial variability. 
+
 \subsubsection{Change-of-Support}
 \subsubsection{Impure Pixels}
-\subsubsection{Parameter Variability}
+\subsubsection{Spatially-Varying Parameter Calibration}
+
+
+\subsection{Parameter Structure} \label{param-structure}
+PFTs, identifiability/equifinality, non-linear dependence.
+
+\subsubsection{Parameter Dimension Reduction}
+Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
 
 \subsection{Multi-Objective Calibration} \label{multi-objective}
+
+\subsection{Learning Initial Conditions}
 
 \subsection{Connections with State Estimation}
 
