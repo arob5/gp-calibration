@@ -39,7 +39,7 @@ xlim <- c(-10, 10)
 ylim <- c(0.0777, 0.4)
 
 # Settings for noisy MCMC. 
-N_mcmc <- 50000
+N_mcmc <- 100000
 burn_in_start <- N_mcmc/2
 
 # VSEM parameters. 
@@ -63,7 +63,8 @@ set.seed(seed_inv_prob)
 PAR_driver <- VSEMcreatePAR(seq_len(N_time_step))
 
 # Parameters. 
-par_names <- c("KEXT", "LAR", "LUE", "GAMMA", "tauV", "tauS", "tauR", "Av")
+# par_names <- c("KEXT", "GAMMA")
+par_names <- c("LUE", "tauV") # "GAMMA", "LAR", "tauS", "tauR", "KEXT", "Av"
 
 # States. 
 state_names <- c("Cv", "Cs", "Cr")
@@ -106,7 +107,7 @@ output_true <- fwd(par_true)
 output_obs <- output_true + matrix(rnorm(N_time_step), ncol=1) %*% chol(cov_obs)
 
 # Create inverse problem list. 
-inv_prob <- list(par_prior=par_prior, y=output_obs)
+inv_prob <- list(par_prior=par_prior, y=output_obs, dim_par=nrow(par_prior))
 
 # Plots. 
 df_inv_prob_data <- data.frame(day=seq_len(N_time_step), driver=PAR_driver, 
@@ -144,31 +145,81 @@ inv_prob$llik_obj <- llik_exact
 
 
 # Test points. 
-N_grid <- 5000
-u_grid <- get_batch_design("LHS", N_grid, prior_params=inv_prob$par_prior)
+N_grid <- 201^2 # 5000
+u_grid <- get_batch_design("tensor_product_grid", N_grid, prior_params=inv_prob$par_prior)
 test_info <- list(input=u_grid)
 test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+
+# MCMC sampling using exact likelihood. 
+mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
+cov_prop_init <- diag((inv_prob$par_prior$param2 - inv_prob$par_prior$param1)/12, nrow=inv_prob$dim_par)
+mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
+                                 mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init, adapt_scale_prop=FALSE)
+samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
+
+# Plots. 
+trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", burn_in_start=75000) # , burn_in_start=burn_in_start) 
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt, param_types="par") # burn_in_start=burn_in_start
+
+for(plt in trace_plots_exact) plot(plt) 
+for(plt in hist_plots_exact) plot(plt)
+
+```
+
+
+```{r}
+test_info$llik <- llik_exact$assemble_llik(test_info$input)
+test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+
+
+plot(test_info$input, exp(test_info$llik+test_info$lprior + 1023), type="l", xlim=c(.5, .9))
+```
+
+
+
+
+```{r}
+
+df_samp <- as.data.frame(mcmc_exact_list$par)
+df_samp_subset <- unique(df_samp[10000:10500,])
+df_samp_subset$itr <- 1:nrow(df_samp_subset)
+
+
+plt_test <- plot_heatmap(test_info$input, exp(test_info$llik + test_info$lprior + 1000), point_coords=par_true,
+                         raster=TRUE, xlab=colnames(test_info$input)[1], ylab=colnames(test_info$input)[2])
+
+plt_test + geom_text(aes(x=LUE, y=tauV, label=itr), data=df_samp_subset, color="red")
 
 
 
 
 ```
 
+```{r}
+
+df <- select_mcmc_samp(samp_dt, param_types="par") # burn_in_start=burn_in_start
+df <- dcast(df, "param_type+itr+test_label~param_name", value.var="sample")
+
+ggplot(df, aes(x=LUE, y=tauV) ) +
+  geom_density_2d()
 
 
+```
+
+Examples to include: 
+1.) Calibrating LUE and tauV to LAI. Super concentrated posterior. cov_obs=0.36, default uniform priors, 
+365*3 time steps (3 years). 
+2.) 
 
 
+```{r}
 
+test <- getSample(out, start=1, end=NULL)
+plot(1:nrow(test), test[,"KEXT"], type="l")
 
-
-
-
-
-
-
-
+```
 
 
 

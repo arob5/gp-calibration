@@ -158,7 +158,7 @@ with $\NPP(\stateV(\Time), \forcing(\Time))$ modeled as
 \end{align} 
 This ODE is of the form \ref{ode}, with parameters
 \begin{align}
-\Par = \{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\} \label{vsem_param}
+\Par = \{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}. \label{vsem_param}
 \end{align}
 Note that this model is over-parameterized, which can clearly be seen by writing 
 \begin{align}
@@ -188,6 +188,19 @@ The canonical noise model is of the additive form
 though other formulations are possible. 
 We seek to invert the process to infer the parameter values that produced the data; loosely speaking, the 
 \textit{inverse problem} consists of identifying $\Par$ such that $\fwd(\Par) \approx \obs$. 
+
+We emphasize that this setup is quite general; in particular, $\fwd$ can conceptualize a wide array 
+of different problems. The forward model is an abstraction that represents the map from parameters to a quantity that
+can be directly compared to the observations $\obs$. We focus on the setting where $\fwd$ is a deterministic, known 
+function. It is often the case that the forward model has no analytical form; rather, $\fwd$ may be given by a complex 
+computer simulation (e.g., an ODE solver). 
+In the setting of interest, $\fwd$ typically has a variety of characteristics that make 
+the inverse problem especially challenging. We will emphasize forward models that (1) are expensive to evaluate 
+at inputs $\Par$; (2) have high-dimensional, structured output spaces (e.g., time series); and (3) are highly nonlinear. 
+In addition, computing gradients of $\fwd$ may be difficult or impossible in many cases. Given these characteristics, 
+it is desirable to consider algorithms that treat $\fwd$ as a ``black-box''; that is, algorithms that only require the 
+ability to compute evaluations $\fwd(\Par)$, without assuming any additional structure. However, there are certainly 
+cases where additional structure (e.g., derivative information, smoothness, periodicity) can be exploited. 
 
 \begin{example} \label{ex:lsm-inv-prob}
 There are many ways we might define the forward model in the dynamical setting \ref{ode_discrete}, which we recall 
@@ -222,19 +235,6 @@ $\stateInit$ are typically subject to uncertainty; one approach to deal with thi
 $\left\{\stateV(\timeInitState), \stateR(\timeInitState), \stateS(\timeInitState)\right\}$ as additional parameters to be estimated 
 from data, thus incorporating them into the parameter set $\Par$. 
 \end{example}
-
-We emphasize that this setup is quite general; in particular, $\fwd$ can conceptualize a wide array 
-of different problems. The forward model is an abstraction that represents the map from parameters to a quantity that
-can be directly compared to the observations $\obs$. We focus on the setting where $\fwd$ is a deterministic, known 
-function. It is often the case that the forward model has no analytical form; rather, $\fwd$ may be given by a complex 
-computer simulation (e.g., an ODE solver). 
-In the setting of interest, $\fwd$ typically has a variety of characteristics that make 
-the inverse problem especially challenging. We will emphasize forward models that (1) are expensive to evaluate 
-at inputs $\Par$; (2) have high-dimensional, structured output spaces (e.g., time series); and (3) are highly nonlinear. 
-In addition, computing gradients of $\fwd$ may be difficult or impossible in many cases. Given these characteristics, 
-it is desirable to consider algorithms that treat $\fwd$ as a ``black-box''; that is, algorithms that only require the 
-ability to compute evaluations $\fwd(\Par)$, without assuming any additional structure. However, there are certainly 
-cases where additional structure (e.g., derivative information, smoothness, periodicity) can be exploited. 
 
 \subsection{Loss Minimization}
 It is typically impossible (or undesirable) to seek an exact solution $\fwd(\Par) = \obs$. An alternative is to cast 
@@ -410,25 +410,25 @@ spatial variation even after specifying PFT classifications. PFT considerations 
 \Cref{param-structure}. We also note that not all parameters in LSMs correspond to plant traits, and these 
 additional parameters are typically also subject to spatial variability. 
 
-\subsubsection{Change-of-Support}
-\subsubsection{Impure Pixels}
-\subsubsection{Spatially-Varying Parameter Calibration}
+% \subsubsection{Change-of-Support}
+% \subsubsection{Impure Pixels}
+% \subsubsection{Spatially-Varying Parameter Calibration}
 
 
-\subsection{Parameter Structure} \label{param-structure}
-PFTs, identifiability/equifinality, non-linear dependence.
+% \subsection{Parameter Structure} \label{param-structure}
+% PFTs, identifiability/equifinality, non-linear dependence.
 
-\subsubsection{Parameter Dimension Reduction}
-Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
+% \subsubsection{Parameter Dimension Reduction}
+% Parameter fixing, potential for more sophisticated methods, scaling factors for PFTs
 
-\subsection{Multi-Objective Calibration} \label{multi-objective}
+% \subsection{Multi-Objective Calibration} \label{multi-objective}
 
-\subsection{Learning Initial Conditions}
+% \subsection{Learning Initial Conditions}
 
-\subsection{Connections with State Estimation}
+% \subsection{Connections with State Estimation}
 
 % Surrogate Modeling 
-\section{Surrogate Modeling}
+% \section{Surrogate Modeling}
 
 \end{document} 
 

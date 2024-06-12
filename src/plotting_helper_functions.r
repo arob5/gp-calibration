@@ -185,8 +185,8 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   #                 Instead, they will be used to construct a 2D KDE estimate and the
   #                 contours of this KDE will be overlaid on the heatmap. 
   #    points_mat: matrix, with 2 columns. These input points 
-  #                    will be directly plotted as points on the plot and colored red. This 
-  #                    argument is typically used to plot design points. 
+  #                will be directly plotted as points on the plot and colored red. This 
+  #                argument is typically used to plot design points. 
   #    raster: logical(1), see above description. Set to TRUE when `X` is a dense grid of evenly-spaced  
   #            points FALSE when the points in `X` are not evenly-spaced or are sparse. 
   #    point_coords: numeric(2), coordinates to plot a single point. This typically 
@@ -300,6 +300,46 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   
   return(plt)
 }
+
+
+plot_true_pred_scatter <- function(y_pred, y_true, include_CI=FALSE, CI_lower=NULL,
+                                   CI_upper=NULL, y_design=NULL, plot_title=NULL,
+                                   xlab="observed", ylab="predicted", ...) {
+  # Produces a scatter plot of predictions against ground truth values. Note that 
+  # the plot does not display any information about the inputs at which the 
+  # responses are being considered. 
+  
+  # Set default title/labels, if not provided. 
+  if(is.null(plot_title)) plot_title <- "Predictions vs. Truth"
+  if(is.null(xlab)) xlab <- "observed"
+  if(is.null(ylab)) ylab <- "predicted"
+  
+  plt <- ggplot()
+  df_pred <- data.frame(y_pred=y_pred, y_true=y_true)
+  
+  # Plot confidence intervals first, so they don't cover up other layers. 
+  if(include_CI) {
+    df_pred$CI_upper <- CI_upper
+    df_pred$CI_lower <- CI_lower
+    plt <- plt + 
+           geom_segment(aes(x=CI_lower, y=y_pred, xend=CI_upper, yend=y_pred), 
+                        df_pred, color="gray")
+  }
+  
+  plt <- plt + 
+          geom_point(aes(x=y_true, y=y_pred), df_pred, shape=1) + 
+          geom_abline(slope=1, intercept=0, color="red") + 
+          ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+          
+  return(plt)
+  
+}
+
+
+
+
+
+
 
 
 # -----------------------------------------------------------------------------

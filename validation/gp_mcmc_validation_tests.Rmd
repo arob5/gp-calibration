@@ -1,0 +1,88 @@
+---
+title: "GP-Accelerated MCMC Algorithm Tests"
+author: "Andrew Roberts"
+date: '2024-06-09'
+output: html_document
+---
+
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(ggplot2)
+library(data.table)
+
+base_dir <- getwd()
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+
+# Settings for MCMC. 
+N_mcmc <- 50000
+burn_in_start <- N_mcmc/2
+
+# Global likelihood normalization settings. 
+default_conditional <- FALSE
+default_normalize <- TRUE
+
+set.seed(7)
+
+```
+
+
+```{r}
+#
+# 2D Gaussian posterior. 
+# 
+
+fwd <- function(par) par
+cov_obs <- diag(1.0, 2.0)
+par_true <- c(0.0, 10.0)
+par_prior <- data.frame(dist="Gaussian", param1=c(par_true[1], par_true[2]),
+                        param2=c(1.0, 9.0), row.names=c("u1", "u2"))
+y <- fwd(par_true) + drop(sqrt(cov_obs) %*% matrix(rnorm(2)))                            
+
+```
+
+
+```{r}
+# Exact likelihood. 
+llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd, 
+                                         y_obs=matrix(y, nrow=1), dim_par=nrow(par_prior),
+                                         use_fixed_lik_par=TRUE, sig2=diag(cov_obs),
+                                         par_names=rownames(par_prior), 
+                                         default_conditional=default_conditional, 
+                                         default_normalize=default_normalize)
+```
+
+
+```{r}
+# MCMC with exact likelihood. 
+mcmc_exact_list <- mcmc_gp_noisy(llik_exact, par_prior, N_itr=N_mcmc, mode="MCMH")
+samp_dt <- format_mcmc_output(mcmc_exact_list, test_label="exact")
+
+# Plots. 
+trace_plots_exact <- get_trace_plots(samp_dt)
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt, param_types="par")
+
+for(plt in trace_plots_exact) plot(plt) 
+for(plt in hist_plots_exact) plot(plt)
+
+```
+
+
+
+
+
+
+

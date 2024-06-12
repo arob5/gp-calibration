@@ -150,13 +150,18 @@ sample_emulator_cond <- function(inputs_scaled, emulator_info_list, cond_type, s
 adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt_cov, adapt_scale, 
                                   samp_interval, accept_rate, accept_rate_target=0.24,  
                                   adapt_factor_exponent=0.8, adapt_factor_numerator=10) {
+  # Follows the adaptive Metropolis scheme used in the Nimble probabilistic programming language. 
+  # Described here: https://arob5.github.io/blog/2024/06/10/adapt-mh/
 
   return_list <- list()
   adapt_factor <- 1 / (times_adapted + 3)^adapt_factor_exponent
   
   if(adapt_cov) {
-    sample_cov_interval <- cov(samp_interval)
-    cov_prop <- cov_prop + adapt_factor * (sample_cov_interval - cov_prop)
+    if(accept_rate > 0) {
+      sample_cov_interval <- cov(samp_interval)
+      cov_prop <- cov_prop + adapt_factor * (sample_cov_interval - cov_prop)
+    } 
+    
     L_cov_prop <- t(chol(cov_prop))
     return_list$L_cov <- L_cov_prop
   }
@@ -793,6 +798,16 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   accept_count <- 0
   times_adapted <- 0
   
+  ##
+  prop_scale <- matrix(nrow=N_itr, ncol=1, dimnames=list(NULL, "scale"))
+  prop_C <- matrix(nrow=N_itr, ncol=d, dimnames=list(NULL, llik_emulator$input_names))
+  prop_sd_comb <- matrix(nrow=N_itr, ncol=d, dimnames=list(NULL, llik_emulator$input_names))
+
+  prop_scale[1,] <- exp(log_scale_prop)
+  prop_C[1,] <- sqrt(diag(cov_prop))
+  prop_sd_comb[1,] <- prop_scale[1,] * prop_C[1,] 
+  ##
+  
   for(itr in 2:N_itr) {
     #
     # Metropolis step for calibration parameters.
@@ -850,6 +865,13 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       accept_count <- 0
     }
     
+    ##
+    prop_scale[itr,] <- exp(log_scale_prop)
+    prop_C[itr,] <- sqrt(diag(crossprod(L_cov_prop)))
+    prop_sd_comb[itr,] <- prop_scale[itr,] * prop_C[itr,]
+    ##
+    
+    
     #
     # Gibbs step for sig2. 
     #
@@ -866,8 +888,10 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     
   }
   
-  return(list(par=par_samp, sig2=sig2_samp))
-  
+  return(list(samp = list(par=par_samp, sig2=sig2_samp, prop_sd_comb=prop_sd_comb, 
+                          prop_scale=prop_scale, prop_C=prop_C), 
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop))
+
 }
 
 
@@ -895,7 +919,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   #                                           cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
   
   # This should be moved to the argument validation function, once it is written. 
-  if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  # TODO: need to update this check to include forward model emulator with Gaussian likelihood. 
+  # if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
   
   # Objects to store samples. 
   d <- llik_emulator$dim_input
@@ -925,10 +950,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
-  lpost_pred_curr <- get_gp_lpost_approx(matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names)), 
-                                         approx_type, llik_emulator, par_prior_params,  
-                                         lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, ...)
-  
+  par_curr_mat <- matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
+  llik_pred_curr <- llik_emulator$calc_lik_approx(par_curr_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
+  lpost_pred_curr <- llik_pred_curr + calc_lprior_theta(par_curr_mat, par_prior_params)
+
   # Proposal covariance.
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
   if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
@@ -954,10 +979,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
       SSR_idx <- 1
     } else {
       # Compute log-posterior approximation. 
-      lpost_pred_prop <- get_gp_lpost_approx(matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names)), 
-                                             approx_type, llik_emulator, par_prior_params,  
-                                             lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, ...)
-      
+      par_prop_mat <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
+      llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
+      lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior_params)
+
       # Accept-Reject step.
       alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
       
@@ -999,8 +1024,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
     
   }
   
-  return(list(par=par_samp, sig2=sig2_samp))
-  
+  return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop))
+
 }
 
 
@@ -1134,66 +1160,6 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
 }
 
 
-mcmc_gp_1d_discretization <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
-                                      sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
-                                      log_scale_prop=NULL, N_grid_points=NULL,
-                                      adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
-                                      adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
-                                      adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
-  # `N_grid_points` is the number of grid points in the discretization. 
-  
-  # This should be moved to the argument validation function, once it is written. 
-  if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
-  
-  # Objects to store samples. 
-  d <- llik_emulator$dim_input
-  par_samp <- matrix(nrow=N_itr, ncol=d)
-  colnames(par_samp) <- llik_emulator$input_names
-  
-  # Setup for `sig2` (observation variances). Safe to assume that all of the 
-  # non-fixed likelihood parameters are `sig2` since this is verified by 
-  # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
-  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
-  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
-  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
-  
-  if(include_sig2_Gibbs_step) {
-    .NotYetImplemented()
-    
-    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
-    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
-    sig2_samp[1,] <- sig2_curr
-  } else {
-    sig2_curr <- NULL
-    sig2_samp <- NULL
-  }
-  
-  # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
-  par_samp[1,] <- drop(par_init)
-  par_curr <- par_samp[1,]
-  lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
-  
-  # Proposal covariance.
-  if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
-  if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
-  L_cov_prop <- t(chol(cov_prop))
-  accept_count <- 0
-  times_adapted <- 0
-  
-  # Grid points for GP discretization. 
-  grid <- get_tensor_product_grid(N_batch, prior_dist_info=par_prior_params)
-                          
-  # Gibbs step: GP. 
-  
-  
-  # MH step: par. 
-  
-}
-
-
-
 # ---------------------------------------------------------------------
 # Unnormalized log posterior functions using log-likelihood emulators. 
 # ---------------------------------------------------------------------
@@ -1212,18 +1178,23 @@ get_gp_lpost_approx <- function(input, approx_type, llik_emulator, par_prior_par
 }
 
 gp_lpost_mean <- function(input, llik_emulator, par_prior_params, lik_par_val=NULL, 
-                          conditional=FALSE, normalize=TRUE, llik_pred_list=NULL, ...) {
+                          conditional=FALSE, normalize=TRUE, emulator_pred_list=NULL, ...) {
   
-  assert_that(llik_emulator$llik_pred_dist == "Gaussian")
-  
-  if(is.null(llik_pred_list)) {
-    llik_vals <- drop(llik_emulator$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=FALSE, 
-                                            conditional=conditional, normalize=normalize, ...)$mean)
+  # Emulator predictive mean. 
+  if(is.null(emulator_pred_list)) {
+    emulator_mean <- llik_emulator$predict_emulator(input, lik_par_val=lik_par_val, 
+                                                    return_mean=TRUE, return_var=FALSE, ...)$mean 
   } else {
-    llik_vals <- drop(llik_pred_list$mean)
-    assert_that(!is.null(llik_vals))
+    emulator_mean <- emulator_pred_list$mean
   }
   
+  assert_that(!is.null(emulator_mean))
+  
+  # Plug emulator mean into log-likelihood. 
+  llik_vals <- llik_emulator$assemble_llik(emulator_mean, lik_par_val=lik_par_val, conditional=conditional, 
+                                           normalize=normalize, ...)
+
+  # Evaluate prior log density. 
   lprior_vals <- calc_lprior_theta(input, par_prior_params)
   
   return(llik_vals + lprior_vals)

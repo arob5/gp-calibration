@@ -10,6 +10,7 @@
 output/
 images/
 support_points/
+figure-html/
 *.bbl
 *.blg
 .Rproj.user

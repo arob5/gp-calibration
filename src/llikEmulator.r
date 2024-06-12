@@ -216,7 +216,7 @@ llikEmulator$methods(
     }
       
     llik_pred <- .self$assemble_llik(emulator_pred_list$mean, lik_par_val=lik_par_val, 
-                                     conditional=conditional, normalize=normalize)
+                                     conditional=conditional, normalize=normalize, ...)
     if(log_scale) return(llik_pred)
     return(exp(llik_pred))
   },
@@ -389,6 +389,59 @@ llikEmulator$methods(
                                plot_title=plot_title, xlab=xlab, ylab=ylab, ...)
     
     return(plt)                     
+  }, 
+  
+  
+  plot_pred_validation = function(input, true_llik, lik_par_val=NULL, emulator_pred_list=NULL, 
+                                  plot_type="llik", conditional=default_conditional, 
+                                  normalize=default_normalize, include_interval=TRUE,
+                                  interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                                  include_design=TRUE, xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
+    
+    assert_that(plot_type %in% c("llik", "lik"))
+    
+    # Default plot title. 
+    if(is.null(plot_title)) {
+      if(plot_type == "llik") plot_title <- "Log-Likelihood Predictions"
+      if(plot_type == "lik") plot_title <- "Likelihood Predictions"
+    }
+    
+    input <- .self$get_input(input)
+    
+    # Compute required predictive quantities if not already provided. 
+    true_vals <- true_llik
+    if(plot_type == "llik") {
+      pred_list <- .self$predict(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
+                                 return_mean=TRUE, return_var=include_interval, 
+                                 conditional=conditional, normalize=normalize, ...)
+    } else {
+      pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list,  
+                                     return_mean=TRUE, return_var=include_interval, conditional=conditional, 
+                                     normalize=normalize, log_scale=FALSE, ...)
+      if(!is.null(true_vals)) true_vals <- exp(true_vals)
+    }
+    
+    # Compute prediction interval.  
+    if(include_interval) interval_list <- .self$get_pred_interval(input, lik_par_val=lik_par_val, target_pred_list=pred_list, 
+                                                                  target=plot_type, method=interval_method, N_std_dev=N_std_dev,
+                                                                  CI_prob=CI_prob, conditional=conditional, normalize=normalize, ...)
+    else interval_list <- NULL
+    
+    # Design points. 
+    design_inputs <- NULL
+    design_response_vals <- NULL 
+    if(include_design) {
+      design_response_vals <- drop(get_design_llik(lik_par_val, conditional, normalize, ...))
+      if(plot_type == "lik") design_response_vals <- exp(design_response_vals)
+    } 
+    
+    # Produce plot. 
+    plt <- plot_true_pred_scatter(y_pred=drop(pred_list$mean), y_true=drop(true_vals),
+                                  include_CI=include_interval, CI_lower=interval_list$lower,  
+                                  CI_upper=interval_list$upper, y_design=design_response_vals, 
+                                  plot_title=plot_title, xlab=xlab, ylab=ylab, ...)
+    
+    return(plt)
   }
   
 )
@@ -1234,7 +1287,7 @@ llikEmulatorExactGaussDiag$methods(
   },
   
   assemble_llik = function(input, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
-    # `input` should have dimension (N_input, N_samp). Returns vector of length `N_input.` 
+    # `input` should have dimension (N_input, D). Returns vector of length `N_input.` 
 
     # Fetch the variance parameters. 
     sig2_val <- get_lik_par(lik_par_val)
