@@ -5,6 +5,8 @@
 # Andrew Roberts
 # 
 
+library(kde1d)
+
 # ------------------------------------------------------------------------------
 # MCMC Formatting Functions. 
 # ------------------------------------------------------------------------------
@@ -620,7 +622,7 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
                                         xlab="parameter", ylab="kde", save_dir=NULL) {
   # `N_kde_pts` is the number of points at which the KDE approximation is evaluated for each 
   # univariate variable. 
-
+  
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
     test_labels <- c(test_labels, test_label_baseline)
@@ -634,7 +636,7 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
   # Separate out data to be used as the baseline for comparison in each plot, if provided. 
   if(!is.null(test_label_baseline)) {
     samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
-    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
+    samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
   }
   
   # Generate plots. 
@@ -648,7 +650,7 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
     plt_label <- paste(param_type_curr, param_name_curr, sep="_")
     samp_dt_param <- samp_dt_subset[(param_type == param_type_curr) & 
                                     (param_name == param_name_curr), .(test_label, sample)] 
-    test_labels <- unique(samp_dt_param$test_label)
+    test_labels_curr <- unique(samp_dt_param$test_label)
     
     # Determine the grid of points at which the KDE will be evaluated. 
     bound_lower <- quantile(samp_dt_param$sample, 0.025)
@@ -656,39 +658,29 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
     kde_pts <- seq(bound_lower, bound_upper, length.out=N_kde_pts)
     
     # Loop over test labels, constructing KDE for each label. 
-    kde_mat <- matrix(nrow=N_kde_pts, ncol=length(test_labels), 
-                      dimnames=list(NULL, test_labels))
-    for(lbl in test_labels) {
+    kde_mat <- matrix(nrow=N_kde_pts, ncol=length(test_labels_curr), 
+                      dimnames=list(NULL, test_labels_curr))
+    for(lbl in test_labels_curr) {
       kde_fit <- kde1d(samp_dt_subset[test_label==lbl, sample])
       kde_mat[,lbl] <- dkde1d(kde_pts, kde_fit)
     }
 
     # Construct KDE for the baseline label, if provided. 
+    kde_baseline <- NULL
     if(!is.null(test_label_baseline)) {
-      samp_baseline <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                          (param_name == param_name_curr), sample] 
-      
-      samp_list[[2]] <- matrix(samp_baseline, ncol=1)
-      data_names <- c(data_names, test_label_baseline)
+      samp_baseline_param <- samp_dt_baseline[(param_type == param_type_curr) & 
+                                              (param_name == param_name_curr), sample] 
+      kde_fit <- kde1d(samp_baseline_param)
+      kde_baseline <- dkde1d(kde_pts, kde_fit)
     }
     
-    
-    
-    post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=test_info$post,
-                                                  X_design=design_info$input, y_design=design_info$post,
-                                                  plot_title="Posterior Approximations [llik]",
-                                                  line_thickness=line_thickness, design_color=design_color,
-                                                  design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)")
-    
-                             
-    samp_list <- list()
-    samp_list[[1]] <- matrix(samp, ncol=1)
-    data_names <- test_label_curr
-    
-    plts[[plt_label]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
-                                       main_title=test_label_curr, data_names=data_names) 
-    
+    # Construct KDE comparison plot for the current parameter. 
+    plt_curr <- plot_curves_1d_helper(kde_pts, kde_mat, y_new=kde_baseline,
+                                      plot_title=plt_label, xlab=plt_label, ylab="kde")
+    plts[[plt_label]] <- plt_curr
   }
+  
+  return(plts)
   
 }
 

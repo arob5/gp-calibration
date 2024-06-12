@@ -252,7 +252,7 @@ samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_marg_llik_list$samp, test_label="
 # samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_marg_trunc_llik_list$samp, test_label="marg-trunc-llik")
 
 # Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="marg-llik")
+trace_plots <- get_trace_plots(samp_dt, burn_in_start=1, test_labels="marg-llik")
 hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
                                         test_label_baseline="exact", test_labels="marg-llik")
 
@@ -390,7 +390,13 @@ samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik"
 
 
 
+```{r}
+kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
+                                        param_types="par", param_names=NULL, test_label_baseline="exact",
+                                        xlab="parameter", ylab="kde", save_dir=NULL) 
 
+for(plt in kde_plts) plot(plt)
+```
 
 
 
