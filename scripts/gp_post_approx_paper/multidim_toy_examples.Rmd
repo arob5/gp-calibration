@@ -398,6 +398,12 @@ kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=bu
 for(plt in kde_plts) plot(plt)
 ```
 
+```{r}
+scatter_stat_plts <- get_mcmc_moments_scatter_plot_comparisons(samp_dt, test_label_baseline="exact",
+                                                               burn_in_start=burn_in_start, param_types="par")
+
+for(plt in scatter_stat_plts) plot(plt)
+```
 
 
 

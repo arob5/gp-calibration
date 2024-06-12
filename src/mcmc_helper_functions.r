@@ -225,8 +225,8 @@ remove_mcmc_samp_burnin <- function(samp_dt, burn_in_start, return_burnin=FALSE)
 # Computing statistics and errors from MCMC samples. 
 # ------------------------------------------------------------------------------
 
-compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, 
-                                     param_types=NULL, param_names=NULL, subset_samp=TRUE) {
+compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL,
+                                      param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
   #
   # Args:
@@ -234,6 +234,9 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NU
   #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to subset `samp_dt` to determine which
   #                                            parameters and samples will be included in the metric computations.
   #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired form so do not call `select_mcmc_samp()`. 
+  #   format_long: If FALSE (the default), then one column is created for each statistic computed with column names 
+  #                of the form `stat_<stat_name>`. Otherwise, two columns are added: "stat_name" storing the statistic name,
+  #                and "stat_value" storing the associated value. 
   #
   # Returns:
   #    data.table, with columns "samp_mean", "samp_var". 
@@ -245,7 +248,15 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NU
   }
   
   # Compute statistics. 
-  mcmc_param_stats <- samp_dt[, .(samp_mean=mean(sample), samp_var=var(sample)), by=.(test_label, param_type, param_name)]
+  mcmc_param_stats <- samp_dt[, .(mean=mean(sample), var=var(sample)), by=.(test_label, param_type, param_name)]
+  
+  # Convert to long format, if requested. 
+  if(format_long) {
+    mcmc_param_stats <- melt.data.table(mcmc_param_stats, id.vars=c("test_label", "param_type", "param_name"), 
+                                        variable.name="stat_name", value.name="stat_value")
+  } else {
+    setnames(mcmc_param_stats, c("mean", "var"), c("stat_mean", "stat_var"))
+  }
   
   return(mcmc_param_stats)
   
@@ -279,8 +290,8 @@ compute_mcmc_comparison_metrics <- function(samp_dt, test_label_1, test_label_2,
                                      param_types=param_types, param_names=param_names)
   
   # Compute univariate MCMC means and variance estimates.  
-  mcmc_param_stats <- compute_mcmc_param_stats(samp_dt_subset, burn_in_start = burn_in_start, test_labels = test_labels, 
-                                               param_types = param_types, param_names = param_names, subset_samp = FALSE)
+  mcmc_param_stats <- compute_mcmc_param_stats(samp_dt_subset, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                               param_types=param_types, param_names=param_names, subset_samp=FALSE)
   
   
   # Create data.table for storing aggregate metrics (i.e. metrics involving one or more parameters). 
@@ -620,9 +631,11 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
 get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
                                         param_types=NULL, param_names=NULL, test_label_baseline=NULL,
                                         xlab="parameter", ylab="kde", save_dir=NULL) {
-  # `N_kde_pts` is the number of points at which the KDE approximation is evaluated for each 
-  # univariate variable. 
-  
+  # Produces one plot per unique param type-param name combination. Each plot contains one line
+  # per `test_label` that has samples for that specific parameter. Each line is produced from 
+  # a 1d kernel density estimate (KDE) constructed fromn the MCMC samples. N_kde_pts` is the
+  # `number of points at which the KDE approximation is evaluated for each univariate variable.
+
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
     test_labels <- c(test_labels, test_label_baseline)
@@ -680,7 +693,57 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
     plts[[plt_label]] <- plt_curr
   }
   
+  if(!is.null(save_dir)) save_plots(plts, "kde1d", save_dir)
+  
   return(plts)
+  
+}
+
+
+get_mcmc_moments_scatter_plot_comparisons <- function(samp_dt, test_label_baseline, burn_in_start=NULL,
+                                                      test_labels=NULL, param_types=NULL, param_names=NULL,
+                                                      xlab="observed", ylab="predicted", save_dir=NULL) {
+  # For now, only supports mean and standard deviation, but this can easily be generalized to allow 
+  # the user to specify any number of statistics to compute. 
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  if(!is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
+    test_labels <- c(test_labels, test_label_baseline)
+  }
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types=param_types, param_names=param_names)
+  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
+  
+  # Compute statistics from posterior samples. 
+  samp_stats <- compute_mcmc_param_stats(samp_dt_subset, subset_samp=FALSE, format_long=TRUE) 
+  samp_stats[stat_name=="var", `:=`(stat_name="sd", stat_value=sqrt(stat_value))]
+
+  # Separate out data to be used as the baseline for comparison in each plot. 
+  samp_stats_baseline <- samp_stats[test_label==test_label_baseline]
+  samp_stats <- samp_stats[test_label != test_label_baseline]
+  samp_stats <- merge(samp_stats, samp_stats_baseline, all.x=TRUE, 
+                      by=c("param_type", "param_name", "stat_name"), suffixes=c("", "_baseline"))
+                      
+  # Produce one plot per unique stat_name, param_type, or (stat_name, param_type, param_name) combination. 
+  plt_id_vars <- unique(samp_stats[, .(param_type, stat_name)])
+  plt_list <- list()
+  for(i in 1:nrow(plt_id_vars)) {
+    param_type_curr <- plt_id_vars[i, param_type]
+    stat_name_curr <- plt_id_vars[i, stat_name]
+    plt_lbl <- paste(param_type_curr, stat_name_curr, sep="-")
+    samp_stats_curr <- samp_stats[(param_type==param_type_curr) & (stat_name==stat_name_curr)]
+    
+    plt <- ggplot(samp_stats_curr) + 
+            geom_point(aes(x=stat_value_baseline, y=stat_value, color=test_label, shape=param_name)) + 
+            geom_abline(slope=1, intercept=0, color="red") + 
+            ggtitle(plt_lbl) + xlab(paste0(plt_lbl, ", ", test_label_baseline)) + 
+            ylab(plt_lbl)
+    plt_list[[plt_lbl]] <- plt
+  }
+  
+  if(!is.null(save_dir)) save_plots(plts, "kde1d", save_dir)
+  
+  return(plt_list)
   
 }
 
