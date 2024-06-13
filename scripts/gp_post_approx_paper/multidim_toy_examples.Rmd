@@ -405,7 +405,13 @@ scatter_stat_plts <- get_mcmc_moments_scatter_plot_comparisons(samp_dt, test_lab
 for(plt in scatter_stat_plts) plot(plt)
 ```
 
+```{r}
+coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start, param_types="par",
+                                           probs=seq(.5, .99, .05))
+coverage_plts <- coverage_plt_list$plots
 
+for(plt in coverage_plts) plot(plt)
+```
 
 
 

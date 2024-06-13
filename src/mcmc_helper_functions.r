@@ -5,6 +5,7 @@
 # Andrew Roberts
 # 
 
+library(HDInterval)
 library(kde1d)
 
 # ------------------------------------------------------------------------------
@@ -703,8 +704,16 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
 get_mcmc_moments_scatter_plot_comparisons <- function(samp_dt, test_label_baseline, burn_in_start=NULL,
                                                       test_labels=NULL, param_types=NULL, param_names=NULL,
                                                       xlab="observed", ylab="predicted", save_dir=NULL) {
-  # For now, only supports mean and standard deviation, but this can easily be generalized to allow 
-  # the user to specify any number of statistics to compute. 
+  # This function currently produces one plot per unique (param type, stat name) combination. 
+  # Currently the stats are hard-coded to be mean and standard deviation, though this can easily 
+  # be generlized to allow the user to pass in any number of statistics of interest. 
+  # The plots are scatter plots summarizing the mean/standard deviation MCMC estimates to some 
+  # "baseline" estimates. Currently, the baseline estimates are also computed from samples, using 
+  # the test label `test_label_baseline`, which must be present in `samp_dt` (this can be generalized
+  # to allow the baseline estimates to be explicitly passed if desired; e.g., if they are known exactly 
+  # as is the case in linear Gaussian problems). Each plot contains a point for each (param name, test label)
+  # combination, where the param names are those that belong to the param type being considered in 
+  # that plot. The param names are differentiated by shape and the test labels are differentiated by color. 
   
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
@@ -815,9 +824,83 @@ get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=N
   }
   
   if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
-  
   return(plts)
   
+}
+
+
+get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NULL, test_labels=NULL,
+                                  param_types=NULL, param_names=NULL, xlab="observed", ylab="predicted", 
+                                  save_dir=NULL, probs=seq(0.5, 1.0, .1)) {
+  # Produces one plot per unique (param type, param name) combination. Each plot will contain one line 
+  # per test label that has samples associated with the specific parameter being plotted. These lines 
+  # summarize the coverage of the distributions (i.e., the samples for each test label) with respect 
+  # to some "baseline" test label, specified by `test_label_baseline` (this typically represents 
+  # some notion of the "true" distribution). For a specific plot, let us consider how a single 
+  # point is computed: 
+  #    (1) A highest posterior density (HPD) interval of probability p is estimated from samples 
+  #        (using the HDInterval package) for each test label. 
+  #    (2) Let [a,b] be the bounds of this estimated interval for a specific test label. Next we 
+  #        estimate the probability of the baseline distribution falling within the interval [a,b]. 
+  #        This is accomplished via a 1d kernel density estimate (KDE) of the baseline distribution 
+  #        using the package kde1d. Suppose we estimate this probability to be q. 
+  #    (3) The point (p,q) is then plotted. This is repeated for each test label, and also repeated
+  #        for a set of different probabilities p, specified by the arguments `probs`. The points  
+  #        corresponding to the same test label are connected with interpolating lines. 
+                                  
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  if(!is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
+    test_labels <- c(test_labels, test_label_baseline)
+  }
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types=param_types, param_names=param_names)
+  plt_id_vars <- unique(samp_dt_subset[, .(param_type, param_name)])
+  
+  # Separate out data to be used as the baseline for comparison in each plot.
+  samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
+  samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
+  
+  # Create one plot per unique (param_type, param_name) combination. 
+  plt_list <- list()
+  for(i in 1:nrow(plt_id_vars)) {
+    # (param_type, param_name) combination for current plot. 
+    param_type_curr <- plt_id_vars[i, param_type]
+    param_name_curr <- plt_id_vars[i, param_name]
+    samp_dt_param <- samp_dt_subset[(param_type==param_type_curr) & (param_name==param_name_curr)]
+    lbl_curr <- paste(param_type_curr, param_name_curr, sep="-")
+    test_labels_curr <- unique(samp_dt_param$test_label)
+    
+    # Estimate highest posterior density interval for each test label and probability. 
+    dt_plt <- data.table(test_label=character(), prob=numeric(), hdi_interval_lower=numeric(),
+                         hdi_interval_upper=numeric())
+    for(lbl in test_labels_curr) {
+      compute_hdi <- function(p) HDInterval::hdi(samp_dt_param[test_label==lbl, sample], p)
+      hdi_bounds <- mapply(compute_hdi, probs)
+      dt_plt_lbl <- data.table(test_label=lbl, prob=probs, hdi_interval_lower=hdi_bounds["lower",], 
+                               hdi_interval_upper=hdi_bounds["upper",])
+      dt_plt <- rbindlist(list(dt_plt, dt_plt_lbl), use.names=TRUE)
+    }
+    
+    # Compute KDE for the baseline distribution. 
+    kde_fit <- kde1d(samp_dt_baseline[(param_type==param_type_curr) & (param_name==param_name_curr), sample])
+
+    # Use KDE to estimate probability of each of the HPD intervals computed above. 
+    dt_plt[, coverage_prob := pkde1d(hdi_interval_upper, kde_fit) - pkde1d(hdi_interval_lower, kde_fit)]
+    
+    # Generate plot. 
+    plt <- ggplot(dt_plt) + 
+            geom_point(aes(x=prob, y=coverage_prob, color=test_label)) + 
+            geom_line(aes(x=prob, y=coverage_prob, color=test_label)) + 
+            geom_abline(slope=1, intercept=0, color="red", linetype="dashed") + 
+            ggtitle(paste0("Coverage: ", lbl_curr)) + xlab("Prob") + ylab("Coverage Prob")
+        
+    plt_list[[lbl_curr]] <- plt
+  }
+  
+  # Optionally save plots to file. Return plot list. 
+  if(!is.null(save_dir)) save_plots(plt_list, "coverage", save_dir)
+  return(list(plots=plt_list, plot_data=dt_plt))
+
 }
 
 
