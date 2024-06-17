@@ -755,13 +755,16 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
                           adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
                           adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
                           adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
-  # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
+  # `mode` can be "MCMH" (Monte Carlo within Metropolis-Hastings) or "pseudo-marg" (pseudo-marginal Metropolis-Hastings). 
+  # TODO: `mode` is currently not used here; the algorithm automatically uses MCMH. 
   
   # Validation and setup for log-likelihood emulator. 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
   # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
   # validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
   #                             cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
+  
+  if(model != "MCMH") .NotYetImplemented()
   
   # Objects to store samples. 
   d <- llik_emulator$dim_input

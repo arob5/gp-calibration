@@ -352,9 +352,136 @@ ensure_valid_inv_prob_list_lesd <- function(inv_prob_list, fix_lik_par) {
 }
 
 
+# -----------------------------------------------------------------------------
+# Convenience functions for testing different emualtor/MCMC methods to 
+# approximately solve a Bayesian inverse problem. 
+# -----------------------------------------------------------------------------
 
+run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, save_dir=NULL, 
+                                       samp_dt=NULL, mcmc_list=NULL, test_label_suffix=NULL, ...) {
+  # Runs different sampling algorithms to try to approximate the posterior of the 
+  # parameters in the inverse problem defined by the `inv_prob_list` object.
+  # Saves a csv file containing the samples. 
+  # TODO: Need to generalize to allow sampling likelihood parameters. 
+  #
+  # Args:
+  #    inv_prob_list: list, with elements "fwd", "par_prior", "llik_obj".
+  #    llik_em_obj: Object of class that inherits from `llikEmulator`. This 
+  #                 log-likelihood emulator is passed to all of the approximate 
+  #                 GP-accelerated MCMC algorithms. 
+  #    mcmc_tags: character, vector of MCMC valid test labels that determine 
+  #               which MCMC algorithms will be run. Valid options include 
+  #               "gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "pseudo-marg", 
+  #               "acc-prob-marg". 
+  #    samp_dt: data.table, with colnames "test_label", "param_type", "param_name",   
+  #             "itr", and "sample". If non-NULL, then this function will append
+  #              to this data.table. Otherwise a new one will be
+  #             created. 
+  #    mcmc_list: list, an optional list storing MCMC information returned by 
+  #               the MCMC functions other than the samples themselves (e.g., 
+  #               proposal covariance). If provided, will be appended to. Otherwise
+  #               a new one will be created. 
+  #    test_label_suffix: character(1), an optional string to append to the end  
+  #                       of each MCMC tag when defining the test labels. A 
+  #                       hyphen will automatically be added between the MCMC
+  #                       tag and test label. Otherwise the test labels will be set 
+  #                       to the MCMC tags.
+  #    ...: additional arguments will be passed to the MCMC functions; e.g., "par_init", 
+  #         "N_itr", proposal adaptation parameters, etc. 
+  #
+  # Returns: 
+  #    Invisibly returns a list with named elements: 
+  #        - "samp": data.table containing the MCMC samples.
+  #        - "mcmc_list": list containing MCMC output other than samples.  
+  #    Side effect: If `save_dir` specifies a valid directory, then 
+  #                 saves the data.table as a csv file and the list as a RData file.  
+  
+  # Create new data.table for samples if an existing one is not provided. 
+  if(is.null(samp_dt)) {
+    samp_dt <- data.table(test_label=character(), param_type=character(), 
+                          param_name=character(), itr=integer(), sample=numeric())
+  }
+  if(is.null(mcmc_list)) {
+    mcmc_list <- list()
+  }
+  
+  # Run MCMC algorithms. 
+  valid_mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "pseudo-marg", "acc-prob-marg")
+  invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
+  if(length(invalid_tags) > 0) {
+    message("Unsupported MCMC tags will not be run: ", invalid_tags)
+  }
+  
+  # Add underscore before the suffix. 
+  if(!is.null(test_label_suffix)) test_label_suffix <- paste0("-", test_label_suffix)
+  
+  # Output directory: Create if it doesn't exist. If files already exist, append timestamp 
+  # to filenames to avoid overwriting. 
+  samp_filename <- "mcmc_samp"
+  list_filename <- "mcmc_list"
+  if(!is.null(save_dir)) {
+    if(!dir.exists(save_dir)) dir.create(save_dir)
+    timestamp <- as.character(Sys.time())
+    if(file.exists(file.path(save_dir, paste0(samp_filename, ".csv")))) samp_filename <- paste(samp_filename, timestamp, sep="_")
+    if(file.exists(file.path(save_dir, paste0(list_filename, ".csv")))) list_filename <- paste(list_filename, timestamp, sep="_")
+  }
+  samp_filename <- paste0(samp_filename, ".csv")
+  list_filename <- paste0(list_filename, ".RData")
+  
+  # Run MCMC algorithms. 
+  if("gp-mean" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+                                                approx_type="mean", ...)
+    lbl <- paste0("gp-mean", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
+  
+  if("gp-marg" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+                                                approx_type="marginal", ...)
+    lbl <- paste0("gp-marg", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
+  
+  if("mcwmh-joint" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                 mode="MCMH", use_gp_cov=TRUE, ...)
+                                 
+    lbl <- paste0("mcwmh-joint", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
 
-
+  if("mcwmh-ind" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                 mode="MCMH", use_gp_cov=FALSE, ...)
+    
+    lbl <- paste0("mcwmh-ind", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
+  
+  if("pseudo-marg" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                 mode="pseudo-marg", ...)
+    lbl <- paste0("pseudo-marg", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
+  
+  if("pseudo-marg" %in% mcmc_tags) {
+    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                 mode="pseudo-marg", ...)
+    lbl <- paste0("pseudo-marg", test_label_suffix)
+    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+  }
+  
+  
+  
+}
 
 
 
