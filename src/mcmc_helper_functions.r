@@ -65,7 +65,8 @@ append_mcmc_output <- function(mcmc_samp_dt, samp_list, test_label) {
   # but this could be relaxed if needed in the future. 
   
   assert_that(is.data.table(mcmc_samp_dt))
-  assert_that(all(colnames(mcmc_samp_dt) == c("param_type", "itr", "param_name", "sample", "test_label")))
+  assert_that(setequal(colnames(mcmc_samp_dt), 
+                       c("param_type", "itr", "param_name", "sample", "test_label")))
   assert_that(!(test_label %in% mcmc_samp_dt$test_label))
   
   mcmc_samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label)

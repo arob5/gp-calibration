@@ -412,7 +412,7 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     message("Unsupported MCMC tags will not be run: ", invalid_tags)
   }
   
-  # Add underscore before the suffix. 
+  # Add hyphen before the suffix. 
   if(!is.null(test_label_suffix)) test_label_suffix <- paste0("-", test_label_suffix)
   
   # Output directory: Create if it doesn't exist. If files already exist, append timestamp 
@@ -422,65 +422,160 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   if(!is.null(save_dir)) {
     if(!dir.exists(save_dir)) dir.create(save_dir)
     timestamp <- as.character(Sys.time())
-    if(file.exists(file.path(save_dir, paste0(samp_filename, ".csv")))) samp_filename <- paste(samp_filename, timestamp, sep="_")
-    if(file.exists(file.path(save_dir, paste0(list_filename, ".csv")))) list_filename <- paste(list_filename, timestamp, sep="_")
+    file_exists <- file.exists(file.path(save_dir, paste0(samp_filename, ".csv"))) || 
+                   file.exists(file.path(save_dir, paste0(list_filename, ".csv")))
+    if(file_exists) {
+      samp_filename <- paste(samp_filename, timestamp, sep="_")
+      list_filename <- paste(list_filename, timestamp, sep="_")
+    }
   }
   samp_filename <- paste0(samp_filename, ".csv")
   list_filename <- paste0(list_filename, ".RData")
   
   # Run MCMC algorithms. 
   if("gp-mean" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
-                                                approx_type="mean", ...)
-    lbl <- paste0("gp-mean", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+                                                  approx_type="mean", ...)
+      lbl <- paste0("gp-mean", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
+    }, 
+    error = function(cond) {
+      message("Error with `gp-mean`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
+    }
+    )
   }
   
   if("gp-marg" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
-                                                approx_type="marginal", ...)
-    lbl <- paste0("gp-marg", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+                                                  approx_type="marginal", ...)
+      lbl <- paste0("gp-marg", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    },
+    error = function(cond) {
+      message("Error with `gp-marg`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file.path(save_dir, list_filename))
+    }
+    )
   }
   
   if("mcwmh-joint" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
-                                 mode="MCMH", use_gp_cov=TRUE, ...)
-                                 
-    lbl <- paste0("mcwmh-joint", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                   mode="MCMH", use_gp_cov=TRUE, ...)
+                                   
+      lbl <- paste0("mcwmh-joint", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    }, 
+    error = function(cond) {
+      message("Error with `mcwmh-joint`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file.path(save_dir, list_filename))
+    }
+    )
   }
 
   if("mcwmh-ind" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
-                                 mode="MCMH", use_gp_cov=FALSE, ...)
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                   mode="MCMH", use_gp_cov=FALSE, ...)
+      
+      lbl <- paste0("mcwmh-ind", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    }, 
+    error = function(cond) {
+      message("Error with `mcwmh-ind`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file.path(save_dir, list_filename))
+    }
+    )
+  }
+  
+  if("pseudo-marg" %in% mcmc_tags) {
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                   mode="pseudo-marg", ...)
+      lbl <- paste0("pseudo-marg", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    },
+    error = function(cond) {
+      message("Error with `pseudo-marg`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file.path(save_dir, list_filename))
+    }
+    )
+  }
+  
+  if("acc-prob-marg" %in% mcmc_tags) {
+    tryCatch(
+    {
+      mcmc_output <- mcmc_gp_acc_prob_approx(llik_em_obj, par_prior_params=inv_prob$par_prior, 
+                                             approx_type="marginal", ...)
+      lbl <- paste0("acc-prob-marg", test_label_suffix)
+      samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+    }, 
+    error = function(cond) {
+      message("Error with `acc-prob-marg`: MCMC output may not be saved.")
+      message(conditionMessage(cond))
+    },
+    warning = function(cond) {
+      message(conditionMessage(cond))
+    }, 
+    finally = {
+      fwrite(samp_dt, file.path(save_dir, samp_filename))
+      save(mcmc_list, file.path(save_dir, list_filename))
+    }
+    )
     
-    lbl <- paste0("mcwmh-ind", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
   }
-  
-  if("pseudo-marg" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
-                                 mode="pseudo-marg", ...)
-    lbl <- paste0("pseudo-marg", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
-  }
-  
-  if("pseudo-marg" %in% mcmc_tags) {
-    mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
-                                 mode="pseudo-marg", ...)
-    lbl <- paste0("pseudo-marg", test_label_suffix)
-    samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-    mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
-  }
-  
-  
-  
+
+  return(list(samp=samp_dt, mcmc_list=mcmc_list))  
+
 }
 
 

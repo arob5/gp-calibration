@@ -42,8 +42,8 @@ ylim <- c(0.0777, 0.4)
 N_mcmc <- 50000
 burn_in_start <- N_mcmc/2
 
-# VSEM parameters. 
-N_time_step <- 365*3 # In days. 
+# Forward model parameters. 
+N_time_step <- 365*3
 
 # Global likelihood normalization settings. 
 default_conditional <- FALSE
