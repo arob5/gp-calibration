@@ -358,7 +358,8 @@ ensure_valid_inv_prob_list_lesd <- function(inv_prob_list, fix_lik_par) {
 # -----------------------------------------------------------------------------
 
 run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, save_dir=NULL, 
-                                       samp_dt=NULL, mcmc_list=NULL, test_label_suffix=NULL, ...) {
+                                       samp_dt=NULL, mcmc_list=NULL, test_label_suffix=NULL, 
+                                       overwrite=FALSE, ...) {
   # Runs different sampling algorithms to try to approximate the posterior of the 
   # parameters in the inverse problem defined by the `inv_prob_list` object.
   # Saves a csv file containing the samples. 
@@ -386,6 +387,9 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   #                       hyphen will automatically be added between the MCMC
   #                       tag and test label. Otherwise the test labels will be set 
   #                       to the MCMC tags.
+  #    overwrite: logical(1), if TRUE will overwrite existing files if saving. Otherwise, 
+  #               will detect existing files and avoid overwriting by appending a timestamp 
+  #               to filenames. 
   #    ...: additional arguments will be passed to the MCMC functions; e.g., "par_init", 
   #         "N_itr", proposal adaptation parameters, etc. 
   #
@@ -421,12 +425,16 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   list_filename <- "mcmc_list"
   if(!is.null(save_dir)) {
     if(!dir.exists(save_dir)) dir.create(save_dir)
-    file_exists <- file.exists(file.path(save_dir, paste0(samp_filename, ".csv"))) || 
-                   file.exists(file.path(save_dir, paste0(list_filename, ".RData")))
-    if(file_exists) {
-      timestamp <- as.character(Sys.time())
-      samp_filename <- paste(samp_filename, timestamp, sep="_")
-      list_filename <- paste(list_filename, timestamp, sep="_")
+    
+    # Avoid overwriting by appending timestamp to file names. 
+    if(!overwrite) {
+      file_exists <- file.exists(file.path(save_dir, paste0(samp_filename, ".csv"))) || 
+                     file.exists(file.path(save_dir, paste0(list_filename, ".RData")))
+      if(file_exists) {
+        timestamp <- as.character(Sys.time())
+        samp_filename <- paste(samp_filename, timestamp, sep="_")
+        list_filename <- paste(list_filename, timestamp, sep="_")
+      }
     }
   }
   samp_filename <- paste0(samp_filename, ".csv")

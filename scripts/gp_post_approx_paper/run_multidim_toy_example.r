@@ -20,7 +20,7 @@ library(parallel)
 library(gridExtra)
 library(data.table)
 
-base_dir <- getwd()
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "multidim_toy_examples")
 
@@ -41,9 +41,6 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 seed_data <- 82
 seed_init_design <- 500
 
-# Forward model parameters. 
-N_time_step <- 365*3
-
 # Global likelihood normalization settings. 
 default_conditional <- FALSE
 default_normalize <- TRUE
@@ -54,13 +51,16 @@ mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "acc-prob-marg"
 # Settings for MCMC runs.  
 N_mcmc <- 50000
 
-# If `output_dir` already exists, append timestep and create new directory. 
+# If `output_dir` already exists, append timestep and create new directory.
+# Otherwise create the directory. 
 if(dir.exists(output_dir)) {
   timestamp <- as.character(Sys.time())
   output_dir <- paste(output_dir, timestamp, sep="_")
   message("`output_dir` already exists. Creating new `output_dir:`")
   message(output_dir)
   dir.create(output_dir)
+} else {
+  dir.create(output_dir, recursive=TRUE)
 }
 
 
@@ -252,7 +252,7 @@ mcmc_info_list_llik <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, llik_e
                                                   mcmc_tags=mcmc_tags, save_dir=output_dir, 
                                                   samp_dt=samp_dt, mcmc_list=mcmc_list, 
                                                   test_label_suffix="llik", N_itr=N_mcmc, 
-                                                  par_init=mcmc_par_init)
+                                                  par_init=mcmc_par_init, overwrite=TRUE)
 
 
 print("--------------------- Running GP-Accelerated MCMC: forward model emulation -------------------------")
@@ -261,10 +261,10 @@ mcmc_info_list_fwd <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, llik_em
                                                  mcmc_tags=mcmc_tags, save_dir=output_dir, 
                                                  samp_dt=samp_dt, mcmc_list=mcmc_list, 
                                                  test_label_suffix="fwd", N_itr=N_mcmc, 
-                                                 par_init=mcmc_par_init)
+                                                 par_init=mcmc_par_init, overwrite=TRUE)
 
 
-
+print("-------------------------- End of Script ------------------------------")
 
 
 
