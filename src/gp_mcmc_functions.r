@@ -764,7 +764,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   # validate_args_mcmc_gp_noisy(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
   #                             cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
   
-  if(model != "MCMH") .NotYetImplemented()
+  if(mode != "MCMH") .NotYetImplemented()
   
   # Objects to store samples. 
   d <- llik_emulator$dim_input

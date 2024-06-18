@@ -415,16 +415,16 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   # Add hyphen before the suffix. 
   if(!is.null(test_label_suffix)) test_label_suffix <- paste0("-", test_label_suffix)
   
-  # Output directory: Create if it doesn't exist. If files already exist, append timestamp 
-  # to filenames to avoid overwriting. 
+  # Output directory: Create if it doesn't exist. If filenames already exist, append
+  # timestamp to avoid overwriting. 
   samp_filename <- "mcmc_samp"
   list_filename <- "mcmc_list"
   if(!is.null(save_dir)) {
     if(!dir.exists(save_dir)) dir.create(save_dir)
-    timestamp <- as.character(Sys.time())
     file_exists <- file.exists(file.path(save_dir, paste0(samp_filename, ".csv"))) || 
-                   file.exists(file.path(save_dir, paste0(list_filename, ".csv")))
+                   file.exists(file.path(save_dir, paste0(list_filename, ".RData")))
     if(file_exists) {
+      timestamp <- as.character(Sys.time())
       samp_filename <- paste(samp_filename, timestamp, sep="_")
       list_filename <- paste(list_filename, timestamp, sep="_")
     }

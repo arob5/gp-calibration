@@ -226,6 +226,8 @@ for(plt in trace_plots) plot(plt)
 for(plt in hist_plots) plot(plt)
 
 ```
+
+
 ```{r}
 
 #
