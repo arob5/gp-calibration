@@ -1498,6 +1498,21 @@ with the covariance simplifying to
 
 % Questions and TODOs
 \section{Questions and TODOs}
+\subsection{Questions}
+\begin{enumerate}
+\item How to reliably use a log-normal emulator for Bayesian inference? 
+	\begin{enumerate}
+	\item Improve GP calibration (e.g., quadratic mean) 
+	\item Use more robust statistics (e.g., interquartile range)
+	\item Truncate proposal or prior. 
+	\end{enumerate}
+\item How to deal with highly concentrated/correlated posteriors? 
+	\begin{enumerate}
+	\item MALA or other samplers. 
+	\end{enumerate}
+\end{enumerate}
+
+
 \subsection{Notation}
 \begin{enumerate}
 \item How to clean up notation for all of the different approximations being considered here? 
