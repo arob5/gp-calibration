@@ -206,10 +206,10 @@ acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, 
 # Argument validation functions 
 # -----------------------------------------------------------------------------
 
-validate_args_acquire_llik_batch_input_sequentially(llik_emulator, acq_func_name, N_batch, 
-                                                    model_response_heuristic, opt_method, 
-                                                    llik_exact=NULL, reoptimize_hyperpar=FALSE, 
-                                                    lik_par_val=NULL, ...) {
+validate_args_acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, N_batch, 
+                                                                model_response_heuristic, opt_method, 
+                                                                llik_exact=NULL, reoptimize_hyperpar=FALSE, 
+                                                                lik_par_val=NULL, ...) {
   
   # It is not recommended to optimize hyperparameters based on pseudo model responses. 
   if((model_response_heuristic != "none") && (reoptimize_hyperpar)) {
