@@ -20,6 +20,7 @@ src_dir <- file.path(base_dir, "src")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
 ```
 
 ```{r}
@@ -64,6 +65,7 @@ gpHet1$fit("Gaussian", "constant")
 ```{r}
 # Predict 
 gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
+
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```
 
