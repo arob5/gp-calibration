@@ -492,6 +492,110 @@ gpWrapperHet$methods(
 )
 
 
+# -----------------------------------------------------------------------------
+# gpKerGP: Class providing interface between calibration code and kergp package.  
+# -----------------------------------------------------------------------------
+
+gpKerGP <- setRefClass(
+  Class = "gpKerGP",
+  contains = "gpWrapper"
+)
+
+gpKerGP$methods(
+  
+  initialize = function(X, Y, ...) {
+    # X and Y should only be missing when the generator is being called due to 
+    # a call to `$copy()`. 
+    # TODO: think of better long-term solution. 
+    if(missing(X) || missing(Y)) return(NULL)
+    
+    library(kergp)
+    
+    initFields(kernel_name_map=list(Gaussian="Gaussian", Matern5_2="Matern5_2", Matern3_2="Matern3_2"), 
+               mean_func_name_map=list(constant="beta0"))
+    callSuper(X=X, Y=Y, lib="hetGP", ...)
+    
+    assert_that(all(names(kernel_name_map) %in% valid_kernels), 
+                msg=paste0("Some kernel names not found in base gpWrapper class: ", 
+                           paste(setdiff(names(kernel_name_map), valid_kernels), collapse=", ")))
+    assert_that(all(names(mean_func_name_map) %in% valid_mean_funcs), 
+                msg=paste0("Some mean function names not found in base gpWrapper class: ", 
+                           paste(setdiff(names(mean_func_name_map), valid_mean_funcs), collapse=", ")))
+  }, 
+  
+  fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
+                         fixed_pars=list(), ...) {
+    # Deal with noiseless case. 
+    if(estimate_nugget) {
+      assert_that(!("g" %in% names(fixed_pars)), 
+                  msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
+    } else {
+      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_nugget
+    }
+    
+    if(length(fixed_pars) == 0) fixed_pars <- NULL
+    
+    gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
+  },
+  
+  predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
+                             return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
+                             include_nugget=TRUE, ...) {
+    
+    if(return_cov) X_prime <- X_new
+    else X_prime <- NULL
+    
+    pred <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_prime)
+    return_list <- list()
+    if(return_mean) return_list$mean <- pred$mean
+    if(return_cov) {
+      return_list$cov <- pred$cov
+      if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs
+      return_list$var <- diag(return_list$cov)
+    } else if(return_var) {
+      return_list$var <- pred$sd2
+      if(include_nugget) return_list$var <- return_list$var + pred$nugs
+    }
+    
+    # Cross covariance.
+    if(return_cross_cov) {
+      pred_cross <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_cross)
+      return_list$cross_cov <- pred_cross$cov
+    }
+    
+    return(return_list)
+  }, 
+  
+  # TODO: I should be careful to ensure X_train is aligned with the data that the homGP 
+  # object stores. Currently these could become misaligned if X_train contains duplicates. 
+  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
+    
+    if(update_hyperpar) {
+      return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, ...))
+    }
+    
+    return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
+  }
+  
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #
 # TEST
 #
