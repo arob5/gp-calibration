@@ -22,7 +22,8 @@ library(data.table)
 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "multidim_toy_examples")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
+                        "multidim_toy_examples", "N60_D10")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -41,12 +42,16 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 seed_data <- 82
 seed_init_design <- 500
 
+# Design settings for emulator construction. 
+N_design <- 60
+design_method <- "LHS"
+
 # Global likelihood normalization settings. 
 default_conditional <- FALSE
 default_normalize <- TRUE
 
 # GP-accelerated MCMC algorithms to run. 
-mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "acc-prob-marg")
+mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind")
 
 # Settings for MCMC runs.  
 N_mcmc <- 50000
@@ -79,7 +84,10 @@ set.seed(seed_data)
 # Basis functions. 
 basis_func_list <- list(phi0=function(t) rep(1, length(t)), phi1=function(t) t, 
                         phi2=function(t) cos(2*pi*t), phi3=function(t) cos(2*pi*2*t), 
-                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3))
+                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3), 
+                        phi6=function(t) sin(2*pi*t/6), phi7=function(t) cos(2*pi*t/6), 
+                        phi8=function(t) cos(2*pi*t/5), phi9=function(t) cos(2*pi*t/8), 
+                        phi10=function(t) sin(2*pi*t/8))
 dim_par <- length(basis_func_list)
 
 # Discretize the unit time interval to define the dimension of the output space. 
@@ -131,8 +139,9 @@ y <- output_true + t(chol(cov_obs)) %*% matrix(rnorm(dim_output), ncol=1)
 #
 
 # List containing inverse problem components. 
-inv_prob <- list(y=y, fwd=fwd, fwd_vect=fwd_vect, par_prior=par_prior, cov_obs=cov_obs, 
-                 par_true=par_true, output_true=output_true)
+inv_prob <- list(y=y, fwd=fwd, fwd_vect=fwd_vect, par_prior=par_prior, 
+                 cov_obs=cov_obs, par_true=par_true, output_true=output_true,
+                 times=times, basis_func_list=basis_func_list)
 
 # Plot ground truth and observations. 
 df_inv_prob_data <- data.frame(t=times, y_true=output_true, y=y)
@@ -180,8 +189,8 @@ seed_init_design <- 500
 set.seed(seed_init_design)
 
 # Generate design. 
-N_design <- 10 * dim_par
-design_method <- "LHS"
+print(paste0("Number design points: ", N_design))
+print(paste0("Design method: ", design_method))
 design_info <- list(design_method=design_method, N_design=N_design, seed=seed_init_design)
 design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
 design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
@@ -204,6 +213,7 @@ em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
 em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
                           default_normalize=default_normalize, lik_par=diag(cov_obs), 
                           use_fixed_lik_par=TRUE)
+save(em_llik, file=file.path(output_dir, "llik_em_llik.RData"))
 emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 test_info$pred_llik <- emulator_pred_llik
 
@@ -214,6 +224,7 @@ em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag
                                    default_conditional=default_conditional, 
                                    default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
                                    par_names=rownames(inv_prob$par_prior))
+save(em_fwd, file=file.path(output_dir, "llik_em_fwd.RData"))
 emulator_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 test_info$pred_fwd <- emulator_pred_fwd
 
@@ -246,13 +257,13 @@ ggsave(file.path(output_dir, "llik_em_pred_plot_fwd.png"), em_fwd_pred_plot)
 
 print("--------------------- Running GP-Accelerated MCMC: llik emulation -------------------------")
 
-mcmc_tags <- "gp-mean"
-
 mcmc_info_list_llik <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, llik_em_obj=em_llik, 
                                                   mcmc_tags=mcmc_tags, save_dir=output_dir, 
                                                   samp_dt=samp_dt, mcmc_list=mcmc_list, 
                                                   test_label_suffix="llik", N_itr=N_mcmc, 
                                                   par_init=mcmc_par_init, overwrite=TRUE)
+samp_dt <- mcmc_info_list_llik$samp
+mcmc_list <- mcmc_info_list_llik$mcmc_list
 
 
 print("--------------------- Running GP-Accelerated MCMC: forward model emulation -------------------------")

@@ -1,7 +1,8 @@
 #!/bin/bash -l
 #$ -N multidim_toy_example
-#$ -P dietzelab                 # Specify project
-#$ -j y                         # Merge the error and output streams into a single file
+#$ -P dietzelab                 # Specify project. 
+#$ -l buyin                     # Request buyin node. 
+#$ -j y                         # Merge the error and output streams into a single file.
 #$ -m beas                      # Email when job begins/ends/aborted/suspended
 
 module load gcc/8.3.0

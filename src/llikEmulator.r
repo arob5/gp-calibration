@@ -919,11 +919,13 @@ llikEmulatorGP$methods(
   
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, 
                                       conditional=default_conditional, normalize=default_normalize,
-                                      log_scale=FALSE, include_nugget=TRUE, ...) {
+                                      include_nugget=TRUE, log_scale=FALSE, ...) {
+    
+    selector <- ifelse(log_scale, "log_mean", "mean")
     
     predict_lik(input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
-                return_mean=TRUE, return_var=FALSE, conditional=conditional,  
-                normalize=normalize, log_scale=FALSE, include_nugget=include_nugget, ...)$mean
+                return_mean=TRUE, return_var=FALSE, conditional=conditional, normalize=normalize,
+                log_scale=log_scale, include_nugget=include_nugget, ...)[[selector]]
     
   },
   

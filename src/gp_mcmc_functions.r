@@ -801,14 +801,10 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   accept_count <- 0
   times_adapted <- 0
   
+  # TODO: TEMP 
   ##
-  prop_scale <- matrix(nrow=N_itr, ncol=1, dimnames=list(NULL, "scale"))
-  prop_C <- matrix(nrow=N_itr, ncol=d, dimnames=list(NULL, llik_emulator$input_names))
   prop_sd_comb <- matrix(nrow=N_itr, ncol=d, dimnames=list(NULL, llik_emulator$input_names))
-
-  prop_scale[1,] <- exp(log_scale_prop)
-  prop_C[1,] <- sqrt(diag(cov_prop))
-  prop_sd_comb[1,] <- prop_scale[1,] * prop_C[1,] 
+  prop_sd_comb[1,] <- exp(log_scale_prop) * sqrt(diag(cov_prop)) 
   ##
   
   for(itr in 2:N_itr) {
@@ -868,10 +864,9 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       accept_count <- 0
     }
     
+    # TODO: TEMP 
     ##
-    prop_scale[itr,] <- exp(log_scale_prop)
-    prop_C[itr,] <- sqrt(diag(crossprod(L_cov_prop)))
-    prop_sd_comb[itr,] <- prop_scale[itr,] * prop_C[itr,]
+    prop_sd_comb[itr,] <- exp(log_scale_prop) * sqrt(diag(crossprod(L_cov_prop)))
     ##
     
     
@@ -891,8 +886,7 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
     
   }
   
-  return(list(samp = list(par=par_samp, sig2=sig2_samp, prop_sd_comb=prop_sd_comb, 
-                          prop_scale=prop_scale, prop_C=prop_C), 
+  return(list(samp = list(par=par_samp, sig2=sig2_samp, prop_sd_comb=prop_sd_comb), 
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop))
 
 }

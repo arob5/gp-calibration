@@ -14,9 +14,10 @@ library(parallel)
 library(gridExtra)
 library(data.table)
 
-base_dir <- getwd()
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "multidim_toy_examples")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
+                        "multidim_toy_examples", "N60_D10")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -38,111 +39,57 @@ design_color <- "red"
 xlim <- c(-10, 10)
 ylim <- c(0.0777, 0.4)
 
-# Settings for noisy MCMC. 
-N_mcmc <- 50000
-burn_in_start <- N_mcmc/2
-
-# Forward model parameters. 
-N_time_step <- 365*3
-
-# Global likelihood normalization settings. 
-default_conditional <- FALSE
-default_normalize <- TRUE
-
+# Settings for MCMC plotting. 
+burn_in_start <- 25000
 ```
 
 ```{r}
 
 #
-# Linear Gaussian model: linear combination of basis functions. 
+# Plot model outputs and observations.  
 #
 
-set.seed(82)
-
-# Basis functions. 
-basis_func_list <- list(phi0=function(t) rep(1, length(t)), phi1=function(t) t, 
-                        phi2=function(t) cos(2*pi*t), phi3=function(t) cos(2*pi*2*t), 
-                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3))
-dim_par <- length(basis_func_list)
-
-# Discretize the unit time interval to define the dimension of the output space. 
-dim_output <- 10
-times <- seq(0, 1, length.out=dim_output)
-
-# Forward model. 
-eval_with_args <- function(FUN, ...) FUN(...)
-Phi <- mapply(eval_with_args, basis_func_list, list(times))
-
-fwd <- function(par) {
-  Phi %*% matrix(par, ncol=1)
-}
-
-fwd_vect <- function(par_mat) {
-  # `par_mat` assumed to have dimension (num inputs, dim_par). Returns 
-  # output of dimension (num inouts, dim_output). 
-  par_mat %*% t(Phi)
-}
-
-# Observation covariance. 
-cov_obs <- diag(0.5, nrow=dim_output)
-
-# Prior distribution. 
-par_prior <- data.frame(dist="Gaussian", param1=rep(1,dim_par), param2=rep(1,dim_par), 
-                        row.names=paste0("u", 1:dim_par))
-
-# Ground truth. 
-par_true <- sample_prior_theta(par_prior)
-output_true <- fwd(par_true)
-
-# Noisy observations. 
-y <- output_true + t(chol(cov_obs)) %*% matrix(rnorm(dim_output), ncol=1)
-
-# List containing inverse problem components. 
-inv_prob <- list(y=y, fwd=fwd, fwd_vect=fwd_vect, par_prior=par_prior, cov_obs=cov_obs)
+load(file.path(output_dir, "inv_prob_list.RData"))
+inv_prob$times <- seq(0, 1, length.out=nrow(inv_prob$y))
 
 # Plot ground truth and observations. 
-df_inv_prob_data <- data.frame(t=times, y_true=output_true, y=y)
+df_inv_prob_data <- data.frame(t=inv_prob$times, y_true=inv_prob$output_true, y=inv_prob$y)
 plt_outputs <- ggplot(data=df_inv_prob_data) +
-                geom_point(aes(x=t, y=y), color="black") + 
-                geom_point(aes(x=t, y=y_true), color="red") + 
-                ylab("output") + ggtitle("True and Observed y")
+                      geom_point(aes(x=t, y=y), color="black") + 
+                      geom_point(aes(x=t, y=y_true), color="red") + 
+                      ylab("output") + ggtitle("True and Observed y")
 
 plot(plt_outputs)
 ```
 
+```{r}
+# Print settings. 
+
+load(file.path(output_dir, "design_info.RData"))
+
+print("Settings:")
+print(paste0("Parameter space dimension: ", nrow(inv_prob$par_prior)))
+print(paste0("Number design points: ", design_info$N_design))
+print(paste0("Design method: ", design_info$design_method))
+
+print("Priors and true parameter:")
+inv_prob$par_prior$par_true <- inv_prob$par_true
+print(inv_prob$par_prior)
+```
+
 
 ```{r}
 #
-# Inversion using exact forward model. 
+# MCMC Plots: exact.  
 #
 
-# Store exact log-likelihood object. 
-llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$fwd, 
-                                         fwd_model_vectorized=inv_prob$fwd_vect,
-                                         y_obs=t(inv_prob$y), dim_par=dim_par,
-                                         use_fixed_lik_par=TRUE, sig2=diag(cov_obs),
-                                         par_names=rownames(inv_prob$par_prior), 
-                                         default_conditional=default_conditional, 
-                                         default_normalize=default_normalize)
-inv_prob$llik_obj <- llik_exact
+samp_dt <- fread(file.path(output_dir, "mcmc_samp.csv"))
 
-# Test points. 
-N_grid <- 5000
-u_grid <- get_batch_design("LHS", N_grid, prior_params=inv_prob$par_prior)
-test_info <- list(input=u_grid)
-test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
-test_info$llik <- llik_exact$assemble_llik(test_info$input)
-test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
-
-# MCMC sampling using exact likelihood. 
-mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
-mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
-                                 mode="MCMH", par_init=mcmc_par_init)
-samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
-
-# MCMC Plots. 
-trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", burn_in_start=burn_in_start)
-hist_plots_exact <- get_hist_plot_comparisons(samp_dt, param_types="par") 
+# MCMC Plots: exact. 
+trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", 
+                                     param_types="par", burn_in_start=burn_in_start)
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt, test_labels="exact", 
+                                              param_types="par", burn_in_start=burn_in_start) 
 
 for(plt in trace_plots_exact) plot(plt) 
 for(plt in hist_plots_exact) plot(plt)
@@ -150,251 +97,59 @@ for(plt in hist_plots_exact) plot(plt)
 ```
 
 ```{r}
-# 
-# Initial design and fit emulators. 
+#
+# MCMC Trace Plots: approximate. 
 #
 
-seed_init_design <- 500
-set.seed(seed_init_design)
+test_labels_approx <- setdiff(unique(samp_dt$test_label), "exact")
+trace_plots_approx <- get_trace_plots(samp_dt, test_label=test_labels_approx,
+                                      param_types="par", burn_in_start=burn_in_start)
 
-# Generate design. 
-N_design <- 10 * dim_par
-design_info <- list()
-design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
-design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
-design_info$llik <- llik_exact$assemble_llik(design_info$input)
-design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
-
-# Log-likelihood emulator. 
-em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
-em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
-                          default_normalize=default_normalize, lik_par=diag(cov_obs), 
-                          use_fixed_lik_par=TRUE)
-emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
-
-# Forward model emulator.
-em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)
-em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag(cov_obs), 
-                                   default_conditional=default_conditional, 
-                                   default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
-                                   par_names=rownames(inv_prob$par_prior))
-emulator_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
+for(plt in trace_plots_approx) plot(plt) 
 ```
-
 
 ```{r}
 #
-# Log-likelihood predictions. 
+# Log-likelihood emulator predictions. 
 #
 
+load(file.path(output_dir, "llik_em_llik.RData"))
+load(file.path(output_dir, "llik_em_fwd.RData"))
+load(file.path(output_dir, "test_info.RData"))
+
 em_llik$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                             emulator_pred_list=emulator_pred_llik, plot_type="llik",
-                             conditional=default_conditional, normalize=default_normalize,
+                             emulator_pred_list=test_info$pred_llik, plot_type="llik",
                              include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
                              plot_title="Log-Likelihood Predictions [llik]")
 
 
 em_fwd$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                            emulator_pred_list=emulator_pred_fwd, plot_type="llik",
-                            conditional=default_conditional, normalize=default_normalize,
+                            emulator_pred_list=test_info$pred_fwd, plot_type="llik",
                             include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
                             plot_title="Log-Likelihood Predictions [fwd]")
                              
 ```
-# Sampling Approximate Posterior Distributions 
-
-```{r}
-#
-# Sample approximate posterior: llik emulator, mean approx 
-#
-
-# Initial condition for all MCMC algorithms. 
-mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
-
-# Mean prediction. 
-mcmc_gp_mean_llik_list <- mcmc_gp_unn_post_dens_approx(em_llik, inv_prob$par_prior, par_init=mcmc_par_init, 
-                                                       N_itr=N_mcmc, approx_type="mean")
-samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_mean_llik_list$samp, test_label="mean-llik")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="mean-llik") 
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_baseline="exact")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-
-```
 
 
 ```{r}
-
-#
-# Sample approximate posterior: llik emulator, marginal approx 
-#
-
-# TODO: truncate at quantiles, not design points. 
-
-
-# Truncating prior by the design point bounds. 
-par_prior_trunc <- truncate_prior_theta(inv_prob$par_prior, input_bounds=em_llik$emulator_model$X_bounds)
-par_prior_trunc <- inv_prob$par_prior
-par_prior_trunc$bound_lower <- qnorm(0.025, par_prior_trunc$param1, par_prior_trunc$param2)
-par_prior_trunc$bound_upper <- qnorm(0.975, par_prior_trunc$param1, par_prior_trunc$param2)
-
-# Marginal prediction. 
-mcmc_gp_marg_llik_list <- mcmc_gp_unn_post_dens_approx(em_llik, inv_prob$par_prior, par_init=mcmc_par_init, 
-                                                       N_itr=N_mcmc, approx_type="marginal")
-samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_marg_llik_list$samp, test_label="marg-llik")
-
-# Marginal prediction, using truncated prior. 
-# mcmc_gp_marg_trunc_llik_list <- mcmc_gp_unn_post_dens_approx(em_llik, par_prior_trunc, par_init=mcmc_par_init,
-#                                                              N_itr=N_mcmc, approx_type="marginal")
-# samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_marg_trunc_llik_list$samp, test_label="marg-trunc-llik")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=1, test_labels="marg-llik")
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                        test_label_baseline="exact", test_labels="marg-llik")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-```
-
-```{r}
-#
-# Sample approximate posterior: fwd emulator, mean approx 
-#
-
-# Mean prediction. 
-mcmc_gp_mean_fwd_list <- mcmc_gp_unn_post_dens_approx(em_fwd, inv_prob$par_prior, par_init=mcmc_par_init, 
-                                                      N_itr=N_mcmc, approx_type="mean")
-samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_mean_fwd_list$samp, test_label="mean-fwd")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="mean-fwd") 
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                        test_label_baseline="exact", test_labels="mean-fwd")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-
-```
-
-```{r}
-#
-# Sample approximate posterior: fwd emulator, marginal approx 
-#
-
-# Mean prediction. 
-mcmc_gp_marg_fwd_list <- mcmc_gp_unn_post_dens_approx(em_fwd, inv_prob$par_prior, par_init=mcmc_par_init, 
-                                                      N_itr=N_mcmc, approx_type="marginal")
-samp_dt <- append_mcmc_output(samp_dt, mcmc_gp_marg_fwd_list$samp, test_label="marg-fwd")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="marg-fwd") 
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                        test_label_baseline="exact", test_labels="marg-fwd")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-
-```
-
-```{r}
-#
-# Sample approximate posterior: llik emulator, mcwmh-joint and mcwmh-ind approx. 
-#
-
-# MCWMH-Joint. 
-mcmh_cov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                    use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list$samp, test_label="mcwmh-joint")
-
-# MCWMH-Ind. 
-mcmh_nocov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                      use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_llik_list$samp, test_label="mcwmh-ind")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="mcwmh-ind") 
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, param_types="par",
-                                        test_label_baseline="exact", test_labels="mcwmh-ind")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-```
-
-```{r}
-#
-# Sample approximate posterior: fwd emulator, mcwmh-joint and mcwmh-ind approx. 
-#
-
-# MCWMH-Joint. 
-mcmh_cov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                    use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list$samp, test_label="mcwmh-joint-fwd")
-
-# MCWMH-Ind. 
-mcmh_nocov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                     use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_fwd_list$samp, test_label="mcwmh-ind-fwd")
-
-# Plots. 
-trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start, test_labels="mcwmh-ind-fwd") 
-hist_plots <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, param_types="par",
-                                        test_label_baseline="exact", test_labels="mcwmh-ind-fwd")
-
-for(plt in trace_plots) plot(plt) 
-for(plt in hist_plots) plot(plt)
-```
-
-
-
-
-
-
-
-
-
-
-```{r}
-mcmc_par_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start=burn_in_start, 
-                                           test_labels=NULL, param_types="par")
-                         
-mcmc_errs_list <- compute_mcmc_comparison_metrics(samp_dt, "exact", "marg-fwd", c("mean", "cov"), 
-                                                  burn_in_start=burn_in_start, param_types="par")
+# mcmc_par_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start=burn_in_start, 
+#                                            test_labels=NULL, param_types="par")
+#                          
+# mcmc_errs_list <- compute_mcmc_comparison_metrics(samp_dt, "exact", "marg-fwd", c("mean", "cov"), 
+#                                                   burn_in_start=burn_in_start, param_types="par")
                                                   
 
 ```
 
 
-
-
 ```{r}
 #
-# Sample approximate posteriors: forward model emulator. 
+# 1d marginal plots (KDEs)
 #
 
-# MCWMH-Ind. 
-mcmh_nocov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                      use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- format_mcmc_output(mcmh_nocov_llik_list, test_label="nocov-llik")
-
-# MCWMH-Joint. 
-mcmh_cov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                    use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik")
-
-
-```
-
-
-
-```{r}
 kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
-                                        param_types="par", param_names=NULL, test_label_baseline="exact",
+                                        param_types="par", param_names=NULL,
+                                        test_label_baseline="exact",
                                         xlab="parameter", ylab="kde", save_dir=NULL) 
 
 for(plt in kde_plts) plot(plt)
@@ -408,8 +163,8 @@ for(plt in scatter_stat_plts) plot(plt)
 ```
 
 ```{r}
-coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start, param_types="par",
-                                           probs=seq(.5, .99, .05))
+coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start,
+                                           param_types="par", probs=seq(.5, .99, .05))
 coverage_plts <- coverage_plt_list$plots
 
 for(plt in coverage_plts) plot(plt)

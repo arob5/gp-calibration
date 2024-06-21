@@ -439,9 +439,12 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   }
   samp_filename <- paste0(samp_filename, ".csv")
   list_filename <- paste0(list_filename, ".RData")
-  
+
   # Run MCMC algorithms. 
   if("gp-mean" %in% mcmc_tags) {
+    
+    print("Running MCMC: gp-mean")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
@@ -465,6 +468,9 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   }
   
   if("gp-marg" %in% mcmc_tags) {
+    
+    print("Running MCMC: gp-marg")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
@@ -482,12 +488,15 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     }, 
     finally = {
       fwrite(samp_dt, file.path(save_dir, samp_filename))
-      save(mcmc_list, file.path(save_dir, list_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
     }
     )
   }
   
   if("mcwmh-joint" %in% mcmc_tags) {
+    
+    print("Running MCMC: mcwmh-joint")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
@@ -506,12 +515,15 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     }, 
     finally = {
       fwrite(samp_dt, file.path(save_dir, samp_filename))
-      save(mcmc_list, file.path(save_dir, list_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
     }
     )
   }
 
   if("mcwmh-ind" %in% mcmc_tags) {
+    
+    print("Running MCMC: mcwmh-ind")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
@@ -530,12 +542,15 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     }, 
     finally = {
       fwrite(samp_dt, file.path(save_dir, samp_filename))
-      save(mcmc_list, file.path(save_dir, list_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
     }
     )
   }
   
   if("pseudo-marg" %in% mcmc_tags) {
+    
+    print("Running MCMC: pseudo-marg")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_noisy(llik_emulator=llik_em_obj, par_prior_params=inv_prob$par_prior, 
@@ -553,12 +568,15 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     }, 
     finally = {
       fwrite(samp_dt, file.path(save_dir, samp_filename))
-      save(mcmc_list, file.path(save_dir, list_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
     }
     )
   }
   
   if("acc-prob-marg" %in% mcmc_tags) {
+    
+    print("Running MCMC: acc-prob-marg")
+    
     tryCatch(
     {
       mcmc_output <- mcmc_gp_acc_prob_approx(llik_em_obj, par_prior_params=inv_prob$par_prior, 
@@ -576,7 +594,7 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     }, 
     finally = {
       fwrite(samp_dt, file.path(save_dir, samp_filename))
-      save(mcmc_list, file.path(save_dir, list_filename))
+      save(mcmc_list, file=file.path(save_dir, list_filename))
     }
     )
     
