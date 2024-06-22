@@ -511,10 +511,24 @@ gpKerGP$methods(
     
     library(kergp)
     
-    initFields(kernel_name_map=list(Gaussian="Gaussian", Matern5_2="Matern5_2", Matern3_2="Matern3_2"), 
-               mean_func_name_map=list(constant="beta0"))
-    callSuper(X=X, Y=Y, lib="hetGP", ...)
+    # Defining the kernel (covariance function). 
+    set_input_names <- function(ker) {
+      inputNames(ker) <- x_names
+      ker
+    }
+    ker_map <- list(Gaussian=set_input_names(kergp::kGauss(d=X_dim)), 
+                    Matern5_2=set_input_names(kergp::kMatern(d=X_dim, nu="5/3")), 
+                    Matern3_2=set_input_names(kergp::kMatern(d=X_dim, nu="3/2")))
     
+    # Defining the mean function. 
+    mean_map <- list(constant=as.formula("y ~ 1"), 
+                     linear=as.formula(paste0("y ~ ", paste(x_names, collapse=" + "))), 
+                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", x_names, ")", collapse=" + "))))
+    
+    initFields(kernel_name_map=ker_map, mean_func_name_map=mean_map) 
+    callSuper(X=X, Y=Y, lib="kergp", ...)
+    
+    # Ensure mean and kernel names are supported. 
     assert_that(all(names(kernel_name_map) %in% valid_kernels), 
                 msg=paste0("Some kernel names not found in base gpWrapper class: ", 
                            paste(setdiff(names(kernel_name_map), valid_kernels), collapse=", ")))
@@ -525,17 +539,35 @@ gpKerGP$methods(
   
   fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
                          fixed_pars=list(), ...) {
-    # Deal with noiseless case. 
-    if(estimate_nugget) {
-      assert_that(!("g" %in% names(fixed_pars)), 
-                  msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
+    
+    # TODO: I should put this code in the mean map instead of here. 
+    # Specify mean function. 
+    if(mean_func_name == "constant") {
+      trend_formula <- as.formula("y ~ 1")
+    } else if(mean_func_name == "linear") {
+      trend_formula <- as.formula(paste0("y ~ ", paste(x_names, collapse=" + ")))
+    } else if(mean_func_name == "quadratic") {
+      trend_formula <- as.formula(paste0("y ~ ", paste0("poly(", x_names, ")", collapse=" + ")))
     } else {
-      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_nugget
+      stop("Invalid `mean_func_name`: ", mean_func_name)
     }
     
-    if(length(fixed_pars) == 0) fixed_pars <- NULL
+    # TODO: handle nugget. 
+    # Nugget can be fixed or estimated.  
+    # if(estimate_nugget) {
+    #   assert_that(!("g" %in% names(fixed_pars)), 
+    #               msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
+    # } else {
+    #   if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_nugget
+    # }
     
-    gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
+    # TODO: figure out how to handle fixed pars. 
+    # if(length(fixed_pars) == 0) fixed_pars <- NULL
+    
+    # TODO: should ensure X_fit has colnames set to `x_names.` 
+    gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
+                        inputs=x_names, cov=map_kernel_name(kernel_name), estim=TRUE, ...)
+    
   },
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 

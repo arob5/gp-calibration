@@ -38,7 +38,7 @@ N_design1 <- 4
 f1 <- function(x) cbind(x^2, 3*x^3)
 X1 <- matrix(seq(10,20,length.out=N_design1), ncol=1)
 Y1 <- f1(X1) + cbind(15*rnorm(nrow(X1)), 30*rnorm(nrow(X1)))
-X1_new <- matrix(seq(10,20, length.out=101), ncol=1)
+X1_new <- matrix(seq(10, 20, length.out=101), ncol=1)
 Y1_new_noiseless <- f1(X1_new)
 
 # 2D input, 1D output, noiseless observations. 
