@@ -57,15 +57,16 @@ TODO: need to also add check for negative predictive variance in covariance matr
 
 ## hetGP
 ```{r}
-# Fit
+# Default fit/predict. 
 gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
 gpHet1$fit("Gaussian", "constant")
-```
-
-```{r}
-# Predict 
 gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
+gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 
+# Fit/predict with fixed small nugget (intended for interpolation). 
+gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpHet1$fit("Gaussian", "constant", estimate_nugget=FALSE)
+gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```
 
@@ -160,7 +161,22 @@ for(i in 1:gpHet1_update$Y_dim) {
 gpHet1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
 ```
 
+## kergp
+```{r}
 
+# Default fit/predict. 
+gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpKerGP1$fit("Gaussian", "constant", optimFun="stats::optim")
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
+gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
+
+# Fit/predict with fixed small nugget (intended for interpolation). 
+gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpKerGP1$fit("Matern3_2", "constant", optimFun="stats::optim", estimate_nugget=FALSE)
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
+gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
+
+```
 
 
 # 2d validation. 

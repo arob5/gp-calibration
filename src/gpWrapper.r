@@ -57,7 +57,7 @@ gpWrapper$methods(
       x_names <- colnames(X)
       if(is.null(x_names)) x_names <- paste0("x", 1:X_dim)
     }
-    
+
     if(is.null(y_names)) {
       y_names <- colnames(Y)
       if(is.null(y_names)) y_names <- paste0("y", 1:Y_dim)
@@ -66,9 +66,7 @@ gpWrapper$methods(
     initFields(X_names=x_names, Y_names=y_names, scale_input=scale_input,
                normalize_output=normalize_output, X_bounds=apply(X, 2, range),
                default_nugget=default_nugget)
-    colnames(X) <<- X_names
-    colnames(Y) <<- Y_names
-    
+
     if(normalize_output) {
       sd_rm_na <- function(x) sd(x, na.rm=TRUE)
       initFields(Y_mean=colMeans(Y, na.rm=TRUE), Y_std=apply(Y, 2, sd_rm_na))
@@ -83,11 +81,18 @@ gpWrapper$methods(
       initFields(X_train=X)
     }
     
+    # Set input and output names. 
+    colnames(X) <<- X_names
+    colnames(Y) <<- Y_names
+    colnames(X_train) <<- X_names
+    colnames(Y_train) <<- Y_names
+    
     initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2"), 
                valid_mean_funcs=c("constant", "linear", "quadratic"), ...)
   },
   
   scale = function(Xnew, inverse=FALSE) {
+    
     if(inverse) {
       Xnew <- Xnew %*% diag(X_bounds[2,] - X_bounds[1,], X_dim) + 
               matrix(X_bounds[1,], nrow=nrow(Xnew), ncol=X_dim, byrow=TRUE)
@@ -151,21 +156,23 @@ gpWrapper$methods(
     #   - If `return_cov==TRUE`, then the variances will always be returned as well, by simply taking 
     #     the diagonal of the covariance matrix. 
     #   - `return_cross_cov` has no effect on the other settings; can be thought of as an optional add-on. 
-    
+
     # Scale inputs, if required. 
     if(scale_input) {
       X_new <- .self$scale(X_new)
       if(return_cross_cov && !is.null(X_cross)) X_cross <- .self$scale(X_cross)
     }
-    
-    # If covariance is requested, default to computing cov at inputs `X_new`.
+
+    # If covariance is requested, default to computing scov at inputs `X_new`.
     if(return_cross_cov && is.null(X_cross)) stop("`return_cross_cov` is TRUE but `X_cross` is NULL.") 
       
     # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(pred_list)) {
-      pred_list[[i]] <- predict_package(X_new, i, return_mean, return_var, return_cov, 
-                                        return_cross_cov, X_cross, include_nugget, ...)
+      pred_list[[i]] <- predict_package(X_new=X_new, output_idx=i, return_mean=return_mean, 
+                                        return_var=return_var, return_cov=return_cov, 
+                                        return_cross_cov=return_cross_cov, X_cross=X_cross, 
+                                        include_nugget=include_nugget, ...)
     }
 
     names(pred_list) <- Y_names
@@ -496,12 +503,12 @@ gpWrapperHet$methods(
 # gpKerGP: Class providing interface between calibration code and kergp package.  
 # -----------------------------------------------------------------------------
 
-gpKerGP <- setRefClass(
-  Class = "gpKerGP",
+gpWrapperKerGP <- setRefClass(
+  Class = "gpWrapperKerGP",
   contains = "gpWrapper"
 )
 
-gpKerGP$methods(
+gpWrapperKerGP$methods(
   
   initialize = function(X, Y, ...) {
     # X and Y should only be missing when the generator is being called due to 
@@ -510,23 +517,25 @@ gpKerGP$methods(
     if(missing(X) || missing(Y)) return(NULL)
     
     library(kergp)
+    callSuper(X=X, Y=Y, lib="kergp", ...)
     
-    # Defining the kernel (covariance function). 
+    # Defining the kernel (covariance function). kergp requires the kernel object 
+    # to have names for each input variable that align with names in the X data 
+    # when fitting and predicting. 
     set_input_names <- function(ker) {
-      inputNames(ker) <- x_names
+      inputNames(ker) <- X_names
       ker
     }
     ker_map <- list(Gaussian=set_input_names(kergp::kGauss(d=X_dim)), 
-                    Matern5_2=set_input_names(kergp::kMatern(d=X_dim, nu="5/3")), 
+                    Matern5_2=set_input_names(kergp::kMatern(d=X_dim, nu="5/2")), 
                     Matern3_2=set_input_names(kergp::kMatern(d=X_dim, nu="3/2")))
     
     # Defining the mean function. 
     mean_map <- list(constant=as.formula("y ~ 1"), 
-                     linear=as.formula(paste0("y ~ ", paste(x_names, collapse=" + "))), 
-                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", x_names, ")", collapse=" + "))))
+                     linear=as.formula(paste0("y ~ ", paste(X_names, collapse=" + "))), 
+                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", X_names, ")", collapse=" + "))))
     
     initFields(kernel_name_map=ker_map, mean_func_name_map=mean_map) 
-    callSuper(X=X, Y=Y, lib="kergp", ...)
     
     # Ensure mean and kernel names are supported. 
     assert_that(all(names(kernel_name_map) %in% valid_kernels), 
@@ -537,76 +546,57 @@ gpKerGP$methods(
                            paste(setdiff(names(mean_func_name_map), valid_mean_funcs), collapse=", ")))
   }, 
   
-  fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
-                         fixed_pars=list(), ...) {
+  
+  fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", 
+                         estimate_nugget=TRUE, fixed_pars=list(), ...) {
+    # `kergp` supports a variety of different optimization algorithms, which can be specified 
+    # using the `...` arguments. 
+    # For kergp, the nugget can be handled more on the prediction side than on the model fitting side. 
+    # To fix a jitter, we can fit the model using `noise = FALSE`. Then for the returned GP object 
+    # we can set `gp_fit$varNoise <- nugget`. Then when predicting want to use 
+    # `predict(..., forceInterp=TRUE)` to include the nugget variance in the kernel matrix. 
     
-    # TODO: I should put this code in the mean map instead of here. 
-    # Specify mean function. 
-    if(mean_func_name == "constant") {
-      trend_formula <- as.formula("y ~ 1")
-    } else if(mean_func_name == "linear") {
-      trend_formula <- as.formula(paste0("y ~ ", paste(x_names, collapse=" + ")))
-    } else if(mean_func_name == "quadratic") {
-      trend_formula <- as.formula(paste0("y ~ ", paste0("poly(", x_names, ")", collapse=" + ")))
+    # kergp supports fixing known mean function coefficients `beta`. 
+    if(isTRUE("beta" %in% names(fixed_pars))) {
+      beta <- fixed_pars$beta
     } else {
-      stop("Invalid `mean_func_name`: ", mean_func_name)
+      beta <- NULL
     }
-    
-    # TODO: handle nugget. 
-    # Nugget can be fixed or estimated.  
-    # if(estimate_nugget) {
-    #   assert_that(!("g" %in% names(fixed_pars)), 
-    #               msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
-    # } else {
-    #   if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_nugget
-    # }
-    
-    # TODO: figure out how to handle fixed pars. 
-    # if(length(fixed_pars) == 0) fixed_pars <- NULL
-    
-    # TODO: should ensure X_fit has colnames set to `x_names.` 
+
+    # Fit GP. 
     gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
-                        inputs=x_names, cov=map_kernel_name(kernel_name), estim=TRUE, ...)
+                        inputs=X_names, cov=map_kernel_name(kernel_name), 
+                        estim=TRUE, beta=beta, noise=estimate_nugget, ...)
     
+    # Set fixed nugget if not estimated.
+    if(!estimate_nugget) gp_fit$varNoise <- default_nugget
+    
+    return(gp_fit)
   },
+  
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
                              return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
                              include_nugget=TRUE, ...) {
+    # For kergp, the predictive standard deviation "sd" includes the nugget variance 
+    # if `force_interp` is TRUE; otherwise it is excluded. Specifically, `force_interp=FALSE`
+    # returns the predictive dist f|f(X), while `force_interp=TRUE` returns the predictive dist 
+    # y|y(X). Thus, `force_interp=TRUE` has two effects: (1) adding the nugget to the diagonal 
+    # of the kernel matrix; and (2) adding the nugget to the predictive variance. 
     
-    if(return_cov) X_prime <- X_new
-    else X_prime <- NULL
+    if(return_cross_cov) stop("`return_cross_cov` not yet implemented for gpKerGP class.")
+    if(is.null(colnames(X_new))) colnames(X_new) <- X_names
     
-    pred <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_prime)
+    pred <- kergp:::predict.gp(gp_model[[output_idx]], newdata=X_new, 
+                               forceInterp=include_nugget, seCompute=return_var, 
+                               covCompute=return_cov, ...)
+    
     return_list <- list()
     if(return_mean) return_list$mean <- pred$mean
-    if(return_cov) {
-      return_list$cov <- pred$cov
-      if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs
-      return_list$var <- diag(return_list$cov)
-    } else if(return_var) {
-      return_list$var <- pred$sd2
-      if(include_nugget) return_list$var <- return_list$var + pred$nugs
-    }
-    
-    # Cross covariance.
-    if(return_cross_cov) {
-      pred_cross <- hetGP:::predict(gp_model[[output_idx]], X_new, xprime=X_cross)
-      return_list$cross_cov <- pred_cross$cov
-    }
-    
+    if(return_var) return_list$var <- (pred$sd)^2
+    if(return_cov) return_list$cov <- pred$cov
+
     return(return_list)
-  }, 
-  
-  # TODO: I should be careful to ensure X_train is aligned with the data that the homGP 
-  # object stores. Currently these could become misaligned if X_train contains duplicates. 
-  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
-    
-    if(update_hyperpar) {
-      return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, ...))
-    }
-    
-    return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
   }
   
 )
