@@ -23,7 +23,7 @@ library(data.table)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "multidim_toy_examples", "N60_D10")
+                        "multidim_toy_examples", "N60_D10_test")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -180,10 +180,10 @@ mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")]
 
 
 # -----------------------------------------------------------------------------
-# Initial design and fit emulators. 
+# Initial design and test points.  
 # -----------------------------------------------------------------------------
 
-print("--------------------- Fitting GP Emulators -------------------------")
+print("--------------------- Constructing design -------------------------")
 
 seed_init_design <- 500
 set.seed(seed_init_design)
@@ -206,73 +206,90 @@ test_info <- list(input=u_grid, design_method=test_design_method, N_design=N_des
 test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+save(test_info, file=file.path(output_dir, "test_info.RData"))
 
-# Log-likelihood emulator. 
-em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+# -----------------------------------------------------------------------------
+# Fitting Emulators.   
+# -----------------------------------------------------------------------------
+
+print("--------------------- Fitting Emulators -------------------------")
+
+llik_em_list <- list()
+
+# Log-likelihood emulator, constant mean. 
+em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), 
+                           normalize_output=TRUE, scale_input=TRUE)
 em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
-                          default_normalize=default_normalize, lik_par=diag(cov_obs), 
-                          use_fixed_lik_par=TRUE)
-save(em_llik, file=file.path(output_dir, "llik_em_llik.RData"))
-emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
-test_info$pred_llik <- emulator_pred_llik
+llik_em_list[["em_llik_const"]] <- llikEmulatorGP("em_llik_const", em_llik_gp, default_conditional=default_conditional, 
+                                                  default_normalize=default_normalize, lik_par=diag(cov_obs), 
+                                                  use_fixed_lik_par=TRUE)
+
+# Log-likelihood emulator, quadratic mean.
+em_llik_gp2 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                              normalize_output=TRUE, scale_input=TRUE)
+em_llik_gp2$fit("Gaussian", "quadratic", estimate_nugget=FALSE, 
+                optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
+llik_em_list[["em_llik_quad"]] <- llikEmulatorGP("em_llik_quad", em_llik_gp2, default_conditional=default_conditional, 
+                                                 default_normalize=default_normalize, lik_par=diag(cov_obs), 
+                                                 use_fixed_lik_par=TRUE)
+
 
 # Forward model emulator.
 em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag(cov_obs), 
-                                   default_conditional=default_conditional, 
-                                   default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
-                                   par_names=rownames(inv_prob$par_prior))
-save(em_fwd, file=file.path(output_dir, "llik_em_fwd.RData"))
-emulator_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
-test_info$pred_fwd <- emulator_pred_fwd
+llik_em_list[["em_fwd"]] <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag(cov_obs), 
+                                                     default_conditional=default_conditional, 
+                                                     default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
+                                                     par_names=rownames(inv_prob$par_prior))
 
-# Save test info with emuilator predictions. 
-save(test_info, file=file.path(output_dir, "test_info.RData"))
+# Save log-likelihood emulators. 
+save(llik_em_list, file=file.path(output_dir, "llik_em_list.RData"))
 
 
-#
+# -----------------------------------------------------------------------------
+# Log-Likelihood predictions at test points.   
+# -----------------------------------------------------------------------------
+
+# Emulator predictions. 
+print("--------------------- Emulator Predictions at Test Points -------------------------")
+emulator_pred_list <- list()
+for(em_name in names(llik_em_list)) {
+  emulator_pred_list[[em_name]] <- llik_em_list[[em_name]]$predict_emulator(test_info$input)
+}
+save(emulator_pred_list, file=file.path(output_dir, "emulator_pred_list.RData"))
+
+
 # Log-likelihood predictions. 
-#
-
-em_llik_pred_plot <- em_llik$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                                                  emulator_pred_list=emulator_pred_llik, plot_type="llik",
-                                                  conditional=default_conditional, normalize=default_normalize,
-                                                  include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                                                  plot_title="Log-Likelihood Predictions [llik]")
-em_fwd_pred_plot <- em_fwd$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                                                emulator_pred_list=emulator_pred_fwd, plot_type="llik",
-                                                conditional=default_conditional, normalize=default_normalize,
-                                                include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                                                plot_title="Log-Likelihood Predictions [fwd]")
-
-ggsave(file.path(output_dir, "llik_em_pred_plot_llik.png"), em_llik_pred_plot)
-ggsave(file.path(output_dir, "llik_em_pred_plot_fwd.png"), em_fwd_pred_plot)
+print("--------------------- Log-Likelihood Predictions at Test Points -------------------------")
+for(em_name in names(llik_em_list)) {
+  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
+                                                      plot_type="llik", conditional=default_conditional,
+                                                      normalize=default_normalize, include_interval=TRUE,
+                                                      interval_method="pm_std_dev", N_std_dev=1.64, 
+                                                      plot_title=paste0("llik predictions: ", em_name))
+  ggsave(file.path(output_dir, paste0("llik_pred_", em_name, ".png")), plt)
+}
 
 
 # -----------------------------------------------------------------------------
 # Run MCMC Samplers.  
 # -----------------------------------------------------------------------------
 
-print("--------------------- Running GP-Accelerated MCMC: llik emulation -------------------------")
+print("--------------------- GP-Accelerated MCMC -------------------------")
 
-mcmc_info_list_llik <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, llik_em_obj=em_llik, 
-                                                  mcmc_tags=mcmc_tags, save_dir=output_dir, 
-                                                  samp_dt=samp_dt, mcmc_list=mcmc_list, 
-                                                  test_label_suffix="llik", N_itr=N_mcmc, 
-                                                  par_init=mcmc_par_init, overwrite=TRUE)
-samp_dt <- mcmc_info_list_llik$samp
-mcmc_list <- mcmc_info_list_llik$mcmc_list
-
-
-print("--------------------- Running GP-Accelerated MCMC: forward model emulation -------------------------")
-
-mcmc_info_list_fwd <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, llik_em_obj=em_fwd, 
-                                                 mcmc_tags=mcmc_tags, save_dir=output_dir, 
-                                                 samp_dt=samp_dt, mcmc_list=mcmc_list, 
-                                                 test_label_suffix="fwd", N_itr=N_mcmc, 
-                                                 par_init=mcmc_par_init, overwrite=TRUE)
+for(em_name in names(llik_em_list)) {
+  print(paste0("----- ", em_name, " -----"))
+  mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
+                                               llik_em_obj=llik_em_list[[em_name]], 
+                                               mcmc_tags=mcmc_tags, save_dir=output_dir, 
+                                               samp_dt=samp_dt, mcmc_list=mcmc_list, 
+                                               test_label_suffix=em_name, N_itr=N_mcmc, 
+                                               par_init=mcmc_par_init, overwrite=TRUE)
+  
+  samp_dt <- mcmc_info_list$samp
+  mcmc_list <- mcmc_info_list$mcmc_list
+}
 
 
 print("-------------------------- End of Script ------------------------------")

@@ -17,7 +17,7 @@ library(data.table)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "multidim_toy_examples", "N60_D10")
+                        "multidim_toy_examples", "N60_D10_test")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -113,21 +113,19 @@ for(plt in trace_plots_approx) plot(plt)
 # Log-likelihood emulator predictions. 
 #
 
-load(file.path(output_dir, "llik_em_llik.RData"))
-load(file.path(output_dir, "llik_em_fwd.RData"))
+load(file.path(output_dir, "llik_em_list.RData"))
+load(file.path(output_dir, "emulator_pred_list.RData"))
 load(file.path(output_dir, "test_info.RData"))
+em_names <- names(llik_em_list)
 
-em_llik$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                             emulator_pred_list=test_info$pred_llik, plot_type="llik",
-                             include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                             plot_title="Log-Likelihood Predictions [llik]")
-
-
-em_fwd$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                            emulator_pred_list=test_info$pred_fwd, plot_type="llik",
-                            include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                            plot_title="Log-Likelihood Predictions [fwd]")
-                             
+for(em_name in em_names) {
+  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
+                                                      plot_type="llik", include_interval=TRUE, 
+                                                      interval_method="pm_std_dev", N_std_dev=1.64, 
+                                                      plot_title=paste0("llik predictions: ", em_name))
+  plot(plt)
+}
 ```
 
 
@@ -171,10 +169,56 @@ for(plt in coverage_plts) plot(plt)
 ```
 
 
+```{r}
+x <- 1:100
+y <- x^2 + 100*rnorm(n=100)
+form <- as.formula(paste0("y ~ ", paste0("poly(", "x", ", degree=2)", collapse=" + ")))
+lm1 <- lm(form, data.frame(x=x, y=y))
+x_tst <- seq(-50, 50, length.out=200)
+pred <- predict(lm1, data.frame(x=x_tst))
+plot(x_tst, pred, type="line", col="blue", xlim=c(-50, 100))
+lines(x_tst, x_tst^2, col="red")
+points(x, y)
+```
+
+```{r}
+gptest <- gpWrapperKerGP(matrix(x, ncol=1), matrix(y, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+gptest$fit("Gaussian", "quadratic", estimate_nugget=TRUE, multistart=3)
+predgp <- gptest$predict(matrix(x_tst, ncol=1))
+gptest$gp_model[[1]]$betaHat
 
 
+gptest$plot_pred_1d(matrix(x_tst, ncol=1), include_interval=TRUE, Y_new=matrix(x_tst, ncol=1)^2)
 
+plot(x_tst, predgp$mean, type="line", col="blue", xlim=c(-50, 100))
+lines(x_tst, predgp$trend, type="line", col="green")
+lines(x_tst, x_tst^2, col="red")
+points(x, y)
+```
 
+```{r}
+X <- get_batch_design("LHS", 100, bounds=rbind(c(-1, -1), c(1, 1)))
+X_tst <- get_batch_design("LHS", 500, bounds=rbind(c(-1, -1), c(1, 1)))
+
+colnames(X) <- c("x1", "x2")
+colnames(X_tst) <- c("x1", "x2")
+
+f <- function(x) 2*x[,1,drop=FALSE]^2 + 3*x[,2,drop=FALSE] - 5*x[,1,drop=FALSE]*x[,2,drop=FALSE] - 12 + 3*x[,1,drop=FALSE]
+y <- f(X) + 1 * rnorm(100)
+y_tst <- f(X_tst)
+
+gptest <- gpWrapperKerGP(X, y, normalize_output=TRUE, scale_input=TRUE)
+gptest$fit("Gaussian", "quadratic", estimate_nugget=TRUE, multistart=5, trace=TRUE)
+gptest$gp_model[[1]]$betaHat
+
+predgp <- gptest$predict(X_tst)
+
+plot(y_tst, predgp$mean, col="blue")
+abline(a=0, b=1, col="red")
+
+plot(y_tst, predgp$trend, col="green")
+abline(a=0, b=1, col="red")
+```
 
 
 

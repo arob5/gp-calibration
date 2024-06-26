@@ -65,14 +65,14 @@ get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=
   # Either `prior_dist_info` or `bounds` must be provided. 
   assert_that(!is.null(prior_dist_info) || !is.null(bounds))
 
-  # The dimension of the input space.
-  dim_input <- nrow(prior_dist_info)
-  
   # If `prior_dist_info` is NULL, samples points uniformly in the region 
   # defined by `bounds`.
   if(is.null(prior_dist_info)) {
     prior_dist_info <- data.frame(dist="Uniform", param1=bounds[1,], param2=bounds[2,])
   }
+  
+  # The dimension of the input space.
+  dim_input <- nrow(prior_dist_info)
   
   # If `bounds` is NULL, set to NA. No bounds will be enforced beyond those
   # implied by the prior distributions. For distributions with unbounded support. 

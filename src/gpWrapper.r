@@ -147,7 +147,8 @@ gpWrapper$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, ...) {
+                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
+                     return_trend=TRUE, ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers to k(X_new, X_cross).
     #   - The former is always diagonal, and `include_nugget==TRUE` will cause nugget variances to be 
@@ -172,11 +173,12 @@ gpWrapper$methods(
       pred_list[[i]] <- predict_package(X_new=X_new, output_idx=i, return_mean=return_mean, 
                                         return_var=return_var, return_cov=return_cov, 
                                         return_cross_cov=return_cross_cov, X_cross=X_cross, 
-                                        include_nugget=include_nugget, ...)
+                                        include_nugget=include_nugget, return_trend=return_trend, ...)
     }
 
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
+    trend_pred <- do.call(cbind, lapply(pred_list, function(l) l$trend))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$var))
     cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
     cross_cov_pred <- abind(lapply(pred_list, function(l) l$cross_cov), along=3)
@@ -194,17 +196,20 @@ gpWrapper$methods(
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
+      if(return_trend) trend_pred <- .self$normalize(trend_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
       if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
       if(return_cross_cov) for(i in 1:Y_dim) cross_cov_pred[,,i] <- Y_std[i]^2 * cross_cov_pred[,,i]
     }
       
-    return(list(mean=mean_pred, var=var_pred, cov=cov_pred, cross_cov=cross_cov_pred))
+    return(list(mean=mean_pred, var=var_pred, cov=cov_pred, 
+                cross_cov=cross_cov_pred, trend=trend_pred))
   }, 
   
   
   predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE,
-                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE) {
+                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE,
+                              return_trend=TRUE) {
     .NotYetImplemented()
   },
   
@@ -533,7 +538,7 @@ gpWrapperKerGP$methods(
     # Defining the mean function. 
     mean_map <- list(constant=as.formula("y ~ 1"), 
                      linear=as.formula(paste0("y ~ ", paste(X_names, collapse=" + "))), 
-                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", X_names, ")", collapse=" + "))))
+                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", X_names, ", degree=2)", collapse=" + "))))
     
     initFields(kernel_name_map=ker_map, mean_func_name_map=mean_map) 
     
@@ -577,12 +582,15 @@ gpWrapperKerGP$methods(
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
                              return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
-                             include_nugget=TRUE, ...) {
+                             include_nugget=TRUE, return_trend=TRUE, ...) {
     # For kergp, the predictive standard deviation "sd" includes the nugget variance 
     # if `force_interp` is TRUE; otherwise it is excluded. Specifically, `force_interp=FALSE`
     # returns the predictive dist f|f(X), while `force_interp=TRUE` returns the predictive dist 
     # y|y(X). Thus, `force_interp=TRUE` has two effects: (1) adding the nugget to the diagonal 
     # of the kernel matrix; and (2) adding the nugget to the predictive variance. 
+    # If `return_trend` is TRUE, then the returned list will also contain element "trend" 
+    # storing the predictions from the GP trend alone; i.e., the prior mean function 
+    # evaluations. 
     
     if(return_cross_cov) stop("`return_cross_cov` not yet implemented for gpKerGP class.")
     if(is.null(colnames(X_new))) colnames(X_new) <- X_names
@@ -595,6 +603,7 @@ gpWrapperKerGP$methods(
     if(return_mean) return_list$mean <- pred$mean
     if(return_var) return_list$var <- (pred$sd)^2
     if(return_cov) return_list$cov <- pred$cov
+    if(return_trend) return_list$trend <- pred$trend
 
     return(return_list)
   }
