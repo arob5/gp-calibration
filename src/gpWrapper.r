@@ -184,19 +184,30 @@ gpWrapper$methods(
     cross_cov_pred <- abind(lapply(pred_list, function(l) l$cross_cov), along=3)
     
     # Set negative variances to 0. 
-    if(return_var || return_cov) {
+    if(return_var) {
       neg_var_idx <- (var_pred < 0)
       if(any(neg_var_idx)) {
         message("Thresholding negative variance predictions at 0.")
         var_pred[neg_var_idx] <- 0
-        if(return_cov) diag(cov_pred)[neg_var_idx] <- 0
+      }
+    }
+    
+    if(return_cov) {
+      for(i in 1:Y_dim) {
+        neg_var_idx <- (diag(cov_pred[,,i]) < 0)
+        if(any(neg_var_idx)) {
+          eps <- .Machine$double.eps
+          message("Thresholding negative diagonal values of predicted covariance at ",
+                  eps, "; output ", i)
+          diag(cov_pred[,,i])[neg_var_idx] <- eps
+        }
       }
     }
     
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
-      if(return_trend) trend_pred <- .self$normalize(trend_pred, inverse=TRUE)
+      if(return_trend && !is.null(trend_pred)) trend_pred <- .self$normalize(trend_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
       if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
       if(return_cross_cov) for(i in 1:Y_dim) cross_cov_pred[,,i] <- Y_std[i]^2 * cross_cov_pred[,,i]
@@ -232,8 +243,7 @@ gpWrapper$methods(
     if((adjustment=="truncated") && !use_cov) {
       pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i], nrow=nrow(X_new))), along=3)
     } else if((adjustment != "truncated") && use_cov) {
-      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, 
-                                                                         function(i) t(chol(pred_list$cov[,,i]))), along=3)
+      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) t(chol(pred_list$cov[,,i]))), along=3)
     } else if(adjustment != "truncated") {
       pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
     }

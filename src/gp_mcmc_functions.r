@@ -162,7 +162,14 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
       cov_prop <- cov_prop + adapt_factor * (sample_cov_interval - cov_prop)
     } 
     
-    L_cov_prop <- t(chol(cov_prop))
+    # Handle case that `cov_prop` may not be positive definite. 
+    L_cov_prop <- try(t(chol(cov_prop)))
+    if(inherits(L_cov_prop, "try-error")) {
+      message("Problematic proposal cov: ", cov_prop)
+      cov_prop <- Matrix::nearPD(cov_prop, ensureSymmetry=TRUE)
+      L_cov_prop <- t(chol(cov_prop))
+    }
+    
     return_list$L_cov <- L_cov_prop
   }
   

@@ -22,8 +22,8 @@ library(data.table)
 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "multidim_toy_examples", "N60_D10_test")
+base_output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "linGauss")
+
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -38,13 +38,35 @@ source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 
+# Command line arguments: 
+#  - potential options: dim_par, dim_output, N_design, design_method, 
+#                       N_design_test, design_method_test, N_mcmc
+#  - The settings `dim_par`, `dim_output`, `N_design`, `design_method` are 
+#    viewed as the key variables and are hence used to define the name 
+#    of the run, used for the output directory. 
+#  - If not specified as command line arguments, must be set explicitly 
+#    in this file. Command line arguments take precedence. 
+settings <- commandArgs(trailingOnly=TRUE)
+
 # Seeds for random number generator for different portions of analysis. 
 seed_data <- 82
-seed_init_design <- 500
+seed_design <- 500
+
+# Number of parameters to calibrate. Will determine the number of basis 
+# functions in the forward model. 
+if(!("dim_par" %in% names(settings))) settings$dim_par <- 11
+
+# Number of forward model outputs. For forward model emulation, this means 
+# one GP must be fit per output. 
+if(!("dim_output" %in% names(settings))) settings$dim_output <- 10
 
 # Design settings for emulator construction. 
-N_design <- 60
-design_method <- "LHS"
+if(!("N_design" %in% names(settings))) settings$N_design <- 100
+if(!("design_method" %in% names(settings))) settings$design_method <- "LHS"
+
+# Design settings for emulator validation. 
+if(!("N_design_test" %in% names(settings))) settings$N_design_test <- 400 
+if(!("design_method_test" %in% names(settings))) settings$design_method_test <- "LHS"
 
 # Global likelihood normalization settings. 
 default_conditional <- FALSE
@@ -54,7 +76,31 @@ default_normalize <- TRUE
 mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind")
 
 # Settings for MCMC runs.  
-N_mcmc <- 50000
+if(!("N_mcmc" %in% names(settings))) settings$N_mcmc <- 50000
+
+# Create global variables with the setting values. 
+required_settings <- c("dim_par", "dim_output", "N_design", "design_method", 
+                       "N_design_test", "design_method_test", "N_mcmc")
+missing_settings <- setdiff(required_settings, names(settings))
+if(length(missing_settings) > 0) stop("Missing settings: ", missing_settings)
+dim_par <- settings$dim_par
+dim_output <- settings$dim_output
+N_design <- settings$N_design
+design_method <- settings$design_method
+N_design_test <- settings$N_design_test
+design_method_test <- settings$design_method_test
+N_mcmc <- settings$N_mcmc
+
+#
+# Create alphanumeric tag defining the run, and use to create directory. 
+#
+
+# Run tag. 
+run_tag <- paste("linGauss", paste0("d", dim_par), paste0("p", dim_output), 
+                 paste0("N", N_design), design_method, sep="_")
+
+# Output directory. 
+output_dir <- file.path(base_output_dir, run_tag)
 
 # If `output_dir` already exists, append timestep and create new directory.
 # Otherwise create the directory. 
@@ -67,6 +113,32 @@ if(dir.exists(output_dir)) {
 } else {
   dir.create(output_dir, recursive=TRUE)
 }
+save(settings, file=file.path(output_dir, "settings.RData"))
+
+# Print settings. 
+print("--------------------- User specified settings -------------------------")
+
+print("--> General settings")
+print(paste0("run tag: ", run_tag))
+print(paste0("output directory: ", output_dir))
+print(paste0("Data generation seed (seed_data): ", seed_data))
+print(paste0("Design data seed (seed_design): ", seed_design))
+print(paste0("Likelihood densities conditional: ", default_conditional))
+print(paste0("Likelihood densities normalized: ", default_normalize))
+
+print("--> Inverse problem")
+print(paste0("Parameter space dimension: ", dim_par))
+print(paste0("Forward model output dimension: ", dim_output))
+
+print("--> Design")
+print(paste0("Number design points: ", N_design))
+print(paste0("Design method: ", design_method))
+print(paste0("Number test points: ", N_design_test))
+print(paste0("Test design method: ", design_method_test))
+
+print("--> MCMC settings")
+print(paste0("Number iterations: ", N_mcmc))
+print(paste0("GP-accelerated MCMC algs: ", paste(mcmc_tags, collapse=", ")))
 
 
 # -----------------------------------------------------------------------------
@@ -81,17 +153,16 @@ set.seed(seed_data)
 # Forward model: linear combination of basis functions. 
 #
 
-# Basis functions. 
-basis_func_list <- list(phi0=function(t) rep(1, length(t)), phi1=function(t) t, 
-                        phi2=function(t) cos(2*pi*t), phi3=function(t) cos(2*pi*2*t), 
-                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3), 
-                        phi6=function(t) sin(2*pi*t/6), phi7=function(t) cos(2*pi*t/6), 
-                        phi8=function(t) cos(2*pi*t/5), phi9=function(t) cos(2*pi*t/8), 
+# Basis functions: restrict to the number specified by `dim_par`. 
+basis_func_list <- list(phi0=function(t) rep(1, length(t)), phi1=function(t) t,
+                        phi2=function(t) cos(2*pi*t), phi3=function(t) cos(2*pi*2*t),
+                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3),
+                        phi6=function(t) sin(2*pi*t/6), phi7=function(t) cos(2*pi*t/6),
+                        phi8=function(t) cos(2*pi*t/5), phi9=function(t) cos(2*pi*t/8),
                         phi10=function(t) sin(2*pi*t/8))
-dim_par <- length(basis_func_list)
+basis_func_list <- basis_func_list[1:dim_par]
 
 # Discretize the unit time interval to define the dimension of the output space. 
-dim_output <- 10
 times <- seq(0, 1, length.out=dim_output)
 
 # Forward model. 
@@ -171,13 +242,6 @@ llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$fw
 inv_prob$llik_obj <- llik_exact
 save(inv_prob, file=file.path(output_dir, "inv_prob_list.RData"))
 
-# MCMC sampling using exact likelihood. 
-mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
-mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
-                                 mode="MCMH", par_init=mcmc_par_init)
-samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
-mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
-
 
 # -----------------------------------------------------------------------------
 # Initial design and test points.  
@@ -185,13 +249,10 @@ mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")]
 
 print("--------------------- Constructing design -------------------------")
 
-seed_init_design <- 500
-set.seed(seed_init_design)
+set.seed(seed_design)
 
 # Generate design. 
-print(paste0("Number design points: ", N_design))
-print(paste0("Design method: ", design_method))
-design_info <- list(design_method=design_method, N_design=N_design, seed=seed_init_design)
+design_info <- list(design_method=design_method, N_design=N_design, seed=seed_design)
 design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
 design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
 design_info$llik <- llik_exact$assemble_llik(design_info$input)
@@ -199,14 +260,25 @@ design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 save(design_info, file=file.path(output_dir, "design_info.RData"))
 
 # Test points. 
-N_design_test <- 5000
-test_design_method <- "LHS"
-u_grid <- get_batch_design(test_design_method, N_design_test, prior_params=inv_prob$par_prior)
-test_info <- list(input=u_grid, design_method=test_design_method, N_design=N_design_test)
+u_grid <- get_batch_design(design_method_test, N_design_test, prior_params=inv_prob$par_prior)
+test_info <- list(input=u_grid, design_method=design_method_test, N_design=N_design_test)
 test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
 save(test_info, file=file.path(output_dir, "test_info.RData"))
+
+
+# -----------------------------------------------------------------------------
+# Exact MCMC. 
+# -----------------------------------------------------------------------------
+
+# MCMC sampling using exact likelihood. 
+mcmc_par_init <- design_info$input[which.max(design_info$llik + design_info$lprior),]
+mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
+                                 mode="MCMH", par_init=mcmc_par_init)
+samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
+mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
+
 
 # -----------------------------------------------------------------------------
 # Fitting Emulators.   
@@ -217,6 +289,7 @@ print("--------------------- Fitting Emulators -------------------------")
 llik_em_list <- list()
 
 # Log-likelihood emulator, constant mean. 
+print("-> Fitting em_llik_const")
 em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), 
                            normalize_output=TRUE, scale_input=TRUE)
 em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
@@ -225,6 +298,7 @@ llik_em_list[["em_llik_const"]] <- llikEmulatorGP("em_llik_const", em_llik_gp, d
                                                   use_fixed_lik_par=TRUE)
 
 # Log-likelihood emulator, quadratic mean.
+print("-> Fitting em_llik_quad")
 em_llik_gp2 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
                               normalize_output=TRUE, scale_input=TRUE)
 em_llik_gp2$fit("Gaussian", "quadratic", estimate_nugget=FALSE, 
@@ -233,8 +307,8 @@ llik_em_list[["em_llik_quad"]] <- llikEmulatorGP("em_llik_quad", em_llik_gp2, de
                                                  default_normalize=default_normalize, lik_par=diag(cov_obs), 
                                                  use_fixed_lik_par=TRUE)
 
-
 # Forward model emulator.
+print("-> Fitting em_fwd")
 em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
 llik_em_list[["em_fwd"]] <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag(cov_obs), 
@@ -254,6 +328,7 @@ save(llik_em_list, file=file.path(output_dir, "llik_em_list.RData"))
 print("--------------------- Emulator Predictions at Test Points -------------------------")
 emulator_pred_list <- list()
 for(em_name in names(llik_em_list)) {
+  print(paste0("Predicting with emulator: ", em_name))
   emulator_pred_list[[em_name]] <- llik_em_list[[em_name]]$predict_emulator(test_info$input)
 }
 save(emulator_pred_list, file=file.path(output_dir, "emulator_pred_list.RData"))

@@ -17,7 +17,7 @@ library(data.table)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "multidim_toy_examples", "N60_D10_test")
+                        "multidim_toy_examples", "N100_D11")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -220,9 +220,25 @@ plot(y_tst, predgp$trend, col="green")
 abline(a=0, b=1, col="red")
 ```
 
+```{r}
+  mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
+                                               llik_em_obj=llik_em_list[["em_llik_quad"]], 
+                                               mcmc_tags="mcwmh-joint", save_dir=output_dir, 
+                                               samp_dt=samp_dt, mcmc_list=mcmc_list, 
+                                               test_label_suffix="em_llik_quad", N_itr=N_mcmc, 
+                                               par_init=mcmc_par_init, overwrite=TRUE)
 
 
+```
 
+```{r}
+matplot(X_test, prior_samp, type="l")
+
+plot(x, y)
+lines(X_test, y_test, col="red")
+lines(X_test, y_hat, col="blue")
+  
+```
 
 
 
