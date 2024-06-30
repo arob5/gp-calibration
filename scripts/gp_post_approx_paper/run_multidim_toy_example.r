@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 
 "Usage:
-  test_docopt.r [options]
+  test_docopt.r <run_tag> [options]
   test_docopt.r (-h | --help)
 
 Options:
@@ -40,11 +40,19 @@ library(viridis)
 library(parallel)
 library(gridExtra)
 library(data.table)
+library(docopt)
 
+# Read command line arguments. 
+arguments <- docopt(doc)
+run_tag <- arguments$run_tag
+required_settings <- c("dim_par", "dim_output", "N_design", "design_method", 
+                       "N_design_test", "design_method_test", "N_mcmc")
+settings <- arguments[required_settings]
+
+# Directory setup. 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-base_output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "linGauss")
-
+base_output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", run_tag)
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -59,50 +67,51 @@ source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 
-# Command line arguments: 
-#  - potential options: dim_par, dim_output, N_design, design_method, 
-#                       N_design_test, design_method_test, N_mcmc
-#  - The settings `dim_par`, `dim_output`, `N_design`, `design_method` are 
-#    viewed as the key variables and are hence used to define the name 
-#    of the run, used for the output directory. 
-#  - If not specified as command line arguments, must be set explicitly 
-#    in this file. Command line arguments take precedence. 
-settings <- commandArgs(trailingOnly=TRUE)
-
 # Seeds for random number generator for different portions of analysis. 
 seed_data <- 82
 seed_design <- 500
 
 # Number of parameters to calibrate. Will determine the number of basis 
 # functions in the forward model. 
-if(!("dim_par" %in% names(settings))) settings$dim_par <- 11
+if(!is.null(settings$dim_par)) settings$dim_par <- as.integer(settings$dim_par)
 
 # Number of forward model outputs. For forward model emulation, this means 
 # one GP must be fit per output. 
-if(!("dim_output" %in% names(settings))) settings$dim_output <- 10
+if(is.null(settings$dim_output)) {settings$dim_output <- 10L
+} else {settings$dim_output <- as.integer(settings$dim_output)}
+
 
 # Design settings for emulator construction. 
-if(!("N_design" %in% names(settings))) settings$N_design <- 100
-if(!("design_method" %in% names(settings))) settings$design_method <- "LHS"
+if(is.null(settings$N_design)) {
+  settings$N_design <- 10L*settings$dim_par
+} else {settings$N_design <- as.integer(settings$N_design)}
+
+if(is.null(settings$design_method)) settings$design_method <- "LHS"
 
 # Design settings for emulator validation. 
-if(!("N_design_test" %in% names(settings))) settings$N_design_test <- 400 
-if(!("design_method_test" %in% names(settings))) settings$design_method_test <- "LHS"
+if(is.null(settings$N_design_test)) {
+  settings$N_design_test <- min(100L*settings$dim_par, 500L)
+} else {settings$N_design_test <- as.integer(settings$N_design_test)}
+
+if(is.null(settings$design_method_test)) settings$design_method_test <- "LHS"
 
 # Global likelihood normalization settings. 
 default_conditional <- FALSE
 default_normalize <- TRUE
 
 # GP-accelerated MCMC algorithms to run. 
-mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind")
+if(is.null(settings$mcmc_tags)) {
+  settings$mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind")
+} else {
+  settings$mcmc_tags <- unlist(strsplit(settings$mcmc_tags, ","))
+}
 
 # Settings for MCMC runs.  
-if(!("N_mcmc" %in% names(settings))) settings$N_mcmc <- 50000
+if(is.null(settings$N_mcmc)) {settings$N_mcmc <- 50000L
+} else {settings$N_mcmc <- as.integer(settings$N_mcmc)}
 
 # Create global variables with the setting values. 
-required_settings <- c("dim_par", "dim_output", "N_design", "design_method", 
-                       "N_design_test", "design_method_test", "N_mcmc")
-missing_settings <- setdiff(required_settings, names(settings))
+missing_settings <- names(settings)[sapply(settings, is.null)]
 if(length(missing_settings) > 0) stop("Missing settings: ", missing_settings)
 dim_par <- settings$dim_par
 dim_output <- settings$dim_output
@@ -110,18 +119,19 @@ N_design <- settings$N_design
 design_method <- settings$design_method
 N_design_test <- settings$N_design_test
 design_method_test <- settings$design_method_test
+mcmc_tags <- settings$mcmc_tags
 N_mcmc <- settings$N_mcmc
 
 #
-# Create alphanumeric tag defining the run, and use to create directory. 
+# Create alphanumeric ID defining the run, and use to create directory. 
 #
 
-# Run tag. 
-run_tag <- paste("linGauss", paste0("d", dim_par), paste0("p", dim_output), 
-                 paste0("N", N_design), design_method, sep="_")
+# Run ID. 
+run_id <- paste(run_tag, paste0("d", dim_par), paste0("p", dim_output), 
+                paste0("N", N_design), design_method, sep="_")
 
 # Output directory. 
-output_dir <- file.path(base_output_dir, run_tag)
+output_dir <- file.path(base_output_dir, run_id)
 
 # If `output_dir` already exists, append timestep and create new directory.
 # Otherwise create the directory. 
@@ -141,6 +151,7 @@ print("--------------------- User specified settings -------------------------")
 
 print("--> General settings")
 print(paste0("run tag: ", run_tag))
+print(paste0("run ID: ", run_id))
 print(paste0("output directory: ", output_dir))
 print(paste0("Data generation seed (seed_data): ", seed_data))
 print(paste0("Design data seed (seed_design): ", seed_design))

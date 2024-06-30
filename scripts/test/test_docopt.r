@@ -1,5 +1,5 @@
 "Usage:
-  test_docopt.r [options]
+  test_docopt.r <run_tag> [options]
   test_docopt.r (-h | --help)
 
 Options:
@@ -27,9 +27,16 @@ library(docopt)
 arguments <- docopt(doc)
 print(arguments)
 
-unlist(strsplit(arguments$mcmc_tags, ","))
-as.integer(arguments$N_design)
+print("Run tag:")
+print(arguments$run_tag)
 
+required_settings <- c("dim_par", "dim_output", "N_design", "design_method", 
+                       "N_design_test", "design_method_test", "N_mcmc", "mcmc_tags")
+
+settings <- arguments[required_settings]
+
+print("settings:")
+print(settings)
 
 
 
