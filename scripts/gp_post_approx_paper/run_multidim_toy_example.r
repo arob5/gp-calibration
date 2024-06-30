@@ -8,6 +8,27 @@
 #
 
 # -----------------------------------------------------------------------------
+# docopt string for parsing command line arguments.  
+# -----------------------------------------------------------------------------
+
+"Usage:
+  test_docopt.r [options]
+  test_docopt.r (-h | --help)
+
+Options:
+  -h --help                                 Show this screen.
+  --dim_par=<dim_par>                       Dimension of parameter space. 
+  --dim_output=<dim_output>                 Dimension of output space. 
+  --N_design=<N_design>                     Number of design points.
+  --design_method=<design_method>           Algorithm to generate design points. 
+  --N_design_test=<N_design_test>           Number of validation points for emulators. 
+  --design_method_test=<design_method_test> Algorithm to generate validation points. 
+  --mcmc_tags=<mcmc_tag,mcmc_tag>           GP-approx MCMC algorithms. 
+  --N_mcmc=<N_mcmc>                         Number of MCMC iterations. 
+" -> doc
+
+
+# -----------------------------------------------------------------------------
 # Setup 
 # -----------------------------------------------------------------------------
 
