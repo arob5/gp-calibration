@@ -5,6 +5,8 @@
 #$ -j y                         # Merge the error and output streams into a single file.
 #$ -m beas                      # Email when job begins/ends/aborted/suspended
 
+# TODO: need to redirect the output/error files to the run directory. 
+
 # Load modules. 
 module load gcc/8.3.0
 module load R/4.3.1

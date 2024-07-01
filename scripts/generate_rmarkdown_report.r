@@ -19,11 +19,11 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 scripts_dir <- file.path(base_dir, "scripts")
 output_dir <- file.path(base_dir, "output")
 
-tag <- "N100_D11"
+tag <- "linGauss_d3_p10_N30_LHS"
 rmd_path <- file.path(scripts_dir, "gp_post_approx_paper", "multidim_toy_examples.Rmd")
-save_dir <- file.path(output_dir, "gp_post_approx_paper", 
-                      "multidim_toy_examples", tag, "rmarkdown")
-base_filename <- file.path(paste0("multidim_toy_example_", tag))
+save_dir <- file.path(output_dir, "gp_post_approx_paper", "linGauss", tag, "rmarkdown")
+                      
+base_filename <- tag
 file_extension <- ".html"
 
 #

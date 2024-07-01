@@ -839,12 +839,15 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
   # to some "baseline" test label, specified by `test_label_baseline` (this typically represents 
   # some notion of the "true" distribution). For a specific plot, let us consider how a single 
   # point is computed: 
-  #    (1) A highest posterior density (HPD) interval of probability p is estimated from samples 
-  #        (using the HDInterval package) for each test label. 
-  #    (2) Let [a,b] be the bounds of this estimated interval for a specific test label. Next we 
+  #    (1) The "nominal coverage" interval of probability `p` is estimated from samples for 
+  #        the distribution associated with each test label. This interval is centered at the 
+  #        empirical median, with the endpoints computed by excluding 100*(1-p)/2 % of the 
+  #        samples from each tail, so that the interval contains 100*p % of the samples. 
+  #    (2) Let [a,b] be the bounds of this estimated nominal interval for a specific test label. Next we 
   #        estimate the probability of the baseline distribution falling within the interval [a,b]. 
-  #        This is accomplished via a 1d kernel density estimate (KDE) of the baseline distribution 
-  #        using the package kde1d. Suppose we estimate this probability to be q. 
+  #        This is accomplished by counting the number of samples of the baseline distribution 
+  #        falling within [a,b] and dividing by the number of baseline samples. Let's call the 
+  #        computed fraction `q`. 
   #    (3) The point (p,q) is then plotted. This is repeated for each test label, and also repeated
   #        for a set of different probabilities p, specified by the arguments `probs`. The points  
   #        corresponding to the same test label are connected with interpolating lines. 
@@ -861,8 +864,16 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
   samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
   samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
   
+  # Probabilities for lower/upper quantiles for nominal coverage interval.
+  probs_lower <- (1 - probs) / 2
+  probs_upper <- (1 + probs) / 2
+  
   # Create one plot per unique (param_type, param_name) combination. 
   plt_list <- list()
+  dt_plt <- data.table(param_name=character(), param_type=character(),  
+                       test_label=character(), prob=numeric(), 
+                       nominal_lower=numeric(), median=numeric(), 
+                       nominal_upper=numeric(), N_sample=integer(), actual_coverage=numeric())
   for(i in 1:nrow(plt_id_vars)) {
     # (param_type, param_name) combination for current plot. 
     param_type_curr <- plt_id_vars[i, param_type]
@@ -870,32 +881,47 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
     samp_dt_param <- samp_dt_subset[(param_type==param_type_curr) & (param_name==param_name_curr)]
     lbl_curr <- paste(param_type_curr, param_name_curr, sep="-")
     test_labels_curr <- unique(samp_dt_param$test_label)
+    samp_baseline_curr <- samp_dt_baseline[(param_type==param_type_curr) & (param_name==param_name_curr), sample]
     
     # Estimate highest posterior density interval for each test label and probability. 
-    dt_plt <- data.table(test_label=character(), prob=numeric(), hdi_interval_lower=numeric(),
-                         hdi_interval_upper=numeric())
+    dt_plt_param <- data.table(test_label=character(), prob=numeric(), nominal_lower=numeric(),
+                               nominal_upper=numeric(), median=numeric(), N_sample=integer())
     for(lbl in test_labels_curr) {
-      compute_hdi <- function(p) HDInterval::hdi(samp_dt_param[test_label==lbl, sample], p)
-      hdi_bounds <- mapply(compute_hdi, probs)
-      dt_plt_lbl <- data.table(test_label=lbl, prob=probs, hdi_interval_lower=hdi_bounds["lower",], 
-                               hdi_interval_upper=hdi_bounds["upper",])
-      dt_plt <- rbindlist(list(dt_plt, dt_plt_lbl), use.names=TRUE)
+      
+      # Nominal coverage for each test label. 
+      samp_dt_param_lbl <- samp_dt_param[test_label==lbl, sample]
+      median_lbl <- median(samp_dt_param_lbl)
+      param_lbl_nominal_interval <- rbind(quantile(samp_dt_param_lbl, probs=probs_lower), 
+                                          quantile(samp_dt_param_lbl, probs=probs_upper))
+      dt_plt_param_lbl <- data.table(test_label=lbl, prob=probs, 
+                                     nominal_lower=quantile(samp_dt_param_lbl, probs=probs_lower), 
+                                     nominal_upper=quantile(samp_dt_param_lbl, probs=probs_upper), 
+                                     median=median_lbl, N_sample=length(samp_dt_param_lbl))
+      
+      # Append to current data.table. 
+      dt_plt_param <- rbindlist(list(dt_plt_param, dt_plt_param_lbl), use.names=TRUE)
     }
     
-    # Compute KDE for the baseline distribution. 
-    kde_fit <- kde1d(samp_dt_baseline[(param_type==param_type_curr) & (param_name==param_name_curr), sample])
+    # Compute actual coverage (probability mass of baseline distribution that is captured
+    # by the nominal interval).
+    # Actual coverage for each test label.
+    N_baseline_curr <- length(samp_baseline_curr)
+    compute_actual_coverage <- function(l, u) sum((samp_baseline_curr >= l) & (samp_baseline_curr <= u)) / N_baseline_curr
+    dt_plt_param[, actual_coverage := compute_actual_coverage(nominal_lower, nominal_upper), by=seq_len(nrow(dt_plt_param))]
 
-    # Use KDE to estimate probability of each of the HPD intervals computed above. 
-    dt_plt[, coverage_prob := pkde1d(hdi_interval_upper, kde_fit) - pkde1d(hdi_interval_lower, kde_fit)]
-    
     # Generate plot. 
-    plt <- ggplot(dt_plt) + 
-            geom_point(aes(x=prob, y=coverage_prob, color=test_label)) + 
-            geom_line(aes(x=prob, y=coverage_prob, color=test_label)) + 
+    plt <- ggplot(dt_plt_param) + 
+            geom_point(aes(x=prob, y=actual_coverage, color=test_label)) + 
+            geom_line(aes(x=prob, y=actual_coverage, color=test_label)) + 
             geom_abline(slope=1, intercept=0, color="red", linetype="dashed") + 
-            ggtitle(paste0("Coverage: ", lbl_curr)) + xlab("Prob") + ylab("Coverage Prob")
+            ggtitle(paste0("Coverage: ", lbl_curr)) + xlab("Nominal Coverage") + ylab("Actual Coverage")
         
     plt_list[[lbl_curr]] <- plt
+    
+    # Append plot data.
+    dt_plt_param[, param_name := param_name_curr]
+    dt_plt_param[, param_type := param_type_curr]
+    dt_plt <- rbindlist(list(dt_plt, dt_plt_param), use.names=TRUE)
   }
   
   # Optionally save plots to file. Return plot list. 

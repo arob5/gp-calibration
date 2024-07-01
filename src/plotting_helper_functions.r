@@ -321,11 +321,15 @@ plot_true_pred_scatter <- function(y_pred, y_true, include_CI=FALSE, CI_lower=NU
   if(include_CI) {
     df_pred$CI_upper <- CI_upper
     df_pred$CI_lower <- CI_lower
+    df_pred$captures_truth <- (df_pred$y_true >= df_pred$CI_lower) & 
+                              (df_pred$y_true <= df_pred$CI_upper)
     plt <- plt + 
-           geom_segment(aes(x=CI_lower, y=y_pred, xend=CI_upper, yend=y_pred), 
-                        df_pred, color="gray")
+            geom_segment(aes(x=y_true, y=CI_lower, xend=y_true, yend=CI_upper, 
+                             color=captures_truth), df_pred) + 
+            scale_color_manual(values = c("FALSE"="orange", "TRUE"="gray"))
   }
   
+  # Plot point predictions, and line y=x. 
   plt <- plt + 
           geom_point(aes(x=y_true, y=y_pred), df_pred, shape=1) + 
           geom_abline(slope=1, intercept=0, color="red") + 
@@ -334,12 +338,6 @@ plot_true_pred_scatter <- function(y_pred, y_true, include_CI=FALSE, CI_lower=NU
   return(plt)
   
 }
-
-
-
-
-
-
 
 
 # -----------------------------------------------------------------------------
