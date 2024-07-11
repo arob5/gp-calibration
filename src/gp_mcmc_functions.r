@@ -162,7 +162,14 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
       cov_prop <- cov_prop + adapt_factor * (sample_cov_interval - cov_prop)
     } 
     
-    L_cov_prop <- t(chol(cov_prop))
+    # Handle case that `cov_prop` may not be positive definite. 
+    L_cov_prop <- try(t(chol(cov_prop)))
+    if(inherits(L_cov_prop, "try-error")) {
+      message("Problematic proposal cov: ", cov_prop)
+      cov_prop <- Matrix::nearPD(cov_prop, ensureSymmetry=TRUE)
+      L_cov_prop <- t(chol(cov_prop))
+    }
+    
     return_list$L_cov <- L_cov_prop
   }
   
@@ -807,6 +814,8 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
   prop_sd_comb[1,] <- exp(log_scale_prop) * sqrt(diag(cov_prop)) 
   ##
   
+  tryCatch(
+  {
   for(itr in 2:N_itr) {
     #
     # Metropolis step for calibration parameters.
@@ -883,12 +892,17 @@ mcmc_gp_noisy <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_i
       sig2_curr <- sample_NIG_cond_post_sig2(SSR_curr, sig2_prior_info, N_obs)
       sig2_samp[itr,] <- sig2_curr
     }
-    
   }
+  },  error = function(cond) {
+    message("mcmc_gp_noisy() MCMC error; iteration ", itr)
+    message(conditionMessage(cond))
+  }, finally = {
+    return(list(samp=list(par=par_samp, sig2=sig2_samp, prop_sd_comb=prop_sd_comb), 
+                log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, par_curr=par_curr, 
+                par_prop=par_prop, sig2_curr=sig2_curr))
+  }
+  )
   
-  return(list(samp = list(par=par_samp, sig2=sig2_samp, prop_sd_comb=prop_sd_comb), 
-              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop))
-
 }
 
 
@@ -958,72 +972,79 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   accept_count <- 0
   times_adapted <- 0
   
-  for(itr in 2:N_itr) {
-    #
-    # Metropolis step for calibration parameters.
-    #
-    
-    # Random walk proposal. 
-    par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
-    
-    # Compute prior. 
-    lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
-    
-    # Immediately reject if proposal has prior density zero (which will often happen when the 
-    # prior has been truncated to stay within the design bounds). 
-    if(is.infinite(lprior_par_prop)) {
-      par_samp[itr,] <- par_samp[itr-1,]
-      SSR_idx <- 1
-    } else {
-      # Compute log-posterior approximation. 
-      par_prop_mat <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
-      llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
-      lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior_params)
-
-      # Accept-Reject step.
-      alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
+  tryCatch(
+  {
+    for(itr in 2:N_itr) {
+      #
+      # Metropolis step for calibration parameters.
+      #
       
-      if(runif(1) <= alpha) {
-        par_samp[itr,] <- par_prop
-        par_curr <- par_prop
-        lpost_pred_curr <- lpost_pred_prop
-        SSR_idx <- 2 
-        accept_count <- accept_count + 1 
-      } else {
-        par_samp[itr,] <- par_curr
+      # Random walk proposal. 
+      par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
+      
+      # Compute prior. 
+      lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
+      
+      # Immediately reject if proposal has prior density zero (which will often happen when the 
+      # prior has been truncated to stay within the design bounds). 
+      if(is.infinite(lprior_par_prop)) {
+        par_samp[itr,] <- par_samp[itr-1,]
         SSR_idx <- 1
+      } else {
+        # Compute log-posterior approximation. 
+        par_prop_mat <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
+        llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
+        lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior_params)
+  
+        # Accept-Reject step.
+        alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
+        
+        if(runif(1) <= alpha) {
+          par_samp[itr,] <- par_prop
+          par_curr <- par_prop
+          lpost_pred_curr <- lpost_pred_prop
+          SSR_idx <- 2 
+          accept_count <- accept_count + 1 
+        } else {
+          par_samp[itr,] <- par_curr
+          SSR_idx <- 1
+        }
+        
+        # Adapt proposal covariance matrix and scaling term.
+        if(adapt && (((itr-1) %% adapt_interval) == 0)) {
+          times_adapted <- times_adapted + 1
+          adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
+                                              times_adapted=times_adapted, 
+                                              adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
+                                              samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
+                                              accept_rate=accept_count/adapt_interval, accept_rate_target, 
+                                              adapt_factor_exponent, adapt_factor_numerator)
+          cov_prop <- adapt_list$cov
+          log_scale_prop <- adapt_list$log_scale
+          if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
+          accept_count <- 0
+        }
       }
       
-      # Adapt proposal covariance matrix and scaling term.
-      if(adapt && (((itr-1) %% adapt_interval) == 0)) {
-        times_adapted <- times_adapted + 1
-        adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
-                                            times_adapted=times_adapted, 
-                                            adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
-                                            samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
-                                            accept_rate=accept_count/adapt_interval, accept_rate_target, 
-                                            adapt_factor_exponent, adapt_factor_numerator)
-        cov_prop <- adapt_list$cov
-        log_scale_prop <- adapt_list$log_scale
-        if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
-        accept_count <- 0
+      #
+      # Gibbs step for sig2. 
+      #
+      
+      if(include_sig2_Gibbs_step) {
+        .NotYetImplemented()
       }
+      
     }
-    
-    
-    #
-    # Gibbs step for sig2. 
-    #
-    
-    if(include_sig2_Gibbs_step) {
-      .NotYetImplemented()
-    }
-    
-  }
   
-  return(list(samp=list(par=par_samp, sig2=sig2_samp), 
-              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop))
-
+  }, error = function(cond) {
+    message("mcmc_gp_unn_post_dens_approx() MCMC error; iteration ", itr)
+    message(conditionMessage(cond))
+  }, finally = {
+    return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+                log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, par_curr=par_curr,
+                par_prop=par_prop, sig2_curr=sig2_curr))
+  }
+  )
 }
 
 
@@ -1094,6 +1115,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
   accept_count <- 0
   times_adapted <- 0
   
+  tryCatch({
   for(itr in 2:N_itr) {
     #
     # Metropolis step for calibration parameters.
@@ -1149,11 +1171,16 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
     if(include_sig2_Gibbs_step) {
       .NotYetImplemented()
     }
-    
   }
-  
-  return(list(par=par_samp, sig2=sig2_samp))
-  
+  }, error = function(cond) {
+    message("mcmc_gp_acc_prob_approx() MCMC error; iteration ", itr)
+    message(conditionMessage(cond))
+  }, finally = {
+    return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+                log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, par_curr=par_curr,
+                par_prop=par_prop, sig2_curr=sig2_curr))
+  }
+  )
 }
 
 

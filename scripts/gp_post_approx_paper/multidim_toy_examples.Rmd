@@ -17,7 +17,7 @@ library(data.table)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "multidim_toy_examples", "N60_D10")
+                        "linGauss", "d11_p10_N100_LHS")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -113,21 +113,19 @@ for(plt in trace_plots_approx) plot(plt)
 # Log-likelihood emulator predictions. 
 #
 
-load(file.path(output_dir, "llik_em_llik.RData"))
-load(file.path(output_dir, "llik_em_fwd.RData"))
+load(file.path(output_dir, "llik_em_list.RData"))
+load(file.path(output_dir, "emulator_pred_list.RData"))
 load(file.path(output_dir, "test_info.RData"))
+em_names <- names(llik_em_list)
 
-em_llik$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                             emulator_pred_list=test_info$pred_llik, plot_type="llik",
-                             include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                             plot_title="Log-Likelihood Predictions [llik]")
-
-
-em_fwd$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                            emulator_pred_list=test_info$pred_fwd, plot_type="llik",
-                            include_interval=TRUE, interval_method="pm_std_dev", N_std_dev=1, 
-                            plot_title="Log-Likelihood Predictions [fwd]")
-                             
+for(em_name in em_names) {
+  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
+                                                      plot_type="llik", include_interval=TRUE, 
+                                                      interval_method="pm_std_dev", N_std_dev=1.64, 
+                                                      plot_title=paste0("llik predictions: ", em_name))
+  plot(plt)
+}
 ```
 
 
@@ -171,9 +169,19 @@ for(plt in coverage_plts) plot(plt)
 ```
 
 
+```{r}
+plot(llik_emulator$get_design_llik(), design_pred$trend)
+abline(a=0, b=1, col="red")
 
+hist(resid, 30)
+hist(pred_list$var, 30)
+hist(sqrt(pred_list$var), 30)
 
-
+plot(test_info$llik, pred_list$trend)
+abline(a=0, b=1, col="red")
+plot(test_info$llik, pred_list$mean)
+abline(a=0, b=1, col="red")
+```
 
 
 

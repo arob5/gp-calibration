@@ -33,7 +33,7 @@ gpWrapper <- setRefClass(
                  X_names="character", Y_names="character",
                  X_train="matrix", Y_train="matrix", default_nugget="numeric", 
                  valid_kernels="character", valid_mean_funcs="character", 
-                 kernel_name_map="list", mean_func_name_map="list")
+                 kernel_name_map="function", mean_func_name_map="function")
 )
 
 gpWrapper$methods(
@@ -147,7 +147,8 @@ gpWrapper$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, ...) {
+                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
+                     return_trend=TRUE, ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers to k(X_new, X_cross).
     #   - The former is always diagonal, and `include_nugget==TRUE` will cause nugget variances to be 
@@ -172,39 +173,54 @@ gpWrapper$methods(
       pred_list[[i]] <- predict_package(X_new=X_new, output_idx=i, return_mean=return_mean, 
                                         return_var=return_var, return_cov=return_cov, 
                                         return_cross_cov=return_cross_cov, X_cross=X_cross, 
-                                        include_nugget=include_nugget, ...)
+                                        include_nugget=include_nugget, return_trend=return_trend, ...)
     }
 
     names(pred_list) <- Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
+    trend_pred <- do.call(cbind, lapply(pred_list, function(l) l$trend))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$var))
     cov_pred <- abind(lapply(pred_list, function(l) l$cov), along=3)
     cross_cov_pred <- abind(lapply(pred_list, function(l) l$cross_cov), along=3)
     
     # Set negative variances to 0. 
-    if(return_var || return_cov) {
+    if(return_var) {
       neg_var_idx <- (var_pred < 0)
       if(any(neg_var_idx)) {
         message("Thresholding negative variance predictions at 0.")
         var_pred[neg_var_idx] <- 0
-        if(return_cov) diag(cov_pred)[neg_var_idx] <- 0
+      }
+    }
+    
+    if(return_cov) {
+      for(i in 1:Y_dim) {
+        neg_var_idx <- (diag(cov_pred[,,i]) < 0)
+        if(any(neg_var_idx)) {
+          eps <- .Machine$double.eps
+          message("Thresholding negative diagonal values of predicted covariance at ",
+                  eps, "; output ", i)
+          diag(cov_pred[,,i])[neg_var_idx] <- eps
+        }
       }
     }
     
     # Return outputs to unnormalized scale. 
     if(normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
+      if(return_trend && !is.null(trend_pred)) trend_pred <- .self$normalize(trend_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
       if(return_cov) for(i in 1:Y_dim) cov_pred[,,i] <- Y_std[i]^2 * cov_pred[,,i]
       if(return_cross_cov) for(i in 1:Y_dim) cross_cov_pred[,,i] <- Y_std[i]^2 * cross_cov_pred[,,i]
     }
       
-    return(list(mean=mean_pred, var=var_pred, cov=cov_pred, cross_cov=cross_cov_pred))
+    return(list(mean=mean_pred, var=var_pred, cov=cov_pred, 
+                cross_cov=cross_cov_pred, trend=trend_pred))
   }, 
   
   
   predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE,
-                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE) {
+                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE,
+                              return_trend=TRUE) {
     .NotYetImplemented()
   },
   
@@ -227,8 +243,7 @@ gpWrapper$methods(
     if((adjustment=="truncated") && !use_cov) {
       pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i], nrow=nrow(X_new))), along=3)
     } else if((adjustment != "truncated") && use_cov) {
-      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, 
-                                                                         function(i) t(chol(pred_list$cov[,,i]))), along=3)
+      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) t(chol(pred_list$cov[,,i]))), along=3)
     } else if(adjustment != "truncated") {
       pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
     }
@@ -340,11 +355,19 @@ gpWrapper$methods(
   },
   
   map_kernel_name = function(kernel_name) {
-    return(kernel_name_map[[kernel_name]])
+    
+    assert_that(kernel_name %in% valid_kernels, 
+                msg=paste0("Kernel ", kernel_name, " not found in gpWrapper$valid_kernels."))
+    
+    return(kernel_name_map(kernel_name))
   },
   
   map_mean_func_name = function(mean_func_name) {
-    return(mean_func_name_map[[mean_func_name]])
+    
+    assert_that(mean_func_name %in% valid_mean_funcs, 
+                msg=paste0("Mean function ", mean_func_name, " not found in gpWrapper$valid_mean_funcs"))
+    
+    return(mean_func_name_map(mean_func_name))
   }, 
   
   augment_design = function(X_new, Y_new) {
@@ -375,17 +398,17 @@ gpWrapper$methods(
 #
 # Attributes defined by gpWrapper but that must be specified in the package-specific
 # class:
-#    kernel_name_map: list, to be interpreted as a dictionary with the names
-#                     attribute equal to the dictionary keys, which should be 
-#                     valid kernel names (the valid kernel names are defined 
-#                     by the `valid_kernels` attribute of gpWrapper). The 
-#                     values of the dictionary are the corresponding name 
-#                     used by the specific GP package. 
-#    mean_func_name_map: list, the analog of `kernel_name_map` for the mean 
-#                        functions. Note that `valid_mean_funcs` in 
-#                        gpWrapper provides the set of valid names. 
+#    kernel_name_map: function, maps kernel name to either the associated kernel 
+#                     object as required by the function. For some packages (e.g., 
+#                     kergp) the output will be an actual object from a kernel class. 
+#                     For others (e.g., hetGP), the output will be a string 
+#                     specifying the kernel names used by hetGP. The `valid_kernels`
+#                     attribute of `gpWrapper` provides the valid inputs to the 
+#                     `kernel_name_map` function. 
+#    mean_func_name_map: function, the analog of `kernel_name_map` for the mean 
+#                        functions. The `valid_mean_funcs` attribute 
+#                        is the analog of `valid_kernels`. 
 #    
-#
 # Required methods: 
 #    fit_package
 #    predict_package: The analog to `fit_package` but for prediction. 
@@ -430,16 +453,20 @@ gpWrapperHet$methods(
     
     library(hetGP)
     
-    initFields(kernel_name_map=list(Gaussian="Gaussian", Matern5_2="Matern5_2", Matern3_2="Matern3_2"), 
-               mean_func_name_map=list(constant="beta0"))
-    callSuper(X=X, Y=Y, lib="hetGP", ...)
+    kernel_map <- function(kernel_name) {
+      if(kernel_name == "Gaussian") return("Gaussian")
+      else if(kernel_name == "Materm5_2") return("Matern5_2")
+      else if(kernel_name == "Matern3_2") return("Matern3_2")
+      else stop("gpWrapperHet does not support kernel: ", kernel_name)
+    }
     
-    assert_that(all(names(kernel_name_map) %in% valid_kernels), 
-                msg=paste0("Some kernel names not found in base gpWrapper class: ", 
-                           paste(setdiff(names(kernel_name_map), valid_kernels), collapse=", ")))
-    assert_that(all(names(mean_func_name_map) %in% valid_mean_funcs), 
-                msg=paste0("Some mean function names not found in base gpWrapper class: ", 
-                           paste(setdiff(names(mean_func_name_map), valid_mean_funcs), collapse=", ")))
+    mean_func_map <- function(mean_func_name) {
+      if(mean_func_name == "constant") return("beta0")
+      else stop("gpWrapperHet does not support mean function: ", mean_func_name)
+    }
+    
+    initFields(kernel_name_map=kernel_map, mean_func_name_map=mean_func_map)
+    callSuper(X=X, Y=Y, lib="hetGP", ...)
   }, 
   
   fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
@@ -521,29 +548,60 @@ gpWrapperKerGP$methods(
     
     # Defining the kernel (covariance function). kergp requires the kernel object 
     # to have names for each input variable that align with names in the X data 
-    # when fitting and predicting. 
-    set_input_names <- function(ker) {
+    # when fitting and predicting. Currently, I am using a hack that adds a jitter
+    # to the diagonal of the kernel matrix when the kernel matrix is square. 
+    # This is not ideal - ideally `kergp` would make it easier to fix a jitter. 
+    kernel_map <- function(kernel_name) {
+      
+      if(kernel_name == "Gaussian") {
+        kernFun <- function(x1, x2, par) {
+          K12 <- kergp:::kNormFun(x1, x2, par, k1FunGauss)
+          
+          # Hack: add jitter to diagonal if number of rows are equal. 
+          if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_nugget, nrow(x1)))
+          return(K12)
+        }
+        
+        ker <- covMan(kernel = kernFun,
+                      hasGrad = TRUE,
+                      acceptMatrix = TRUE,
+                      d = X_dim,
+                      par = c(rep(1, X_dim), 1),
+                      parLower = rep(1e-8, X_dim + 1L),
+                      parUpper = rep(Inf, X_dim + 1L),
+                      parNames = c(X_names, "sigma2"),
+                      label = "Gaussian kernel with jitter.")
+      } else if(kernel_name == "Matern5_2") {
+        .NotYetImplemented()
+      } else if(kernel_name == "Matern3_2") {
+        .NotYetImplemented()
+      } else {
+        stop("gpWrapperKerGP does not support kernel ", kernel_name)
+      }
+
+      # Ensure the names attribute used by kergp agrees with the names attribute 
+      # used by gpWrapper. 
       inputNames(ker) <- X_names
-      ker
+      
+      return(ker)
     }
-    ker_map <- list(Gaussian=set_input_names(kergp::kGauss(d=X_dim)), 
-                    Matern5_2=set_input_names(kergp::kMatern(d=X_dim, nu="5/2")), 
-                    Matern3_2=set_input_names(kergp::kMatern(d=X_dim, nu="3/2")))
     
-    # Defining the mean function. 
-    mean_map <- list(constant=as.formula("y ~ 1"), 
-                     linear=as.formula(paste0("y ~ ", paste(X_names, collapse=" + "))), 
-                     quadratic=as.formula(paste0("y ~ ", paste0("poly(", X_names, ")", collapse=" + "))))
+    # Defining the mean functions. 
+    mean_func_map <- function(mean_func_name) {
+      if(mean_func_name == "constant") {
+        mean_func <- as.formula("y ~ 1")
+      } else if(mean_func_name == "linear") {
+        mean_func <- as.formula(paste0("y ~ ", paste(X_names, collapse=" + ")))
+      } else if(mean_func_name == "quadratic") {
+        mean_func <- as.formula(paste0("y ~ ", paste0("poly(", X_names, ", degree=2)", collapse=" + ")))
+      } else {
+        stop("gpWrapperKerGP does not support mean function: ", mean_func_name)
+      }
+      
+      return(mean_func)
+    }
     
-    initFields(kernel_name_map=ker_map, mean_func_name_map=mean_map) 
-    
-    # Ensure mean and kernel names are supported. 
-    assert_that(all(names(kernel_name_map) %in% valid_kernels), 
-                msg=paste0("Some kernel names not found in base gpWrapper class: ", 
-                           paste(setdiff(names(kernel_name_map), valid_kernels), collapse=", ")))
-    assert_that(all(names(mean_func_name_map) %in% valid_mean_funcs), 
-                msg=paste0("Some mean function names not found in base gpWrapper class: ", 
-                           paste(setdiff(names(mean_func_name_map), valid_mean_funcs), collapse=", ")))
+    initFields(kernel_name_map=kernel_map, mean_func_name_map=mean_func_map) 
   }, 
   
   
@@ -562,107 +620,66 @@ gpWrapperKerGP$methods(
     } else {
       beta <- NULL
     }
+    
+    # TODO: temporarily do not support nugget variance estimation. 
+    if(estimate_nugget) {
+      stop("gpWrapperKerGP does not currently support estimation of the nugget variance")
+    }
 
     # Fit GP. 
     gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
                         inputs=X_names, cov=map_kernel_name(kernel_name), 
-                        estim=TRUE, beta=beta, noise=estimate_nugget, ...)
+                        estim=TRUE, beta=beta, noise=FALSE, ...)
     
+    # TODO: Commenting this out for now, as we are fixing a jitter within the kernel function. 
     # Set fixed nugget if not estimated.
-    if(!estimate_nugget) gp_fit$varNoise <- default_nugget
+    # if(!estimate_nugget) gp_fit$varNoise <- default_nugget
     
     return(gp_fit)
   },
   
-  
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
                              return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
-                             include_nugget=TRUE, ...) {
+                             include_nugget=TRUE, return_trend=TRUE, pred_type="SK", ...) {
     # For kergp, the predictive standard deviation "sd" includes the nugget variance 
     # if `force_interp` is TRUE; otherwise it is excluded. Specifically, `force_interp=FALSE`
     # returns the predictive dist f|f(X), while `force_interp=TRUE` returns the predictive dist 
     # y|y(X). Thus, `force_interp=TRUE` has two effects: (1) adding the nugget to the diagonal 
     # of the kernel matrix; and (2) adding the nugget to the predictive variance. 
+    # If `return_trend` is TRUE, then the returned list will also contain element "trend" 
+    # storing the predictions from the GP trend alone; i.e., the prior mean function 
+    # evaluations.
+    # `pred_type` can either be "SK" (simple kriging) or "UK" (universal kriging). The latter 
+    # incorporates uncertainty due to estimation of the GP mean function coefficients. Note 
+    # that if using "UK" then the predictive variance will not necessarily stabilize to the 
+    # prior variance far away from the design points; in fact, the predictive variance can 
+    # explode, causing issues when extrapolation is desired. 
     
     if(return_cross_cov) stop("`return_cross_cov` not yet implemented for gpKerGP class.")
     if(is.null(colnames(X_new))) colnames(X_new) <- X_names
     
     pred <- kergp:::predict.gp(gp_model[[output_idx]], newdata=X_new, 
-                               forceInterp=include_nugget, seCompute=return_var, 
-                               covCompute=return_cov, ...)
+                               forceInterp=FALSE, seCompute=return_var, 
+                               covCompute=return_cov, type=pred_type, ...)
     
     return_list <- list()
     if(return_mean) return_list$mean <- pred$mean
     if(return_var) return_list$var <- (pred$sd)^2
     if(return_cov) return_list$cov <- pred$cov
+    if(return_trend) return_list$trend <- pred$trend
+    
+    # Using the current nugget hack, the nugget variance will be added whenever the 
+    # two matrices passed to the kernel have the same number of observations. 
+    # TODO: need to check whether varVec includes this nugget or not. For now 
+    # assuming it does; thus, the nugget will be added by default. 
+    if(!include_nugget) {
+      if(return_var) return_list$var <- return_list$var - default_nugget
+      if(return_cov) return_list$cov <- hetGP:::fast_diag(return_list$cov, -rep(default_nugget, nrow(cov)))
+    }
 
     return(return_list)
   }
   
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#
-# TEST
-#
-
-# Testing base class. 
-# X <- matrix(seq(10,20,length.out=5), ncol=1)
-# Y <- X^2 + 0.2*matrix(rnorm(nrow(X)), ncol=1)
-# 
-# gp <- gpWrapper(X, Y, normalize_output=TRUE, scale_input=TRUE)
-# gp$field("lib")
-# gp$field("normalize_output")
-# gp$field("scale_input")
-# gp$field("X_names")
-# gp$field("Y_names")
-# 
-# gp$field("Y")
-# gp$field("Y_mean")
-# gp$field("Y_std")
-# gp$field("Y_train")
-# gp$field("X")
-# gp$field("X_bounds")
-# gp$field("X_train")
-# 
-# gp$fit()
-# 
-# 
-# # Testing hetGP wrapper.
-# gpHet <- gpWrapperHet(X, Y, normalize_output=TRUE, scale_input=TRUE)
-# 
-# gpHet$field("lib")
-# gpHet$field("normalize_output")
-# gpHet$field("scale_input")
-# gpHet$field("X_names")
-# gpHet$field("Y_names")
-# gpHet$field("Y")
-# gpHet$field("Y_mean")
-# gpHet$field("Y_std")
-# gpHet$field("Y_train")
-# gpHet$field("X")
-# gpHet$field("X_bounds")
-# gpHet$field("X_train")
-# gpHet$mean_func_name_map
-# gpHet$kernel_name_map
-# gpHet$field("gp_model")
-
-
 
 
