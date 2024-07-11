@@ -68,12 +68,12 @@ input parameters $\Par \in \parSpace \subset \R^{\dimPar}$. In addition, we supp
 $\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ seeks to approximate. The 
 \textit{inverse problem} concerns learning the parameter values $\Par$ such that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating}
 the model so that it agrees with reality. The statistical approach to this problem assumes that the link between model outputs and 
-observations is governed by a probability distribution on  $\obs | \Par$. We assume that this distribution admits a density 
+observations is governed by a probability distribution on  $\obs \given \Par$. We assume that this distribution admits a density 
 with corresponding log-likelihood 
 \begin{align}
 \llik: \parSpace \to \R, \label{log_likelihood}
 \end{align}
-such that $p(\obs | \Par) = \Exp{\llik(\Par)}$ 
+such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$ 
 \footnote{For succinctness, the notation $\llik(\Par)$ suppresses dependence on the data $\obs$, 
 as we assume the data is fixed throughout the analysis.}
 \footnote{We are currently focusing on the forward model parameter $\Par$, treating other likelihood 
@@ -1512,6 +1512,12 @@ with the covariance simplifying to
 	\end{enumerate}
 \end{enumerate}
 
+\subsection{Emulator Ideas}
+\begin{enumerate}
+\item Sum of quadratic kernel, Gaussian kernel, and some sort of flat/linear kernel (i.e. something with very long lengthscales) to capture the 
+part of the response surface that "flattens" out. 
+\end{enumerate}
+
 
 \subsection{Notation}
 \begin{enumerate}
@@ -1548,6 +1554,9 @@ simulation-based inference.
 \item Hyperparameter marginalization: need to look into opportunities for closed-form hyperparameter marginalization during 
 sequential design phase. 
 \item Developing a design criterion that better aligns with the MHWMC procedure; e.g., something that targets the likelihood ratio. 
+\item Implementing Higdon basis function approach for comparison. 
+\item Nonnegative constrained GPs (may be able to do this by modifying the kergp optimization code and using nloptr's option to add constraints) 
+\item GP-accelerated MALA 
 \end{enumerate}
 
 \subsection{Limitations of existing literature}

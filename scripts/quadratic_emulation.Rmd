@@ -1,0 +1,192 @@
+---
+title: "Emulating a Quadratic"
+author: "Andrew Roberts"
+date: '2024-07-10'
+output: html_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(abind)
+library(kergp)
+library(ggplot2)
+
+```
+
+```{r}
+#
+# Setup 
+#
+
+set.seed(5)
+
+# Parameters for Gaussian density (log of this density is the quadratic to be emulated).  
+X_dim <- 2L
+par_names <- c("x1", "x2")
+m <- c(0, 0)
+C <- rbind(c(1, .5), c(.5, 1))
+L <- t(chol(C))
+y <- m + drop(L %*% matrix(rnorm(2), ncol=1))
+n <- 10
+f <- function(X) 0.5 * n * log(2*pi) - sum(log(diag(L))) - 0.5 * colSums(forwardsolve(L, t(X-m))^2)
+
+# Grid for prediction and plotting. 
+alpha_grid <- .05
+p_grid <- 1-(alpha_grid/2)
+sqrt_N_grid <- 50
+N_grid <- sqrt_N_grid^2
+
+X_grid_bounds <- rbind(
+  min=c(qnorm(1-p_grid, m[1], sqrt(C[1,1])), qnorm(1-p_grid, m[2], sqrt(C[2,2]))),
+  max=c(qnorm(p_grid, m[1], sqrt(C[1,1])), qnorm(p_grid, m[2], sqrt(C[2,2])))
+)
+colnames(X_grid_bounds) <- par_names
+X_grid <- expand.grid(seq(X_grid_bounds["min",1], X_grid_bounds["max",1], length.out=sqrt_N_grid), 
+                      seq(X_grid_bounds["min",2], X_grid_bounds["max",2], length.out=sqrt_N_grid))
+colnames(X_grid) <- par_names
+y_grid <- f(X_grid)
+df_grid <- data.frame(y=y_grid, X_grid)
+
+# Design points. Intentionally avoiding sampling the tails in order to test extrapolation performance.  
+N <- 7
+alpha_design <- .2
+p_design <- 1-(alpha_design/2)
+
+X_design_bounds <- rbind(
+  min=c(qnorm(1-p_design, m[1], sqrt(C[1,1])), qnorm(1-p_design, m[2], sqrt(C[2,2]))),
+  max=c(qnorm(p_design, m[1], sqrt(C[1,1])), qnorm(p_design, m[2], sqrt(C[2,2])))
+)
+X <- lhs::randomLHS(n=N, k=X_dim)
+X[,1] <- qunif(X[,1], min=X_design_bounds["min", 1], max=X_design_bounds["max", 1])
+X[,2] <- qunif(X[,2], min=X_design_bounds["min", 2], max=X_design_bounds["max", 2])
+
+X_bounds <- apply(X, 2, range)
+rownames(X_bounds) <- c("min", "max")
+colnames(X) <- par_names
+y <- f(X)
+df_design <- data.frame(y=y, X)
+
+```
+
+
+```{r}
+#
+# Kernels 
+# 
+
+# Jitter 
+eps <- sqrt(.Machine$double.eps)
+
+# Gaussian kernel. 
+kern_fun_Gauss <- function(x1, x2, par) {
+  K12 <- kergp:::kNormFun(x1, x2, par, kergp::k1FunGauss)
+          
+  # Hack: add jitter to diagonal if number of rows are equal. 
+  if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(eps, nrow(x1)))
+  
+  return(K12)
+}
+
+ker_Gauss <- covMan(kernel = kern_fun_Gauss,
+                    hasGrad = TRUE,
+                    acceptMatrix = TRUE,
+                    d = X_dim,
+                    par = c(rep(1, X_dim), 1),
+                    parLower = rep(1e-8, X_dim + 1L),
+                    parUpper = rep(Inf, X_dim + 1L),
+                    parNames = c(paste("theta", 1L:X_dim, sep = "_"), "sigma2"),
+                    label = "Gaussian kernel with jitter.")
+inputNames(ker_Gauss) <- par_names
+
+# Quadratic kernel. 
+ker_fun_quad <- function(x1, x2, par) { 
+  affine_comb <- tcrossprod(x1, x2) + par[1]
+  K12 <- affine_comb^2
+  attr(K12, "gradient") <- list(cst=2*affine_comb)
+  
+  # Hack: add jitter to diagonal if number of rows are equal. 
+  if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(eps, nrow(x1)))
+  
+  return(K12)
+}
+
+ker_quad <- covMan(kernel = ker_fun_quad,
+                   acceptMatrix = TRUE, 
+                   hasGrad = TRUE,
+                   d = X_dim,
+                   parLower = c(cst=0),
+                   parUpper = c(cst=Inf),
+                   parNames = c("cst"),
+                   label = "Quadratic kernel with jitter.", 
+                   par = c(cst=1.0))
+inputNames(ker_quad) <- par_names
+
+# Gaussian plus quadratic kernel.   
+kern_fun_Gauss_plus_quad <- function(x1, x2, par) {
+  # Note that the jitter is added in the quadratic part of the kernel. 
+  
+  K12_Gauss <- kergp:::kNormFun(x1, x2, par[1:(length(par)-1)], kergp::k1FunGauss)
+  K12_quad <- ker_fun_quad(x1, x2, par[length(par)])
+  K12 <- K12_Gauss + K12_quad
+  attr(K12, "gradient") <- abind(attr(K12_Gauss, "gradient"), cst=attr(K12_quad, "gradient")$cst, along=3)
+
+  return(K12)
+}
+
+ker_Gauss_plus_quad <- covMan(kernel = kern_fun_Gauss_plus_quad,
+                              acceptMatrix = TRUE, 
+                              hasGrad = TRUE,
+                              d = X_dim,
+                              parLower = c(setNames(attr(ker_Gauss, "parLower"), attr(ker_Gauss, "kernParNames")),
+                                           setNames(attr(ker_quad, "parLower"), attr(ker_quad, "kernParNames"))),
+                              parUpper = c(setNames(attr(ker_Gauss, "parUpper"), attr(ker_Gauss, "kernParNames")),
+                                           setNames(attr(ker_quad, "parUpper"), attr(ker_quad, "kernParNames"))),
+                              parNames = c(attr(ker_Gauss, "kernParNames"), attr(ker_quad, "kernParNames")),
+                              label = "Gauss plus quadratic kernel with jitter.", 
+                              par = c(setNames(attr(ker_Gauss, "par"), attr(ker_Gauss, "kernParNames")),
+                                      setNames(attr(ker_quad, "par"), attr(ker_quad, "kernParNames"))))
+inputNames(ker_Gauss_plus_quad) <- par_names
+
+
+```
+
+```{r}
+#
+# Mean functions. 
+#
+
+# Constant mean function. 
+mean_func_cst <- as.formula("y ~ 1")
+
+# Linear mean function. 
+mean_func_lin <- as.formula(paste0("y ~ ", paste(par_names, collapse=" + ")))
+
+# Quadratic only mean function. 
+mean_func_quad <- as.formula(paste0("y ~ ", paste(paste0("I(", par_names, "^2)"), collapse=" + ")))
+
+# Quadratic and linear terms. 
+mean_func_lin_quad <- as.formula(paste0("y ~ ", paste0("poly(", par_names, ", degree=2)", collapse=" + ")))
+```
+
+
+```{r}
+#
+# True function and design points. 
+#
+
+ggplot() + 
+  geom_contour(aes(x1, x2, z=y), df_grid) + 
+  geom_point(aes(x1, x2), df_design, color="black")
+#geom_tile(aes(x1, x2, fill=y), df_grid)
+
+```
+
+
+
+
+
+
+
+
