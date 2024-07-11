@@ -18,12 +18,14 @@
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 scripts_dir <- file.path(base_dir, "scripts")
 output_dir <- file.path(base_dir, "output")
+tag <- "linGauss"
+run_id <- "d11_p10_N100_LHS"
+run_dir_relative <- file.path("gp_post_approx_paper", tag, run_id)
 
-tag <- "linGauss_d3_p10_N30_LHS"
 rmd_path <- file.path(scripts_dir, "gp_post_approx_paper", "multidim_toy_examples.Rmd")
-save_dir <- file.path(output_dir, "gp_post_approx_paper", "linGauss", tag, "rmarkdown")
+save_dir <- file.path(output_dir, run_dir_relative, "rmarkdown")
                       
-base_filename <- tag
+base_filename <- run_id
 file_extension <- ".html"
 
 #
@@ -35,7 +37,7 @@ file_extension <- ".html"
 if(dir.exists(save_dir)) {
   
   filename <- paste0(base_filename, file_extension)
-  if(file.exists(save_dir, filename)) {
+  if(file.exists(file.path(save_dir, filename))) {
     timestamp <- as.character(Sys.time())
     base_filename <- paste(base_filename, timestamp, sep="_")
   }

@@ -2,7 +2,7 @@
 # sim_study_functions.r
 # Simulation study for comparing different approaches to (batch) sequential design with GP emulator. 
 # Dependencies: mcmc_calibration_functions.r, gp_emulator_functions.r, 
-#               sequential_design_optimiation.r
+#               sequential_design_optimization.r
 #
 # Andrew Roberts
 # ---------------------------------------------------------------------------------------------------
@@ -477,10 +477,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
                                                   approx_type="marginal", ...)
       lbl <- paste0("gp-marg", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
     },
     error = function(cond) {
-      message("Error with `gp-marg`: MCMC output may not be saved.")
+      message("Error with `gp-marg`: MCMC output may be incomplete/missing.")
       message(conditionMessage(cond))
     },
     warning = function(cond) {
@@ -504,10 +504,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
                                    
       lbl <- paste0("mcwmh-joint", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
     }, 
     error = function(cond) {
-      message("Error with `mcwmh-joint`: MCMC output may not be saved.")
+      message("Error with `mcwmh-joint`: MCMC output may be incomplete/missing.")
       message(conditionMessage(cond))
     },
     warning = function(cond) {
@@ -531,10 +531,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
       
       lbl <- paste0("mcwmh-ind", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
     }, 
     error = function(cond) {
-      message("Error with `mcwmh-ind`: MCMC output may not be saved.")
+      message("Error with `mcwmh-ind`: MCMC output may be incomplete/missing.")
       message(conditionMessage(cond))
     },
     warning = function(cond) {
@@ -557,10 +557,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
                                    mode="pseudo-marg", ...)
       lbl <- paste0("pseudo-marg", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
     },
     error = function(cond) {
-      message("Error with `pseudo-marg`: MCMC output may not be saved.")
+      message("Error with `pseudo-marg`: MCMC output may be incomplete/missing.")
       message(conditionMessage(cond))
     },
     warning = function(cond) {
@@ -583,10 +583,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
                                              approx_type="marginal", ...)
       lbl <- paste0("acc-prob-marg", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
-      mcmc_list[[lbl]] <- mcmc_output[setdiff(colnames(mcmc_output), "samp")]
+      mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
     }, 
     error = function(cond) {
-      message("Error with `acc-prob-marg`: MCMC output may not be saved.")
+      message("Error with `acc-prob-marg`: MCMC output may be incomplete/missing.")
       message(conditionMessage(cond))
     },
     warning = function(cond) {

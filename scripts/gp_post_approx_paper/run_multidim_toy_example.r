@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 
 "Usage:
-  test_docopt.r <run_tag> [options]
+  test_docopt.r <run_id> <output_dir> [options]
   test_docopt.r (-h | --help)
 
 Options:
@@ -34,6 +34,15 @@ Options:
 
 print("---------------------------------- Setup ----------------------------------")
 
+# Base directory (i.e., project directory). Required for loading the R project (renv). 
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+
+# Load R project. 
+renv::load(base_dir)
+print(".libPaths()")
+print(.libPaths())
+renv::status()
+
 library(lhs)
 library(ggplot2)
 library(viridis)
@@ -44,16 +53,16 @@ library(docopt)
 
 # Read command line arguments. 
 arguments <- docopt(doc)
-run_tag <- arguments$run_tag
+run_id <- arguments$run_id
+output_dir <- arguments$output_dir
 required_settings <- c("dim_par", "dim_output", "N_design", "design_method", 
                        "N_design_test", "design_method_test", "N_mcmc")
 settings <- arguments[required_settings]
 
-# Directory setup. 
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+# Source and output paths.  
 src_dir <- file.path(base_dir, "src")
-base_output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", run_tag)
 
+# Source scripts. 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
@@ -126,21 +135,23 @@ N_mcmc <- settings$N_mcmc
 # Create alphanumeric ID defining the run, and use to create directory. 
 #
 
-# Run ID. 
-run_id <- paste(run_tag, paste0("d", dim_par), paste0("p", dim_output), 
-                paste0("N", N_design), design_method, sep="_")
-
-# Output directory. 
-output_dir <- file.path(base_output_dir, run_id)
+# MOVED THIS TO BASH FILE 
+# # Run ID. 
+# run_id <- paste(run_tag, paste0("d", dim_par), paste0("p", dim_output), 
+#                 paste0("N", N_design), design_method, sep="_")
+# 
+# # Output directory. 
+# output_dir <- file.path(base_output_dir, run_id)
 
 # If `output_dir` already exists, append timestep and create new directory.
 # Otherwise create the directory. 
 if(dir.exists(output_dir)) {
-  timestamp <- as.character(Sys.time())
-  output_dir <- paste(output_dir, timestamp, sep="_")
-  message("`output_dir` already exists. Creating new `output_dir:`")
-  message(output_dir)
-  dir.create(output_dir)
+  stop("`output_dir` already exists.")
+  # timestamp <- as.character(Sys.time())
+  # output_dir <- paste(output_dir, timestamp, sep="_")
+  # message("`output_dir` already exists. Creating new `output_dir:`")
+  # message(output_dir)
+  # dir.create(output_dir)
 } else {
   dir.create(output_dir, recursive=TRUE)
 }
@@ -150,7 +161,6 @@ save(settings, file=file.path(output_dir, "settings.RData"))
 print("--------------------- User specified settings -------------------------")
 
 print("--> General settings")
-print(paste0("run tag: ", run_tag))
 print(paste0("run ID: ", run_id))
 print(paste0("output directory: ", output_dir))
 print(paste0("Data generation seed (seed_data): ", seed_data))

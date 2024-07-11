@@ -16,8 +16,8 @@ library(data.table)
 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "linGauss", "linGauss_d3_p10_N30_LHS")
-                       # "multidim_toy_examples", "N100_D11")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
+                        "linGauss", "d11_p10_N100_LHS")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -167,6 +167,26 @@ coverage_plts <- coverage_plt_list$plots
 
 for(plt in coverage_plts) plot(plt)
 ```
+
+
+```{r}
+plot(llik_emulator$get_design_llik(), design_pred$trend)
+abline(a=0, b=1, col="red")
+
+hist(resid, 30)
+hist(pred_list$var, 30)
+hist(sqrt(pred_list$var), 30)
+
+plot(test_info$llik, pred_list$trend)
+abline(a=0, b=1, col="red")
+plot(test_info$llik, pred_list$mean)
+abline(a=0, b=1, col="red")
+```
+
+
+
+
+
 
 
 
