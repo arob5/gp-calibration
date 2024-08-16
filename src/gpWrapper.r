@@ -87,7 +87,7 @@ gpWrapper$methods(
     colnames(X_train) <<- X_names
     colnames(Y_train) <<- Y_names
     
-    initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2"), 
+    initFields(valid_kernels=c("Gaussian", "Matern5_2", "Matern3_2", "Gaussian_plus_Quadratic"), 
                valid_mean_funcs=c("constant", "linear", "quadratic"), ...)
   },
   
@@ -575,6 +575,43 @@ gpWrapperKerGP$methods(
         .NotYetImplemented()
       } else if(kernel_name == "Matern3_2") {
         .NotYetImplemented()
+      } else if(kernel_name == "Gaussian_plus_Quadratic") {
+      
+        kernFun <- function(x1, x2, par) {
+          x1 <- as.matrix(x1)
+          x2 <- as.matrix(x2)
+          
+          # Gaussian part. 
+          K12_Gauss <- kergp:::kNormFun(x1, x2, par[1:(length(par)-1)], kergp::k1FunGauss)
+          
+          # Quadratic part. 
+          affine_comb <- tcrossprod(x1, x2) + par[length(par)]
+          K12_quad <- affine_comb^2
+          attr(K12_quad, "gradient") <- list(quad_offset=2*affine_comb)
+          
+          # Add kernels. 
+          K12 <- K12_Gauss + K12_quad
+          attr(K12, "gradient") <- abind(attr(K12_Gauss, "gradient"), cst=attr(K12_quad, "gradient")$quad_offset, along=3)
+          
+          # Hack: add jitter to diagonal if number of rows are equal. 
+          if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_nugget, nrow(x1)))
+          return(K12)
+        }
+        
+        ker_par_names <- c(X_names, "sigma2", "quad_offset")
+        par_lower <- setNames(c(rep(1e-08, X_dim), 1e-08, 0), ker_par_names)
+        par_upper <- setNames(c(rep(Inf, X_dim), Inf, Inf), ker_par_names)
+        par_default <- setNames(c(rep(1, X_dim), 1, 1), ker_par_names)
+        
+        ker <- covMan(kernel = kernFun,
+                      acceptMatrix = TRUE, 
+                      hasGrad = TRUE,
+                      d = X_dim,
+                      parNames = ker_par_names, 
+                      parLower = par_lower,
+                      parUpper = par_upper, 
+                      label = "Gaussian plus quadratic kernel with jitter", 
+                      par = par_default)
       } else {
         stop("gpWrapperKerGP does not support kernel ", kernel_name)
       }

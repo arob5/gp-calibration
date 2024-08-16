@@ -170,7 +170,7 @@ llikEmulator$methods(
   
   calc_lik_approx_comparison = function(input, approx_types, lik_par_val=NULL, emulator_pred_list=NULL,
                                         conditional=default_conditional, normalize=default_normalize,
-                                        log_scale=FALSE, ...) {
+                                        include_nugget=TRUE, log_scale=FALSE, ...) {
     # A wrapper around `calc_lik_approx` that allows multiple likelihood approximation types 
     # to be computed. Returns a matrix of dimension `(nrow(input), length(approx_types))`, 
     # each column containing a different likelihood approximation type. 
@@ -184,24 +184,30 @@ llikEmulator$methods(
     for(i in seq_along(approx_types)) {
       lik_approx_vals[,i] <-   calc_lik_approx(input=input, approx_type=approx_types[i], lik_par_val=lik_par_val, 
                                                emulator_pred_list=emulator_pred_list, conditional=conditional, 
-                                               normalize=normalize, log_scale=log_scale, ...)
+                                               normalize=normalize, include_nugget=TRUE, log_scale=log_scale, ...)
     }
     
     return(lik_approx_vals)
   },  
   
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
-                                      normalize=default_normalize, log_scale=FALSE, ...) {
+                                      normalize=default_normalize, include_nugget=TRUE, log_scale=FALSE, ...) {
     .NotYetImplemented()  
   },
   
   calc_lik_sample_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
-                                      normalize=default_normalize, log_scale=FALSE, ...) {
+                                    normalize=default_normalize, include_nugget=TRUE, log_scale=FALSE, ...) {
     .NotYetImplemented()  
   },
   
+  calc_lik_quantile_approx = function(input, alpha=0.9, lik_par_val=NULL, emulator_pred_list=NULL, 
+                                      conditional=default_conditional, normalize=default_normalize,
+                                      include_nugget=TRUE, log_scale=FALSE, ...) {
+    .NotYetImplemented()
+  },
+  
   calc_lik_mean_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, conditional=default_conditional,
-                                  normalize=default_normalize, log_scale=FALSE, ...) {
+                                  normalize=default_normalize, include_nugget=TRUE, log_scale=FALSE, ...) {
     # `Mean approx` means that the `emulator_model` predictive mean is computed at inputs `input`, then 
     # the predictive mean is passed to `assemble_llik()` and the result is exponentiated (if 
     # `log_scale` is FALSE). This implements the "plug-in emulator mean" approximation. This default method 
@@ -210,7 +216,8 @@ llikEmulator$methods(
     input <- .self$get_input(input)
     
     if(is.null(emulator_pred_list)) {
-      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, return_var=FALSE, ...)
+      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, return_var=FALSE, 
+                                                   include_nugget=include_nugget, ...)
     } else {
       assert_that(!is.null(emulator_pred_list$mean))
     }
@@ -220,6 +227,7 @@ llikEmulator$methods(
     if(log_scale) return(llik_pred)
     return(exp(llik_pred))
   },
+  
   
   get_pred_interval = function(input, lik_par_val=NULL, emulator_pred_list=NULL, target_pred_list=NULL, target="llik",  
                                method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
@@ -929,9 +937,29 @@ llikEmulatorGP$methods(
     
   },
   
+  
+  calc_lik_quantile_approx = function(input, alpha=0.9, lik_par_val=NULL, emulator_pred_list=NULL, 
+                                      conditional=default_conditional, normalize=default_normalize,
+                                      include_nugget=TRUE, log_scale=FALSE, ...) {
+    
+    input <- .self$get_input(input)
+    
+    if(is.null(emulator_pred_list)) {
+      emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, return_var=TRUE, ...)
+    } else {
+      assert_that(!is.null(emulator_pred_list$mean))
+      assert_that(!is.null(emulator_pred_list$var))
+    }
+    
+    q <- qnorm(alpha)
+    emulator_pred_list$mean + q * sqrt(emulator_pred_list$var)
+    
+  },
+  
+  
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, emulator_pred_list=NULL, llik_pred_list=NULL,
-                             target="llik", conditional=default_conditional, normalize=default_normalize, 
-                             lower_tail=TRUE, include_nugget=TRUE, ...) {
+                            target="llik", conditional=default_conditional, normalize=default_normalize, 
+                            lower_tail=TRUE, include_nugget=TRUE, ...) {
     # The log-likelihood emulator distribution is Gaussian, and the likelihood emulator is log-normal.
     # Both the Gaussian and Log-normal quantile functions are parameterized in terms of the underlying 
     # Gaussian mean/variance, so only `llik_pred_list` is required, regardless of whether `target`

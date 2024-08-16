@@ -10,10 +10,9 @@
 # R project, one should ensure that renv::load() is called within the R script 
 # being run so that the correct library path is set. 
 
-# TODO: need to redirect the output/error files to the run directory. 
-
 # Settings to pass to Rscript. 
-RUN_TAG="linGauss"
+RUN_TAG="quadker_quantile"
+EXPERIMENT_TAG="linGauss"
 DIM_PAR=11
 DIM_OUTPUT=10
 N_DESIGN=100
@@ -21,13 +20,13 @@ N_DESIGN_TEST=600
 DESIGN_METHOD="LHS"
 DESIGN_METHOD_TEST="LHS"
 N_MCMC=50000
-MCMC_TAGS="gp-mean,gp-marg,mcwmh-joint,mcwmh-ind"
+MCMC_TAGS="gp-mean,gp-marg,gp-quantile,mcwmh-joint,mcwmh-ind"
 
 # Create output directory. Creation of this directory is handled (if necessary)
 # within the R script. 
-SIM_RUN_ID="d${DIM_PAR}_p${DIM_OUTPUT}_N${N_DESIGN}_${DESIGN_METHOD}"
+SIM_RUN_ID="${RUN_TAG}_d${DIM_PAR}_p${DIM_OUTPUT}_N${N_DESIGN}_${DESIGN_METHOD}"
 LOG_FILENAME="${JOB_NAME}.o${JOB_ID}"
-OUTPUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_post_approx_paper/${RUN_TAG}/${SIM_RUN_ID}"
+OUTPUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_post_approx_paper/${EXPERIMENT_TAG}/${SIM_RUN_ID}"
 
 # Load modules, including specification of the R version. 
 module load gcc/8.3.0

@@ -110,7 +110,7 @@ default_normalize <- TRUE
 
 # GP-accelerated MCMC algorithms to run. 
 if(is.null(settings$mcmc_tags)) {
-  settings$mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind")
+  settings$mcmc_tags <- c("gp-mean", "gp-marg", "gp-quantile", "mcwmh-joint", "mcwmh-ind")
 } else {
   settings$mcmc_tags <- unlist(strsplit(settings$mcmc_tags, ","))
 }
@@ -349,6 +349,17 @@ llik_em_list[["em_llik_quad"]] <- llikEmulatorGP("em_llik_quad", em_llik_gp2, de
                                                  default_normalize=default_normalize, lik_par=diag(cov_obs), 
                                                  use_fixed_lik_par=TRUE)
 
+# Log-likelihood emulator, constant mean, Gaussian plus quadratic kernel. 
+print("-> Fitting em_llik_const_GaussQuad")
+em_llik_gp3 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                              normalize_output=TRUE, scale_input=TRUE)
+em_llik_gp3$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
+                optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
+llik_em_list[["em_llik_const_GaussQuad"]] <- llikEmulatorGP("em_llik_const_GaussQuad", em_llik_gp3, 
+                                                            default_conditional=default_conditional, 
+                                                            default_normalize=default_normalize, 
+                                                            lik_par=diag(cov_obs), use_fixed_lik_par=TRUE)
+                                                            
 # Forward model emulator.
 print("-> Fitting em_fwd")
 em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)

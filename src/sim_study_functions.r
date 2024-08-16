@@ -372,8 +372,8 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   #                 GP-accelerated MCMC algorithms. 
   #    mcmc_tags: character, vector of MCMC valid test labels that determine 
   #               which MCMC algorithms will be run. Valid options include 
-  #               "gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "pseudo-marg", 
-  #               "acc-prob-marg". 
+  #               "gp-mean", "gp-marg", "gp-quantile", "mcwmh-joint", 
+  #               "mcwmh-ind", "pseudo-marg", "acc-prob-marg". 
   #    samp_dt: data.table, with colnames "test_label", "param_type", "param_name",   
   #             "itr", and "sample". If non-NULL, then this function will append
   #              to this data.table. Otherwise a new one will be
@@ -410,7 +410,8 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   }
   
   # Run MCMC algorithms. 
-  valid_mcmc_tags <- c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind", "pseudo-marg", "acc-prob-marg")
+  valid_mcmc_tags <- c("gp-mean", "gp-marg", "gp-quantile", "mcwmh-joint", 
+                       "mcwmh-ind", "pseudo-marg", "acc-prob-marg")
   invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
   if(length(invalid_tags) > 0) {
     message("Unsupported MCMC tags will not be run: ", invalid_tags)
@@ -490,6 +491,32 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
       fwrite(samp_dt, file.path(save_dir, samp_filename))
       save(mcmc_list, file=file.path(save_dir, list_filename))
     }
+    )
+  }
+  
+  if("gp-quantile" %in% mcmc_tags) {
+    
+    print("Running MCMC: gp-quantile")
+    
+    tryCatch(
+      {
+        mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+                                                    approx_type="quantile", ...)
+        lbl <- paste0("gp-quantile", test_label_suffix)
+        samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)
+        mcmc_list[[lbl]] <- mcmc_output[setdiff(names(mcmc_output), "samp")]
+      },
+      error = function(cond) {
+        message("Error with `gp-quantile`: MCMC output may be incomplete/missing.")
+        message(conditionMessage(cond))
+      },
+      warning = function(cond) {
+        message(conditionMessage(cond))
+      }, 
+      finally = {
+        fwrite(samp_dt, file.path(save_dir, samp_filename))
+        save(mcmc_list, file=file.path(save_dir, list_filename))
+      }
     )
   }
   

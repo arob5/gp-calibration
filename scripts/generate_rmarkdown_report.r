@@ -19,7 +19,7 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 scripts_dir <- file.path(base_dir, "scripts")
 output_dir <- file.path(base_dir, "output")
 tag <- "linGauss"
-run_id <- "d11_p10_N100_LHS"
+run_id <- "quadker_d11_p10_N100_LHS"
 run_dir_relative <- file.path("gp_post_approx_paper", tag, run_id)
 
 rmd_path <- file.path(scripts_dir, "gp_post_approx_paper", "multidim_toy_examples.Rmd")

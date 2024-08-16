@@ -911,7 +911,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
                                          log_scale_prop=NULL, approx_type="marginal",
                                          adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
                                          adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
-                                         adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
+                                         adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, 
+                                         alpha=0.9, ...) {
   # GP-accelerated MCMC algorithms which define an approximate posterior distribution by approximating 
   # the unnormalized posterior density. Examples of this include the "mean" approximation, in which 
   # the GP predictive mean is simply plugged into the unnormalized posterior density, and the "marginal" 
@@ -921,8 +922,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   # TODO: need to update the name of this function and the above one to reflect that these functions are valid
   # only for Gaussian likelihoods with sig2 params assigned independent IG priors, or likelihoods with 
   # fixed likelihood parameters. 
-  # Supported values for `approx_type`: "marginal", "mean". 
-  
+  # Supported values for `approx_type`: "marginal", "mean", "quantile". 
+  # `alpha` is only relevant for the "quantile" approximation, and defines the 
+  # pointwise quantile of the GP predictive distribution to use in the approximation. 
+
   # Validation and setup for log-likelihood emulator. 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
   # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
@@ -962,7 +965,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   par_curr_mat <- matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
-  llik_pred_curr <- llik_emulator$calc_lik_approx(par_curr_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
+  llik_pred_curr <- llik_emulator$calc_lik_approx(par_curr_mat, approx_type, 
+                                                  lik_par_val=sig2_curr, log_scale=TRUE, 
+                                                  alpha=alpha, ...) 
   lpost_pred_curr <- llik_pred_curr + calc_lprior_theta(par_curr_mat, par_prior_params)
 
   # Proposal covariance.
@@ -993,7 +998,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
       } else {
         # Compute log-posterior approximation. 
         par_prop_mat <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
-        llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, lik_par_val=sig2_curr, log_scale=TRUE, ...) 
+        llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, 
+                                                        lik_par_val=sig2_curr, log_scale=TRUE, alpha=alpha, ...) 
         lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior_params)
   
         # Accept-Reject step.

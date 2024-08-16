@@ -17,7 +17,7 @@ library(data.table)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        "linGauss", "d11_p10_N100_LHS")
+                        "linGauss", "quadker_d11_p10_N100_LHS")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -107,6 +107,26 @@ trace_plots_approx <- get_trace_plots(samp_dt, test_label=test_labels_approx,
 
 for(plt in trace_plots_approx) plot(plt) 
 ```
+
+```{r}
+plts <- get_trace_plots(samp_dt, test_label="gp-mean-em_llik_const_GaussQuad",
+                        param_types="par", burn_in_start=1)
+  
+  
+for(plt in plts) plot(plt) 
+
+
+
+kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
+                                        param_types="par", param_names=NULL,
+                                        test_label_baseline="exact", test_labels="gp-mean-em_llik_const_GaussQuad",
+                                        xlab="parameter", ylab="kde", save_dir=NULL) 
+
+for(plt in kde_plts) plot(plt)
+```
+
+
+
 
 ```{r}
 #

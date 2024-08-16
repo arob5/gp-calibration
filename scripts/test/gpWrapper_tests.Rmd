@@ -175,6 +175,12 @@ gpKerGP1$fit("Gaussian", "constant", estimate_nugget=FALSE, trace=TRUE, multista
 gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE, include_nugget=TRUE)
 gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
 
+# Gaussian plus quadratic kernel. 
+gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpKerGP1$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, trace=TRUE, multistart=5)
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE, include_nugget=TRUE)
+gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
+
 ```
 
 
