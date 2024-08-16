@@ -102,6 +102,9 @@ inputNames(ker_Gauss) <- par_names
 
 # Quadratic kernel. 
 ker_fun_quad <- function(x1, x2, par) { 
+  x1 <- as.matrix(x1)
+  x2 <- as.matrix(x2)
+  
   affine_comb <- tcrossprod(x1, x2) + par[1]
   K12 <- affine_comb^2
   attr(K12, "gradient") <- list(cst=2*affine_comb)
@@ -127,6 +130,9 @@ inputNames(ker_quad) <- par_names
 kern_fun_Gauss_plus_quad <- function(x1, x2, par) {
   # Note that the jitter is added in the quadratic part of the kernel. 
   
+  x1 <- as.matrix(x1)
+  x2 <- as.matrix(x2)
+  
   K12_Gauss <- kergp:::kNormFun(x1, x2, par[1:(length(par)-1)], kergp::k1FunGauss)
   K12_quad <- ker_fun_quad(x1, x2, par[length(par)])
   K12 <- K12_Gauss + K12_quad
@@ -148,6 +154,26 @@ ker_Gauss_plus_quad <- covMan(kernel = kern_fun_Gauss_plus_quad,
                               par = c(setNames(attr(ker_Gauss, "par"), attr(ker_Gauss, "kernParNames")),
                                       setNames(attr(ker_quad, "par"), attr(ker_quad, "kernParNames"))))
 inputNames(ker_Gauss_plus_quad) <- par_names
+
+# Quadratic kernel test. 
+ker_fun_quad_test <- function(x1, x2, par) { 
+  
+  affine_comb <- sum(x1*x2) + par[1]
+  k <- affine_comb^2
+  attr(k, "gradient") <- c(cst=2*affine_comb)
+  
+  return(k)
+}
+
+ker_quad_test <- covMan(kernel = ker_fun_quad_test,
+                        hasGrad = TRUE,
+                        d = X_dim,
+                        parLower = c(cst=0),
+                        parUpper = c(cst=Inf),
+                        parNames = c("cst"),
+                        label = "Quadratic kernel test.", 
+                        par = c(cst=1.0))
+inputNames(ker_quad_test) <- par_names
 
 
 ```
@@ -176,13 +202,268 @@ mean_func_lin_quad <- as.formula(paste0("y ~ ", paste0("poly(", par_names, ", de
 # True function and design points. 
 #
 
-ggplot() + 
-  geom_contour(aes(x1, x2, z=y), df_grid) + 
-  geom_point(aes(x1, x2), df_design, color="black")
+contour_true <- ggplot() + 
+                geom_contour(aes(x1, x2, z=y), df_grid) + 
+                geom_point(aes(x1, x2), df_design, color="black")
 #geom_tile(aes(x1, x2, fill=y), df_grid)
+
+plot(contour_true)
+```
+
+```{r}
+#
+# Fit emulators.  
+#
+
+# TODO: need to also consider designs that are not centered around the mode. 
+
+multistart <- 10L
+
+# Constant mean, Gaussian kernel. 
+gp_cst_Gauss <- kergp::gp(mean_func_cst, df_design, inputs=par_names, cov=ker_Gauss, multistart=multistart, noise=FALSE)
+
+# Lin/Quadratic mean, Gaussian kernel. 
+gp_linquad_Gauss <- kergp::gp(mean_func_lin_quad, df_design, inputs=par_names, cov=ker_Gauss, multistart=multistart, noise=FALSE)
+
+# Quadratic mean, Gaussian kernel. 
+gp_quad_Gauss <- kergp::gp(mean_func_quad, df_design, inputs=par_names, cov=ker_Gauss, multistart=multistart, noise=FALSE)
+
+# Constant mean, quadratic kernel. 
+gp_cst_quad <- kergp::gp(mean_func_cst, df_design, inputs=par_names, cov=ker_quad, 
+                         trace=TRUE, noise=FALSE, parTrack=TRUE, parCovIni=c(cst=.2))
+gp_cst_quad$MLE$parTracked
+
+
+
+# gp_cst_quad <- kergp::gp(mean_func_cst, df_design, inputs=par_names, cov=ker_quad, 
+#                          multistart=multistart, trace=TRUE, noise=FALSE, varNoiseIni=0, 
+#                          parCovIni=simulPar(ker_quad, nsim=2), opts=list(algorithm="test"))
+
+# Constant mean, Gauss plus quadratic kernel.
+gp_cst_quadGauss <- kergp::gp(mean_func_cst, df_design, inputs=par_names, cov=ker_Gauss_plus_quad, multistart=multistart, noise=FALSE)
+
 
 ```
 
+```{r}
+# Log marginal likelihood surface for gp_cst_quad, with intercept fixed. 
+beta_vals <- c(seq(0, 12, 2), 9.333226)
+cst_grid <- seq(0, 20, length.out=100)
+llik_vals <- matrix(NA, nrow=length(cst_grid), ncol=length(beta_vals))
+mf <- model.frame(mean_func_cst, data=df_design)
+F_mat <- model.matrix(mean_func_cst, data=mf)
+
+for(i in seq_along(beta_vals)) {
+  
+  beta_fixed <- c(`(Intercept)`=beta_vals[i])
+  thisy <- y - F_mat %*% beta_fixed
+  
+  for(j in seq_along(cst_grid)) {
+    llik_vals[j,i] <- kergp:::.logLikFun0(par=c(cst=cst_grid[j]), ker_quad, thisy, X, F=NULL, 
+                                          noise=FALSE, compGrad=FALSE, trace=FALSE)
+  }
+}
+
+matplot(cst_grid, llik_vals, type="l", ylim=c(-100, 30))
+
+
+
+plot(cst_grid, llik_vals[,8], type="l")
+
+
+```
+
+
+```{r}
+#
+# Predict with emulators. 
+#
+
+pred_cst_Gauss <- kergp:::predict.gp(gp_cst_Gauss, X_grid, type="SK", seCompute=TRUE, forceInterp=FALSE)
+df_grid$cst_Gauss_mean <- pred_cst_Gauss$mean
+
+pred_cst_linquad_Gauss <- kergp:::predict.gp(gp_linquad_Gauss, X_grid, type="SK", seCompute=TRUE, forceInterp=FALSE)
+df_grid$linquad_Gauss_mean <- pred_cst_linquad_Gauss$mean
+df_grid$linquad_Gauss_trend <- pred_cst_linquad_Gauss$trend
+
+pred_quad_Gauss <- kergp:::predict.gp(gp_quad_Gauss, X_grid, type="SK", seCompute=TRUE, forceInterp=FALSE)
+df_grid$quad_Gauss_mean <- pred_quad_Gauss$mean
+df_grid$quad_Gauss_trend <- pred_quad_Gauss$trend
+
+pred_cst_quad <- kergp:::predict.gp(gp_cst_quad, X_grid, type="SK", seCompute=TRUE, forceInterp=FALSE)
+df_grid$cst_quad_mean <- pred_cst_quad$mean
+
+pred_cst_quadGauss <- kergp:::predict.gp(gp_cst_quadGauss, X_grid, type="SK", seCompute=TRUE, forceInterp=FALSE)
+df_grid$cst_quadGauss_mean <- pred_cst_quadGauss$mean
+
+```
+
+```{r}
+test <- kergp:::predict.gp(gp_cst_quad, X, type="SK", seCompute=TRUE, forceInterp=FALSE)
+print(cbind(y, test$mean))
+print(test$sdSK)
+
+df_grid$cst_quad_resid <- y_grid - df_grid$cst_quad_mean
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=cst_quad_resid), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=cst_quad_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: constant mean, Gaussian kernel")
+
+
+```
+
+
+
+```{r}
+#
+# GP mean predictions. 
+# 
+
+# Constant mean, Gaussian kernel. 
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=cst_Gauss_mean), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=cst_Gauss_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: constant mean, Gaussian kernel")
+
+# Quadratic mean, Gaussian kernel.  
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=linquad_Gauss_trend), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=linquad_Gauss_trend), df_grid, color="red") + 
+  ggtitle("Trend pred: Quadratic mean, Gaussian kernel")
+
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=linquad_Gauss_mean), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=linquad_Gauss_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: Quadratic mean, Gaussian kernel")
+
+
+# Quadratric mean (no linear terms), Gaussian kernel. 
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=quad_Gauss_trend), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=quad_Gauss_trend), df_grid, color="red") + 
+  ggtitle("Trend pred: Quadratic mean (no linear terms), Gaussian kernel")
+
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=quad_Gauss_mean), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=quad_Gauss_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: Quadratic mean (no linear terms), Gaussian kernel")
+
+# Constant mean, quadratic kernel. 
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=cst_quad_mean), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=cst_quad_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: Constant mean, Quadratic kernel")
+
+# Constant mean, quadratic plus Gaussian kernel. 
+ggplot() + 
+  geom_tile(aes(x1, x2, fill=cst_quadGauss_mean), df_grid) + 
+  geom_contour(aes(x1, x2, z=y), df_grid, color="white") + 
+  geom_point(aes(x1, x2), df_design, color="red") + 
+  geom_contour(aes(x1, x2, z=cst_quadGauss_mean), df_grid, color="red") + 
+  ggtitle("Mean pred: Constant mean, Quadratic Plus Gaussian kernel")
+  
+
+```
+
+
+```{r}
+#
+# Investigating GP hyperparameters. 
+#
+
+
+print(gp_quad_Gauss)
+print(gp_cst_quad)
+print(gp_cst_quadGauss)
+
+```
+
+
+```{r}
+gp <- function(formula, data,
+               inputs = inputNames(cov),
+               cov,
+               estim = TRUE,
+               ...) {
+    
+    Call <- match.call()
+    if (! all(inputs %in% colnames(data))) {
+        stop("all elements of 'inputs' must be colnames of 'data'")
+    }
+    if (as.character(formula[[2]]) %in% inputs) {
+        stop("the response can not appear in 'inputs'")
+    }
+
+    ## remove coercion to allow qualitative kernels.
+    ## X <- as.matrix(data[ , inputs, drop = FALSE], rownames.force = TRUE)
+    X <- data[ , inputs, drop = FALSE]
+                   
+    mf <- model.frame(formula, data = data)
+    tt <- terms(mf)
+    y <- model.response(mf, "numeric")
+    F <- model.matrix(formula, data = mf)
+    n <- length(y)
+    p <- ncol(F)
+    d <- ncol(X)
+    
+    if (estim) {
+        
+        fit <- try(mle(object = cov,
+                   y = y, X = X, F = F,
+                       ...))
+
+        if (inherits(fit, "try-error")){
+          covMat(cov, X = X)
+          stop("Maximum Likelihood error")
+        } 
+        optValue <- fit$opt$val
+        ## replace 'cov'.
+        cov <- fit$cov
+        ## varNoise <- fit$varNoise
+        MLE <- fit
+        fit <- fit$trendRes
+        logLik <- MLE$logLik
+        
+    } else {
+            
+        ## if (is.na(varNoise)) varNoise <- NULL
+        fit <- try(gls(object = cov,
+                       y = y, X = X, F = F,
+                       ...))
+        if (inherits(fit, "try-error")) stop("GLS error")
+        optValue <- NULL
+        MLE <- NULL
+        logLik <- NA
+    }
+
+
+```
+
+```{r}
+X_00 <- matrix(c(0,0), nrow=1)
+colnames(X_00) <- par_names
+
+kergp:::predict.gp(gp_cst_quad, X_00, type="SK", seCompute=TRUE, forceInterp=FALSE)$mean
+kergp:::predict.gp(gp_cst_quadGauss, X_00, type="SK", seCompute=TRUE, forceInterp=FALSE)$mean
+
+f(X_00)
+X
+
+```
 
 
 
