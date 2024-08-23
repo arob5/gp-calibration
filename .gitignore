@@ -12,6 +12,7 @@ output/
 images/
 support_points/
 figure-html/
+.ipynb_checkpoints/
 *.bbl
 *.blg
 .Rproj.user
@@ -19,9 +20,9 @@ emulator_metrics_illustration_files/
 gp_emulator_error_metrics_files/
 *.svg
 *.git
+*.pyc
 
 # Ignore everything in renv folder except for select files. 
 renv/*
 !renv/activate.R
 !renv/settings.dcf
-
