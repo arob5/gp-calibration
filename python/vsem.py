@@ -132,7 +132,9 @@ def get_vsem_default_pars():
 
 def get_vsem_default_priors():
     # A convenience function to return default priors for the VSEM model
-    # parameters, including the initial conditions.
+    # parameters, including the initial conditions. Note that this does not
+    # align with the bounds provided in the R BayesianTools function
+    # `VSEMgetDefaults()`.
 
     # Default priors.
     par_priors = [["KEXT", "Uniform", 2e-01, 1.0],
@@ -143,9 +145,9 @@ def get_vsem_default_priors():
                   ["tauS", "Uniform", 4e+03, 5e+04],
                   ["tauR", "Uniform", 5e+02, 3e+03],
                   ["Av", "Uniform", 2e-01, 1.0],
-                  ["Cv", "Uniform", 0.0, 4e+2],
-                  ["Cs", "Uniform", 0.0, 1e+03],
-                  ["Cr", "Uniform", 0.0, 2e+02]]
+                  ["Cv", "Uniform", 0.0, 10.0],
+                  ["Cs", "Uniform", 0.0, 30.0],
+                  ["Cr", "Uniform", 0.0, 10.0]]
     par_priors = pd.DataFrame(par_priors, columns=["par_name", "dist", "param1", "param2"])
 
     return par_priors
@@ -224,3 +226,15 @@ def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True)
         model_output = model_output[0,:,:]
 
     return model_output
+
+def get_vsem_fwd_model(driver, par_cal_idx=None, par_default=None, simplify=True):
+    # A convenience function that returns a function representing the VSEM
+    # forward model `fwd_vsem()` only as an argument of `par_cal`, with the
+    # remaining arguments fixed. This is convenient for parameter estimation
+    # analyses where the remaining arguments (e.g., the model driver) will
+    # be fixed throughout the analysis.
+
+    def fwd(par_cal):
+        return fwd_vsem(par_cal, driver, par_cal_idx, par_default, simplify)
+
+    return fwd
