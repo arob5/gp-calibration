@@ -436,7 +436,10 @@ The plug-in mean estimators yield the unnormalized posterior density approximati
 \end{align}
 These approximations fail to account for the uncertainty introduced by the surrogate model, which can lead 
 to overconfidence in downstream posterior inference. These mean-based approximations are analyzed 
-theoretically in \cite{StuartTeck1}, with error bounds provided in Hellinger distance. In \cite{VehtariParallelGP}, 
+theoretically in \cite{StuartTeck1}, with error bounds provided in Hellinger distance. The paper 
+\cite{gp_surrogates_random_exploration} considers fitting GP emulators directly to the unnormalized 
+log posterior density, and also provides Hellinger-type error bounds for the plug-in mean posterior approximation.  
+In \cite{VehtariParallelGP}, 
 the approximation \ref{post_dens_mean_llik} is considered and is instead referred to as the 
 \textit{median approximation}, owing to the fact that the median formula for a log-normal random variable 
 gives $\text{median}(\Exp{\llikEm[\Ndesign](\Par)}) = \Exp{\emMean[\Ndesign]{\fwd}(\Par)}$. In other words, 

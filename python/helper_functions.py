@@ -5,6 +5,8 @@
 # Andrew Roberts
 #
 
+import numpy as np
+
 # For an nxd input array, returns a 2xd array with the first row storing
 # the minimum value of X in each dimension, and likewise with the maximum
 # in the second row.
@@ -39,7 +41,7 @@ def scale_inputs(X, source_bounds=None, target_bounds=None, invert=False):
 
 
 # By default, this function implicitly treats data as lying in the hypercube [-1,1]^d.
-# One can implicitly think of [-1,1]^d as the hypercube associated with the bounds of
+# One can think of [-1,1]^d as the hypercube associated with the bounds of
 # the design points, so test points generated outside of this cube can be thought of
 # as testing the extrapolation of the model.
 # The output test points can be appropriately scaled with respect to a different

@@ -215,7 +215,7 @@ def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True)
 
     for i in range(n_run):
         if par_cal_is_subset:
-            par_run = par_default
+            par_run = par_default.copy()
             par_run[par_cal_idx] = par_cal[i,:]
         else:
             par_run = par_cal[i,:]
@@ -227,14 +227,19 @@ def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True)
 
     return model_output
 
-def get_vsem_fwd_model(driver, par_cal_idx=None, par_default=None, simplify=True):
+def get_vsem_fwd_model(driver, n_par_cal, par_cal_idx=None, par_default=None, simplify=True):
     # A convenience function that returns a function representing the VSEM
     # forward model `fwd_vsem()` only as an argument of `par_cal`, with the
     # remaining arguments fixed. This is convenient for parameter estimation
     # analyses where the remaining arguments (e.g., the model driver) will
-    # be fixed throughout the analysis.
+    # be fixed throughout the analysis. Also includes a check to ensure the
+    # parameter dimension is correct.
 
     def fwd(par_cal):
+        if par_cal.ndim == 1:
+            assert len(par_cal) == n_par_cal
+        else:
+            assert par_cal.shape[1] == n_par_cal
         return fwd_vsem(par_cal, driver, par_cal_idx, par_default, simplify)
 
     return fwd

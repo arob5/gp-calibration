@@ -1,0 +1,127 @@
+---
+title: 'Parameter Calibration for Dynamical Model: Example'
+author: "Andrew Roberts"
+date: '2024-08-26'
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Overview 
+This tutorial walks through the basic workflow for estimating the parameters of a differential equation from data, a process we refer to as *parameter calibration* or *parameter estimation*. We adopt a Bayesian perspective, meaning that the goal will be to obtain a posterior distribution of the parameters given some observed data. In addition to providing a conceptual introduction, this document serves to introduce code that I have written for performing parameter calibration experiments. I try to only load packages and source external functions when 
+they are needed, so it is clear where they are used and so you can work through parts of this document even if you are having issues with 
+packages/code used in other parts. Here is a general outline for this document: 
+1. Introduce a basic differential equation and visually explore the effect of changing its parameter values. 
+2. Simulate some observations, and show how the problem of estimating parameter values using these observations can generically be viewed as an inverse problem; specifically, a *Bayesian inverse problem*, since we are considering a Bayesian perspective.
+3. Solve the Bayesian inverse problem by utilizing an MCMC method to sample from the posterior distribution. 
+
+
+# The Differential Equation Model 
+We will be using the [VSEM](https://rdrr.io/cran/BayesianTools/man/VSEM.html) model as a simple example throughout this tutorial. This is a toy model describing flows of carbon between three different states (i.e., pools): above-ground vegetation, soil, and below-ground vegetation (roots). See the linked page for the specifics of the model, or my write-up on ecosystem model calibration. Let $x(t) := [x_v(t), x_r(t),x_s(t)]$ denote the *state vector*; $x(t)$ is how much carbon is in each of the three states 
+(vegetation, roots, soil) at time $t$. The VSEM model is an ordinary differential equation (ODE); its equations model the time derivatives $x^\prime(t) = f(x(t))$ of this state vector. Solving the ODE means using this information regarding how the states change to obtain the actual values of the states themselves; i.e., the solution is a trajectory of the system $\{x(t): 0 \leq t \leq T\}$ over some time 
+horizon $[0,T]$. Most ODEs cannot be solved in closed-form, and so this trajectory has to be approximated using numerical algorithms. The point of this document is not to go into these numerical algorithms; let us just assume we have used such an algorithm. The approximate solution to the ODE is then given by a *discretization* of the form $\{x(t_k): 0 \leq k \leq K\}$, where $t_0, t_1, \dots, t_K$ are 
+time points within the time-horizon $[0,T]$. Let's assume for simplicity that these time points are equally spaced, with time step 
+$h := t_k - t_{k-1}$. A basic ODE numerical solver constructs this discretization via 
+$$
+x(t_{k+1}) := x(t_k) + h \cdot f(x(t_k))
+$$
+
+Going forward in this document, we will treat the discretized solution of the ODE as the model, and basically forget that there is an underlying continuous-time model. In other words, we are ignoring any error between the true ODE solution and its numerical approximation. For the purposes of this document, the main thing to understand is that the solution of the ODE depends on $f$, which describes the time derivatives of the states. Often, $f$ depends on parameters that are not known a priori; we will denote these parameters by $u$ and therefore write $f_u$ to indicate that $f$ depends on parameters $u$. The below code numerically solves the VSEM model for different values of parameters $u$ (again, see the VSEM documentation for examples of what these parameters look like). Notice how changing the parameter values results in very different simulated trajectories. If we plan on using these simulations as forecasts to predict the future state of the carbon cycle, it is essential to find the combination of parameter values that produces simulations that most closely agree with the real world. 
+
+
+```{r}
+# The VSEM model (and an algorithm to numerically solve it) is implemented in the R `BayesianTools` package. 
+library(BayesianTools)
+library(data.table)
+library(ggplot2)
+
+
+set.seed(6324742)
+
+# This defines the time points (the `t_k` in my above notation). VSEM is implemented 
+# to be solved on a daily time step, so `h`= 1 day. Therefore, the below code defines the daily time steps 
+# so that the time horizon is 3 years. 
+time_steps <- 1:(365*3)
+n_time_steps <- length(time_steps)
+
+# This is the model driver/forcing data. Ignore this for now if you're unfamiliar with those concepts. 
+driver <- BayesianTools::VSEMcreatePAR(time_steps)
+
+# These are the default model parameters. We will consider varying their values. This BayesianTools 
+# function also provides bounds for each parameter value. 
+par_defaults <- BayesianTools::VSEMgetDefaults()
+print(par_defaults)
+n_vsem_pars <- nrow(par_defaults)
+
+# Generating different parameters at which to simulate the model. We're simply uniformly sampling 
+# parameter values from within the bounds that VSEM provided. This creates a matrix of parameter 
+# values to try out; each row is a different parameter combination.  
+n_pars_test <- 10
+pars_test <- matrix(nrow=n_pars_test, ncol=n_vsem_pars)
+for(i in 1:n_pars_test) {
+  for(j in 1:n_vsem_pars) {
+    pars_test[i,j] <- runif(1, min=par_defaults[j,"lower"], max=par_defaults[j,"upper"])
+  }
+}
+
+# This runs the numerical ODE solver at each parameter value combination. For each parameter 
+# combination, the model outputs the simulated trajectory x(t_k), k=1,...,K which is a 
+# stored in a `n_time_steps` x 3 matrix (since there are 3 states) (the BayesianTools function 
+# VSEM actually outputs a 4th variable as well, but we're ignoring this for now). 
+state_names <- c("Cv", "Cs", "CR")
+model_tests <- data.table(param_idx=factor(), Cv=numeric(), Cs=numeric(), 
+                          CR=numeric(), time=numeric())
+for(i in 1:n_pars_test) {
+  model_out <- as.data.table(BayesianTools::VSEM(pars=pars_test[i,], PAR=driver)[,state_names])
+  model_out[, param_idx := as.factor(i)]
+  model_out[, time := time_steps]
+  model_tests <- rbindlist(list(model_tests, model_out), use.names=TRUE)
+}
+
+# Finally, we plot the simulated trajectories. 
+plot_v <- ggplot(model_tests) + geom_line(aes(x=time, y=Cv, color=param_idx)) + ggtitle("Above-ground Vegetation Simulations")
+plot_s <- ggplot(model_tests) + geom_line(aes(x=time, y=Cs, color=param_idx)) + ggtitle("Soil Simulations")
+plot_r <- ggplot(model_tests) + geom_line(aes(x=time, y=CR, color=param_idx)) + ggtitle("Below-ground Vegetation Simulations")
+
+plot(plot_v)
+plot(plot_s)
+plot(plot_r)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
