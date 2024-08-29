@@ -54,7 +54,6 @@
 
 % Use citep and citet
 % Write w_1 and w_2 as functions of u and u-tilde 
-% Email Amy 
 
 % Introduction 
 \section{Introduction}
@@ -117,6 +116,9 @@ cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approxim
 an approximation of the latter). We refer to such approximations interchangeably 
 as \textit{surrogates} or \textit{emulators}. The focus of the present work is on utilizing \textit{Gaussian processes} 
 to derive emulators for the forward model or log-likelihood. 
+
+\subsection{Motivating Example: Parameter Estimation for Dynamical Models}
+
 
 \subsection{Gaussian Processes}
 In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer readers to 
@@ -1528,6 +1530,32 @@ part of the response surface that "flattens" out.
 \end{enumerate}
 
 \subsection{Numerical experiments:}
+My plan is to have emulation in dynamical settings (ODEs) as the unifying theme here. VSEM can provide the core example but could also consider 
+others, such as Lorenz-63 (see Hwanwoo Kim, Daniel Sanz-Alonso paper for the ODEs they consider). When introducing the dynamical setting,
+cite Stuart/Schneider Earth System modeling 2.0 paper. Provide various examples of observation operators: time-averages (moments) of state 
+variables, identity operator, many shorter time-averages (e.g., weekly/monthly averages), multi-objective settings of calibrating to multiple state 
+variables. I should probably include Lorenz-63 to have a more familiar example to many audiences. 
+
+\begin{enumerate}
+\item 1D example with 1D output for basic illustration. 
+	\begin{enumerate}
+	\item VSEM with single varied parameter. 
+	\item For 1D output, consider long time average of of a single state variable. This will allow us to compare forward model and log-likelihood emulation directly.
+	\item Gaussian likelihood. 
+	\item Compare emulator distributions, log-likelihood emulator distributions, and likelihood emulator distributions, and various posterior approximations. 
+	\item Validation metrics: RMSE, MAE, CRPS, Log-Score, Coverage. 
+	\end{enumerate}
+\item 2D examples for basic illustration and consideration of different posterior characteristics: Gaussian, banana, unidentifiable, concentration level, bimodal. 
+\item Extension of 2D densities to 6-10 dims (see Vehtari paper numerical experiments) 
+\item Sequential design performance at different levels of posterior concentration. 
+\item Integrated uncertainty criterion: incorporating the current posterior via the integrand or the measure?
+\item Large batch, few iteration sequential design experiment. 
+(4 different combinations we could consider) 
+\end{enumerate}
+
+
+
+
 \begin{enumerate}
 \item 1D example for basic illustration. 
 \item 2D examples for basic illustration and consideration of different posterior characteristics: Gaussian, banana, unidentifiable, concentration level, bimodal. 

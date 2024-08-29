@@ -6,6 +6,7 @@
 #
 
 import numpy as np
+import scipy as sp
 
 # For an nxd input array, returns a 2xd array with the first row storing
 # the minimum value of X in each dimension, and likewise with the maximum
@@ -67,3 +68,34 @@ def gen_extrapolation_test_inputs(d, N_points, max_scaler=2.0, scale="linear", t
             X_test[j,:,:] = scale_inputs(X_test[j,:,:], source_bounds=reference_bounds, target_bounds=target_bounds)
 
     return X_test
+
+
+# Given an array `X` of shape (n_point, n_dim), returns an array `pairwise_ranges`
+# of shape (2, n_dim), where `pairwise_ranges[0,d]` is the minimum pairwise distance
+# between distinct points in `X[:,d]`. Similarly, `pairwise_ranges[1,d]` contains
+# the maximum pairwise distance in the dth dimension. The distance is in the
+# Euclidean sense, but this could be generalized by passing additional arguments
+# to `sp.spatial.distance.pdist`.
+def get_pairwise_dist_range_per_dim(X):
+    n_dim = X.shape[1]
+    pairwise_ranges = np.empty((2,n_dim))
+
+    for d in range(n_dim):
+        pairwise_dists = sp.spatial.distance.pdist(X[:,d,np.newaxis])
+        pairwise_ranges[0,d] = np.min(pairwise_dists)
+        pairwise_ranges[1,d] = np.max(pairwise_dists)
+
+    return pairwise_ranges
+
+# Returns the inverse gamma parameters `alpha` and `beta` that achieve a given
+# target mean `m` and standard deviation `s`. Returns a tuple containing the values
+# of `alpha` and `beta`, respectively.
+def get_IG_pars_from_mean_sd(m, s):
+    v = np.power(s,2)
+    alpha = 2 + np.power(m,2)/v
+    beta = (alpha-1)*m
+
+    # Condition for mean and variance to exist.
+    assert alpha > 2
+
+    return (alpha,beta)
