@@ -10,6 +10,7 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode} % Note that this also loads algorithmicx
 \usepackage{cleveref}
+\usepackage{natbib}
 \usepackage{bbm}
 \usepackage{caption, subcaption} % Captions and sub-figures. 
 % \usepackage[demo]{graphicx}
@@ -117,9 +118,59 @@ an approximation of the latter). We refer to such approximations interchangeably
 as \textit{surrogates} or \textit{emulators}. The focus of the present work is on utilizing \textit{Gaussian processes} 
 to derive emulators for the forward model or log-likelihood. 
 
+% Motivating Example: Parameter Estimation for Dynamical Models
 \subsection{Motivating Example: Parameter Estimation for Dynamical Models}
+While many problems fall under the generic setting outlined above, our primary application of interest 
+stems from the problem of parameter estimation for dynamical models that describe complex systems. 
+This problem arises in various forms under the umbrella of Earth system modeling \citep{ESM_modeling_2pt0}, 
+and we pull examples primarily from ecological models of the terrestrial biosphere (\todo: cite). We now 
+establish notation for the dynamical model applications, and cast the problem of parameter estimation for 
+differential equations as a specific instance of the generic inverse problem \ref{inv_prob_Gaussian}. 
+Consider the initial value problem 
+\begin{align}
+\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC,
+\end{align}
+describing the time evolution of $\dimState$ state variables 
+$\state(\Time) \Def \left[\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)\right]^\top \in \mathbb{R}^{\dimState}$,
+with dynamics depending on parameters $\Par \in \parSpace$. As our focus will be on estimating these parameters 
+from observations, we consider the solution operator 
+\begin{align}
+\Par &\mapsto \left\{\state(\Time, \Par) :  \Time \in [\timeStart, \timeEnd] \right\}, 
+\end{align}
+mapping parameters to state trajectories over some time horizon $[\timeStart, \timeEnd]$. In practice, the solution 
+is often approximated via a numerical discretization of the form 
+\begin{align}
+\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]. 
+\end{align}
+Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
+and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
+values $\state(\Time, \Par)$ at a finite set of time points $\{0, 1, \dots, \NTimeStep\} \subset [\timeStart, \timeEnd]$. 
+Going forward, we focus on the approximate solution operator $\solutionOp$, neglecting discretization error 
+for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
+noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
+$\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the state trajectory to a 
+$\dimObs$-dimensional observable quantity. Equipping the parameters with a prior $\Par \sim \priorDens$,
+we assume the observations are generated as 
+\begin{align}
+\obs &= \fwd(\Par) + \noise \Def (\obsOp \circ \solutionOp)(\Par) + \noise \nonumber \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\end{align}
+for some parameter value in the support of the prior distribution. Some of the methods discussed below readily 
+generalize to more complicated settings that consider non-additive or non-Gaussian noise, or the presence of 
+model discrepancy terms. While the observation map can assume many forms across different applications, 
+common examples include 
+\begin{align}
+\obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
+&\Def \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
+\obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
+&\Def \left(\state^{(\stateIndex)}_{\timeIndex} \right)_{\timeIndex \in \mathcal{K}}, \mathcal{K} \subset \{1, 2, \dots, \NTimeStep\} \label{obs_op_subset}
+\end{align} 
+for some $\stateIndex \in \{1, 2, \dots, \dimState\}$. The map \ref{obs_op_moments} corresponds to the first $\dimObs$ moments of the 
+$\stateIndex^{\text{th}}$ state trajectory, with $\dimObs=1$ implying a standard time average. The second example \ref{obs_op_subset}
+indicates that noisy observations of the $\stateIndex^{\text{th}}$ state are available at a subset of the discrete time set. 
+Of course, we can also generalize so that these observation operators depend on multiple state variables. 
 
-
+% Gaussian Processes
 \subsection{Gaussian Processes}
 In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer readers to 
 \cite{gramacy2020surrogates, StuartTeck2, gpML}. A \textit{Gaussian process} (GP) is a probability 
