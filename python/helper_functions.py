@@ -40,6 +40,28 @@ def scale_inputs(X, source_bounds=None, target_bounds=None, invert=False):
     return target_bounds[0,:] + np.multiply(X - source_bounds[0,:],
                                            (target_bounds[1,:]-target_bounds[0,:]) / (source_bounds[1,:] - source_bounds[0,:]))
 
+# Normalizes a matrix by applying a linear transformation to each of its columns.
+# The linear transformation for the jth column is to first subtract the constant
+# `cst_add[j]` and then multiple the result by `cst_mult[j]`. If `invert` is True
+# then the inverse of this transformation is applied. The matrix with the transformed
+# columns is returned.
+def normalize_matrix(Y, cst_add=None, cst_mult=None, invert=False):
+    Y_dim = Y.shape[1]
+    if cst_add is None:
+        cst_add = np.zeros(Y_dim)
+    if cst_mult is None:
+        cst_mult = np.ones(Y_dim)
+
+    assert cst_add.ndim == 1
+    assert cst_mult.ndim == 1
+
+    if not invert:
+        Y_new = (Y + cst_add) * cst_mult
+    else:
+        Y_new = (Y_new / cst_mult) - cst_add
+
+    return Y_new
+
 
 # By default, this function implicitly treats data as lying in the hypercube [-1,1]^d.
 # One can think of [-1,1]^d as the hypercube associated with the bounds of
@@ -99,3 +121,25 @@ def get_IG_pars_from_mean_sd(m, s):
     assert alpha > 2
 
     return (alpha,beta)
+
+
+# Compute continuous ranked probability score (CRPS) for a Gaussian predictive
+# distribution (i.e., forecast). Negatively oriented so that smaller scores
+# are better. Arguments are vectors of observations, Gaussian means, and
+# Gaussian variances of equal length. Returns vector of the same length containing
+# the computed CRPS for each observation.
+def calc_crps_Gaussian(y, m, v):
+    s = np.sqrt(v)
+    y_norm = (y-m)/s
+    F = sp.stats.norm.cdf(y_norm)
+    f = sp.stats.norm.pdf(y_norm)
+    crps = s * (y*(2*F - 1) + 2*f - np.power(np.pi, -0.5))
+    return -crps
+
+# Compute the log score for a Gaussian predictive distribution (i.e., forecast).
+# Negatively oriented so that smaller scores are better. Arguments are vectors
+# of observations, Gaussian means, and Gaussian variances of equal length.
+# Returns vector of the same length containing the computed log score for each
+# observation.
+def calc_log_score_Gaussian(y, m, v):
+    return -sp.stats.norm.logpdf(y, loc=m, scale=np.sqrt(v))

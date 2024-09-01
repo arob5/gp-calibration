@@ -161,7 +161,7 @@ model discrepancy terms. While the observation map can assume many forms across 
 common examples include 
 \begin{align}
 \obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
-&\Def \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
+&\Def \frac{1}{\timeEnd - \timeStart} \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
 \obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
 &\Def \left(\state^{(\stateIndex)}_{\timeIndex} \right)_{\timeIndex \in \mathcal{K}}, \mathcal{K} \subset \{1, 2, \dots, \NTimeStep\} \label{obs_op_subset}
 \end{align} 
@@ -448,7 +448,8 @@ approximation of the posterior. Given that it is not obvious how to perform infe
 proceeds by choosing a single, deterministic posterior approximation that somehow summarizes the uncertainty in the 
 random posterior measure. Popular choices for such deterministic approximations are described below. Going forward, 
 for succinctness we will specify only the \textit{unnormalized} posterior densities, with the associated normalizing constants  
-implicitly defined. \Cref{fig:post_approx_1d} provides a one-dimensional illustration of the posterior approximations 
+implicitly defined. Existence of the approximate posteriors is an important question that we discuss in \Cref{post_existence}. 
+\Cref{fig:post_approx_1d} provides a one-dimensional illustration of the posterior approximations 
 discussed below, utilizing the same emulators from \Cref{fig:em_dist_1d}. 
 
 \begin{figure}
@@ -804,6 +805,11 @@ an unbiased estimator of
 $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
 This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
 $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
+
+% Existence of approximate posteriors. 
+\subsection{Existence of Approximate Posterior Distributions} \label{post_existence}
+\todo
+
 
 
 % Sequential Design
