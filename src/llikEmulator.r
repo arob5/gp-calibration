@@ -1243,12 +1243,20 @@ llikEmulatorExactGauss$methods(
 #    be diagonal, so the `lik_par` for this class is defined to be the vector 
 #    corresponding to the diagonal of this covariance matrix.`lik_par` may 
 #    also be provided as a single value, which is interpreted as a 
-#    homoskedastic variance.
+#    homoskedastic variance. Concretely, implements a likelihood of the form, 
+#    likelihood of the form
+#        p(y1,...,yP|u,v1,...,vP) = prod_{p=1}^{P} prod_{n=1}^{N} N(yp_n|G(u)_p, vp),
+#    where:
+#    P = `N_output` and N = `N_obs`
+#    y1,...,yP are each vectors of length N.
+#    v1,...,vP are variance parameters corresponding to each output, respectively. 
 #
-# TODO: need to generalize this to have `N_outputs`, which may differ 
-# from `N_obs`. `N_obs` is then interpreted as `N_obs` independent replicates 
-# with the same covariance diag(sig2). Can then replace `y` with `Y`, which 
-# is `N_obs x N_outputs`. 
+# In words, this likelihood assumes the forward model `G` has P outputs. A set of 
+# observations yp is associated with each output p, and these observations are 
+# assumed to be iid draws from N(G(u)_p, vp). The argument `y_obs` to the class 
+# constructor is a (N,P) matrix storing each set of observations as columns.  
+# 
+# TODO: generalize to allow ragged arrays, where the yp need not be the same length.
 # -----------------------------------------------------------------------------
 
 llikEmulatorExactGaussDiag <- setRefClass(
@@ -1328,8 +1336,8 @@ llikEmulatorExactGaussDiag$methods(
     # Construct log likelihood.
     llik <- vector(mode="numeric", length=nrow(input))
     for(i in seq_along(llik)) {
-      llik[i] <- -0.5 * sum(mult_vec_with_mat_rows(1/sig2_val, 
-                                               add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2))
+      llik[i] <- -0.5 * sum(mult_vec_with_mat_cols(1/sig2_val, 
+                            add_vec_to_mat_cols(-fwd_model_vals[i,], .self$y)^2))
     }
     
     if(normalize || !conditional) llik <- llik - 0.5 * .self$N_obs * sum(log(sig2_val))

@@ -8,6 +8,15 @@ output: html_document
 ```{r, echo = FALSE, include = FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
+# TODO: 
+#    - Fix estimate of observation variance. 
+#    - Improve llik emulator GP model. 
+#    - Include model discrepancy to make the data generation process differ from the 
+#      likelihood so that we can obtain a more realistic log-likelihood surface. 
+#      Options: different likelihood variance, set fixed parameters to values that are 
+#               not equal to the ground truth, add a deterministic term to the foward  
+#               model. 
+
 library(lhs)
 library(kde1d)
 library(ggplot2)
@@ -21,6 +30,7 @@ src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_visualization")
 
 source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
@@ -56,36 +66,98 @@ int_trap <- function(x, dx) {
 
 ```{r}
 #
-# Define inverse problem: 
-#    nonlinear forward model, Gaussian likelihood with known variance, 
-#    uniform prior, so focus on the likelihood as the prior does not affect things. 
+# Defining the forward model, parameter space, and priors for the inverse problem: 
+#    Parameter calibration for VSEM model. Calibrating single parameter implying a 1-dim 
+#    input space, and considering an observable in the form of a time average, implying 
+#    a 1-dim output space. 
 #
 
 seed_inv_prob <- 35
 set.seed(seed_inv_prob)
 
-# Forward model. 
-N_obs <- 1
-fwd_model <- function(u) sin(u) + 0.1*u
+# Parameter to calibrate. 
+par_cal_name <- "KEXT"
 
-# Priors and true parameter values. 
-par_prior_params <- data.frame(dist="Uniform", param1=xlim[1], param2=xlim[2])
-rownames(par_prior_params) <- "u"
-u_true <- 3.0
-sig2_true <- 1
-y <- matrix(0) # fwd_model(rep(u_true, N_obs)) + sqrt(sig2_true) * rnorm(N_obs)
+# VSEM default parameter values.
+par_names <- get_vsem_par_names()
+par_default <- get_vsem_default_pars()
+print("Parameter defaults:")
+print(data.frame(par_name=par_names, default_value=par_default))
 
-# Exact likelihood. 
+# Define prior on calibration parameter.
+par_cal_idx <- which(par_cal_name==par_names)
+par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
+print("Prior on calibration parameter:")
+print(par_prior_params)
+
+# Number of time points (days) and model driver. 
+n_year <- 3
+n_time <- 365*n_year
+time_points <- 1:n_time
+driver <- BayesianTools::VSEMcreatePAR(days=time_points)
+plot(time_points, driver, main="Model Driver (PAR)", xlab="Day", ylab="PAR")
+
+# Map from calibration parameter to VSEM outputs.
+output_names <- get_vsem_output_names()
+lai_idx <- which(output_names=="LAI") 
+param_to_output_map <- get_vsem_fwd_model(driver, 1, par_cal_idx, par_default, simplify=FALSE)
+
+# Observation operator (map from model outputs to observable): time average of LAI. 
+obs_op <- function(model_outputs) {
+  single_run <- (dim(model_outputs)[1]==1L)
+  lai_trajectory <- model_outputs[,,lai_idx]
+  if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
+  rowMeans(lai_trajectory)
+}
+
+# Forward model: defined here as the calibration parameter-to-observable map. Returns 
+# matrix of dimension (N_run,1) to align with the convention of `fwd_model_vectorized`
+# in the `llikEmulatorExactGaussDiag` class. 
+fwd_model <- function(par_cal) {
+  matrix(obs_op(param_to_output_map(par_cal)),ncol=1L)
+}
+```
+
+```{r}
+# Defining the likelihood, ground truth, and observed data for the inverse problem. 
+signal_to_noise_ratio <- 20
+par_true <- par_default
+u_true <- par_true[par_cal_idx]
+model_outputs_true <- param_to_output_map(u_true)
+y_true <- obs_op(model_outputs_true)
+sig_eps <- mean(y_true) / signal_to_noise_ratio
+sig2_eps <- sig_eps^2
+sig2_true <- sig2_eps # Currently obs variance is fixed, 
+                      # so no distinction between exact and estimated variance. 
+y <- y_true + sig_eps*rnorm(n=1)
+
+print(paste0("y true: ", y_true))
+print(paste0("y obs: ", y))
+print(paste0("epsilon std: ", sig_eps))
+
+# Plot ground truth data.  
+for(j in 1:dim(model_outputs_true)[3]) {
+    output_var <- output_names[j]
+    plot(time_points, model_outputs_true[1,,j], xlab="Days", ylab=output_var, main=output_var)
+}
+```
+
+
+```{r}
+# Instantiate the "exact log-likelihood" object. 
 default_conditional <- FALSE
 default_normalize <- TRUE
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
-                                         y_obs=y, dim_par=1L, use_fixed_lik_par=TRUE,
-                                         sig2=sig2_true, par_names=rownames(par_prior_params), 
+                                         y_obs=matrix(y), dim_par=1L, use_fixed_lik_par=TRUE,
+                                         sig2=sig2_eps, par_names=par_cal_name, 
                                          default_conditional=default_conditional, 
                                          default_normalize=default_normalize)
-inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y, par_true=u_true, sig2_true=sig2_true)
+inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y, 
+                 par_true=u_true, sig2_true=sig2_true)
+```
 
-# Create grid for plotting. 
+```{r}
+# Grid of test points for plotting and emulator evaluation. 
 N_grid <- 201
 u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
 test_info <- list(input=u_grid)
@@ -100,8 +172,8 @@ plot(test_info$input, test_info$llik, type="l",
      main="True log-likelihood", xlab="u", ylab="density")
 plot(test_info$input, exp(test_info$llik), type="l", 
      main="True likelihood", xlab="u", ylab="density")
-
 ```
+
 
 ```{r}
 # 
@@ -130,7 +202,7 @@ emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 # Forward model emulator.
 em_fwd_gp <- gpWrapperHet(design_info$input, matrix(design_info$fwd, ncol=1), normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, y, sig2=inv_prob$sig2_true, 
+em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, matrix(y), sig2=inv_prob$sig2_true, 
                                    default_conditional=default_conditional, 
                                    default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
                                    par_names=rownames(par_prior_params))

@@ -229,11 +229,11 @@ def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True)
 
 def get_vsem_fwd_model(driver, n_par_cal, par_cal_idx=None, par_default=None, simplify=True):
     # A convenience function that returns a function representing the VSEM
-    # forward model `fwd_vsem()` only as an argument of `par_cal`, with the
+    # forward model `fwd_vsem()` but only as an argument of `par_cal`, with the
     # remaining arguments fixed. This is convenient for parameter estimation
-    # analyses where the remaining arguments (e.g., the model driver) will
-    # be fixed throughout the analysis. Also includes a check to ensure the
-    # parameter dimension is correct.
+    # analyses where the remaining arguments (e.g., the model driver and the
+    # fixed parameters) will be fixed throughout the analysis. Also includes
+    # a check to ensure the parameter dimension is correct.
 
     def fwd(par_cal):
         if par_cal.ndim == 1:
