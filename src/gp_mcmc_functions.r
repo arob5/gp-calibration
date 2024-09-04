@@ -1357,6 +1357,87 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_emulator, use_join
 }
 
 
+# -----------------------------------------------------------------------------
+# Sample-Based Posterior Approximation: 
+# The algorithms here attempt to approximately sample the so-called "sample-
+# based" approximate posterior. Samples from this distribution are generated 
+# by first sampling a random distribution (via sampling a GP trajectory) and 
+# then sampling a parameter value from this distribution. In general, this is 
+# impractical due to the requirement of sampling a random probability measure. 
+# The functions here attempt to approximate this sampling procedure. 
+# -----------------------------------------------------------------------------
+
+
+sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bounds, 
+                                            N_grid, N_samp, lik_par_val=NULL, 
+                                            max_rejects=1000L, ...) {
+  
+  assert_that(llik_emulator$dim_input==1L)
+  
+  # Construct grid. 
+  par_grid <- seq(bounds[1], bounds[2], length.out=N_grid)
+  par_grid_mat <- matrix(par_grid,ncol=1)
+  colnames(par_grid_mat) <- llik_emulator$input_names
+  
+  # Iterate until desired number of samples is acheived. 
+  par_samp <- vector(mode="numeric", length=N_samp)
+
+  for(i in 1:N_samp) {
+    
+    # Sample log-likelihood values over dense grid. 
+    llik_grid <- drop(llik_emulator$sample(par_grid_mat, lik_par_val=lik_par_val, N_samp=1, ...))
+    lpost_grid <- llik_grid + calc_lprior_theta(par_grid_mat, par_prior_params)
+    
+    # Linearly interpolate to obtain approximate log-likelihood sample/trajectory. 
+    llik_interp <- get_linear_interpolation_1d(par_grid, llik_grid)
+    lpost_interp <- function(par) llik_interp(par) + calc_lprior_theta(par, par_prior_params)
+    
+    # Upper bound for (unnormalized) density. 
+    M <- max(exp(lpost_grid))
+    assert_that(M > 0)
+    assert_that(!is.infinite(M))
+    
+    # Rejection sampling until a sample is obtained. 
+    N_rejects <- 0L 
+    accepted <- FALSE
+    while(!accepted && (N_rejects < max_rejects)) {
+      par_prop <- runif(n=1, min=bounds[1], max=bounds[2])
+      u <- runif(n=1, min=0, max=M)
+      if(log(u) <= lpost_interp(par_prop)) {
+        accepted <- TRUE
+        par_samp[i] <- par_prop
+      } else {
+        N_rejects <- N_rejects+1L
+        if(N_rejects==max_rejects) stop(paste0("Reached max rejects when attempting to simulate sample ", i))
+      }
+    }
+  }
+  
+  return(par_samp)
+}
+
+
+get_linear_interpolation_1d <- function(input_points, output_points) {
+  
+  point_order <- order(input_points)
+  input_points <- input_points[point_order]
+  output_points <- output_points[point_order]
+  
+  f <- function(x) {
+    idx_l <- max(which(input_points <= x))
+    idx_u <- idx_l+1L
+    x_l <- input_points[idx_l]
+    x_u <- input_points[idx_u]
+    y_l <- output_points[idx_l]
+    y_u <- output_points[idx_u]
+    
+    y_l + (y_u-y_l)/(x_u-x_l)*(x-x_l)
+  }
+  
+  return(f)
+  
+}
+
 
 # ---------------------------------------------------------------------
 # Helper functions 

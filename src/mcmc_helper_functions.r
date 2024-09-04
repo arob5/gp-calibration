@@ -109,8 +109,8 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
   
   # Select rows corresponding to label-type-name combinations. 
   samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
-                              (param_type %in% param_types) & 
-                              (param_name %in% param_names)]
+                            (param_type %in% param_types) & 
+                            (param_name %in% param_names)]
   
   # Remove (or select) burn-in iterations; burn-in can differ by test label. 
   samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start, return_burnin)

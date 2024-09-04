@@ -9,13 +9,21 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 
 # TODO: 
-#    - Fix estimate of observation variance. 
-#    - Improve llik emulator GP model. 
+#    - Why is fwd model post estimate underpredicting so much? 
+#    - Should any of the normalized post approximations interpolate the design points? 
+#    - Estimate observation variance. 
+#    - Improve llik emulator GP model (consider using Vehtari method of integrating out trend coefs). 
 #    - Include model discrepancy to make the data generation process differ from the 
 #      likelihood so that we can obtain a more realistic log-likelihood surface. 
 #      Options: different likelihood variance, set fixed parameters to values that are 
 #               not equal to the ground truth, add a deterministic term to the foward  
 #               model. 
+#
+# A nice visual example: 
+#    seed_inv_prob <- 2562
+#    seed_init_design <- 1643
+#    N_design <- 3L
+#    design_method <- "LHS"
 
 library(lhs)
 library(kde1d)
@@ -36,6 +44,7 @@ source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
@@ -49,9 +58,22 @@ design_color <- "red"
 xlim <- c(-10, 10)
 ylim <- c(0.0777, 0.4)
 
+# Random number generator seeds. 
+seed_inv_prob <- 2562
+seed_init_design <- 16431
+
+# Settings for approximate simulation from sample-based approximate posterior. 
+# Increasing these values increases the fidelity of the approximation. 
+N_grid_sb <- 250
+N_samp_sb <- 5000
+
 # Settings for noisy MCMC. 
 N_mcmc <- 50000
 burn_in_start <- N_mcmc/2
+
+# Design point settings. 
+N_design <- 3L
+design_method <- "LHS"
 
 # Basic trapezoidal rule for numerical integration, for approximating normalizing constants. 
 int_trap <- function(x, dx) {
@@ -72,7 +94,6 @@ int_trap <- function(x, dx) {
 #    a 1-dim output space. 
 #
 
-seed_inv_prob <- 35
 set.seed(seed_inv_prob)
 
 # Parameter to calibrate. 
@@ -84,9 +105,11 @@ par_default <- get_vsem_default_pars()
 print("Parameter defaults:")
 print(data.frame(par_name=par_names, default_value=par_default))
 
-# Define prior on calibration parameter.
+# Define prior on calibration parameter. Setting rownames to "u" so that plot labels 
+# will use this generic symbol for the parameter rather than `par_cal_name`. 
 par_cal_idx <- which(par_cal_name==par_names)
 par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
+rownames(par_prior_params) <- "u"
 print("Prior on calibration parameter:")
 print(par_prior_params)
 
@@ -149,7 +172,7 @@ default_conditional <- FALSE
 default_normalize <- TRUE
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
                                          y_obs=matrix(y), dim_par=1L, use_fixed_lik_par=TRUE,
-                                         sig2=sig2_eps, par_names=par_cal_name, 
+                                         sig2=sig2_eps, par_names=rownames(par_prior_params), 
                                          default_conditional=default_conditional, 
                                          default_normalize=default_normalize)
 inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y, 
@@ -180,20 +203,22 @@ plot(test_info$input, exp(test_info$llik), type="l",
 # Initial design and fit emulators. 
 #
 
-seed_init_design <- 23
 set.seed(seed_init_design)
 
 # Generate design. 
-N_design <- 7
 design_info <- list()
-design_info$input <- get_batch_design("LHS", N_design, prior_params=inv_prob$par_prior)
+design_info$input <- get_batch_design(design_method, N_design, prior_params=inv_prob$par_prior)
 design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[,1]
 design_info$llik <- llik_exact$assemble_llik(design_info$input)
 design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 
 # Log-likelihood emulator. 
-em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
-em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+em_llik_gp <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                             normalize_output=TRUE, scale_input=TRUE)
+em_llik_gp$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
+               optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
+# em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
+# em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
 em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
                           default_normalize=default_normalize, lik_par=inv_prob$sig2_true, 
                           use_fixed_lik_par=TRUE)
@@ -225,13 +250,13 @@ plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(test_info$input, include
                                                         pred_list=emulator_pred_llik, ylab="L(u)",
                                                         Y_new=matrix(test_info$llik, ncol=1), line_thickness=line_thickness,
                                                         design_color=design_color, design_pt_size=design_pt_size, 
-                                                        plot_title="GP predictions [llik]")[[1]]
+                                                        xlab="u", plot_title="GP predictions [llik]")[[1]]
 plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
                                                       interval_method="pm_std_dev", N_std_dev=N_std_dev,
                                                       pred_list=emulator_pred_fwd, ylab="G(u)",
                                                       Y_new=matrix(test_info$fwd, ncol=1), line_thickness=line_thickness,
                                                       design_color=design_color, design_pt_size=design_pt_size, 
-                                                      plot_title="GP predictions [fwd]")[[1]]
+                                                      xlab="u", plot_title="GP predictions [fwd]")[[1]]
 
 # (2): Plot the log-likelihood emulator predictive distributions. 
 plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_llik,
@@ -239,13 +264,13 @@ plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=e
                                            interval_method="pm_std_dev", N_std_dev=N_std_dev,
                                            true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                            design_color=design_color, design_pt_size=design_pt_size,
-                                           plot_title="log-likelihood predictions [llik]", ylab="L(u)")
+                                           xlab="u", plot_title="log-likelihood predictions [llik]", ylab="L(u)")
 plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd,
                                          plot_type="llik", include_interval=TRUE,  
                                          interval_method="pm_std_dev", N_std_dev=N_std_dev,
                                          true_llik=test_info$llik, CI_prob=CI_prob, ylab="L(u)",
                                          design_color=design_color, design_pt_size=design_pt_size,
-                                         plot_title="log-likelihood predictions [fwd]")
+                                         xlab="u", plot_title="log-likelihood predictions [fwd]")
 
 # (3): Plot the likelihood emulator predictive distributions. 
 plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_llik,
@@ -253,7 +278,7 @@ plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=em
                                           interval_method="pm_std_dev", N_std_dev=N_std_dev,
                                           true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                           design_color=design_color, design_pt_size=design_pt_size, ylab="exp L(u)",
-                                          plot_title="likelihood predictions [llik]")
+                                          xlab="u", plot_title="likelihood predictions [llik]")
 
 # TODO: why doesnt this throw an error when using "CI"?
 plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
@@ -261,7 +286,7 @@ plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emul
                                         interval_method="pm_std_dev", N_std_dev=N_std_dev,
                                         true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                         design_color=design_color, design_pt_size=design_pt_size, ylab="exp L(u)",
-                                        plot_title="likelihood predictions [fwd]")
+                                        xlab="u", plot_title="likelihood predictions [fwd]")
 
 #
 # Plot formatting and saving. 
@@ -296,7 +321,6 @@ plot(plt_lik_dist_llik)
 plot(plt_lik_dist_fwd)
 ggsave(file.path(output_dir, "lik_dist_llikem.png"), plt_lik_dist_llik)
 ggsave(file.path(output_dir, "lik_dist_fwdem.png"), plt_lik_dist_fwd)
-
 ```
 ```{r}
 #
@@ -311,7 +335,6 @@ design_info$post <- exp(design_info$llik + design_info$lprior) / norm_cst_exact
 ```
 
 
-
 ```{r}
 #
 # Comparison of different posterior approximations. 
@@ -323,29 +346,60 @@ normalize_lik <- function(lik, dx) {
 }
 
 # Log-likelihood emulation. 
-lik_approx_llik <- em_llik$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
-                                                      emulator_pred_list=emulator_pred_llik)
-lik_approx_llik <- apply(lik_approx_llik, 2, function(x) normalize_lik(x, dx))
-lik_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=test_info$post,
-                                             X_design=design_info$input, y_design=design_info$post,
-                                             plot_title="Posterior Approximations [llik]",
-                                             line_thickness=line_thickness, design_color=design_color,
-                                             design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
-                                             ggformat_journal(legend_position="none")
-plot(lik_approx_llik_plt)
+post_approx_llik <- em_llik$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
+                                                       emulator_pred_list=emulator_pred_llik)
+post_approx_llik <- apply(post_approx_llik, 2, function(x) normalize_lik(x, dx))
+post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, post_approx_llik, y_new=test_info$post,
+                                              X_design=design_info$input, y_design=design_info$post,
+                                              plot_title="Posterior Approximations [llik]",
+                                              line_thickness=line_thickness, design_color=design_color,
+                                              design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
+                                              ggformat_journal(legend_position="none")
+plot(post_approx_llik_plt)
 
 # Forward model emulation. 
-lik_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
-                                                    emulator_pred_list=emulator_pred_fwd)
-lik_approx_fwd <- apply(lik_approx_fwd, 2, function(x) normalize_lik(x, dx))
-lik_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=test_info$post,
-                                            X_design=design_info$input, y_design=design_info$post,
-                                            plot_title="Likelihood Approximations [fwd]",
-                                            line_thickness=line_thickness, design_color=design_color,
-                                            design_pt_size=design_pt_size, xlab="u", 
-                                            ylab="exp L(u)") %>% ggformat_journal(legend_position="none")
-plot(lik_approx_fwd_plt)
+post_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
+                                                     emulator_pred_list=emulator_pred_fwd)
+post_approx_fwd <- apply(post_approx_fwd, 2, function(x) normalize_lik(x, dx))
+post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, post_approx_fwd, y_new=test_info$post,
+                                             X_design=design_info$input, y_design=design_info$post,
+                                             plot_title="Posterior Approximations [fwd]",
+                                             line_thickness=line_thickness, design_color=design_color,
+                                             design_pt_size=design_pt_size, xlab="u", 
+                                             ylab="pi(u)") %>% ggformat_journal(legend_position="none")
+plot(post_approx_fwd_plt)
 ```
+
+
+```{r}
+# Sample (approximately) from the sample-based (sb) GP-approximated posterior. We consider this as 
+# the "true" Bayesian solution in some sense, to which the other approximations can be compared. 
+
+if(par_prior_params$dist=="Uniform") {
+  prior_support <- c(par_prior_params$param1, par_prior_params$param2)
+} else {
+  prior_support<- c(NaN, NaN)
+}
+
+post_samples_sb_llik <- sim_sample_based_approx_1d_grid(em_llik, par_prior_params, 
+                                                        bounds=prior_support, 
+                                                        N_grid=N_grid_sb, N_samp=N_samp_sb)
+post_samples_sb_fwd <- sim_sample_based_approx_1d_grid(em_fwd, par_prior_params, 
+                                                       bounds=prior_support, 
+                                                       N_grid=N_grid_sb, N_samp=N_samp_sb)
+
+# Compute kernel density estimates. 
+kde_fit_sb_llik <- kde1d(post_samples_sb_llik, xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_llik <- cbind(post_approx_llik, `sample`=dkde1d(test_info$input, kde_fit_sb_llik))
+
+kde_fit_sb_fwd <- kde1d(post_samples_sb_fwd, xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_fwd <- cbind(post_approx_fwd, `sample`=dkde1d(test_info$input, kde_fit_sb_fwd))
+
+hist(post_samples_sb_llik,30)
+hist(post_samples_sb_fwd,30)
+```
+
+
 ```{r}
 # MCWMH approaches. 
 
@@ -359,12 +413,12 @@ mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
 # MCWMH-Ind. 
 mcmh_nocov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
                                       use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- format_mcmc_output(mcmh_nocov_llik_list, test_label="nocov-llik")
+samp_dt <- format_mcmc_output(mcmh_nocov_llik_list$samp, test_label="nocov-llik")
 
 # MCWMH-Joint. 
 mcmh_cov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
                                     use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik")
+samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list$samp, test_label="cov-llik")
 
 #
 # Forward model emulator. 
@@ -373,12 +427,12 @@ samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list, test_label="cov-llik"
 # MCWMH-Ind. 
 mcmh_nocov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
                                      use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_fwd_list, test_label="nocov-fwd")
+samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_fwd_list$samp, test_label="nocov-fwd")
 
 # MCWMH-Joint. 
 mcmh_cov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
                                    use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list, test_label="cov-fwd")
+samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list$samp, test_label="cov-fwd")
 
 ```
 
@@ -389,7 +443,8 @@ samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list, test_label="cov-fwd")
 trace_plots <- get_trace_plots(samp_dt, burn_in_start=burn_in_start) 
 for(plt in trace_plots) plot(plt) 
 
-get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_baseline="nocov-llik")
+get_hist_plot_comparisons(samp_dt, test_label_baseline="nocov-llik", 
+                          param_types="par", burn_in_start=burn_in_start)
 ```
 
 ```{r}
@@ -398,29 +453,38 @@ get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, test_label_basel
 # Produce kernel density approximations of posterior using MCMC samples. 
 # 
 
+
 #
 # Log-likelihood emulator. 
 #
 
 # MCWMH-Ind. 
-kde_fit_mcwmh_ind_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="nocov-llik")$sample)
-lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_llik))
+kde_fit_mcwmh_ind_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, 
+                                                 test_labels="nocov-llik", param_types="par")$sample, 
+                                xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_llik <- cbind(post_approx_llik, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_llik))
 
 # MCWMH-Joint. 
-kde_fit_mcwmh_joint_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="cov-llik")$sample)
-lik_approx_llik <- cbind(lik_approx_llik, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_llik))
+kde_fit_mcwmh_joint_llik <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, 
+                                                   test_labels="cov-llik", param_types="par")$sample,
+                                  xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_llik <- cbind(post_approx_llik, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_llik))
 
 #
 # Forward model emulator. 
 #
 
 # MCWMH-Ind. 
-kde_fit_mcwmh_ind_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="nocov-fwd")$sample)
-lik_approx_fwd <- cbind(lik_approx_fwd, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_fwd))
+kde_fit_mcwmh_ind_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, 
+                                                test_labels="nocov-fwd", param_types="par")$sample,
+                               xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_fwd <- cbind(post_approx_fwd, `mcwmh-ind`=dkde1d(test_info$input, kde_fit_mcwmh_ind_fwd))
 
 # MCWMH-Joint. 
-kde_fit_mcwmh_joint_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels="cov-fwd")$sample)
-lik_approx_fwd <- cbind(lik_approx_fwd, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_fwd))
+kde_fit_mcwmh_joint_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, 
+                                                  test_labels="cov-fwd", param_types="par")$sample,
+                                 xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
+post_approx_fwd <- cbind(post_approx_fwd, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_fwd))
 
 
 ```
@@ -431,23 +495,40 @@ lik_approx_fwd <- cbind(lik_approx_fwd, `mcwmh-joint`=dkde1d(test_info$input, kd
 # Plot: comparison of posterior approximations. 
 #
 
+# The kernel density estimates can produce some outlier points at the edges of the domain. We 
+# trim off the first and last grid point to avoid this.
+N_trim <- 3L
+start_idx <- N_trim+1L
+stop_idx <- N_grid-N_trim
+post_approx_llik_trim <- post_approx_llik[start_idx:stop_idx,]
+post_approx_fwd_trim <- post_approx_fwd[start_idx:stop_idx,]
+test_input_trim <- test_info$input[start_idx:stop_idx,]
+post_trim <- test_info$post[start_idx:stop_idx]
+
 # Log-likelihood emulator. 
-post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, lik_approx_llik, y_new=test_info$post,
+post_approx_llik_plt <- plot_curves_1d_helper(test_input_trim, post_approx_llik_trim, y_new=post_trim,
                                               X_design=design_info$input, y_design=design_info$post,
                                               plot_title="Posterior Approximations [llik]",
                                               line_thickness=line_thickness, design_color=design_color,
-                                              design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
-                                              ggformat_journal(legend_position="bottom", 
-                                                               legend.text=element_text(size=20))
+                                              design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)")
+                                              
 
 # Forward model emulator. 
-post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, lik_approx_fwd, y_new=test_info$post,
+post_approx_fwd_plt <- plot_curves_1d_helper(test_input_trim, post_approx_fwd_trim, y_new=post_trim,
                                              X_design=design_info$input, y_design=design_info$post,
                                              plot_title="Posterior Approximations [llik]",
                                              line_thickness=line_thickness, design_color=design_color,
-                                             design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
-                                             ggformat_journal(legend_position="bottom", 
-                                                               legend.text=element_text(size=20))
+                                             design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)")
+
+# Align axis limits. 
+lims_post_trim <- get_common_lims(post_approx_llik_plt, post_approx_fwd_plt)
+post_approx_llik_plt <- post_approx_llik_plt %>% 
+                        ggformat_journal(legend_position="bottom", legend.text=element_text(size=20), 
+                                         xlim=lims_post_trim$xlim, ylim=lims_post_trim$ylim)
+post_approx_fwd_plt <- post_approx_fwd_plt %>% 
+                       ggformat_journal(legend_position="bottom", legend.text=element_text(size=20), 
+                                        xlim=lims_post_trim$xlim, ylim=lims_post_trim$ylim)
+
 
 plot(post_approx_llik_plt)
 plot(post_approx_fwd_plt)
