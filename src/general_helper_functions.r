@@ -85,4 +85,14 @@ log_diff_exp <- function(x, y, threshold=100) {
 }
 
 
+# Basic trapezoidal rule for numerical integration. Mostly used in this code for 
+# approximating normalizing constants for basic 1d integrals. 
+int_trap <- function(x, dx) {
+  x <- drop(x)
+  n_pts <- length(x)
+  
+  return(0.5 * dx * (x[1] + x[n_pts]) +  dx * sum(x[2:(n_pts-1)]))
+}
+
+
 

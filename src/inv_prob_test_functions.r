@@ -7,7 +7,7 @@
 #
 
 library(assertthat)
-library(BayesianTools) # For the VSEM toy model.
+library(BayesianTools) # For the VSEM toy ecosystem model.
 
 # -----------------------------------------------------------------------------
 # Very Simple Ecosystem Model (VSEM):

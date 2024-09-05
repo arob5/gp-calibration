@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = FALSE)
 # TODO: 
 #    - Why is fwd model post estimate underpredicting so much? 
 #    - Should any of the normalized post approximations interpolate the design points? 
+#    - Track the estimates of the normalizing constants.  
 #    - Estimate observation variance. 
 #    - Improve llik emulator GP model (consider using Vehtari method of integrating out trend coefs). 
 #    - Include model discrepancy to make the data generation process differ from the 
@@ -62,10 +63,12 @@ ylim <- c(0.0777, 0.4)
 seed_inv_prob <- 2562
 seed_init_design <- 16431
 
+# The number of independent observations of the observable (a time average). 
+N_obs <- 1L
+
 # Settings for approximate simulation from sample-based approximate posterior. 
 # Increasing these values increases the fidelity of the approximation. 
-N_grid_sb <- 250
-N_samp_sb <- 5000
+N_monte_carlo_sb <- 100000L
 
 # Settings for noisy MCMC. 
 N_mcmc <- 50000
@@ -74,14 +77,6 @@ burn_in_start <- N_mcmc/2
 # Design point settings. 
 N_design <- 3L
 design_method <- "LHS"
-
-# Basic trapezoidal rule for numerical integration, for approximating normalizing constants. 
-int_trap <- function(x, dx) {
-  x <- drop(x)
-  n_pts <- length(x)
-
-  return(0.5 * dx * (x[1] + x[n_pts]) +  dx * sum(x[2:(n_pts-1)]))
-}
 
 ```
 
@@ -112,6 +107,12 @@ par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
 rownames(par_prior_params) <- "u"
 print("Prior on calibration parameter:")
 print(par_prior_params)
+if(par_prior_params$dist=="Uniform") {
+  prior_support <- c(par_prior_params$param1, par_prior_params$param2)
+} else {
+  prior_support<- c(NaN, NaN)
+  stop("Currently this notebook is designed assuming uniform prior. Would need to update `estimate_sample_based_density_1d_grid()` is generalizing.")
+}
 
 # Number of time points (days) and model driver. 
 n_year <- 3
@@ -152,7 +153,7 @@ sig_eps <- mean(y_true) / signal_to_noise_ratio
 sig2_eps <- sig_eps^2
 sig2_true <- sig2_eps # Currently obs variance is fixed, 
                       # so no distinction between exact and estimated variance. 
-y <- y_true + sig_eps*rnorm(n=1)
+y <- y_true + sig_eps*rnorm(n=N_obs)
 
 print(paste0("y true: ", y_true))
 print(paste0("y obs: ", y))
@@ -171,7 +172,7 @@ for(j in 1:dim(model_outputs_true)[3]) {
 default_conditional <- FALSE
 default_normalize <- TRUE
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
-                                         y_obs=matrix(y), dim_par=1L, use_fixed_lik_par=TRUE,
+                                         y_obs=matrix(y,nrow=N_obs), dim_par=1L, use_fixed_lik_par=TRUE,
                                          sig2=sig2_eps, par_names=rownames(par_prior_params), 
                                          default_conditional=default_conditional, 
                                          default_normalize=default_normalize)
@@ -227,7 +228,7 @@ emulator_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 # Forward model emulator.
 em_fwd_gp <- gpWrapperHet(design_info$input, matrix(design_info$fwd, ncol=1), normalize_output=TRUE, scale_input=TRUE)
 em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, matrix(y), sig2=inv_prob$sig2_true, 
+em_fwd <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, matrix(y,nrow=N_obs), sig2=inv_prob$sig2_true, 
                                    default_conditional=default_conditional, 
                                    default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
                                    par_names=rownames(par_prior_params))
@@ -332,6 +333,8 @@ norm_cst_exact <- int_trap(exp(test_info$llik + test_info$lprior), dx)
 test_info$post <- exp(test_info$llik + test_info$lprior) / norm_cst_exact
 design_info$post <- exp(design_info$llik + design_info$lprior) / norm_cst_exact
 
+# Store approximated normalizing constants. 
+norm_cst_list <- list(exact=norm_cst_exact)
 ```
 
 
@@ -340,15 +343,24 @@ design_info$post <- exp(design_info$llik + design_info$lprior) / norm_cst_exact
 # Comparison of different posterior approximations. 
 #
 
-# Convenience function for normalization. 
-normalize_lik <- function(lik, dx) {
-  lik * exp(test_info$lprior)  / int_trap(lik * exp(test_info$lprior), dx)
+# Convenience functions for normalization. 
+approx_norm_cst <- function(lik, dx) {
+  int_trap(lik*exp(test_info$lprior), dx)
+}
+
+normalize_lik <- function(lik, norm_cst) {
+  lik*exp(test_info$lprior) / norm_cst
 }
 
 # Log-likelihood emulation. 
 post_approx_llik <- em_llik$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
                                                        emulator_pred_list=emulator_pred_llik)
-post_approx_llik <- apply(post_approx_llik, 2, function(x) normalize_lik(x, dx))
+
+norm_cst_llik <- apply(post_approx_llik, 2, function(x) approx_norm_cst(x,dx))
+approx_names_llik <- colnames(post_approx_llik)
+post_approx_llik <- sapply(1:ncol(post_approx_llik), function(j) normalize_lik(post_approx_llik[,j], norm_cst_llik[j]))
+colnames(post_approx_llik) <- approx_names_llik
+norm_cst_list$llik <- norm_cst_llik
 post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, post_approx_llik, y_new=test_info$post,
                                               X_design=design_info$input, y_design=design_info$post,
                                               plot_title="Posterior Approximations [llik]",
@@ -360,7 +372,11 @@ plot(post_approx_llik_plt)
 # Forward model emulation. 
 post_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
                                                      emulator_pred_list=emulator_pred_fwd)
-post_approx_fwd <- apply(post_approx_fwd, 2, function(x) normalize_lik(x, dx))
+norm_cst_fwd <- apply(post_approx_fwd, 2, function(x) approx_norm_cst(x,dx))
+approx_names_fwd <- colnames(post_approx_fwd)
+post_approx_fwd <- sapply(1:ncol(post_approx_fwd), function(j) normalize_lik(post_approx_fwd[,j], norm_cst_fwd[j]))
+colnames(post_approx_fwd) <- approx_names_fwd
+norm_cst_list$fwd <- norm_cst_fwd
 post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, post_approx_fwd, y_new=test_info$post,
                                              X_design=design_info$input, y_design=design_info$post,
                                              plot_title="Posterior Approximations [fwd]",
@@ -370,33 +386,16 @@ post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, post_approx_fwd, y
 plot(post_approx_fwd_plt)
 ```
 
-
 ```{r}
-# Sample (approximately) from the sample-based (sb) GP-approximated posterior. We consider this as 
+# Estimate the sample-based (sb) GP-approximated posterior. We consider this as 
 # the "true" Bayesian solution in some sense, to which the other approximations can be compared. 
+dens_sb_llik <- estimate_sample_based_density_1d_grid(em_llik, par_prior_params, test_info$input, 
+                                                      N_monte_carlo=N_monte_carlo_sb)
+dens_sb_fwd <- estimate_sample_based_density_1d_grid(em_fwd, par_prior_params, test_info$input, 
+                                                     N_monte_carlo=N_monte_carlo_sb)
 
-if(par_prior_params$dist=="Uniform") {
-  prior_support <- c(par_prior_params$param1, par_prior_params$param2)
-} else {
-  prior_support<- c(NaN, NaN)
-}
-
-post_samples_sb_llik <- sim_sample_based_approx_1d_grid(em_llik, par_prior_params, 
-                                                        bounds=prior_support, 
-                                                        N_grid=N_grid_sb, N_samp=N_samp_sb)
-post_samples_sb_fwd <- sim_sample_based_approx_1d_grid(em_fwd, par_prior_params, 
-                                                       bounds=prior_support, 
-                                                       N_grid=N_grid_sb, N_samp=N_samp_sb)
-
-# Compute kernel density estimates. 
-kde_fit_sb_llik <- kde1d(post_samples_sb_llik, xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
-post_approx_llik <- cbind(post_approx_llik, `sample`=dkde1d(test_info$input, kde_fit_sb_llik))
-
-kde_fit_sb_fwd <- kde1d(post_samples_sb_fwd, xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
-post_approx_fwd <- cbind(post_approx_fwd, `sample`=dkde1d(test_info$input, kde_fit_sb_fwd))
-
-hist(post_samples_sb_llik,30)
-hist(post_samples_sb_fwd,30)
+post_approx_llik <- cbind(post_approx_llik, `sample`=dens_sb_llik)
+post_approx_fwd <- cbind(post_approx_fwd, `sample`=dens_sb_fwd)
 ```
 
 
@@ -485,8 +484,6 @@ kde_fit_mcwmh_joint_fwd <- kde1d(select_mcmc_samp(samp_dt, burn_in_start=burn_in
                                                   test_labels="cov-fwd", param_types="par")$sample,
                                  xmin=prior_support[1], xmax=prior_support[2], deg=2, mult=1)
 post_approx_fwd <- cbind(post_approx_fwd, `mcwmh-joint`=dkde1d(test_info$input, kde_fit_mcwmh_joint_fwd))
-
-
 ```
 
 
@@ -538,8 +535,14 @@ ggsave(file.path(output_dir, "post_approx_fwdem.png"), post_approx_fwd_plt)
 ```
 
 
+```{r}
+# Print normalizing constant estimates. 
+print("Estimated normalizing constants:")
+print(norm_cst_list)
+```
 
 
+# Part 2: Sequential Design 
 
 
 

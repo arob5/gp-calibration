@@ -653,7 +653,7 @@ llikSumEmulator$methods(
   
     emulator_samp_list <- sample_emulator(input, N_samp=N_samp, labels=labels, ...)
     assemble_llik(emulator_samp_list, lik_par_val, conditional=conditional, normalize=normalize,
-                 sum_terms=sum_terms, labels=labels)
+                  sum_terms=sum_terms, labels=labels)
   }, 
   
   # TODO: need to update this to reflect changes in `llikEmulator$plot_llik_samp_1d`; i.e. the 
@@ -882,7 +882,7 @@ llikEmulatorGP$methods(
                     include_nugget=TRUE, conditional=default_conditional, normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    sample_emulator(input, emulator_pred_list, N_samp, use_cov, include_nugget, ...)
+    sample_emulator(input, emulator_pred_list, N_samp, use_cov, include_nugget, ...)[,,1]
   }, 
   
   predict = function(input, lik_par_val=NULL, emulator_pred_list=NULL, return_mean=TRUE, 
@@ -1336,8 +1336,8 @@ llikEmulatorExactGaussDiag$methods(
     # Construct log likelihood.
     llik <- vector(mode="numeric", length=nrow(input))
     for(i in seq_along(llik)) {
-      llik[i] <- -0.5 * sum(mult_vec_with_mat_cols(1/sig2_val, 
-                            add_vec_to_mat_cols(-fwd_model_vals[i,], .self$y)^2))
+      llik[i] <- -0.5 * sum(mult_vec_with_mat_rows(1/sig2_val, 
+                            add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2))
     }
     
     if(normalize || !conditional) llik <- llik - 0.5 * .self$N_obs * sum(log(sig2_val))
@@ -1579,7 +1579,7 @@ llikEmulatorFwdGaussDiag$methods(
     llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
     for(i in seq_along(llik)) {
       sig2_val_i <- ifelse(inflate_var, sig2_val + var_inflation_vals[i,], sig2_val)
-      llik[i] <- -0.5 * sum(mult_vec_with_mat_cols(1/sig2_val_i, 
+      llik[i] <- -0.5 * sum(mult_vec_with_mat_rows(1/sig2_val_i, 
                                                add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2))  
       if(normalize || !conditional) llik[i] <- llik[i] - 0.5 * .self$N_obs * sum(log(sig2_val_i))
     }

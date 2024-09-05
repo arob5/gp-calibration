@@ -144,7 +144,7 @@ is often approximated via a numerical discretization of the form
 \end{align}
 Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
-values $\state(\Time, \Par)$ at a finite set of time points $\{0, 1, \dots, \NTimeStep\} \subset [\timeStart, \timeEnd]$. 
+values $\state(\Time, \Par)$ at a finite set of time points in $[\timeStart, \timeEnd]$. 
 Going forward, we focus on the approximate solution operator $\solutionOp$, neglecting discretization error 
 for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
 noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
@@ -152,10 +152,12 @@ $\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the sta
 $\dimObs$-dimensional observable quantity. Equipping the parameters with a prior $\Par \sim \priorDens$,
 we assume the observations are generated as 
 \begin{align}
-\obs &= \fwd(\Par) + \noise \Def (\obsOp \circ \solutionOp)(\Par) + \noise \nonumber \\
+\obs &= (\obsOp \circ \solutionOp)(\Par) + \noise \nonumber \\
 \noise &\sim \Gaussian(0, \likPar) \nonumber 
 \end{align}
-for some parameter value in the support of the prior distribution. Some of the methods discussed below readily 
+for some parameter value in the support of the prior distribution. Observe that this falls within the generic 
+inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
+Some of the methods discussed below readily 
 generalize to more complicated settings that consider non-additive or non-Gaussian noise, or the presence of 
 model discrepancy terms. While the observation map can assume many forms across different applications, 
 common examples include 
@@ -305,7 +307,7 @@ A popular alternative is to first approximately express the high-dimensional out
 \end{align}
 and then model the coefficients $\basisWeight_{\idxBasis}(\Par)$ using independent GPs. The basis vectors 
 are typically found via a singular value decomposition, though other bases have been explored 
-(\cite{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}). The surrogate constructed in 
+\citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}. The surrogate constructed in 
 this fashion is simply a linear combination of independent GP emulators, and hence most of the results on forward model 
 emulation in this paper are easily extended to this setting. See the appendix for details (\todo). 
 
@@ -341,8 +343,8 @@ by
 \end{prop}
 
 The use of GPs to approximate log-likelihoods has been widely used in approximate Bayesian inference 
-(\cite{VehtariParallelGP, Kandasamy_2017, llikRBF, trainDynamics, quantileApprox, wang2018adaptive, landslideCalibration})
-and Bayesian quadrature (\cite{BayesQuadrature, BayesQuadRatios}). In the context of inverse problems with 
+\citep{VehtariParallelGP, Kandasamy_2017, llikRBF, trainDynamics, quantileApprox, wang2018adaptive, landslideCalibration}
+and Bayesian quadrature \citep{BayesQuadrature, BayesQuadRatios}. In the context of inverse problems with 
 high-dimensional output spaces, log-likelihood emulation has the clear benefit of reducing to a univariate GP setting. 
 On the other hand, it has several downsides. Even on the log scale, log-likelihoods can be fast-varying and exhibit large 
 dynamic range, proving troublesome for stationary GP priors \cite{wang2018adaptive}. A second potential weakness 
@@ -811,7 +813,6 @@ $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_ll
 \todo
 
 
-
 % Sequential Design
 \section{Sequential Design}
 In applications, the GP emulator is often constructed sequentially. In this section, we consider augmenting the 
@@ -1126,6 +1127,8 @@ Then for $\Par \in \parSpace$,
  
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
+
+% 
 
 % Appendix 
 \section{Appendix}

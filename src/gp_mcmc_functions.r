@@ -4,6 +4,8 @@
 #
 # Andrew Roberts
 #
+# Depends:
+#    gpWrapper, llikEmulator, general_helper_functions 
 
 # -----------------------------------------------------------------------------
 # Code Standards
@@ -1371,6 +1373,13 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_emulator, use_join
 sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bounds, 
                                             N_grid, N_samp, lik_par_val=NULL, 
                                             max_rejects=1000L, ...) {
+  # This function (approximately) generates samples via: 
+  #    (1) Sample a random log-likelihood L. 
+  #    (2) Sample a value u from the posterior implied by L. 
+  # To make this practical, L is sampled at a finite number of locations (an equally
+  # spaced grid) and then linearly interpolated to produce an approximation to L^hat(u).
+  # Then u is sampled from the distribution with unnormalized density 
+  # prior(u)*exp{L^hat(u)} via rejection sampling. 
   
   assert_that(llik_emulator$dim_input==1L)
   
@@ -1379,7 +1388,7 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
   par_grid_mat <- matrix(par_grid,ncol=1)
   colnames(par_grid_mat) <- llik_emulator$input_names
   
-  # Iterate until desired number of samples is acheived. 
+  # Iterate until desired number of samples is achieved. 
   par_samp <- vector(mode="numeric", length=N_samp)
 
   for(i in 1:N_samp) {
@@ -1389,9 +1398,11 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
     lpost_grid <- llik_grid + calc_lprior_theta(par_grid_mat, par_prior_params)
     
     # Linearly interpolate to obtain approximate log-likelihood sample/trajectory. 
-    llik_interp <- get_linear_interpolation_1d(par_grid, llik_grid)
-    lpost_interp <- function(par) llik_interp(par) + calc_lprior_theta(par, par_prior_params)
-    
+    # llik_interp <- get_linear_interpolation_1d(par_grid, llik_grid)
+    # lpost_interp <- function(par) llik_interp(par) + calc_lprior_theta(par, par_prior_params)
+    lik_interp <- get_linear_interpolation_1d(par_grid, exp(llik_grid))
+    post_interp <- function(par) lik_interp(par) * exp(calc_lprior_theta(par, par_prior_params))
+     
     # Upper bound for (unnormalized) density. 
     M <- max(exp(lpost_grid))
     assert_that(M > 0)
@@ -1403,7 +1414,8 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
     while(!accepted && (N_rejects < max_rejects)) {
       par_prop <- runif(n=1, min=bounds[1], max=bounds[2])
       u <- runif(n=1, min=0, max=M)
-      if(log(u) <= lpost_interp(par_prop)) {
+      if(u <= post_interp(par_prop)) {
+      # if(log(u) <= lpost_interp(par_prop)) {
         accepted <- TRUE
         par_samp[i] <- par_prop
       } else {
@@ -1414,6 +1426,46 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
   }
   
   return(par_samp)
+}
+
+estimate_sample_based_density_1d_grid <- function(llik_emulator, par_prior_params, input_grid, 
+                                                  N_monte_carlo=1000L, lik_par_val=NULL, ...) {
+  # This function is similar to `sim_sample_based_approx_1d_grid()` but its goal is not 
+  # to draw parameter samples `u`, but instead to estimate the expectation of the random 
+  # density of `u` implied by the algorithm 
+  #    (1) Sample a random log-likelihood L. 
+  #    (2) Sample a value u from the posterior implied by L.
+  # This function estimates the density of the samples `u` returned by this algorithm. 
+  # It does so by sampling density values on a grid, numerically normalizing each,
+  # and then computing the average over the normalized values for each grid point. 
+  # Note that this (approximately) computes the expected normalized density, whereas
+  # the marginal approximation computes the expected unnormalized density and then 
+  # normalizes after-the-fact. This approach has the benefit over 
+  # `sim_sample_based_approx_1d_grid()` of not requiring rejection sampling, but
+  # requires more care regarding numerical stability. I am completely ignoring this 
+  # for now and working on the original (non-log) scale. If this function is to be 
+  # used in cases where log-likelihood values might be very small, then this code 
+  # should be updated. 
+  
+  assert_that(llik_emulator$dim_input==1L)
+  
+  # Simulate log-likelihood values. Return shape is (N_grid, N_monte_carlo).
+  llik_samp <- llik_emulator$sample(input_grid, lik_par_val=lik_par_val, N_samp=N_monte_carlo, ...)
+
+  # Assuming numbers are reasonable for now so exponentiating is fine. 
+  lprior_dens <- calc_lprior_theta(input_grid, par_prior_params)
+  post_dens_samp <- exp(add_vec_to_mat_cols(lprior_dens, llik_samp))
+  
+  # Normalize.
+  dx <- abs(drop(input_grid)[2] - drop(input_grid)[1])
+  for(j in 1:ncol(post_dens_samp)) {
+    post_dens_samp[,j] <- post_dens_samp[,j] / int_trap(post_dens_samp[,j], dx)
+  }
+  
+  # Average over Monte Carlo samples for each input.
+  density_estimates <- rowMeans(post_dens_samp)
+  
+  return(density_estimates)
 }
 
 
