@@ -543,6 +543,18 @@ print(norm_cst_list)
 
 
 # Part 2: Sequential Design 
+```{r}
+
+
+
+
+
+```
+
+
+
+
+
 
 
 
