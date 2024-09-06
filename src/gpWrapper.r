@@ -354,20 +354,22 @@ gpWrapper$methods(
     drop(mu) + C_chol_lower %*% matrix(rnorm(nrow(C_chol_lower)*N_samp), ncol=N_samp)
   },
   
-  map_kernel_name = function(kernel_name) {
+  map_kernel_name = function(kernel_name, ...) {
+    # Additional arguments `...` sometimes include the design data to set empirical 
+    # bounds/priors on the kernel hyperparameters. 
     
     assert_that(kernel_name %in% valid_kernels, 
                 msg=paste0("Kernel ", kernel_name, " not found in gpWrapper$valid_kernels."))
     
-    return(kernel_name_map(kernel_name))
+    return(kernel_name_map(kernel_name, ...))
   },
   
-  map_mean_func_name = function(mean_func_name) {
+  map_mean_func_name = function(mean_func_name, ...) {
     
     assert_that(mean_func_name %in% valid_mean_funcs, 
                 msg=paste0("Mean function ", mean_func_name, " not found in gpWrapper$valid_mean_funcs"))
     
-    return(mean_func_name_map(mean_func_name))
+    return(mean_func_name_map(mean_func_name, ...))
   }, 
   
   augment_design = function(X_new, Y_new) {
@@ -526,9 +528,20 @@ gpWrapperHet$methods(
 )
 
 
-# -----------------------------------------------------------------------------
-# gpKerGP: Class providing interface between calibration code and kergp package.  
-# -----------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+# gpKerGP: Class providing interface between calibration code and kergp package.
+#
+# Gaussian kernel parameterization:
+#    v * exp{(x-y)^2 / ell^2}
+# so the 1/2 factor is NOT included and lengthscale ell is on the same scale as 
+# the inputs. Marginal variance v is on the squared scale. 
+# Source: kergp function `kNormFun`. Somewhat confusingly the function 
+# `k1FunGauss` which is used to define `kNormFun` (see the `kGauss ` function)
+# does include the 1/2 factor. However, when this function is called from the 
+# `kNormFun` function, the parameters (1.0,1.0) are passed, meaning that 
+# the C code uses lengthscale/marginal variance parameters of 1.0. These 
+# parameters are instead set directly in the R code. 
+# -------------------------------------------------------------------------------
 
 gpWrapperKerGP <- setRefClass(
   Class = "gpWrapperKerGP",
@@ -551,7 +564,7 @@ gpWrapperKerGP$methods(
     # when fitting and predicting. Currently, I am using a hack that adds a jitter
     # to the diagonal of the kernel matrix when the kernel matrix is square. 
     # This is not ideal - ideally `kergp` would make it easier to fix a jitter. 
-    kernel_map <- function(kernel_name) {
+    kernel_map <- function(kernel_name, X_fit, y_fit) {
       
       if(kernel_name == "Gaussian") {
         kernFun <- function(x1, x2, par) {
@@ -598,10 +611,17 @@ gpWrapperKerGP$methods(
           return(K12)
         }
         
-        ker_par_names <- c(X_names, "sigma2", "quad_offset")
-        par_lower <- setNames(c(rep(1e-08, X_dim), 1e-08, 0), ker_par_names)
-        par_upper <- setNames(c(rep(Inf, X_dim), Inf, Inf), ker_par_names)
-        par_default <- setNames(c(rep(1, X_dim), 1, 1), ker_par_names)
+        # Hyperparameters: lengthscales, marginal variance, additive cst in quadratic kernel.
+        ker_par_names <- c(X_names, "sigma2", "quad_offset") 
+        y_centered <- abs(y_fit-mean(y_fit))
+        max_y <- max(abs(y_centered))
+        qy <- quantile(y_centered, 0.2)
+        lengthscale_bounds <- get_lengthscale_bounds(X_fit, p=c(0.1), include_one_half=FALSE)
+        marg_var_max <- get_marginal_variance_bounds(max_y, p=0.99, return_variance=TRUE)
+        marg_var_default <- get_marginal_variance_bounds(qy, p=0.90, return_variance=TRUE)
+        par_lower <- setNames(c(lengthscale_bounds["min",], 1e-08, 0), ker_par_names)
+        par_upper <- setNames(c(lengthscale_bounds["max",], marg_var_max, 0), ker_par_names)
+        par_default <- setNames(c(lengthscale_bounds[3,], marg_var_default, 0), ker_par_names)
         
         ker <- covMan(kernel = kernFun,
                       acceptMatrix = TRUE, 
@@ -665,7 +685,7 @@ gpWrapperKerGP$methods(
 
     # Fit GP. 
     gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
-                        inputs=X_names, cov=map_kernel_name(kernel_name), 
+                        inputs=X_names, cov=map_kernel_name(kernel_name, X_fit, y_fit), 
                         estim=TRUE, beta=beta, noise=FALSE, ...)
     
     # TODO: Commenting this out for now, as we are fixing a jitter within the kernel function. 

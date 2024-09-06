@@ -19,10 +19,20 @@ knitr::opts_chunk$set(echo = FALSE)
 #      Options: different likelihood variance, set fixed parameters to values that are 
 #               not equal to the ground truth, add a deterministic term to the foward  
 #               model. 
+#   - gpWrapper: clean up default hyperparameter setting (move to helper functions). And also set 
+#                other hyperparameters (e.g., offset for quadratic kernel). 
 #
 # A nice visual example: 
 #    seed_inv_prob <- 2562
 #    seed_init_design <- 1643
+#    N_obs <- 1
+#    N_design <- 3L
+#    design_method <- "LHS"
+#
+# An example where the quadratic+Gaussian emulator points up:  
+#    seed_inv_prob <- 2562
+#    seed_init_design <- 1643
+#    N_obs <- 3
 #    N_design <- 3L
 #    design_method <- "LHS"
 
@@ -38,6 +48,7 @@ base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_visualization")
 
+source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -64,7 +75,7 @@ seed_inv_prob <- 2562
 seed_init_design <- 16431
 
 # The number of independent observations of the observable (a time average). 
-N_obs <- 1L
+N_obs <- 2L
 
 # Settings for approximate simulation from sample-based approximate posterior. 
 # Increasing these values increases the fidelity of the approximation. 
@@ -216,7 +227,7 @@ design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 # Log-likelihood emulator. 
 em_llik_gp <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
                              normalize_output=TRUE, scale_input=TRUE)
-em_llik_gp$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
+em_llik_gp$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE,
                optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
 # em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
 # em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
