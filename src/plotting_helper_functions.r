@@ -390,7 +390,36 @@ get_common_lims <- function(...) {
 }
 
 
-
+align_plots <- function(..., theme=NULL, theme_args=NULL) {
+  # Aligns the axes of a set of ggplot plots using `get_common_lims()` 
+  # and then  optionally adds a plot theme to each plot. 
+  #
+  # Args: 
+  #    ...: ggplot plot objects. 
+  #    theme: a function to add themes to a ggplot plot. Must be able to 
+  #           be called as `theme(plt, ...)`, where the named argument 
+  #           list `theme_args` will take the place of `...`. See 
+  #           `ggformat_journal` for such a function. 
+  #    theme_args: named list of arguments to pass to `theme`. This 
+  #                should not include the `plt` argument to `theme()` 
+  #                since this argument will be filled in by `...`. 
+  #
+  # Returns: 
+  #    A list of the formatted plots.
+  
+  plot_list <- list(...)
+  
+  # Align axis limits. 
+  lims_post_trim <- get_common_lims(...)
+  
+  # Add theme. 
+  if(!is.null(theme)) {
+    theme_call <- function(plt) do.call(theme, c(plt=plt, theme_args))
+    plot_list <- lapply(plot_list, theme_call)
+  }
+  
+  return(plot_list)
+}
 
 
 

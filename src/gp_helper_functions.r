@@ -122,8 +122,64 @@ get_marginal_variance_bounds <- function(M, p=0.9, return_variance=FALSE) {
 }
 
 
+get_bounds <- function(X) {
+  # For an nxd input matrix, returns a 2xd matrix with the first row storing
+  # the minimum value of X in each dimension, and likewise with the maximum
+  # in the second row.
+  
+  apply(X, 2, range)
+}
 
 
+scale_inputs <- function(X, source_bounds=NULL, target_bounds=NULL, invert=FALSE) {
+  # Linearly scales data, dimension by dimension, from one hyper-rectangle to another 
+  # hyper-rectangle.
+  #
+  # Args:
+  #    X: matrix of dimension (n,d), `n` data points in `d` dimensions. 
+  #    source_bounds: (2,d) matrix, defining the bounds in each dimension. 
+  #                   Defaults to `get_bounds(X)`. 
+  #    target_bounds: (2,d) matrix or vector of length 2, defaults to the unit 
+  #                   hypercube [0,1]^d. If a vector of length 2, then treated 
+  #                   as bounds that will be applied to all dimensions, hence 
+  #                   defining a hypercube. 
+  #    invert: if TRUE, the roles of source and targert bounds are reversed; i.e., 
+  #            the inverse map is computed. 
+  #
+  # Returns:
+  #    matrix of dimension `dim(X)` containing the transformed data `X`. 
+
+  assert_that(is.matrix(X))
+  d <- ncol(X)
+
+  # Construct the source bounds.
+  if(is.null(source_bounds)) source_bounds <- get_bounds(X) 
+
+  # Construct the bounds in each dimension defining the hyperrectangle that
+  # the data will be scaled to lie within.
+  if(is.null(target_bounds)) {
+    target_bounds <- rbind(rep(0,d), rep(1,d))
+  } else if(is.vector(target_bounds)) {
+    assert_that(length(target_bounds) == 2)
+    target_bounds <- matrix(target_bounds,ncol=1)[,rep(1,d), drop=FALSE]
+  } else {
+    assert_that(is.matrix(target_bounds))
+    assert_that(all(dim(target_bounds)==c(2,d)))
+  }
+
+  # Invert transformation. 
+  if(invert) {
+    temp <- source_bounds
+    source_bounds <- target_bounds
+    target_bounds <- temp
+  }
+  
+  # Linearly map data from source bounds to target bounds.
+  source_diff <- source_bounds[2,] - source_bounds[1,]
+  target_diff <- target_bounds[2,] - target_bounds[1,]
+  bound_ratio <- target_diff/source_diff
+  add_vec_to_mat_rows(target_bounds[1,], mult_vec_with_mat_rows(bound_ratio, add_vec_to_mat_rows(-source_bounds[1,], X)))
+}
 
 
 

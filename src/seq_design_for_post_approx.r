@@ -55,9 +55,11 @@ evaluate_llik_acq_func_vectorized <- function(acq_func, input_mat, llik_em=NULL,
   #    numeric vector of length `nrow(input_mat)` containing the acqusition function 
   #    evaluations. 
   
-  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), llik_em=llik_em, ...))
+  input_names <- colnames(input_mat)
+  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1, 
+                                                      dimnames=list(NULL,input_names)), 
+                                               llik_em=llik_em, ...))
 }
-
 
 
 acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, N_batch, 
@@ -191,25 +193,111 @@ get_acq_model_response <- function(input, model_response_heuristic,
 }
 
 
-acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, log_scale=TRUE, ...) {
+# -----------------------------------------------------------------------------
+# Acquisition functions. 
+# These acquisitions are defined with respect to a log-likelihood emulator, 
+# which means an object that inherits from the `llikEmulator` class. 
+# These functions must all be named using the convention 
+# "acq_llik_<name>", where `<name>` is the acquisition function name. 
+# The first argument is required to be "input" and the second "llik_em", 
+# specifying the input points and log-likelihood emulator, respectively. 
+# For now, acquisition functions are defined to accept a single or multiple 
+# inputs, with multiple inputs implying a "batch" of candidate points; note 
+# that this is different vectorized evaluation at multiple points. For the 
+# latter, use `evaluate_llik_acq_func_vectorized()`. 
+#
+# Note that the "acq_llik_" prefix indicates that these acquisition functions 
+# are defined with respect to a log-likelihood emulator object. This does 
+# NOT mean that the acquisition function targets the log-likelihood emulator 
+# directly. This may be the case, but many of the acqusition functions 
+# target the exponential of the log-likelihood emulator, or the induced 
+# unnormalized posterior density emulator.
+#
+# For acquisition functions defined on the exponentiated (likelihood) 
+# scale, numerical under/overflow often becomes an issue. Therefore, 
+# these acquisition functions have a `log_scale` argument that 
+# defaults to TRUE.
+#
+# TODO: how should we handle the prior here? Have it as an optional 
+# argument so that the functions can operate on either the unduced 
+# likelihood emulator or the induced unnormalized posterior density 
+# emulator? 
+# TODO: need to think of a consistent way to handle `lik_par_val`. 
+# -----------------------------------------------------------------------------
+
+acq_llik_neg_var_gp <- function(input, llik_em, ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian 
+  # process (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. 
+  # Simply returns the negative predictive variance of this underlying 
+  # GP at the input point `input`. The negative is due to the fact that 
+  # the framework assumes that acquisition functions are always minimized,  
+  # so to implement the "maximum variance" acquisition it must be 
+  # negated here.
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  acq_neg_var(input, llik_em$emulator_model)
+}
+
+
+acq_llik_neg_entropy_gp <- function(input, llik_em, ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian 
+  # process (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. 
+  # Returns the negative predictive entropy of this underlying 
+  # GP at the input point `input`. The negative is due to the fact that 
+  # the framework assumes that acquisition functions are always minimized,  
+  # so to implement the "maximum entropy" acquisition it must be 
+  # negated here.
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  acq_neg_entropy(input, llik_em$emulator_model)
+}
+
+
+acq_llik_neg_var_gp <- function(input, llik_em, ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian 
+  # process (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. 
+  # Simply returns the negative predictive variance of this underlying 
+  # GP at the input point `input`. The negative is due to the fact that 
+  # the framework assumes that acquisition functions are always minimized,  
+  # so to implement the "maximum variance" acquisition it must be 
+  # negated here.
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  acq_neg_var(input, llik_em$emulator_model)
+}
+
+
+acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
+  # Defined for `llik_em` objects that have the method `predict_lik()` 
+  # implemented with  the option to return the variance of the likelihood
+  # emulator. This function returns the negative variance of the induced 
+  # likelihood emulator (exponential of the log-likelihood emulator) at  
+  # inputs `input`. If `log_scale` is TRUE (the default), then the 
+  # negative of the log of the variance is returned. 
+  
+  -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, log_scale=log_scale, ...)$log_var  
+}
+
+
+acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL, log_scale=TRUE, ...) {
   # TODO: how should lik_par be handled here? 
   # TODO: validate_args_acq_IEVAR_grid()
   
   N_grid <- nrow(grid_points)
   if(is.null(weights)) weights <- rep(1/N_grid, N_grid)
-  emulator_obj_copy <- emulator_obj$copy(shallow=FALSE)
+  llik_em_copy <- llik_em$copy(shallow=FALSE)
   
   # Emulator predictions at acquisition evaluation locations and at grid locations. 
   pred <- emulator_obj_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  pred_grid <- emulator_obj_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  pred_grid <- llik_em_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
   
   # Update the GP model, treating the predictive mean as the observed 
   # response at the acquisition evaluation locations. 
-  emulator_obj_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
+  llik_em_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
   
   # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
   # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
-  pred_cond <- emulator_obj_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
+  pred_cond <- llik_em_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
   log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
                                              return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
   
@@ -225,14 +313,8 @@ acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, 
   
 }
 
-# -----------------------------------------------------------------------------
-# Acquisition Function Framework 
-#
-# Acquisition functions must be called as `acq_llik_<acq_func_name>(input, ...)`, 
-# where `input` is a numeric D-length vector or 1xD matrix representing a 
-# parameter value. This section contains functions that operate on acquisition 
-# functions. The next section actually defines specific acqusition functions. 
-# -----------------------------------------------------------------------------
+
+
 
 
 

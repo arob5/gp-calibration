@@ -98,6 +98,7 @@ compare_acq_funcs <- function(input, acq_func_names, model=NULL, ...) {
   
   acq_func_str <- paste0("acq_", acq_func_names)
   acq_vals <- sapply(acq_func_str, function(x) evaluate_acq_func_vectorized(get(x), input, model, ...))
+  acq_vals <- matrix(acq_vals, ncol=length(acq_func_names))
   colnames(acq_vals) <- acq_func_names
   return(acq_vals)
 }
