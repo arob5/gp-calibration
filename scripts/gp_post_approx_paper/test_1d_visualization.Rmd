@@ -21,6 +21,8 @@ knitr::opts_chunk$set(echo = FALSE)
 #               model. 
 #   - gpWrapper: clean up default hyperparameter setting (move to helper functions). And also set 
 #                other hyperparameters (e.g., offset for quadratic kernel). 
+#   - For additive kernel, decompose to understand what the quadratic and Gaussian pieces look like 
+#     (see Duvenaud thesis). 
 #
 # A nice visual example: 
 #    seed_inv_prob <- 2562
@@ -75,7 +77,7 @@ seed_inv_prob <- 2562
 seed_init_design <- 16431
 
 # The number of independent observations of the observable (a time average). 
-N_obs <- 2L
+N_obs <- 1L
 
 # Settings for approximate simulation from sample-based approximate posterior. 
 # Increasing these values increases the fidelity of the approximation. 
@@ -555,10 +557,21 @@ print(norm_cst_list)
 
 # Part 2: Sequential Design 
 ```{r}
+# We consider two classifications of the acquisitions here: 
+#    (1) pointwise (pw) vs. integrated (int)
+#        The pw acquisition functions only depend on a single input, while the 
+#        integrated acquisition functions are a function of the entire input space.
+#    (2) Classifying by their "target": gp vs. post.
+#        The gp acqusition functions are defined with respect to the underlying GP 
+#        emulator, while the post acquisition functions directly target the 
+#        likelihood or unnormalized posterior density. 
 
+gp_list <- list(llik=em_llik$emulator_model, fwd=em_fwd$emulator_model)
+acq_funcs_pw_gp <- c("neg_var", "neg_entropy")
+acq_funcs_pw_post <- c("")
 
-
-
+acq_pw_gp_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pointwise, gp_list)
+acq_pw_post_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pw_post, gp_list)
 
 ```
 

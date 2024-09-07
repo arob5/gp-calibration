@@ -19,6 +19,122 @@
 # Andrew Roberts
 # 
 
+# -----------------------------------------------------------------------------
+# Acquisition Function Framework 
+# The acquisition function framework is generally split into two pieces: 
+# acquisition functions that target Gaussian processes (GPs) (seq_design_gp.r)
+# and those that opetate on log-likelihood emulators 
+# (seq_design_for_post_approx.r). The functions here are high-level functions 
+# that interface between the two. This primarily means that the functions 
+# here will identify whether the passed model object is a `gpWrapper` or 
+# `llikEmulator` and then call the appropriate function. 
+# -----------------------------------------------------------------------------
+
+identify_model_type <- function(model) {
+  # Identify whether a model object `model` is a Gaussian process (GP)
+  # emulator, a log-likelihood emulator, or neither. In particular, 
+  # identifies whether `model` inherits from the `gpWrapper` or 
+  # `llikEmulator` class. `model` is allowed to be NULL (due to the 
+  # fact that some acquisition functions may not require a model), 
+  # but any other class besides these three throws an exception.
+  
+  if(inherits(model, "gpWrapper")) return("gp")
+  else if(inherits(model, "llikEmulator")) return("llik_em")
+  else if(is.null(model)) return(NULL)
+  
+  stop("Unrecognized model ", model)
+}
+
+is_gp <- function(model) {
+  inherits(model, "gpWrapper")
+}
+
+is_llik_em <- function(model) {
+  inherits(model, "llikEmulator")
+}
+
+
+evaluate_acq_func_vectorized <- function(acq_func, input_mat, model=NULL, ...) {
+  # Evaluates the objective function `acq_func` at a set of inputs `input_mat` using 
+  # the model `model`. Calls either `evaluate_acq_gp_func_vectorized()` or 
+  # `evaluate_acq_llik_func_vectorized()` depending on whether `model` is a 
+  # gpWrapper or llikEmulator. 
+  #
+  # Args:
+  #    acq_func: An acquisition function for llikEmulator objects. 
+  #    input_mat: matrix, of dimension (N,D) containing N D-dimensional inputs 
+  #               stacked in the rows of the matrix. The acquisition functions 
+  #               will be evaluated at these points. 
+  #    model: object that inherits from the `gpWrapper` or `llikEmulator` class. 
+  #    ...: other arguments passed to `acq_func`. 
+  #
+  # Returns: 
+  #    numeric vector of length `nrow(input_mat)` containing the acqusition function 
+  #    evaluations. 
+  
+  if(is_gp(model) || is.null(model)) evaluate_gp_acq_func_vectorized(acq_func, input_mat, model, ...)
+  else if(is_llik_em(model)) evaluate_llik_acq_func_vectorized(acq_func, input_mat, model, ...)
+  else stop("Unrecognized model ", model)
+}
+
+compare_acq_funcs <- function(input, acq_func_names, model=NULL, ...) {
+  # A convenience function that takes a character string of acquisition 
+  # function names, and evaluates the respective acquisition functions 
+  # at a set of points.
+  #
+  # Args:
+  #    input: matrix, of dimension (N,D) containing N D-dimensional inputs 
+  #           stacked in the rows of the matrix. The acquisition functions 
+  #           will be evaluated at these points. 
+  #    acq_func_names: character, vector of acquisition function names, 
+  #                    excluding the "acq_" prefix. 
+  #    model: object that inherits from the `gpWrapper` or `llikEmulator` class.
+  #    ...: Other arguments passed to the acquisition functions. 
+  #
+  # Returns: 
+  #    Matrix of acqusition function evaluations. Has dimension 
+  #    `(nrow(input), length(acq_func_names))`. The colnames attribute
+  #    is set to `acq_func_names`. 
+  
+  acq_func_str <- paste0("acq_", acq_func_names)
+  acq_vals <- sapply(acq_func_str, function(x) evaluate_acq_func_vectorized(get(x), input, model, ...))
+  colnames(acq_vals) <- acq_func_names
+  return(acq_vals)
+}
+
+
+compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
+  # A convenience function that acts as a wrapper around `compare_acq_funcs`,
+  # which calls this function for each Gaussian process in the list `gp_list`. 
+  #
+  # Args:
+  #    input: matrix, of dimension (N,D) containing N D-dimensional inputs 
+  #           stacked in the rows of the matrix. The acquisition functions 
+  #           will be evaluated at these points. 
+  #    acq_func_names: character, vector of acquisition function names, 
+  #                    excluding the "acq_" prefix. 
+  #    model_list: list of objects, each of which inherit from `gpWrapper`
+  #                or `llikEmulator`. 
+  #    ...: other arguments passed to `compare_acq_funcs()`. 
+  #
+  # Returns:
+  #    list of length `length(gp_list)`. Each element contains a matrix, 
+  #    the output of `compare_acq_funcs()` evaluated using the respective model. 
+  #    The names attribute of the list is set to `names(model_list)`. 
+  
+  assert_that(is.list(model_list))
+  lapply(model_list, function(model) compare_acq_funcs(input, acq_func_names, model, ...))
+}
+
+
+
+
+# -----------------------------------------------------------------------------
+# General functions for batch design:
+# These are typically intended for "one-shot" design, which often implies
+# that they are used to generate an initial design, which will then be refined 
+# by sequential design methods. 
+# -----------------------------------------------------------------------------
 
 get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidates=NULL, 
                              design_candidate_weights=NULL, ...) {

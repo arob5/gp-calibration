@@ -14,7 +14,11 @@
 # some objective function to select the design points. We refer to this objective
 # function as an "acquisition function" ("acq" for short), but it is also sometimes
 # called a design criterion or refinement function. Other design methods 
-# (e.g. Latin Hypercube Design) fall outside of this framework. 
+# (e.g. Latin Hypercube Design) fall outside of this framework.
+#
+# The file "seq_design_gp.r" contains similar functions that are designed to act
+# on objects that inherit from `gpWrapper`. The functions here are instead 
+# defined to act on objects that inherit from `llikEmulator`. 
 #
 # Depends: These functions are designed to work with objects from the 
 #          llikEmulator class, which also involve the llikSumEmulator and 
@@ -31,9 +35,29 @@ library(matrixStats)
 #
 # Acquisition functions must be called as `acq_llik_<acq_func_name>(input, ...)`, 
 # where `input` is a numeric D-length vector or 1xD matrix representing a 
-# parameter value. 
-#
+# parameter value. This section contains functions that operate on acquisition 
+# functions. The next section actually defines specific acqusition functions. 
 # -----------------------------------------------------------------------------
+
+evaluate_llik_acq_func_vectorized <- function(acq_func, input_mat, llik_em=NULL, ...) {
+  # Evaluates the objective function `acq_func` at a set of inputs `input_mat` using 
+  # the log-likelihood emulator `llik_em`. 
+  #
+  # Args:
+  #    acq_func: An acquisition function for llikEmulator objects. 
+  #    input_mat: matrix, of dimension (N,D) containing N D-dimensional inputs 
+  #               stacked in the rows of the matrix. The acquisition functions 
+  #               will be evaluated at these points. 
+  #    llik_em: object that inherits from the `llikEmulator` class. 
+  #    ...: other arguments passed to `acq_func`. 
+  #
+  # Returns: 
+  #    numeric vector of length `nrow(input_mat)` containing the acqusition function 
+  #    evaluations. 
+  
+  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), llik_em=llik_em, ...))
+}
+
 
 
 acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, N_batch, 
@@ -200,6 +224,18 @@ acq_llik_IEVAR_grid <- function(input, emulator_obj, grid_points, weights=NULL, 
   return(exp(log_IEVAR))
   
 }
+
+# -----------------------------------------------------------------------------
+# Acquisition Function Framework 
+#
+# Acquisition functions must be called as `acq_llik_<acq_func_name>(input, ...)`, 
+# where `input` is a numeric D-length vector or 1xD matrix representing a 
+# parameter value. This section contains functions that operate on acquisition 
+# functions. The next section actually defines specific acqusition functions. 
+# -----------------------------------------------------------------------------
+
+
+
 
 
 # -----------------------------------------------------------------------------

@@ -77,7 +77,7 @@ optimize_acq_single_input <- function(acq_func_name, gp, opt_method, candidate_g
 }
 
 
-evaluate_acq_func_vectorized <- function(acq_func, input_mat, gp=NULL, ...) {
+evaluate_gp_acq_func_vectorized <- function(acq_func, input_mat, gp=NULL, ...) {
   apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1), gp=gp, ...))
 }
 
@@ -88,7 +88,7 @@ minimize_objective_grid <- function(acq_func, candidate_grid, gp=NULL, ...) {
   
   assert_that(is.matrix(candidate_grid))
   
-  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, candidate_grid, gp=gp, ...)
+  acq_func_evals <- evaluate_gp_acq_func_vectorized(acq_func, candidate_grid, gp=gp, ...)
   argmin_idx <- which.min(acq_func_evals)
   
   return(candidate_grid[argmin_idx,])
@@ -101,6 +101,7 @@ get_acq_model_response <- function(input, model_response_heuristic,
   if(model_response_heuristic == "none") return(f_exact(input))
   else .NotYetImplemented()
 }
+
 
 
 # -----------------------------------------------------------------------------
