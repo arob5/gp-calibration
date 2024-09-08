@@ -414,7 +414,7 @@ gpWrapper$methods(
     # log-normal predictive quantities.
     pred_cond <- gp_copy$predict(X_eval, return_mean=TRUE, return_var=TRUE, ...)
     lnp_cond_log_var <- matrix(nrow=N_eval, ncol=.self$Y_dim)
-    for(j in 1:.self$Y_dim) {
+    for(j in seq_len(.self$Y_dim)) {
       lnp_cond_log_var[,j] <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean[,j], 
                                                      var_Gaussian=pred_cond$var[,j],
                                                      return_mean=FALSE, return_var=TRUE, 

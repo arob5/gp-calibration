@@ -141,7 +141,17 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   return(sum(drop(pred_cond$var) * weights))
 }
 
-acq_IEVAR_grid2 <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
+acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
+  # This function targets exploration for an exponentiated GP. It can be thought 
+  # of as an integrated mean squared prediction error criterion for 
+  # log-normal processes. The outer integral over the design space is 
+  # approximated with a discrete sum over grid points `grid_points` which are given 
+  # weights `weights`. When `input` is a matrix with more than 1 row, then the
+  # acquisition will be computed in batch mode, meaning that it considers conditioning
+  # on the entire batch of inputs. Note that this is different from the function simply 
+  # being vectorized across multiple inputs. For the latter, use 
+  # `evaluate_acq_func_vectorized()`
+  
   assert_that(gp$Y_dim==1L)
   
   log_evar <- gp$calc_expected_cond_var(grid_points, input, log_scale=TRUE, ...)[,1]
@@ -150,50 +160,6 @@ acq_IEVAR_grid2 <- function(input, gp, grid_points, weights=1/nrow(grid_points),
   
   if(log_scale) return(log_IEVAR)
   return(exp(log_IEVAR))
-}
-
-
-acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
-  # This function targets exploration for the exponentiated GP. It can be thought 
-  # of as an integrated mean squared prediction error criterion for 
-  # log-normal processes. The outer integral over the design space is 
-  # approximated with a discrete sum over grid points `grid_points` which are given 
-  # weights `weights`. When `input` is a matrix with more than 1 row, then the
-  # acquisition will be computed in batch mode, meaning that it considers conditioning
-  # on the entire batch of inputs. Note that this is different from the function simply 
-  # being vectorized across multiple inputs. For the latter, use 
-  # `evaluate_acq_func_vectorized()`. 
-  
-  # TODO: validate_args_acq_IEVAR_grid()
-  
-  N_grid <- nrow(grid_points)
-  if(length(weights)==1) weights <- rep(weights, N_grid)
-  gp_copy <- gp$copy(shallow=FALSE)
-  
-  # Emulator predictions at acquisition evaluation locations and at grid locations. 
-  pred <- gp_copy$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  pred_grid <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
-  
-  # Update the GP model, treating the predictive mean as the observed 
-  # response at the acquisition evaluation locations. 
-  gp_copy$update(input, pred$mean, update_hyperpar=FALSE, ...)
-  
-  # Predict with the conditional ("cond") GP (i.e., the updated GP) at the grid locations. 
-  # Convert to the exponentiated scale to obtain log-normal predictive quantities. 
-  pred_cond <- gp_copy$predict(grid_points, return_mean=TRUE, return_var=TRUE, ...)
-  log_pred_cond_LN <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean, var_Gaussian=pred_cond$var,
-                                             return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
-  
-  # Compute the variance inflation term on the log scale. 
-  log_var_inflation <- 2 * (pred_grid$var - pred_cond$var)
-  
-  # Compute log IEVAR. 
-  log_summands <- log_pred_cond_LN$log_var + log_var_inflation + log(weights)
-  log_IEVAR <- matrixStats::logSumExp(log_summands)
-  
-  if(log_scale) return(log_IEVAR)
-  return(exp(log_IEVAR))
-  
 }
 
 
