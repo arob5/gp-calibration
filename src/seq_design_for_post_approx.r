@@ -277,6 +277,26 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
   -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, log_scale=log_scale, ...)$log_var  
 }
 
+acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
+  # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 
+  # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
+  # with a discrete sum at inputs `grid_points`.
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  acq_IVAR_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, weights=weights, ...)
+}
+
+
+acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); 
+  # i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the integrated 
+  # entropy criterion by approximating the integral with a descrete sum at inouts `grid_points`. 
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  acq_IENT_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, weights=weights, ...)
+}
+
 
 acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL, log_scale=TRUE, ...) {
   # TODO: how should lik_par be handled here? 

@@ -589,7 +589,18 @@ plot(acq_pw_plt_fwd)
 
 ```
 
+```{r}
+# Integrated criteria. 
+acq_funcs_int <- c("llik_IVAR_grid_gp", "llik_IENT_grid_gp")
+acq_int_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_int, llik_em_list["fwd"], 
+                                           grid_points=test_info$input)
+acq_int_list <- lapply(acq_int_list, scale_acq)
+acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_list$fwd, plot_title="Integrated acq [fwd]",
+                                         line_thickness=line_thickness, design_color=design_color,
+                                         design_pt_size=design_pt_size, xlab="u", ylab="acq")
 
+plot(acq_int_plt_fwd)
+```
 
 
 

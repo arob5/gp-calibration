@@ -993,7 +993,7 @@ As an initial example, we consider tailoring the $\maxvarLabel$ and $\maxentLabe
 using a log-likelihood emulator. The natural analogs of these acquisition functions in this setting are 
 \begin{align}
 &\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)] 
-= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par) - 1} \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}, \\ 
+= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}, \\ 
 &\labelAcq[\Ndesign]{\maxexpentLabel}(\designBatchIn) \Def -\Ent[\llikEmRdmDens[\Ndesign](\designBatchIn)]
 = \todo. \label{acq_max_exp_var_ent}
 \end{align} 
