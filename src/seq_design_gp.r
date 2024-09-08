@@ -141,6 +141,17 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   return(sum(drop(pred_cond$var) * weights))
 }
 
+acq_IEVAR_grid2 <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
+  assert_that(gp$Y_dim==1L)
+  
+  log_evar <- gp$calc_expected_cond_var(grid_points, input, log_scale=TRUE, ...)[,1]
+  log_summands <- log_evar + log(weights)
+  log_IEVAR <- matrixStats::logSumExp(log_summands)
+  
+  if(log_scale) return(log_IEVAR)
+  return(exp(log_IEVAR))
+}
+
 
 acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
   # This function targets exploration for the exponentiated GP. It can be thought 

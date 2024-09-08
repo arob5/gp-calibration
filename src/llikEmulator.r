@@ -925,6 +925,7 @@ llikEmulatorGP$methods(
                            return_var=return_var, return_cov=return_cov, log_scale=log_scale)
   }, 
   
+
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, emulator_pred_list=NULL, 
                                       conditional=default_conditional, normalize=default_normalize,
                                       include_nugget=TRUE, log_scale=FALSE, ...) {

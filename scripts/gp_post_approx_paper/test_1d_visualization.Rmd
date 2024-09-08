@@ -600,8 +600,35 @@ acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_list$fwd, plot
                                          design_pt_size=design_pt_size, xlab="u", ylab="acq")
 
 plot(acq_int_plt_fwd)
-```
 
+# TODO:
+#    - To add IEVAR/IEENT, should add method `expected_cond_var()` to the llikEmulator class. 
+#    - Need to add `update()` method to gpWrapperKerGP.
+#    - Figure out plot formatting/display; add dashed vertical lines for design points, and 
+#      stars marking the minima.
+#    - When implementing these methods and the acquisition functions that call these methods, 
+#      need to think about the case when there are multiple underlying GPs. 
+```
+```{r}
+# Integrated criteria. 
+test <- evaluate_gp_acq_func_vectorized(acq_IEVAR_grid2, test_info$input, gp=em_fwd$emulator_model,
+                                        grid_points=test_info$input)
+tester <- cbind(a=acq_int_list$fwd[,"llik_IVAR_grid_gp"], b=test)
+tester <- scale_acq(tester)
+
+plot_curves_1d_helper(test_info$input, tester, plot_title="Integrated acq [fwd]",
+                                         line_thickness=line_thickness, design_color=design_color,
+                                         design_pt_size=design_pt_size, xlab="u", ylab="acq")
+
+
+# TODO:
+#    - To add IEVAR/IEENT, should add method `expected_cond_var()` to the llikEmulator class. 
+#    - Need to add `update()` method to gpWrapperKerGP.
+#    - Figure out plot formatting/display; add dashed vertical lines for design points, and 
+#      stars marking the minima.
+#    - When implementing these methods and the acquisition functions that call these methods, 
+#      need to think about the case when there are multiple underlying GPs. 
+```
 
 
 

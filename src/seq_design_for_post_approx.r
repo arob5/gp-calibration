@@ -277,6 +277,7 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
   -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, log_scale=log_scale, ...)$log_var  
 }
 
+
 acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), ...) {
   # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
   # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 

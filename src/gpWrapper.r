@@ -387,6 +387,48 @@ gpWrapper$methods(
     
     if(normalize_output) Y_train <<- rbind(Y_train, .self$normalize(Y_new))
     else Y_train <<- rbind(Y_train, Y_new)
+  }, 
+  
+  calc_expected_cond_var = function(X_eval, X_cond, include_nugget=TRUE, log_scale=TRUE, ...) {
+    # Computes the log of E_l Var[exp(f(X_eval))|f(X_cond)=l], the expected conditional variance 
+    # due to conditioning on `X_cond`. The expected conditional variance is evaluated at inputs 
+    # `X_eval`. The expectation is with respect to the current GP predictive distribution, 
+    # which can be viewed as a posterior predictive expectation. When `gp_model` contains 
+    # more than one GP, then this expectation is computed independently for each GP. 
+    # Returns matrix of shape `(nrow(X_eval), Y_dim)`, where `Y_dim` is the number of 
+    # independent GPs. 
+    
+    N_eval <- nrow(X_eval)
+    gp_copy <- .self$copy(shallow=FALSE)
+    
+    # Emulator predictions at evaluation locations and at conditioning locations. 
+    pred <- gp_copy$predict(X_cond, return_mean=TRUE, return_var=TRUE, ...)
+    pred_eval <- gp_copy$predict(X_eval, return_mean=FALSE, return_var=TRUE, ...)
+    
+    # Update the GP model, treating the predictive mean as the observed 
+    # response at the evaluation locations. 
+    gp_copy$update(X_cond, pred$mean, update_hyperpar=FALSE, ...)
+    
+    # Predict with the conditional ("cond") GP (i.e., the updated GP) at the  
+    # evaluation locations. Convert to the exponentiated scale to obtain 
+    # log-normal predictive quantities.
+    pred_cond <- gp_copy$predict(X_eval, return_mean=TRUE, return_var=TRUE, ...)
+    lnp_cond_log_var <- matrix(nrow=N_eval, ncol=.self$Y_dim)
+    for(j in 1:.self$Y_dim) {
+      lnp_cond_log_var[,j] <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean[,j], 
+                                                     var_Gaussian=pred_cond$var[,j],
+                                                     return_mean=FALSE, return_var=TRUE, 
+                                                     log_scale=TRUE)$log_var
+    }
+    
+    # Compute the variance inflation term on the log scale. 
+    log_var_inflation <- 2 * (pred_eval$var - pred_cond$var)
+    
+    # Compute log expected conditional variance.  
+    log_evar <- lnp_cond_log_var + log_var_inflation
+    
+    if(log_scale) return(log_evar)
+    return(exp(log_evar))
   }
 
 )
