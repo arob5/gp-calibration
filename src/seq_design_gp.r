@@ -263,7 +263,6 @@ acq_neg_entropy <- function(input, gp, ...) {
   # `input`. 
   
   -0.5 * log(2*pi*gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]) - 0.5
-  
 }
 
 

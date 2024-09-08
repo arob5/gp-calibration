@@ -834,8 +834,8 @@ llikEmulatorGP$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, input_names=gp_model$X_names,
               dim_input=gp_model$X_dim, default_conditional=default_conditional, 
               default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
-              lik_description="Generic llik.",
-              emulator_description="GP directly emulating the .", 
+              lik_description="Generic log likelihood",
+              emulator_description="GP directly emulating the log-likelihood.", 
               llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
   }, 
   
@@ -908,15 +908,15 @@ llikEmulatorGP$methods(
     # Likelihood emulator mean/var/cov predictions. For this class (under direct GP emulation
     # of the log-likelihood), the likelihood emulator is a log-normal process. Thus, 
     # the GP log-likelihood predictions can simply be transformed to obtain log-normal 
-    # likelihood predictions. 
-    # Currently `return_cross_cov` is not supported. 
+    # likelihood predictions. Currently `return_cross_cov` is not supported. Note that both the 
+    # GP mean and variance are required to compute the log-normal mean and/or variance. 
     
     if(return_cross_cov) {
       stop("`return_cross_cov` is not yet supported for `llikEmulatorGP$predict_lik()`.")
     }
     
     llik_pred <- .self$predict(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
-                               return_mean=return_mean, return_var=return_var, return_cov=return_cov,  
+                               return_mean=TRUE, return_var=TRUE, return_cov=return_cov,  
                                return_cross_cov=return_cross_cov, input_cross=input_cross, 
                                conditional=conditional, normalize=normalize, include_nugget=include_nugget, ...)
                                

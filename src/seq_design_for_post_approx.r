@@ -235,7 +235,7 @@ acq_llik_neg_var_gp <- function(input, llik_em, ...) {
   # negated here.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_var(input, llik_em$emulator_model)
+  acq_neg_var(input, llik_em$emulator_model, ...)
 }
 
 
@@ -249,7 +249,7 @@ acq_llik_neg_entropy_gp <- function(input, llik_em, ...) {
   # negated here.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_entropy(input, llik_em$emulator_model)
+  acq_neg_entropy(input, llik_em$emulator_model, ...)
 }
 
 
@@ -263,7 +263,7 @@ acq_llik_neg_var_gp <- function(input, llik_em, ...) {
   # negated here.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_var(input, llik_em$emulator_model)
+  acq_neg_var(input, llik_em$emulator_model, ...)
 }
 
 
@@ -274,7 +274,6 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
   # likelihood emulator (exponential of the log-likelihood emulator) at  
   # inputs `input`. If `log_scale` is TRUE (the default), then the 
   # negative of the log of the variance is returned. 
-  
   -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, log_scale=log_scale, ...)$log_var  
 }
 

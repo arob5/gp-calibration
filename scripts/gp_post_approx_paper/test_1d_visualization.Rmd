@@ -61,8 +61,9 @@ source(file.path(src_dir, "gp_emulator_functions.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "sim_study_functions.r"))
 source(file.path(src_dir, "mcmc_calibration_functions.r"))
-source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design_for_post_approx.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 
 # Plot settings applied to all plots. 
@@ -566,31 +567,24 @@ print(norm_cst_list)
 #        emulator, while the post acquisition functions directly target the 
 #        likelihood or unnormalized posterior density. 
 
-# gp_list <- list(llik=em_llik$emulator_model, fwd=em_fwd$emulator_model)
-# acq_funcs_pw_gp <- c("neg_var", "neg_entropy")
 llik_em_list <- list(llik=em_llik, fwd=em_fwd)
 
-acq_funcs_pw_gp <- c("llik_neg_var_gp", "llik_neg_entropy_gp")
-acq_funcs_pw_post <- c("llik_neg_var_lik")
-acq_pw_gp_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pw_gp, llik_em_list)
-acq_pw_post_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pw_post, llik_em_list)
+# Compute pointwise acquisitions. 
+acq_funcs_pw <- c("llik_neg_var_gp", "llik_neg_entropy_gp", "llik_neg_var_lik")
+acq_pw_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pw, llik_em_list)
+scale_acq <- function(x) scale_inputs(x, target_bounds=c(1,2))
+acq_pw_list <- lapply(acq_pw_list, scale_acq)
 
+# Plot pointwise acquisitions. 
+acq_pw_plt_llik<- plot_curves_1d_helper(test_info$input, acq_pw_list$llik, plot_title="pointwise acq [llik]",
+                                        line_thickness=line_thickness, design_color=design_color,
+                                        design_pt_size=design_pt_size, xlab="u", ylab="acq")
+acq_pw_plt_fwd<- plot_curves_1d_helper(test_info$input, acq_pw_list$fwd, plot_title="pointwise acq [fwd]",
+                                       line_thickness=line_thickness, design_color=design_color,
+                                       design_pt_size=design_pt_size, xlab="u", ylab="acq")
+plot(acq_pw_plt_llik)
+plot(acq_pw_plt_fwd)
 
-tester <- scale_inputs(acq_pw_post_list$fwd, target_bounds=c(1,2))
-acq_pw_gp_llik_plot <- plot_curves_1d_helper(test_info$input, tester,
-                                             plot_title="pw gp acq [llik]",
-                                             line_thickness=line_thickness, design_color=design_color,
-                                             design_pt_size=design_pt_size, xlab="u", ylab="acq")
-plot(acq_pw_gp_llik_plot)
-
-
-lims_post_trim <- get_common_lims(post_approx_llik_plt, post_approx_fwd_plt)
-post_approx_llik_plt <- post_approx_llik_plt %>% 
-                        ggformat_journal(legend_position="bottom", legend.text=element_text(size=20), 
-                                         xlim=lims_post_trim$xlim, ylim=lims_post_trim$ylim)
-post_approx_fwd_plt <- post_approx_fwd_plt %>% 
-                       ggformat_journal(legend_position="bottom", legend.text=element_text(size=20), 
-                                        xlim=lims_post_trim$xlim, ylim=lims_post_trim$ylim)
 
 
 ```
