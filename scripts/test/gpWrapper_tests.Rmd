@@ -17,7 +17,9 @@ library(data.table)
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
 
+source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 ```
@@ -108,7 +110,7 @@ for(i in 1:gpHet1$Y_dim) {
 # Test `update()` method: 
 # Construct the design in two stages and ensure the resulting design is 
 # equal to the one-shot design above. Note that the kernel hyperparameters will not be the 
-# same as above; the hyperparmeter estimation will only use the initial design. Note also 
+# same as above; the hyperparameter estimation will only use the initial design. Note also 
 # that `X_train`, `Y_train` will not necessarily agree across the two methods since 
 # `X_bounds`, `Y_mean`, and `Y_std` are based on the initial design (they are not updated), 
 # so the scaling/normalization will be different. 
@@ -182,6 +184,74 @@ gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE, include_nugget=
 gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
 
 ```
+
+```{r}
+#
+# Test `update()` method: 
+# Construct the design in two stages and ensure the resulting design is 
+# equal to the one-shot design above. Note that the kernel hyperparameters will not be the 
+# same as above; the hyperparameter estimation will only use the initial design. Note also 
+# that `X_train`, `Y_train` will not necessarily agree across the two methods since 
+# `X_bounds`, `Y_mean`, and `Y_std` are based on the initial design (they are not updated), 
+# so the scaling/normalization will be different. 
+#
+
+N_partial_design1 <- N_design1 - 1
+
+# Fit on partial design. 
+gpKerGP1_update <- gpWrapperKerGP(X1[1:N_partial_design1,,drop=FALSE], 
+                                  Y1[1:N_partial_design1,,drop=FALSE], 
+                                  normalize_output=TRUE, scale_input=TRUE)
+gpKerGP1_update$fit("Gaussian", "constant", estimate_nugget=FALSE)
+
+# Predictive plot for GPs pre-update. 
+gpKerGP1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
+
+# Now update design. 
+gpKerGP1_update$update(X1[(N_partial_design1+1):N_design1,,drop=FALSE], 
+                       Y1[(N_partial_design1+1):N_design1,,drop=FALSE],
+                       update_hyperpar=FALSE)
+
+# Test. 
+print("X agrees:")
+all.equal(gpKerGP1$X, gpKerGP1_update$X)
+
+print("Y agrees:")
+all.equal(gpKerGP1$Y, gpKerGP1_update$Y)
+
+print("X_train agrees after inverting scaling:")
+all.equal(gpKerGP1$scale(gpKerGP1$X_train, inverse=TRUE), 
+          gpKerGP1_update$scale(gpKerGP1_update$X_train, inverse=TRUE))
+
+print("Y_train agrees after inverting normalization:")
+all.equal(gpKerGP1$normalize(gpKerGP1$Y_train, inverse=TRUE), 
+          gpKerGP1_update$normalize(gpKerGP1_update$Y_train, inverse=TRUE))
+
+print("kergp X agrees with gpWrapper X_train:")
+for(i in 1:gpKerGP1_update$Y_dim) {
+  print(all.equal(gpKerGP1_update$gp_model[[i]]$X, gpKerGP1_update$X_train))
+}
+  
+print("kergp y agrees with gpWrapper Y_train")
+for(i in 1:gpKerGP1_update$Y_dim) {
+  print(all.equal(gpKerGP1_update$gp_model[[i]]$y, gpKerGP1_update$Y_train[,i]))
+}
+
+# Predictive plot for updated GPs. The initial hyperparameter fit was very poor so 
+# can lead to some weird results. The lengthscale is so small that even a slight 
+# deviation from the design points causes reversion to the prior. This is why 
+# the function appears to interpolate the endpoints (which are also design points), 
+# but the two interior design points are not a subset of the test points, so the 
+# function appears not to be interpolating these points, but it really is. 
+gpKerGP1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
+```
+
+
+
+
+
+
+
 
 
 # 2d validation. 

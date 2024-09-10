@@ -789,11 +789,11 @@ gpWrapperKerGP$methods(
     # Update design. Note that this assumes that this function is called via the `update()` 
     # method, meaning that `.self$X_train` and `.self$Y_train` have already been updated. 
     gp_obj$X <- .self$X_train
-    gp_obj$y <- .self$y_train[,output_idx]
+    gp_obj$y <- .self$Y_train[,output_idx]
 
     # Update basis functions for the GP mean.
     # TODO: store mean func name as attribute. 
-    df <- data.frame(y=.self$y_train[,output_idx], .self$X_train)
+    df <- data.frame(y=gp_obj$y, gp_obj$X )
     mean_func_formula <- map_mean_func_name(.self$mean_func_name)
     mf <- model.frame(mean_func_formula, data=df)
     gp_obj$F <- model.matrix(mean_func_formula, data=mf)
