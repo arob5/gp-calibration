@@ -808,13 +808,31 @@ $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) 
 This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
 $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
 
+% Perspectives on Posteriors Induced by Gaussian Process Surrogates 
+\subsection{Perspectives on Posteriors Induced by Gaussian Process Surrogates}
+In the preceding subsections, we have summarized a wide variety of GP-induced posteriors that have been considered 
+in the literature, as well as proposed a new approach based on a noisy approximation of a MH algorithm. This leads to 
+the natural question: \textit{which is the correct posterior approximation to use?} We argue that the answer to this question 
+depends largely on the goal at hand. The existing literature in this area tends to implicitly favor one of two potential 
+objectives: (1) forward uncertainty propagation or; (2) posterior error minimization. The former perspective tends to 
+accept that computation is limited and hence completely reducing surrogate-induced error is infeasible. The goal thus 
+becomes to ``honestly'' propagate the surrogate uncertainty with the goal of achieving reasonable posterior coverage 
+(within reason, one typically favors over, rather than under, coverage). The latter perspective emphasizes minimizing 
+error with respect to the true posterior, and ensuring posterior convergence as the number of design points increases
+(surrogate refinement via the selection of additional design points is the topic of  \Cref{seq_des}). It is not difficult to 
+imagine scenarios where these two goals are at odds; for example, the GP plug-in mean approximation may beat its
+competitors with respect to common error metrics (e.g., $L^2$, Hellinger) but fall short when uncertainty calibration 
+is emphasized. We of course should hope for the ideal, whereby computation-limited approximations exhibit favorable 
+uncertainty calibration in some sense, while also converging towards the true posterior in the event that more 
+computational resources become available.    
+
+
 % Existence of approximate posteriors. 
 \subsection{Existence of Approximate Posterior Distributions} \label{post_existence}
 \todo
 
-
 % Sequential Design
-\section{Sequential Design}
+\section{Sequential Design} \label{seq_des}
 In applications, the GP emulator is often constructed sequentially. In this section, we consider augmenting the 
 initial design $\designIn[\Ndesign]$ with new input points that are chosen to yield maximal improvement in the 
 GP-induced posterior approximation. This can be thought of as a question of experimental design for the 
