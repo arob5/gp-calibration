@@ -1,0 +1,201 @@
+---
+title: "VSEM Example"
+author: "Andrew Roberts"
+date: '2024-09-10'
+output: html_document
+---
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(lhs)
+library(ggplot2)
+library(viridis)
+library(parallel)
+library(gridExtra)
+library(data.table)
+
+experiment_tag <- "vsem"
+run_tag <- "test_d3_p1_N30_LHS"
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
+                        experiment_tag, run_tag)
+
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "gp_emulator_functions.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
+source(file.path(src_dir, "mcmc_calibration_functions.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+
+# Plot settings applied to all plots. 
+design_pt_size <- 4
+line_thickness <- 1.5
+design_color <- "red"
+xlim <- c(-10, 10)
+ylim <- c(0.0777, 0.4)
+
+# Settings for MCMC plotting. 
+burn_in_start <- 100000L
+```
+
+```{r}
+
+#
+# Plot model outputs and observations.  
+#
+
+load(file.path(output_dir, "inv_prob_list.RData"))
+
+df_inv_prob_data <- data.frame(t=inv_prob$times, y_true=drop(inv_prob$output_true), 
+                               y=drop(inv_prob$y))
+plt_outputs <- ggplot(data=df_inv_prob_data) +
+                      geom_point(aes(x=t, y=y), color="red") + 
+                      geom_line(aes(x=t, y=y_true), color="black") + 
+                      ylab("output") + ggtitle("True and Observed y")
+
+plot(plt_outputs)
+```
+
+```{r}
+# Print settings. 
+
+load(file.path(output_dir, "design_info.RData"))
+
+print("Settings:")
+print(paste0("Parameter space dimension: ", nrow(inv_prob$par_prior)))
+print(paste0("Number design points: ", design_info$N_design))
+print(paste0("Design method: ", design_info$design_method))
+
+print("Priors and true parameter:")
+inv_prob$par_prior$par_true <- inv_prob$par_true
+print(inv_prob$par_prior)
+```
+
+
+```{r}
+#
+# MCMC Plots: exact.  
+#
+
+samp_dt <- fread(file.path(output_dir, "mcmc_samp.csv"))
+
+# MCMC Plots: exact. 
+trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", 
+                                     param_types="par", burn_in_start=burn_in_start)
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt, test_labels="exact", 
+                                              param_types="par", burn_in_start=burn_in_start)
+corr_plots_exact <- get_mcmc_2d_density_plots(samp_dt, test_labels="exact", 
+                                              burn_in_start=burn_in_start)$exact
+
+for(plt in trace_plots_exact) plot(plt) 
+for(plt in hist_plots_exact) plot(plt)
+for(plt in corr_plots_exact) plot(plt)
+
+```
+
+```{r}
+#
+# MCMC Trace Plots: approximate. 
+#
+
+test_labels_approx <- setdiff(unique(samp_dt$test_label), "exact")
+trace_plots_approx <- get_trace_plots(samp_dt, test_label=test_labels_approx,
+                                      param_types="par", burn_in_start=burn_in_start)
+
+for(plt in trace_plots_approx) plot(plt) 
+```
+
+```{r}
+plts <- get_trace_plots(samp_dt, test_label="gp-mean-em_llik_const_GaussQuad",
+                        param_types="par", burn_in_start=1)
+  
+  
+for(plt in plts) plot(plt) 
+
+
+
+kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
+                                        param_types="par", param_names=NULL,
+                                        test_label_baseline="exact",
+                                        test_labels="gp-mean-em_llik_const_GaussQuad",
+                                        xlab="parameter", ylab="kde", save_dir=NULL) 
+
+for(plt in kde_plts) plot(plt)
+```
+
+
+```{r}
+#
+# Log-likelihood emulator predictions. 
+#
+
+load(file.path(output_dir, "llik_em_list.RData"))
+load(file.path(output_dir, "emulator_pred_list.RData"))
+load(file.path(output_dir, "test_info.RData"))
+em_names <- names(llik_em_list)
+
+for(em_name in em_names) {
+  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
+                                                      plot_type="llik", include_interval=TRUE, 
+                                                      interval_method="pm_std_dev", N_std_dev=1.64, 
+                                                      plot_title=paste0("llik predictions: ", em_name))
+  plot(plt)
+}
+```
+
+
+```{r}
+# mcmc_par_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start=burn_in_start, 
+#                                            test_labels=NULL, param_types="par")
+#                          
+# mcmc_errs_list <- compute_mcmc_comparison_metrics(samp_dt, "exact", "marg-fwd", c("mean", "cov"), 
+#                                                   burn_in_start=burn_in_start, param_types="par")
+                                                  
+
+```
+
+
+```{r}
+#
+# 1d marginal plots (KDEs)
+#
+
+kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
+                                        param_types="par", param_names=NULL,
+                                        test_label_baseline="exact",
+                                        xlab="parameter", ylab="kde", save_dir=NULL) 
+
+for(plt in kde_plts) plot(plt)
+```
+
+```{r}
+scatter_stat_plts <- get_mcmc_moments_scatter_plot_comparisons(samp_dt, test_label_baseline="exact",
+                                                               burn_in_start=burn_in_start, param_types="par")
+
+for(plt in scatter_stat_plts) plot(plt)
+```
+
+```{r}
+coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start,
+                                           param_types="par", probs=seq(.5, .99, .05))
+coverage_plts <- coverage_plt_list$plots
+
+for(plt in coverage_plts) plot(plt)
+```
+
+
+
+
+
+
+
+
+
