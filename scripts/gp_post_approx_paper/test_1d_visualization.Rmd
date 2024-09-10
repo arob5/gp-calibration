@@ -578,13 +578,19 @@ acq_pw_list <- lapply(acq_pw_list, scale_acq)
 # Plot pointwise acquisitions. 
 acq_pw_plt_llik<- plot_curves_1d_helper(test_info$input, acq_pw_list$llik, plot_title="pointwise acq [llik]",
                                         line_thickness=line_thickness, design_color=design_color,
-                                        design_pt_size=design_pt_size, xlab="u", ylab="acq")
+                                        design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
+                                        geom_vline(xintercept=drop(design_info$input), 
+                                                    linetype="dashed", color=design_color)
+  
 acq_pw_plt_fwd<- plot_curves_1d_helper(test_info$input, acq_pw_list$fwd, plot_title="pointwise acq [fwd]",
                                        line_thickness=line_thickness, design_color=design_color,
-                                       design_pt_size=design_pt_size, xlab="u", ylab="acq")
+                                       design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
+                                       geom_vline(xintercept=drop(design_info$input), 
+                                                    linetype="dashed", color=design_color)
 plot(acq_pw_plt_llik)
 plot(acq_pw_plt_fwd)
 
+# TODO: add star representing the minimum of each acquisition. 
 
 
 ```
@@ -597,7 +603,9 @@ acq_int_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_int, llik_
 acq_int_list <- lapply(acq_int_list, scale_acq)
 acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_list$fwd, plot_title="Integrated acq [fwd]",
                                          line_thickness=line_thickness, design_color=design_color,
-                                         design_pt_size=design_pt_size, xlab="u", ylab="acq")
+                                         design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
+                                         geom_vline(xintercept=drop(design_info$input), 
+                                                    linetype="dashed", color=design_color)
 
 plot(acq_int_plt_fwd)
 

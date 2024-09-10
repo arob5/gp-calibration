@@ -27,10 +27,10 @@ library(abind)
 gpWrapper <- setRefClass(
    Class = "gpWrapper", 
    fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
-                 X_dim="integer", Y_dim="integer",
-                 scale_input="logical", normalize_output="logical",
-                 X_bounds="matrix", Y_mean="numeric", Y_std="numeric",
-                 X_names="character", Y_names="character",
+                 X_dim="integer", Y_dim="integer", mean_func_name="character",
+                 kernel_name="character", scale_input="logical", 
+                 normalize_output="logical", X_bounds="matrix", Y_mean="numeric", 
+                 Y_std="numeric", X_names="character", Y_names="character",
                  X_train="matrix", Y_train="matrix", default_nugget="numeric", 
                  valid_kernels="character", valid_mean_funcs="character", 
                  kernel_name_map="function", mean_func_name_map="function")
@@ -132,6 +132,8 @@ gpWrapper$methods(
     }
 
     gp_model <<- fits_list
+    mean_func_name <<- mean_func_name
+    kernel_name <<- kernel_name
   }, 
 
   fit_parallel = function(kernel_name="Gaussian", mean_func_name="constant", fixed_pars=list(), ...) {
@@ -777,6 +779,37 @@ gpWrapperKerGP$methods(
     }
 
     return(return_list)
+  }, 
+  
+  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
+    if(update_hyperpar) stop("kergp update with hyperparameter update not yet implemented.")
+    
+    gp_obj <- .self$gp_model[[output_idx]]
+    
+    # Update design. Note that this assumes that this function is called via the `update()` 
+    # method, meaning that `.self$X_train` and `.self$Y_train` have already been updated. 
+    gp_obj$X <- .self$X_train
+    gp_obj$y <- .self$y_train[,output_idx]
+
+    # Update basis functions for the GP mean.
+    # TODO: store mean func name as attribute. 
+    df <- data.frame(y=.self$y_train[,output_idx], .self$X_train)
+    mean_func_formula <- map_mean_func_name(.self$mean_func_name)
+    mf <- model.frame(mean_func_formula, data=df)
+    gp_obj$F <- model.matrix(mean_func_formula, data=mf)
+
+    # Call kergp's generalized least squares method, which computes the betaHat estimate
+    # conditional on fixed kernel. However, here we pass the current value of betaHat 
+    # so that it will not be re-estimated. The point of calling this is thus to simply 
+    # compute intermediate quantities (e.g., Cholesky factor of covariance). 
+    gls_list <- kergp::gls(object=gp_obj$covariance, y=gp_obj$y, X=gp_obj$X, 
+                           F=gp_obj$F, beta=gp_obj$betaHat, varNoise=NULL)
+    
+    # Update quantities computed by the GLS function. 
+    gls_quantities <- c("L","eStar","sseStar","FStar","RStar")
+    gp_obj[gls_quantities] <- gls_list[gls_quantities]
+
+    return(gp_obj)
   }
   
 )
