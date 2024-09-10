@@ -630,6 +630,46 @@ get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param
 }
 
 
+get_mcmc_2d_density_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL,
+                                      param_names=NULL, save_dir=NULL) {
+  # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
+  # variables from samples. Will produce one plot per pair of variables within 
+  # each value of `test_label`.
+  # TODO: for now this is restricted to param_type="par". Need to think about how 
+  #       to handle multiple param_types. 
+
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
+                                     param_types="par", param_names=param_names)
+  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_name)])
+  test_lbls <- unique(plt_id_vars[, test_label])
+  
+  # Create plots between pairs of variables within each test label.
+  plts <- list()
+  for(lbl in test_lbls) {
+    plts[[lbl]] <- list()
+    samp_dt_lbl <- select_mcmc_samp(samp_dt_subset, test_labels=lbl)
+    par_names <- unique(samp_dt_lbl[test_label==lbl, param_name])
+    n_par <- length(par_names)
+    for(i in 1:(n_par-1)) {
+      for(j in (i+1):n_par) {
+        par_i <- par_names[i]
+        par_j <- par_names[j]
+        plot_tag <- paste(par_i, par_j, sep="-")
+        samp_dt_pars <- select_mcmc_samp(samp_dt_lbl, param_names=c(par_i,par_j))[, .(itr,param_name,sample)]
+        samp_dt_pars <- data.table::dcast(samp_dt_pars, "itr~param_name", value.var="sample")
+        setnames(samp_dt_pars, c(par_i,par_j), c("var1","var2"))
+        plts[[lbl]][[plot_tag]] <- ggplot(samp_dt_pars, aes(x=var1, y=var2)) + 
+                                   geom_density_2d() + xlab(par_i) + ylab(par_j)
+      }
+    }
+  }
+  
+  if(!is.null(save_dir)) save_plots(unlist(plts,recursive=FALSE), "density2d", save_dir)
+  return(plts)
+}
+
+
 get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
                                         param_types=NULL, param_names=NULL, test_label_baseline=NULL,
                                         xlab="parameter", ylab="kde", save_dir=NULL) {

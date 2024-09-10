@@ -1,11 +1,18 @@
 #
-# run_multidim_toy_example.r
-# Bayesian inversion for synthetic examples with multidimensional 
-# parameter spaces. This file is written to be able to run on a 
-# computing cluster. 
+# run_vsem_example.r
+# Bayesian inversion for Very Simple Ecosystem Model (VSEM). This file 
+# is written to be able to run on a computing cluster. 
 #
 # Andrew Roberts
 #
+
+# TODO:
+#    - Talk with Mike about reasonable priors to use in this experiment. 
+#      e.g., VSEM default parameter range for LAR is enourmous, and would
+#      probably benefit from something like a log-normal/half-normal/Gamma 
+#      prior rather than a uniform one. 
+#    - Set up the settings here so that the VSEM parametrer names can be passed
+#      in from the bash file; right now `dim_par` and `dim_output` do nothing. 
 
 # -----------------------------------------------------------------------------
 # docopt string for parsing command line arguments.  
@@ -80,8 +87,8 @@ source(file.path(src_dir, "seq_design_for_post_approx.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 
 # Seeds for random number generator for different portions of analysis. 
-seed_data <- 82
-seed_design <- 500
+seed_data <- 623434
+seed_design <- 26423
 
 # Number of parameters to calibrate. Will determine the number of basis 
 # functions in the forward model. 
@@ -134,27 +141,11 @@ design_method_test <- settings$design_method_test
 mcmc_tags <- settings$mcmc_tags
 N_mcmc <- settings$N_mcmc
 
-#
-# Create alphanumeric ID defining the run, and use to create directory. 
-#
-
-# MOVED THIS TO BASH FILE 
-# # Run ID. 
-# run_id <- paste(run_tag, paste0("d", dim_par), paste0("p", dim_output), 
-#                 paste0("N", N_design), design_method, sep="_")
-# 
-# # Output directory. 
-# output_dir <- file.path(base_output_dir, run_id)
 
 # If `output_dir` already exists, append timestep and create new directory.
 # Otherwise create the directory. 
 if(dir.exists(output_dir)) {
   stop("`output_dir` already exists.")
-  # timestamp <- as.character(Sys.time())
-  # output_dir <- paste(output_dir, timestamp, sep="_")
-  # message("`output_dir` already exists. Creating new `output_dir:`")
-  # message(output_dir)
-  # dir.create(output_dir)
 } else {
   dir.create(output_dir, recursive=TRUE)
 }
@@ -198,80 +189,99 @@ set.seed(seed_data)
 # Forward model. 
 #
 
-# Basis functions: restrict to the number specified by `dim_par`.
-basis_func_list <- list(phi0=function(t) rep(1, length(t)), phi1=function(t) t,
-                        phi2=function(t) cos(2*pi*t), phi3=function(t) cos(2*pi*2*t),
-                        phi4=function(t) sin(2*pi*t), phi5=function(t) sin(2*pi*t/3),
-                        phi6=function(t) sin(2*pi*t/6), phi7=function(t) cos(2*pi*t/6),
-                        phi8=function(t) cos(2*pi*t/5), phi9=function(t) cos(2*pi*t/8),
-                        phi10=function(t) sin(2*pi*t/8))
-basis_func_list <- basis_func_list[1:dim_par]
+# VSEM default parameter values.
+par_names <- get_vsem_par_names()
+par_default <- get_vsem_default_pars()
+print("Parameter defaults:")
+print(data.frame(par_name=par_names, default_value=par_default))
 
-# Discretize the unit time interval to define the dimension of the output space.
-times <- seq(0, 1, length.out=dim_output)
+# Parameters to calibrate.
+par_cal_names <- c("KEXT", "LUE", "tauV")
+dim_par <- length(par_cal_names)
 
-# Forward model.
-eval_with_args <- function(FUN, ...) FUN(...)
-Phi <- mapply(eval_with_args, basis_func_list, list(times))
+# Define prior on calibration parameter.
+par_cal_idx <- which(par_names %in% par_cal_names)
+par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
+rownames(par_prior_params) <- par_prior_params$par_name
+print("Prior on calibration parameter:")
+print(par_prior_params)
 
-fwd <- function(par) {
-  Phi %*% matrix(par, ncol=1)
+# Number of time points (days) and model driver. 
+n_year <- 3
+n_time <- 365*n_year
+time_points <- 1:n_time
+driver <- BayesianTools::VSEMcreatePAR(days=time_points)
+driver_plt <- ggplot(data.frame(t=time_points,PAR=driver)) + 
+                geom_point(aes(x=time_points,y=PAR)) + 
+                ggtitle("Model Driver (PAR)") + 
+                xlab("Day") + ylab("PAR")
+ggsave(file.path(output_dir, "vsem_driver_data.png"), driver_plt)
+
+# Map from calibration parameter to VSEM outputs.
+output_names <- get_vsem_output_names()
+lai_idx <- which(output_names=="LAI") 
+param_to_output_map <- get_vsem_fwd_model(driver, dim_par, par_cal_idx, par_default, simplify=FALSE)
+
+# Observation operator (map from model outputs to observable): daily LAI observations. 
+obs_op <- function(model_outputs) {
+  single_run <- (dim(model_outputs)[1]==1L)
+  lai_trajectory <- model_outputs[,,lai_idx]
+  if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
+  lai_trajectory
 }
 
-fwd_vect <- function(par_mat) {
-  # `par_mat` assumed to have dimension (num inputs, dim_par). Returns
-  # output of dimension (num inouts, dim_output).
-  par_mat %*% t(Phi)
+# Forward model: defined here as the calibration parameter-to-observable map. Returns 
+# matrix of dimension (N_run,N_time).
+fwd_model <- function(par_cal) {
+  obs_op(param_to_output_map(par_cal))
 }
 
 #
-# Likelihood.
+# Likelihood, ground truth, and observed data. 
 #
 
-# Observation covariance.
-cov_obs <- diag(0.5, nrow=dim_output)
+signal_to_noise_ratio <- 20
+par_true <- par_default
+par_cal_true <- par_true[par_cal_idx]
+model_outputs_true <- param_to_output_map(par_cal_true)
+y_true <- obs_op(model_outputs_true)
+sig_eps <- mean(y_true) / signal_to_noise_ratio
+sig2_eps <- sig_eps^2
+sig2_true <- sig2_eps # Currently obs variance is fixed, 
+                      # so no distinction between exact and estimated variance. 
+y <- y_true + sig_eps*rnorm(n=length(drop(y_true)))
 
-#
-# Prior.
-#
+# Plot ground truth and observed data.
+df_model_outputs_true <- data.frame(model_outputs_true[1,,])
+colnames(df_model_outputs_true) <- output_names
+df_model_outputs_true$time <- time_points
+for(output_var in output_names) {
+  output_var <- sym(output_var)
+  plt <- ggplot(df_model_outputs_true) + geom_line(aes(x=time,y=!!output_var)) + 
+         ggtitle("Ground Truth Trajectory") + xlab("Days") + ylab(output_var)
+  ggsave(file.path(output_dir, paste0("true_",output_var,".png")), plt)
+}
 
-# Prior distribution.
-par_prior <- data.frame(dist="Gaussian", param1=rep(1,dim_par), param2=rep(1,dim_par),
-                        row.names=paste0("u", 1:dim_par))
+df_model_outputs_true$y <- drop(y)
+df_model_outputs_true$y_true <- drop(y_true)
+plt_obs <- ggplot(df_model_outputs_true) + 
+            geom_line(aes(x=time, y=y), color="red") + 
+            geom_line(aes(x=time, y=y_true)) +
+            ggtitle("Observable: true signal vs. obs") + xlab("Days") + ylab("LAI")
+ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 
-#
-# Synthetic data: ground truth and noisy observations.
-#
-
-# Ground truth.
-par_true <- sample_prior_theta(par_prior)
-output_true <- fwd(par_true)
-
-# Noisy observations.
-y <- output_true + t(chol(cov_obs)) %*% matrix(rnorm(dim_output), ncol=1)
 
 #
 # Collect inverse problem components in list, save plots summarizing data.
 #
 
 # List containing inverse problem components.
-inv_prob <- list(y=y, fwd=fwd, fwd_vect=fwd_vect, par_prior=par_prior,
-                 cov_obs=cov_obs, par_true=par_true, output_true=output_true,
-                 times=times, basis_func_list=basis_func_list)
-
-# Plot ground truth and observations. 
-df_inv_prob_data <- data.frame(t=times, y_true=output_true, y=y)
-plt_outputs <- ggplot(data=df_inv_prob_data) +
-               geom_point(aes(x=t, y=y), color="black") + 
-               geom_point(aes(x=t, y=y_true), color="red") + 
-               ylab("output") + ggtitle("True and Observed y")
-
-plot(plt_outputs)
-ggsave(file.path(output_dir, "output_data.png"), plt_outputs)
-
+inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
+                 sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y,
+                 times=time_points)
 
 # -----------------------------------------------------------------------------
-# Inversion using exact forward model. 
+# Exact log-likelihood object. 
 # -----------------------------------------------------------------------------
 
 print("--------------------- Bayesian Inversion with True Forward Model -------------------------")
@@ -279,8 +289,8 @@ print("--------------------- Bayesian Inversion with True Forward Model --------
 # Store exact log-likelihood object. 
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$fwd, 
                                          fwd_model_vectorized=inv_prob$fwd_vect,
-                                         y_obs=t(inv_prob$y), dim_par=dim_par,
-                                         use_fixed_lik_par=TRUE, sig2=diag(cov_obs),
+                                         y_obs=inv_prob$y, dim_par=as.integer(dim_par),
+                                         use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_eps,
                                          par_names=rownames(inv_prob$par_prior), 
                                          default_conditional=default_conditional, 
                                          default_normalize=default_normalize)
@@ -325,6 +335,8 @@ mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_
                                  mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
 samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
 mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
+get_mcmc_2d_density_plots(samp_dt, burn_in_start=burn_in_start, save_dir=output_dir)
+
 
 # -----------------------------------------------------------------------------
 # Fitting Emulators.   
@@ -363,7 +375,7 @@ llik_em_list[["em_llik_const_GaussQuad"]] <- llikEmulatorGP("em_llik_const_Gauss
                                                             default_conditional=default_conditional, 
                                                             default_normalize=default_normalize, 
                                                             lik_par=diag(cov_obs), use_fixed_lik_par=TRUE)
-                                                            
+
 # Forward model emulator.
 print("-> Fitting em_fwd")
 em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)
