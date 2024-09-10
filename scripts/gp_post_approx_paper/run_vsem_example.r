@@ -8,11 +8,14 @@
 
 # TODO:
 #    - Talk with Mike about reasonable priors to use in this experiment. 
-#      e.g., VSEM default parameter range for LAR is enourmous, and would
+#      e.g., VSEM default parameter range for LAR is enormous, and would
 #      probably benefit from something like a log-normal/half-normal/Gamma 
 #      prior rather than a uniform one. 
 #    - Set up the settings here so that the VSEM parametrer names can be passed
 #      in from the bash file; right now `dim_par` and `dim_output` do nothing. 
+#    - Add hyperparameter constraints on other kergp models (not just Gaussian+Quadratic). 
+#    - Add test points along coordinate axes.
+#    - Add basis function forward model emulator. 
 
 # -----------------------------------------------------------------------------
 # docopt string for parsing command line arguments.  
@@ -277,14 +280,14 @@ ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 
 # List containing inverse problem components.
 inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
-                 sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y,
+                 sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y_true,
                  times=time_points)
 
 # -----------------------------------------------------------------------------
 # Exact log-likelihood object. 
 # -----------------------------------------------------------------------------
 
-print("--------------------- Bayesian Inversion with True Forward Model -------------------------")
+print("--------------------- Creating Exact Log-Likelihood Object -------------------------")
 
 # Store exact log-likelihood object. 
 llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$fwd, 
@@ -335,7 +338,6 @@ mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_
                                  mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
 samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
 mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
-get_mcmc_2d_density_plots(samp_dt, burn_in_start=burn_in_start, save_dir=output_dir)
 
 
 # -----------------------------------------------------------------------------
@@ -352,7 +354,7 @@ em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1),
                            normalize_output=TRUE, scale_input=TRUE)
 em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
 llik_em_list[["em_llik_const"]] <- llikEmulatorGP("em_llik_const", em_llik_gp, default_conditional=default_conditional, 
-                                                  default_normalize=default_normalize, lik_par=diag(cov_obs), 
+                                                  default_normalize=default_normalize, lik_par=inv_prob$sig2_eps, 
                                                   use_fixed_lik_par=TRUE)
 
 # Log-likelihood emulator, quadratic mean.
@@ -362,7 +364,7 @@ em_llik_gp2 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1
 em_llik_gp2$fit("Gaussian", "quadratic", estimate_nugget=FALSE, 
                 optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
 llik_em_list[["em_llik_quad"]] <- llikEmulatorGP("em_llik_quad", em_llik_gp2, default_conditional=default_conditional, 
-                                                 default_normalize=default_normalize, lik_par=diag(cov_obs), 
+                                                 default_normalize=default_normalize, lik_par=inv_prob$sig2_eps, 
                                                  use_fixed_lik_par=TRUE)
 
 # Log-likelihood emulator, constant mean, Gaussian plus quadratic kernel. 
@@ -374,16 +376,7 @@ em_llik_gp3$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE,
 llik_em_list[["em_llik_const_GaussQuad"]] <- llikEmulatorGP("em_llik_const_GaussQuad", em_llik_gp3, 
                                                             default_conditional=default_conditional, 
                                                             default_normalize=default_normalize, 
-                                                            lik_par=diag(cov_obs), use_fixed_lik_par=TRUE)
-
-# Forward model emulator.
-print("-> Fitting em_fwd")
-em_fwd_gp <- gpWrapperHet(design_info$input, design_info$fwd, normalize_output=TRUE, scale_input=TRUE)
-em_fwd_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
-llik_em_list[["em_fwd"]] <- llikEmulatorFwdGaussDiag("em_fwd", em_fwd_gp, t(inv_prob$y), sig2=diag(cov_obs), 
-                                                     default_conditional=default_conditional, 
-                                                     default_normalize=default_normalize, use_fixed_lik_par=TRUE, 
-                                                     par_names=rownames(inv_prob$par_prior))
+                                                            lik_par=inv_prob$sig2_eps, use_fixed_lik_par=TRUE)
 
 # Save log-likelihood emulators. 
 save(llik_em_list, file=file.path(output_dir, "llik_em_list.RData"))
