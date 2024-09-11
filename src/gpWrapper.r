@@ -782,6 +782,11 @@ gpWrapperKerGP$methods(
   }, 
   
   update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
+    # NOTE: this update is O(N^3), where N is the total number of design points 
+    # (including the old design points). This is due to the fact that kergp stores 
+    # the Cholesky factor and some other quantities related to the QR decomposition 
+    # to form predictions. There is no obvious way to update the existing quantities 
+    # other than just re-computing them at the union of the old and new design points. 
     if(update_hyperpar) stop("kergp update with hyperparameter update not yet implemented.")
     
     gp_obj <- .self$gp_model[[output_idx]]

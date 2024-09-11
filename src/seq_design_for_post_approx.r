@@ -299,7 +299,22 @@ acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(gr
 }
 
 
-acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL, log_scale=TRUE, ...) {
+acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), 
+                                log_scale=TRUE, ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
+  # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 
+  # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
+  # with a discrete sum at inputs `grid_points`.
+  
+  # TODO: this is temp and only currently works for log-likelihood emulation. 
+  
+  assert_that(is_gp(llik_em$emulator_model))
+  assert_that(class(em_llik) == "llikEmulatorGP")
+  acq_IEVAR_grid(input, llik_em$emulator_model, grid_points, weights, log_scale=log_scale, ...)
+}
+
+
+acq_llik_IEVAR_grid_old <- function(input, llik_em, grid_points, weights=NULL, log_scale=TRUE, ...) {
   # TODO: how should lik_par be handled here? 
   # TODO: validate_args_acq_IEVAR_grid()
   

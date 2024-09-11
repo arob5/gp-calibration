@@ -9,9 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 
 # TODO: 
-#    - Why is fwd model post estimate underpredicting so much? 
-#    - Should any of the normalized post approximations interpolate the design points? 
-#    - Track the estimates of the normalizing constants.  
+#    - Add a quantile approximation. 
 #    - Estimate observation variance. 
 #    - Improve llik emulator GP model (consider using Vehtari method of integrating out trend coefs). 
 #    - Include model discrepancy to make the data generation process differ from the 
@@ -195,7 +193,22 @@ inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y,
 ```
 
 ```{r}
-# Grid of test points for plotting and emulator evaluation. 
+# Generate design and test points.
+
+set.seed(seed_init_design)
+
+# Generate design. 
+design_info <- list()
+design_info$input <- get_batch_design(design_method, N_design, prior_params=inv_prob$par_prior)
+design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[,1]
+design_info$llik <- llik_exact$assemble_llik(design_info$input)
+design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
+
+# Grid of test points for plotting and emulator evaluation. The final set of test 
+# points will be the union of the test grid with the design points (ensuring the 
+# design points are a subset of the test points avoids certain misleading features 
+# in the plots that can occur where only some design points are included in the 
+# test set). 
 N_grid <- 201
 u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
 test_info <- list(input=u_grid)
@@ -217,15 +230,6 @@ plot(test_info$input, exp(test_info$llik), type="l",
 # 
 # Initial design and fit emulators. 
 #
-
-set.seed(seed_init_design)
-
-# Generate design. 
-design_info <- list()
-design_info$input <- get_batch_design(design_method, N_design, prior_params=inv_prob$par_prior)
-design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[,1]
-design_info$llik <- llik_exact$assemble_llik(design_info$input)
-design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 
 # Log-likelihood emulator. 
 em_llik_gp <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
@@ -580,64 +584,69 @@ acq_pw_plt_llik<- plot_curves_1d_helper(test_info$input, acq_pw_list$llik, plot_
                                         line_thickness=line_thickness, design_color=design_color,
                                         design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                         geom_vline(xintercept=drop(design_info$input), 
-                                                    linetype="dashed", color=design_color)
+                                                    linetype="dashed", color=design_color) 
   
 acq_pw_plt_fwd<- plot_curves_1d_helper(test_info$input, acq_pw_list$fwd, plot_title="pointwise acq [fwd]",
                                        line_thickness=line_thickness, design_color=design_color,
                                        design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                        geom_vline(xintercept=drop(design_info$input), 
                                                     linetype="dashed", color=design_color)
+
+
+acq_pw_plt_llik <- acq_pw_plt_llik %>% ggformat_journal(legend_position="bottom",
+                                                        legend.text=element_text(size=20))
+acq_pw_plt_fwd <- acq_pw_plt_fwd %>% ggformat_journal(legend_position="bottom",
+                                                      legend.text=element_text(size=20))
+
 plot(acq_pw_plt_llik)
 plot(acq_pw_plt_fwd)
 
 # TODO: add star representing the minimum of each acquisition. 
-
+ggsave(file.path(output_dir, "acq_pw_llik.png"), acq_pw_plt_llik)
+ggsave(file.path(output_dir, "acq_pw_fwd.png"), acq_pw_plt_fwd)
 
 ```
 
 ```{r}
-# Integrated criteria. 
+# Integrated criteria: llik 
+acq_funcs_int <- c("llik_IVAR_grid_gp", "llik_IENT_grid_gp", "llik_IEVAR_grid")
+acq_int_llik <- compare_acq_funcs(test_info$input, acq_funcs_int, em_llik, 
+                                  grid_points=test_info$input)
+acq_int_llik <- scale_acq(acq_int_llik)
+acq_int_plt_llik <- plot_curves_1d_helper(test_info$input, acq_int_llik, 
+                                          plot_title="Integrated acq [llik]",
+                                          line_thickness=line_thickness, design_color=design_color,
+                                          design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
+                                          geom_vline(xintercept=drop(design_info$input), 
+                                                     linetype="dashed", color=design_color)
+
+# Forward model. 
 acq_funcs_int <- c("llik_IVAR_grid_gp", "llik_IENT_grid_gp")
-acq_int_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_int, llik_em_list["fwd"], 
-                                           grid_points=test_info$input)
-acq_int_list <- lapply(acq_int_list, scale_acq)
-acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_list$fwd, plot_title="Integrated acq [fwd]",
+acq_int_fwd <- compare_acq_funcs(test_info$input, acq_funcs_int, em_fwd, 
+                                 grid_points=test_info$input)
+acq_int_fwd <- scale_acq(acq_int_fwd)
+acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_fwd, 
+                                         plot_title="Integrated acq [fwd]",
                                          line_thickness=line_thickness, design_color=design_color,
                                          design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                          geom_vline(xintercept=drop(design_info$input), 
                                                     linetype="dashed", color=design_color)
 
+acq_int_plt_llik <- acq_int_plt_llik %>% ggformat_journal(legend_position="bottom",
+                                                          legend.text=element_text(size=20))
+acq_int_plt_fwd <- acq_int_plt_fwd %>% ggformat_journal(legend_position="bottom",
+                                                        legend.text=element_text(size=20))
+
+
+plot(acq_int_plt_llik)
 plot(acq_int_plt_fwd)
 
-# TODO:
-#    - To add IEVAR/IEENT, should add method `expected_cond_var()` to the llikEmulator class. 
-#    - Need to add `update()` method to gpWrapperKerGP.
-#    - Figure out plot formatting/display; add dashed vertical lines for design points, and 
-#      stars marking the minima.
-#    - When implementing these methods and the acquisition functions that call these methods, 
-#      need to think about the case when there are multiple underlying GPs. 
-```
-
-```{r}
-# Integrated criteria. 
-
-
-
-test1 <- evaluate_gp_acq_func_vectorized(acq_IEVAR_grid, test_info$input, gp=em_fwd$emulator_model,
-                                         grid_points=test_info$input)
-test2 <- evaluate_gp_acq_func_vectorized(acq_IEVAR_grid2, test_info$input, gp=em_fwd$emulator_model,
-                                         grid_points=test_info$input)
-tester <- cbind(test1, test2)
-
-
-plot_curves_1d_helper(test_info$input, tester, plot_title="Integrated acq [fwd]",
-                                         line_thickness=line_thickness, design_color=design_color,
-                                         design_pt_size=design_pt_size, xlab="u", ylab="acq")
-
+ggsave(file.path(output_dir, "acq_int_llik.png"), acq_int_plt_llik)
+ggsave(file.path(output_dir, "acq_int_fwd.png"), acq_int_plt_fwd)
 
 # TODO:
-#    - To add IEVAR/IEENT, should add method `expected_cond_var()` to the llikEmulator class. 
-#    - Need to add `update()` method to gpWrapperKerGP.
+#    - Should add design points to the set of test points, so that we can see behavior or 
+#      acquisitions at the design points. 
 #    - Figure out plot formatting/display; add dashed vertical lines for design points, and 
 #      stars marking the minima.
 #    - When implementing these methods and the acquisition functions that call these methods, 

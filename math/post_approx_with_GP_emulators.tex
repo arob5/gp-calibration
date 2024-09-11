@@ -826,6 +826,8 @@ is emphasized. We of course should hope for the ideal, whereby computation-limit
 uncertainty calibration in some sense, while also converging towards the true posterior in the event that more 
 computational resources become available.    
 
+\todo: Add comments on the effect of approximating the unnormalized posterior density. 
+
 
 % Existence of approximate posteriors. 
 \subsection{Existence of Approximate Posterior Distributions} \label{post_existence}
@@ -1132,17 +1134,16 @@ GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a n
 design points, with
 $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$.
 Then for $\Par \in \parSpace$, 
-\begin{align*}
-\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd] \\
-&= \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \frac{1}{2}\likPar + \emKer{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer{\fwd}(\Par)\right] - \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}} \\
-&= \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}}.
-\end{align*}
+\begin{align}
+\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd] \nonumber \\
+&= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \frac{1}{2}\likPar + \emKer{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer{\fwd}(\Par)\right] - \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}} \right] \label{fwd_evar1} \\
+&= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}} \right], \label{fwd_evar2}
+\end{align}
+where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$. 
 \end{prop}
 
-\todo: add proof to appendix and define notation used above. 
- 
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
 
@@ -1535,46 +1536,45 @@ immediately from the formula for a log-normal variance.
 
 \subsubsection{Integrated Conditional Variance Calculations: Forward Model Emulation}
 
-\begin{proof} [Proof of \Cref{lemma:fwd-Gaussian-density-dist}]
-\todo: remove the below proof and write new proof leveraging the new lemma. 
-\begin{enumerate}
-\item The first result follows immediately from \Cref{post_dens_marg_fwd_Gaussian}. 
-\item From \Cref{lemma:pred-mean-dist}, we know that 
+\begin{proof} [Proof of \Cref{prop:evar-fwd-emulation}]
+We begin by noting that the squared prior density can be pulled out of the expectation as
 \begin{align*}
-\emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd)
-&\sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)). 
+\E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]
+&= \priorDens^2(\Par) \ \E_{\designBatchFwd}  \Var[\Gaussian\left(\obs |  \fwdEmCond{\designBatchFwd}(\Par), \likPar \right) | \designBatchFwd]. 
 \end{align*}
-We can thus write the expectation of interest as 
+The variance on the righthand side can be expanded as 
+\begin{align}
+\Var[\Gaussian\left(\obs |  \fwdEmCond{\designBatchFwd}(\Par), \likPar \right) | \designBatchFwd]
+&= \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\likPar + \emKer[\Naugment]{\fwd}(\Par) \right)}{\det(2\pi \likPar)^{1/2}}
+- \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}}
+\end{align}
+following from an application of \Cref{fwd_em_lik_emulator_moments_Gaussian}. The denominators in the above expression can be 
+pulled out of the outer expectation and are seen to equal the denominators in the desired expression. We thus complete the proof by 
+computing the expectation of the numerators with respect to 
+$\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
+These expectations can be computed by noting \Cref{lemma:pred-mean-dist} and then applying \Cref{prop:Gaussian_marginal_moments}.
+This yields,
 \begin{align*}
-\E_{\designBatchFwd}\left[\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par)) \right]
-&= \int_{\R^{\dimObs}} \Gaussian(\obs| v, \CovComb[\Naugment](\Par)) 
-\Gaussian(v | \emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)) dv \\
-&= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
+\E_{\designBatchFwd}\left[\Gaussian\left(\obs \bigg| \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\likPar + \emKer[\Naugment]{\fwd}(\Par) \right)\right]
+&= \Gaussian\left(\obs \big| \emMean[\Ndesign]{\fwd}(\Par), 
+\left[\frac{1}{2}\likPar + \emKer[\Naugment]{\fwd}(\Par)\right] + \left[\emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right] \right) \\
+&= \Gaussian\left(\obs \big| \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par) \right)
 \end{align*}
-where the final line uses the Gaussian convolution formula in \Cref{Gaussian_convolution}. Recalling that 
-$\CovComb[\Naugment](\Par) = \likPar + \emKer[\Naugment]{\fwd}(\Par)$, the covariance in the above expression simplifies to 
-$\likPar + \emKer[\Ndesign]{\fwd}(\Par) = \CovComb[\Ndesign](\Par)$. 
-
-\item We start by applying \Cref{lemma:squared_Gaussian_density}, which gives 
+and
 \begin{align*}
-\Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \CovComb[\Naugment](\Par))^2
-&= (2\pi)^{-\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{-1/2} 
-\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right). 
+\E_{\designBatchFwd}\left[\Gaussian\left(\obs \big| \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par)\right]\right)\right] 
+&= \Gaussian\left(\obs \big| \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2} \left[\likPar + \emKer[\Naugment]{\fwd}(\Par)\right] + \left[\emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right] \right) \\
+&= \Gaussian\left(\obs \big| \emMean[\Ndesign]{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right] - \frac{1}{2} \emKer[\Naugment]{\fwd}(\Par)\right),
 \end{align*}
-Just as in part 2 above, the convolution formula in \Cref{Gaussian_convolution} yields 
+which completes the derivation of \Cref{fwd_evar1}. To obtain \Cref{fwd_evar2} we rearrange the covariances of the above expressions to obtain 
 \begin{align*}
-\E_{\designBatchFwd}\left[\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par| \designBatchFwd), \frac{1}{2}\CovComb[\Naugment](\Par)\right) \right] 
-&= \Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)\right), 
+\frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par) &= 
+\left[\likPar +  \emKer[\Ndesign]{\fwd}(\Par) \right] - \frac{1}{2}\likPar 
+= \CovComb(\Par) - \frac{1}{2}\likPar \\
+\left[\frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right] - \frac{1}{2} \emKer[\Naugment]{\fwd}(\Par)
+&= \left[\likPar + \emKer[\Ndesign]{\fwd}(\Par) \right] - \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par) \right] 
+= \CovComb(\Par) - \frac{1}{2} \CovComb[\Naugment](\Par). 
 \end{align*}
-with the covariance simplifying to 
-\begin{align*}
-\frac{1}{2}\CovComb[\Naugment](\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par)
-&= \frac{1}{2}\likPar + \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) + \emKer[\Ndesign]{\fwd}(\Par) - \emKer[\Naugment]{\fwd}(\Par) \\ 
-&= \left[\likPar + \emKer[\Ndesign]{\fwd}(\Par) \right] - \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par) \right] \\
-&= \CovComb[\Ndesign](\Par) - \frac{1}{2} \CovComb[\Naugment](\Par). 
-\end{align*}
- 
-\end{enumerate}
 
 \end{proof}
 
@@ -1653,7 +1653,11 @@ variables. I should probably include Lorenz-63 to have a more familiar example t
 
 \subsection{Need to add}
 \begin{enumerate}
-\item Summary of results from noisy MCMC literature. 
+\item Summary of results from noisy MCMC literature.
+\item Try working out results that compare the ratio of the approx density at two points across different approximations; 
+alternatively could consider deriving these results for the normalized densities. 
+\item Include result that sample and marginal approx agree at the design points.
+\item Include existence results (check existence result from that new paper)
 \end{enumerate}
 
 \subsection{Things to consider trying}
