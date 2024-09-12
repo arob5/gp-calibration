@@ -228,6 +228,26 @@ llikEmulator$methods(
     return(exp(llik_pred))
   },
   
+  calc_expected_lik_cond_var = function(input_eval, input_cond, include_nugget=TRUE, log_scale=TRUE, plugin=FALSE, ...) {
+    # Under the default setting `plugin = FALSE`, computes the log of 
+    # E_l Var[exp(L(input_eval))|L(input_cond)=l]
+    # where L is the log-likelihood emulator and the expectation is with respect to the current 
+    # log-likelihood emulator predictive distribution (i.e., this is a posterior predictive quantity). 
+    # If `plugin = TRUE`, then the function will instead compute 
+    # E_g Var[exp(L(input_eval; G|{input_cond,g}))|g]
+    # where `G` denotes the underlying emulator `emulator_model`. In words, the underlying emulator 
+    # will first be conditioned at the new inputs `input_cond`- G|{input_cond,g} - where `g` is assumed to 
+    # be distributed according to the current emulator model predictive distribution. This conditioned
+    # emulator is plugged into the log-likelihood and then the expectation of the exponentiated 
+    # log-likelihood is computed with respect to `g`. Certain classes may implement this method 
+    # with only one of the two options for `plugin`, in which case an error should be thrown if 
+    # the other option is passed. Other classes may not have this method at all, or return an 
+    # approximation to this expected conditional variance.
+    #
+    # Returns vector of length `length(X_eval)` containing the expected conditional variance 
+    # at the evaluation points `input_eval`. 
+    .NotYetImplemented()
+  },
   
   get_pred_interval = function(input, lik_par_val=NULL, emulator_pred_list=NULL, target_pred_list=NULL, target="llik",  
                                method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
@@ -332,7 +352,6 @@ llikEmulator$methods(
     return(plt)
     
   },
-  
   
   plot_pred_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, plot_type="llik", 
                           conditional=default_conditional, normalize=default_normalize,
@@ -982,6 +1001,16 @@ llikEmulatorGP$methods(
     else q <- qlnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), lower.tail=lower_tail)
     
     return(q)
+  }, 
+  
+  calc_expected_lik_cond_var = function(input_eval, input_cond, include_nugget=TRUE, 
+                                        log_scale=TRUE, plugin=FALSE, ...) {
+    # Since the emulator model directly emulates the log-likelihood in this class, the 
+    # options `plugin = FALSE` and `plugin = TRUE` are equivalent in this case. In either
+    # case, the analogous method for the GP `emulator_model` is dispatched. 
+    
+    .self$emulator_model$calc_expected_exp_cond_var(input_eval, input_cond, include_nugget=include_nugget, 
+                                                    log_scale=log_scale, ...)
   }
   
 )
@@ -1682,6 +1711,9 @@ llikEmulatorFwdGaussDiag$methods(
     # "marginal" likelihood approximation under a Gaussian error model, which implies that the 
     # forward model GP variance is simply added to the likelihood variance. 
     
+    assert_that(normalize && !conditional, 
+                msg="`predict_lik()` for llikEmulatorGP currently assumes normalized and not conditional likelihood.")
+    
     if(return_cross_cov || return_cov) {
       stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict_lik()`.")
     }
@@ -1733,6 +1765,46 @@ llikEmulatorFwdGaussDiag$methods(
                 return_mean=TRUE, return_var=FALSE, conditional=conditional,  
                 normalize=normalize, log_scale=FALSE, include_nugget=include_nugget, ...)$mean
     
+  }, 
+  
+  calc_expected_lik_cond_var = function(input_eval, input_cond, lik_par_val=NULL,
+                                        include_nugget=TRUE, log_scale=TRUE, plugin=FALSE, 
+                                        conditional=default_conditional, normalize=default_normalize, ...) {
+    assert_that(plugin, msg="llikEmulatorFwdGaussDiag$calc_expected_lik_cond_var() requires `plugin=TRUE`.")
+    
+    N_eval <- nrow(input_eval)
+    sig2 <- .self$get_lik_par(lik_par_val)
+    gp_copy <- .self$emulator_model$copy(shallow=FALSE)
+    
+    # GP emulator predictions at evaluation locations and at conditioning locations. 
+    gp_pred <- gp_copy$predict(input_cond, return_mean=TRUE, return_var=FALSE, ...)
+    gp_pred_eval <- gp_copy$predict(input_eval, return_mean=TRUE, return_var=TRUE, ...)
+    
+    # Update the GP model, treating the predictive mean as the observed response at 
+    # the evaluation locations. This leaves the predictive mean unchanged, but updates
+    # the predictive variance. 
+    gp_copy$update(input_cond, gp_pred$mean, update_hyperpar=FALSE, ...)
+    
+    # Predict with the conditional ("cond") GP (i.e., the updated GP) at the  
+    # evaluation locations.
+    gp_pred_cond <- gp_copy$predict(input_eval, return_mean=FALSE, return_var=TRUE, ...)
+    
+    # Compute the log of the numerators of the first and second terms. 
+    log_num1 <- assemble_llik(gp_pred_eval$mean, lik_par_val=0.5*sig2, 
+                              conditional=conditional, normalize=normalize, 
+                              var_inflation_vals=gp_pred_eval$var, ...)
+    log_num2 <- assemble_llik(gp_pred_eval$mean, lik_par_val=0.5*sig2, 
+                              conditional=conditional, normalize=normalize, 
+                              var_inflation_vals=gp_pred_eval$var-0.5*gp_pred_cond$var, ...)
+  
+    # Compute the log of the denominators of the first and second terms. 
+    log_2pi_term <- 0.5 * .self$N_obs * .self$N_output * log(2*pi)
+    log_denom1 <-  log_2pi_term  + 0.5 * .self$N_obs * sum(log(sig2))
+    log_denom2 <- log_2pi_term + 0.5 * .self$N_obs * rowSums(log(add_vec_to_mat_rows(sig2, gp_pred_cond$var)))
+    log_evar <- log_diff_exp(log_num1-log_denom1, log_num2-log_denom2)
+    
+    if(log_scale) return(log_evar)
+    return(exp(log_evar))
   }
   
 )

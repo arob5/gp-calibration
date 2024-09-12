@@ -154,7 +154,7 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
   
   assert_that(gp$Y_dim==1L)
   
-  log_evar <- gp$calc_expected_cond_var(grid_points, input, log_scale=TRUE, ...)[,1]
+  log_evar <- gp$calc_expected_exp_cond_var(grid_points, input, log_scale=TRUE, ...)[,1]
   log_summands <- log_evar + log(weights)
   log_IEVAR <- matrixStats::logSumExp(log_summands)
   

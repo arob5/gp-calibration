@@ -391,7 +391,7 @@ gpWrapper$methods(
     else Y_train <<- rbind(Y_train, Y_new)
   }, 
   
-  calc_expected_cond_var = function(X_eval, X_cond, include_nugget=TRUE, log_scale=TRUE, ...) {
+  calc_expected_exp_cond_var = function(X_eval, X_cond, include_nugget=TRUE, log_scale=TRUE, ...) {
     # Computes the log of E_l Var[exp(f(X_eval))|f(X_cond)=l], the expected conditional variance 
     # due to conditioning on `X_cond`. The expected conditional variance is evaluated at inputs 
     # `X_eval`. The expectation is with respect to the current GP predictive distribution, 
@@ -408,7 +408,8 @@ gpWrapper$methods(
     pred_eval <- gp_copy$predict(X_eval, return_mean=FALSE, return_var=TRUE, ...)
     
     # Update the GP model, treating the predictive mean as the observed 
-    # response at the evaluation locations. 
+    # response at the evaluation locations. This leaves the predictive 
+    # mean unchanged, but updates the predictive variance.
     gp_copy$update(X_cond, pred$mean, update_hyperpar=FALSE, ...)
     
     # Predict with the conditional ("cond") GP (i.e., the updated GP) at the  

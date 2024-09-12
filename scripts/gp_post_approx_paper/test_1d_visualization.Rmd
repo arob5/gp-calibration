@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = FALSE)
 # TODO: 
 #    - Add a quantile approximation. 
 #    - Estimate observation variance. 
+#    - On pg. 30 of paper draft, potentially change mu_N(u|mu_n(U_B)) to mu_N(u).
+#    - Exponentiate the integrated variance acquisitions if possible; o/w make clear I'm plotting the log. 
 #    - Improve llik emulator GP model (consider using Vehtari method of integrating out trend coefs). 
 #    - Include model discrepancy to make the data generation process differ from the 
 #      likelihood so that we can obtain a more realistic log-likelihood surface. 
@@ -621,9 +623,8 @@ acq_int_plt_llik <- plot_curves_1d_helper(test_info$input, acq_int_llik,
                                                      linetype="dashed", color=design_color)
 
 # Forward model. 
-acq_funcs_int <- c("llik_IVAR_grid_gp", "llik_IENT_grid_gp")
 acq_int_fwd <- compare_acq_funcs(test_info$input, acq_funcs_int, em_fwd, 
-                                 grid_points=test_info$input)
+                                 grid_points=test_info$input, plugin=TRUE)
 acq_int_fwd <- scale_acq(acq_int_fwd)
 acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_fwd, 
                                          plot_title="Integrated acq [fwd]",

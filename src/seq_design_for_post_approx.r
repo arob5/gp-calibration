@@ -300,17 +300,26 @@ acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(gr
 
 
 acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), 
-                                log_scale=TRUE, ...) {
+                                log_scale=TRUE, plugin=FALSE, ...) {
+  # Approximates the integrated expected variance criterion for a random likelihood induced 
+  # by a log-likelihood emulator. The integral approximation is obtained via a discretization
+  # at inputs `grid_points`. The argument `plugin` is passed to the `calc_expected_lik_cond_var`
+  # method of `llik_em` (see the comments in this method for details). In brief, this argument 
+  # controls whether the conditional expectation is considered directly for the random 
+  # likelihood, or if the underlying emulator model is first conditioned and then "plugged in" 
+  # to the likelihood before the expectation is taken. 
+  
   # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
   # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 
   # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
   # with a discrete sum at inputs `grid_points`.
+
+  log_evar <- llik_em$calc_expected_lik_cond_var(grid_points, input, log_scale=TRUE, plugin=plugin, ...)
+  log_summands <- log_evar + log(weights)
+  log_IEVAR <- matrixStats::logSumExp(log_summands)
   
-  # TODO: this is temp and only currently works for log-likelihood emulation. 
-  
-  assert_that(is_gp(llik_em$emulator_model))
-  assert_that(class(em_llik) == "llikEmulatorGP")
-  acq_IEVAR_grid(input, llik_em$emulator_model, grid_points, weights, log_scale=log_scale, ...)
+  if(log_scale) return(log_IEVAR)
+  return(exp(log_IEVAR))                                   
 }
 
 
