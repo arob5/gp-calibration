@@ -1070,7 +1070,7 @@ For any $\Par \in \parSpace$, it then follows that
 where 
 \begin{align}
 \Var\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
-&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par| \emMean[\Ndesign]{\llik}(\designBatchIn)\right) + \emKer[\Naugment]{\llik}(\Par)} 
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
 \left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right], \nonumber \\
 \varInflation(\Par; \designBatchIn)
 &= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}. \label{var_inflation_factor}

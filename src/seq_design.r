@@ -128,8 +128,6 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
 }
 
 
-
-
 # -----------------------------------------------------------------------------
 # General functions for batch design:
 # These are typically intended for "one-shot" design, which often implies
@@ -290,6 +288,46 @@ get_tensor_product_grid <- function(N_batch, prior_dist_info=NULL, bounds=NULL,
   colnames(X_grid) <- rownames(prior_dist_info)
   
   return(X_grid)
+}
+
+
+gen_extrapolation_test_inputs <- function(d, N_points, max_scaler=2.0, scale="linear", target_bounds=NULL) {
+  # By default, this function implicitly treats data as lying in the hypercube [-1,1]^d.
+  # One can think of [-1,1]^d as the hypercube associated with the bounds of
+  # the design points, so test points generated outside of this cube can be thought of
+  # as testing the extrapolation of the model.
+  # The output test points can be appropriately scaled with respect to a different
+  # hypercube by specifiying the `target_bounds` argument.
+  # Returns an array `X_test` of shape (d, N_points, d), where `X_test[j,:,:]` gives
+  # the `N_points` test inputs spread along the jth standard basis vector. These
+  # points will be centered relative to the middle of the target hyperrectangle, 
+  # and extend equally in both directions along each standard coordinate direction 
+  # outwards from this center point. 
+  
+  # These scalers are wrt the hypercube [-1,1]^d.
+  reference_bounds <- rbind(rep(-1,d), rep(1,d))
+  if(scale=="linear") {
+    scalers <- seq(-max_scaler, max_scaler, length.out=N_points)
+  } else if(scale=="log") {
+    .NotYetImplemented()
+  }
+
+  # First dimension of `X_test` corresponds to the basis vector/direction being 
+  # considered.
+  X_test <- array(dim=c(d,N_points,d))
+  for(j in range(d)) {
+    basis_vec <- rep(0,d)
+    basis_vec[j] <- 1.0
+    X_test[j,,] <- matrix(basis_vec, nrow=N_points, ncol=d, byrow=TRUE)
+    X_test[j,,] <- mult_vec_with_mat_rows(scalers, X_test[j,,])
+
+    if(!is.null(target_bounds)) {
+      X_test[j,,] <- scale_inputs(X_test[j,,], source_bounds=reference_bounds, 
+                                  target_bounds=target_bounds)
+    }
+  }
+  
+  return(X_test)
 }
 
 
