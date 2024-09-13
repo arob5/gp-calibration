@@ -419,6 +419,7 @@ may outweigh the downsides of log-likelihood emulation in many applications.
         \label{fig:em_dist_1d}
 \end{figure}
 
+
 % Posterior Approximation
 \section{Posterior Approximation}
 The forward model and log-likelihood emulation approaches result in the random log-likelihood approximations 
@@ -832,6 +833,16 @@ computational resources become available.
 % Existence of approximate posteriors. 
 \subsection{Existence of Approximate Posterior Distributions} \label{post_existence}
 \todo
+
+% Practical Gaussian Process Considerations
+\section{Practical Gaussian Process Considerations}
+\begin{itemize}
+\item Examples from literature: quadratic trend, paper that uses constrained GP, Teckentrup GPs for PDEs
+\item Issues with quadratic trend in higher dimensions. 
+\item Issues with existence for priors with unbounded support: issue with ordinary kriging, marginalizing mean 
+uncertainty, quadratic kernel. 
+\item Potential for constrained GPs.
+\end{itemize}
 
 % Sequential Design
 \section{Sequential Design} \label{seq_des}
