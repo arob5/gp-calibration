@@ -78,6 +78,24 @@ inv_prob$par_prior$par_true <- inv_prob$par_true
 print(inv_prob$par_prior)
 ```
 
+```{r}
+# Extrapolation Points. 
+load(file.path(output_dir, "extrap_info.RData"))
+
+df_extrap <- data.frame(extrap_info$input, lpost=extrap_info$lpost)
+for(j in seq_len(inv_prob$dim_par)) {
+  start_idx <- extrap_info$idx[[j]][1]
+  end_idx <- extrap_info$idx[[j]][2]
+  par_name <- inv_prob$par_names[j]
+  cols <- c("lpost", par_name)
+  df_j <- as.data.table(df_extrap)[start_idx:end_idx, ..cols]
+  setnames(df_j, par_name, "u")
+  df_j <- df_j[is.finite(lpost)]
+  plt <- ggplot(df_j, aes(x=u, y=lpost)) + geom_point() + xlab(par_name)
+  plot(plt)
+}
+```
+
 
 ```{r}
 #

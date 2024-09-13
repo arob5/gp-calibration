@@ -7,6 +7,8 @@
 #
 
 # TODO:
+#    - Write a function that acts on `par_prior` and returns bounds for each parameter. 
+#      Will be -Inf/Inf for unbounded. 
 #    - Talk with Mike about reasonable priors to use in this experiment. 
 #      e.g., VSEM default parameter range for LAR is enormous, and would
 #      probably benefit from something like a log-normal/half-normal/Gamma 
@@ -15,7 +17,8 @@
 #      in from the bash file; right now `dim_par` and `dim_output` do nothing. 
 #    - Add hyperparameter constraints on other kergp models (not just Gaussian+Quadratic). 
 #    - Add test points along coordinate axes.
-#    - Add basis function forward model emulator. 
+#    - Add basis function forward model emulator.
+#    - Figure out weird sampling behavior for approximate posteriors. 
 
 # -----------------------------------------------------------------------------
 # docopt string for parsing command line arguments.  
@@ -276,12 +279,12 @@ ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 
 #
 # Collect inverse problem components in list, save plots summarizing data.
-#
 
 # List containing inverse problem components.
 inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
                  sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y_true,
-                 times=time_points)
+                 times=time_points, par_names=rownames(par_prior_params), 
+                 dim_par=dim_par)
 
 # -----------------------------------------------------------------------------
 # Exact log-likelihood object. 
@@ -316,6 +319,7 @@ design_info$input <- get_batch_design(design_info$design_method, N_design,
 design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
 design_info$llik <- llik_exact$assemble_llik(design_info$input)
 design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
+design_info$bounds <- get_bounds(design_info$input)
 save(design_info, file=file.path(output_dir, "design_info.RData"))
 
 # Test points. 
@@ -326,14 +330,37 @@ test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
 save(test_info, file=file.path(output_dir, "test_info.RData"))
 
+# Extrapolation points.
+# TODO: I should alter the extrapolation test function so that I can also pass 
+# in bounds defining the extent of extrapolation in each dimension. For now 
+# the function will return points outside of the prior support, which leads to 
+# infinite lpost vals - I'm currently just dropping infinite vals. 
+extrap_list <- gen_extrapolation_test_inputs(dim_par, N_points_per_dim=200, max_scaler=2.0, 
+                                             scale="linear", target_bounds=design_info$bounds, 
+                                             return_long=TRUE)
+u_extrap <- extrap_list$inputs
+colnames(u_extrap) <- inv_prob$par_names
+extrap_info <- list(input=u_extrap, idx=extrap_list$idx)
+extrap_info$fwd <- llik_exact$run_fwd_model(extrap_info$input) 
+extrap_info$llik <- llik_exact$assemble_llik(extrap_info$input)
+extrap_info$lprior <- calc_lprior_theta(extrap_info$input, inv_prob$par_prior)
+extrap_info$lpost <- extrap_info$llik + extrap_info$lprior
+
+save(extrap_info, file=file.path(output_dir, "extrap_info.RData"))
+
 
 # -----------------------------------------------------------------------------
 # Exact MCMC. 
 # -----------------------------------------------------------------------------
 
-# MCMC sampling using exact likelihood. 
+# Initial condition and covariance proposal for MCMC. 
 mcmc_par_init <- design_info$input[which.max(design_info$llik + design_info$lprior),]
 cov_prop_init <- cov(design_info$input)
+print(paste0("MCMC initial value:", mcmc_par_init))
+print("Initial proposal covariance:")
+print(cov_prop_init)
+
+# MCMC sampling using exact likelihood. 
 mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
                                  mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
 samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
@@ -408,6 +435,60 @@ for(em_name in names(llik_em_list)) {
   ggsave(file.path(output_dir, paste0("llik_pred_", em_name, ".png")), plt)
 }
 
+# Log-likelihood predictions at extrapolation points.
+llik_extrap_pred <- list()
+lik_extrap_pred <- list()
+for(em_name in names(llik_em_list)) {
+  llik_extrap_pred[[em_name]] <- llik_em_list[[em_name]]$predict(extrap_info$input, 
+                                                                 lik_par_val=inv_prob$sig2_eps, 
+                                                                 conditional=default_conditional,
+                                                                 normalize=default_normalize)
+  
+  lik_extrap_pred[[em_name]] <- llik_em_list[[em_name]]$predict_lik(extrap_info$input, 
+                                                                    lik_par_val=inv_prob$sig2_eps, 
+                                                                    conditional=default_conditional,
+                                                                    normalize=default_normalize,
+                                                                    log_scale=TRUE)
+}
+
+ggsave(file.path(output_dir, "llik_pred_extrap_list.png"), llik_extrap_pred)
+ggsave(file.path(output_dir, "lik_pred_extrap_list.png"), lik_extrap_pred)
+
+dt_extrap <- data.table(extrap_info$input, lpost=extrap_info$lpost)
+for(em_name in names(llik_extrap_pred)) {
+  dt_extrap[, paste(em_name, "mean", sep="_") := llik_extrap_pred[[em_name]]$mean + extrap_info$lprior]
+  dt_extrap[, paste(em_name, "var", sep="_") := llik_extrap_pred[[em_name]]$var + 2*extrap_info$lprior]
+}
+
+llik_em_names <- names(llik_extrap_pred)
+mean_cols <- c("lpost", paste(llik_em_names, "mean", sep="_"))
+var_cols <- c("lpost", paste(llik_em_names, "var", sep="_"))
+dt_extrap[1:200, dimension := 1L]
+dt_extrap[201:400, dimension := 2L]
+dt_extrap[401:600, dimension := 3L]
+
+dt_extrap_means_long <- data.table::melt(dt_extrap, id.vars=c(inv_prob$par_names, "dimension"),
+                                         measure.vars=mean_cols)
+dt_extrap_vars_long <- data.table::melt(dt_extrap, id.vars=c(inv_prob$par_names, "dimension"), 
+                                        measure.vars=var_cols)
+
+for(j in seq_len(inv_prob$dim_par)) {
+  par_name <- inv_prob$par_names[j]
+  cols_mean <- c(mean_cols, par_name)
+  dt_j <- as.data.table(dt_extrap)[dimension==j, ..cols_mean]
+  setnames(dt_j, par_name, "u")
+  dt_j <- dt_j[is.finite(lpost)]
+  plt <- ggplot(dt_j, aes(x=u, y=value, color=variable)) + geom_line() + xlab(par_name)
+  plot(plt)
+}
+
+
+
+
+
+
+
+
 
 # -----------------------------------------------------------------------------
 # Run MCMC Samplers.  
@@ -422,7 +503,8 @@ for(em_name in names(llik_em_list)) {
                                                mcmc_tags=mcmc_tags, save_dir=output_dir, 
                                                samp_dt=samp_dt, mcmc_list=mcmc_list, 
                                                test_label_suffix=em_name, N_itr=N_mcmc, 
-                                               par_init=mcmc_par_init, overwrite=TRUE)
+                                               par_init=mcmc_par_init, cov_prop=mcmc_par_init,
+                                               overwrite=TRUE)
   
   samp_dt <- mcmc_info_list$samp
   mcmc_list <- mcmc_info_list$mcmc_list

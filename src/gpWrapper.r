@@ -22,6 +22,19 @@ library(abind)
 # (fit, predict, sample, plot, etc.) that can then be plugged into downstream 
 # tasks. This allows different R packages to be swapped in without modifying 
 # the downstream code. 
+#
+# To standardize behavior across different GP packages that are "wrapped", the 
+# default assumption here is that the predictive distribution of the model 
+# is a GP, with standard predictive mean and covariance functions encoded by 
+# the `predict` method. Note that this is NOT the default behavior of many R 
+# GP packages out there. For example, packages like kergp and hetGP consider 
+# the "ordinary kriging" approach of propagating uncertainty in the mean 
+# function coefficients in the predictive variance. Other packages may 
+# may marginalize the GP predictive distribution with respect to a marginal 
+# variance parameter equipped with an inverse Gamma prior, resulting in a 
+# Student-T - not Gaussian - predictive distribution. The gpWrapper class is 
+# intended to be flexible enough to accomodate such features, but the default
+# behavior should be the basic GP predictive distribution for consistency. 
 # -----------------------------------------------------------------------------
 
 gpWrapper <- setRefClass(
@@ -518,6 +531,12 @@ gpWrapperHet$methods(
   
   fit_package = function(X_fit, y_fit, kernel_name="Gaussian", mean_func_name="constant", estimate_nugget=TRUE, 
                          fixed_pars=list(), ...) {
+    # TODO: changing the `trendtype` (see below) after fitting the GP is not ideal, since
+    # hetGP will use the "OK" trendtype during the MLE but then we manually override 
+    # this post-hoc to change the behavior during prediction. It would be better to  
+    # change this pre-MLE but it doesn't appear that hetGP provides an easy way 
+    # to do this. 
+    
     # Deal with noiseless case. 
     if(estimate_nugget) {
       assert_that(!("g" %in% names(fixed_pars)), 
@@ -529,6 +548,13 @@ gpWrapperHet$methods(
     if(length(fixed_pars) == 0) fixed_pars <- NULL
     
     gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
+    
+    # Change the trendtype from "ordinary kriging" to "simple kriging" to align with the 
+    # default gpWrapper behavior of not inflating the predictive variance due to 
+    # mean function estimation.
+    gp_fit$trendtype <- "SK"
+    
+    return(gp_fit)
   },
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
