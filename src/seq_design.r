@@ -291,7 +291,8 @@ get_tensor_product_grid <- function(N_batch, prior_dist_info=NULL, bounds=NULL,
 }
 
 
-gen_extrapolation_test_inputs <- function(d, N_points, max_scaler=2.0, scale="linear", target_bounds=NULL) {
+gen_extrapolation_test_inputs <- function(d, N_points_per_dim, max_scaler=2.0, scale="linear", 
+                                          target_bounds=NULL, return_long=FALSE) {
   # By default, this function implicitly treats data as lying in the hypercube [-1,1]^d.
   # One can think of [-1,1]^d as the hypercube associated with the bounds of
   # the design points, so test points generated outside of this cube can be thought of
@@ -302,24 +303,30 @@ gen_extrapolation_test_inputs <- function(d, N_points, max_scaler=2.0, scale="li
   # the `N_points` test inputs spread along the jth standard basis vector. These
   # points will be centered relative to the middle of the target hyperrectangle, 
   # and extend equally in both directions along each standard coordinate direction 
-  # outwards from this center point. 
-  
+  # outwards from this center point. If `return_long = TRUE` then instead 
+  # of returning the 3-dimensional array, a list with elements "inputs" and 
+  # "idx" is returned. The former contains a matrix of shape (d*N_points_per_dim, d),
+  # which is the inputs from `X_test` stacked row-wise into a single matrix. 
+  # The `idx` element is a list of length `d` storing the beginning and end 
+  # indices of `inputs` that correspond to each respective dimension. This allows
+  # easy extraction of inputs along the jth direction. 
+
   # These scalers are wrt the hypercube [-1,1]^d.
   reference_bounds <- rbind(rep(-1,d), rep(1,d))
   if(scale=="linear") {
-    scalers <- seq(-max_scaler, max_scaler, length.out=N_points)
+    scalers <- seq(-max_scaler, max_scaler, length.out=N_points_per_dim)
   } else if(scale=="log") {
     .NotYetImplemented()
   }
 
   # First dimension of `X_test` corresponds to the basis vector/direction being 
   # considered.
-  X_test <- array(dim=c(d,N_points,d))
-  for(j in range(d)) {
+  X_test <- array(dim=c(d,N_points_per_dim,d))
+  for(j in seq_len(d)) {
     basis_vec <- rep(0,d)
     basis_vec[j] <- 1.0
-    X_test[j,,] <- matrix(basis_vec, nrow=N_points, ncol=d, byrow=TRUE)
-    X_test[j,,] <- mult_vec_with_mat_rows(scalers, X_test[j,,])
+    X_test[j,,] <- matrix(basis_vec, nrow=N_points_per_dim, ncol=d, byrow=TRUE)
+    X_test[j,,] <- mult_vec_with_mat_cols(scalers, X_test[j,,])
 
     if(!is.null(target_bounds)) {
       X_test[j,,] <- scale_inputs(X_test[j,,], source_bounds=reference_bounds, 
@@ -327,7 +334,19 @@ gen_extrapolation_test_inputs <- function(d, N_points, max_scaler=2.0, scale="li
     }
   }
   
-  return(X_test)
+  # Return 3-dimensional array. 
+  if(!return_long) return(X_test)
+  
+  # Alternatively, return list. 
+  X_test_long <- do.call(rbind, lapply(1:d, function(j) X_test[j,,]))
+  break_points <- vector(mode="list", length=d)
+  for(j in seq_len(d)) {
+    start_idx <- 1L + (j-1)*N_points_per_dim
+    end_idx <- start_idx + N_points_per_dim - 1L
+    break_points[[j]] <- c(start_idx, end_idx)
+  }
+  
+  return(list(inputs=X_test_long, idx=break_points))
 }
 
 
