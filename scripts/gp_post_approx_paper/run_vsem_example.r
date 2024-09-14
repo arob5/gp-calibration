@@ -387,6 +387,7 @@ llik_em_list[["em_llik_const"]] <- llikEmulatorGP("em_llik_const", em_llik_gp, d
                                                   default_normalize=default_normalize, lik_par=inv_prob$sig2_eps, 
                                                   use_fixed_lik_par=TRUE)
 
+
 # Log-likelihood emulator, quadratic mean.
 print("-> Fitting em_llik_quad")
 em_llik_gp2 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 

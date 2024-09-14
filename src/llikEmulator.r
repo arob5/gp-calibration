@@ -250,7 +250,7 @@ llikEmulator$methods(
   },
   
   get_pred_interval = function(input, lik_par_val=NULL, emulator_pred_list=NULL, target_pred_list=NULL, target="llik",  
-                               method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                               method="pm_std_dev", N_std_dev=2, CI_prob=0.9, 
                                conditional=default_conditional, normalize=default_normalize, include_nugget=TRUE, ...) {
     # Options for `target`: "llik" and "lik". 
     # Options for `method`: "pm_std_dev" (pm = "plus-minus"), "CI". The former computes the bounds by 
@@ -429,7 +429,7 @@ llikEmulator$methods(
   plot_pred_validation = function(input, true_llik, lik_par_val=NULL, emulator_pred_list=NULL, 
                                   plot_type="llik", conditional=default_conditional, 
                                   normalize=default_normalize, include_interval=TRUE,
-                                  interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                                  interval_method="pm_std_dev", N_std_dev=2, CI_prob=0.9, 
                                   include_design=TRUE, xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
     
     assert_that(plot_type %in% c("llik", "lik"))
@@ -481,7 +481,7 @@ llikEmulator$methods(
   plot_1d_projection = function(input_names_proj=NULL, n_points=100L, input_list_proj=NULL,   
                                 input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
                                 include_interval=TRUE, interval_method="pm_std_dev",  
-                                N_std_dev=1, CI_prob=0.9, include_nugget=TRUE,
+                                N_std_dev=2, CI_prob=0.9, include_nugget=TRUE,
                                 plot_type="llik", input_bounds=NULL, ...) {
     # This method is very similar to the gpWrapper method of the same name (see that 
     # method for detailed comments). The major differences here include the fact that 
@@ -492,6 +492,7 @@ llikEmulator$methods(
     #
     # TODO: should include the option to use the log of the likelihood predictions. 
     
+    assert_that(is.element(plot_type, c("llik", "lik")))
     if(plot_type=="lik") .NotYetImplemented()
     
     # If provided, ensure `input_bounds` has colnames set to the input names. 
@@ -518,7 +519,7 @@ llikEmulator$methods(
     if(is.null(input_bounds) && !is.null(design_inputs)) input_bounds <- get_bounds(design_inputs)
     if(include_design) {
       design_response <- drop(.self$get_design_llik(lik_par_val, conditional, normalize, ...))
-      if(plot_type=="lik") design_response <- exp(design_response)
+      if((plot_type=="lik") && !log_scale) design_response <- exp(design_response)
     } else {
       design_inputs <- NULL
     }
@@ -559,9 +560,15 @@ llikEmulator$methods(
                       nrow=n_grid, byrow=TRUE, dimnames=list(NULL,input_names_fixed)))
       inputs <- inputs[, .self$input_names]
       
-      # Compute log-likelihood predictions.
-      pred_list <- .self$predict(inputs, lik_par_val=lik_par_val, return_var=include_interval, 
-                                 include_nugget=include_nugget, ...)
+      # Compute log-likelihood or likelihood predictions.
+      if(plot_type=="llik") {
+        pred_list <- .self$predict(inputs, lik_par_val=lik_par_val, return_var=include_interval, 
+                                   include_nugget=include_nugget, conditional=conditional,
+                                   normalize=normalize, ...)
+      } else {
+        pred_list <- .self$predict_lik(inputs, lik_par_val=lik_par_val, return_var=include_interval,  
+                                       conditional=onditional, normalize=normalize, log_scale=FALSE, ...)
+      }
       
       # Compute prediction interval.  
       if(include_interval) {
