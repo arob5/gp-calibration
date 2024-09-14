@@ -361,18 +361,19 @@ gpWrapper$methods(
     return(plts)
   },
   
-  plot_1d_projection = function(x_names, n_points=100L, X_list=NULL, X_fixed=NULL, include_design=FALSE, 
+  plot_1d_projection = function(x_names=NULL, n_points=100L, X_list=NULL, X_fixed=NULL, include_design=FALSE, 
                                 line_plot=FALSE, include_interval=TRUE, interval_method="pm_std_dev",
                                 N_std_dev=1, CI_prob=0.9, include_nugget=TRUE, ...) {
     # Plots GP predictions as a single input variable varies, with the remaining variables 
     # fixed at a single value. The default behavior of the method allows it to be called 
-    # with only the first argument provided; e.g., `plot_1d_projection("x1")`. In this case, 
+    # with no arguments; e.g., `plot_1d_projection()`. In this case, projections will be 
+    # considered on all input dimensions. For each variable being varied, 
     # the remaining variables will by default be fixed at their midpoints with respect to 
     # the `X_bounds` class attribute. GP predictions will be computed with these variables fixed
     # and the variable "x1" varied at `n_points` (default 100) equally spaced points between 
     # its bound values in `X_bounds`. Optional arguments offer much more fine-tuned control; 
     # e.g. `X_list` controls the points at which the varied variables are plotted, and `X_fixed`
-    # controls the values at which the fixed variables are fixed. One one variable may be 
+    # controls the values at which the fixed variables are fixed. One variable may be 
     # varied per plot, but multiple variables can be specified in `x_names`, in which multiple 
     # plots will be produced. Multiple combinations of fixed variables can also be specified 
     # in `X_fixed`, which will be plotted on the same plot. 
@@ -380,6 +381,7 @@ gpWrapper$methods(
     # Args:
     #    x_names: character, a subset of the `X_names` field determining variables to vary 
     #             (they will be varied one at a time, a different plot being produced for each).
+    #             If NULL, set to all variables. 
     #    n_points: integer, the number of grid points at which predictions will be computed for 
     #              the varied variables. This is overwritten for variables with input points 
     #              explicitly provided in `X`.
@@ -405,16 +407,25 @@ gpWrapper$methods(
     #               functions. 
     #
     # Returns:
-    #   List of plots, of length `Y_dim` * `length(x_names)`; i.e., one plot per varied variable 
-    #   per independent GP. Each plot will contain `nrow(X_fixed)` plot elements (lines or 
-    #   point chains).
+    #    List of plots, containing `Y_dim` * `length(x_names)` plots in total; i.e., one plot 
+    #    per varied variable per independent GP. The returned list has multiple levels, the first 
+    #    being a list of length `Y_dim` with names set to the output variable names. Each of these
+    #    elements contains a sublist of length `length(x_name)` corresponding to the projection 
+    #    dimension (the variable being varied). Each plot will contain `nrow(X_fixed)` plot  
+    #    elements (lines or point chains).
     #
     # TODO: would probably be nice to have helper function(s) that construct input grids that 
     # only vary one variable.
+    # TODO: need to generalize code to allow `X_fixed` to have multiple rows; a helper function
+    # will probably be best here as well. 
     
-    # Argument checking. 
-    x_names <- unique(x_names)
-    assert_that(all(is.element(x_names, .self$X_names)))
+    # Determine the variables that will be varied. 
+    if(is.null(x_names)) {
+      x_names <- .self$X_names
+    } else {
+      x_names <- unique(x_names)
+      assert_that(all(is.element(x_names, .self$X_names)))
+    }
     
     # Constructing input grids for varied parameters.
     n_vary <- length(x_names)
@@ -431,6 +442,9 @@ gpWrapper$methods(
     if(is.null(X_fixed)) {
       X_fixed <- matrix(apply(.self$X_bounds, 2, mean), nrow=1)
       colnames(X_fixed) <- colnames(.self$X_bounds)
+    } else {
+      assert_that(nrow(X_fixed)==1, 
+                  msg="Currently only supports the case where `X_fixed` has a single row.")
     }
     
     # Determine whether or not design points are included in plot.
@@ -454,15 +468,18 @@ gpWrapper$methods(
       pred_list <- .self$predict(X_pred, return_var=include_interval, include_nugget=include_nugget, ...)
       
       # Construct plots.
-      for(j in seq_len(gp$Y_dim)) {
-        y_name <- gp$Y_names[j]
-        plts[[y_name]][[x_name]] <- plot_Gaussian_pred_1d(drop(x_grid), pred_mean=pred_list$mean[,j],
-                                                          include_interval=FALSE, X_design=X_design[,x_name], 
-                                                          y_design=gp$Y[,j], ...)
+      for(j in seq_len(.self$Y_dim)) {
+        y_name <- .self$Y_names[j]
+        plts[[y_name]][[x_name]] <- plot_Gaussian_pred_1d(drop(x_grid), pred_mean=pred_list$mean[,j], 
+                                                          pred_var=pred_list$var[,j],
+                                                          include_interval=include_interval, 
+                                                          interval_method=interval_method, N_std_dev=N_std_dev,
+                                                          CI_prob=CI_prob, X_design=X_design[,x_name], 
+                                                          y_design=.self$Y[,j], xlab=x_name, ylab=y_name)
       }
-      
     }
-
+    
+    return(plts)
   },
   
   plot_loocv = function() {
