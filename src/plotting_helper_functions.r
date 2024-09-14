@@ -118,7 +118,7 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 }
 
 
-plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design), 
+plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.null(X_design), 
                                   y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
                                   xlab="x", ylab="y", ground_truth_col="black", design_color="black", 
                                   design_pt_size=1.5, line_thickness=1.0) {
@@ -127,16 +127,39 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   # Can still plot design points, just like `plot_pred_1d_helper`. 
   # `pred` is a matrix of dimension `(nrow(X_new), K)`, where `K` is the number of curves
   # to plot. A baseline curve will also be plotted if `y_new` is provided. 
-  
+  # By default, if `def_by` is NULL then each line (column of `pred`) will be plotted a 
+  # different color. The names of the lines in the legend will be taken from `colnames(pred)`
+  # if is it non-NULL; otherwise default names will be assigned. Passing `df_by` allows 
+  # specifying a finer mapping based on both color and linetype. `df_by` should have number
+  # of rows equal to `ncol(pred)` and ordered in the same way as the columns in `pred`. 
+  # Only columns in `df_by` called "color" or "linetype" are extracted, and these are mapped
+  # to the ggplot attributes of the same names. 
+ 
   # Set default title, if not provided. 
   if(is.null(plot_title)) plot_title <- "Approximations"
   
   # Column names of `pred` are used for plot labels. 
   if(is.null(dim(pred))) pred <- matrix(pred, ncol=1)
-  if(is.null(colnames(pred))) colnames(pred) <- paste0("y", 1:ncol(pred))
+  if(is.null(colnames(pred))) {
+    ids <- paste0("y", 1:ncol(pred))
+    colnames(pred) <- ids
+  } else {
+    ids <- colnames(pred)
+  }
+
+  # if(is.null(colnames(pred))) colnames(pred) <- paste0("y", 1:ncol(pred))
   
   df_pred <- cbind(x=drop(X_new), as.data.frame(pred))
-  df_pred <- melt(df_pred, id.vars="x", variable.name="approx", value.name="y")
+  df_pred <- melt(df_pred, id.vars="x", variable.name="id", value.name="y")
+  
+  # Optionally add classes for each line. 
+  if(!is.null(df_by)) {
+    valid_by_cols <- is.element(colnames(df_by), c("color","linetype"))
+    assert_that(any(valid_by_cols))
+    df_by <- df_by[, colnames(df_by)[valid_by_cols]]
+    df_by$id <- ids 
+    df_pred <- merge(df_pred, df_by, by="id")
+  }
   
   plt <- ggplot()
   
@@ -147,9 +170,27 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
                            linetype="dashed", linewidth=line_thickness)  
   }
   
-  plt <- plt + 
-          geom_line(aes(x=x, y=y, col=approx), df_pred, linewidth=line_thickness) + 
-          ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  # Plot lines. 
+  by_color <- TRUE
+  by_linetype <- FALSE
+  if(!is.null(df_by)) {
+    by_color <- ("color" %in% colnames(df_by))
+    by_linetype <- ("linetype" %in% colnames(df_by))
+  } else {
+    df_pred$color <- df_pred$id
+  }
+  
+  if(by_color && !by_linetype) {
+    plt <- plt + 
+            geom_line(aes(x=x, y=y, col=color), df_pred, linewidth=line_thickness) + 
+            ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  } else if(by_color && by_linetype) {
+    plt <- plt + 
+            geom_line(aes(x=x, y=y, col=color, linetype=linetype), df_pred, linewidth=line_thickness) + 
+            ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
+  } else {
+    stop("No by cols identified.")
+  }
   
   # Design points. 
   if(include_design) {
@@ -158,7 +199,6 @@ plot_curves_1d_helper <- function(X_new, pred, include_design=!is.null(X_design)
   }
   
   return(plt)
-  
 }
 
 

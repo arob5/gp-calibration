@@ -213,7 +213,9 @@ design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
 # test set). 
 N_grid <- 201
 u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
-test_info <- list(input=u_grid)
+u_grid <- sort(union(drop(u_grid), design_info$input))
+N_grid <- length(u_grid)
+test_info <- list(input=matrix(u_grid, ncol=1, dimnames=list(NULL, llik_exact$input_names)))
 test_info$fwd <- llik_exact$run_fwd_model(test_info$input)[,1] 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
 test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
@@ -577,22 +579,43 @@ llik_em_list <- list(llik=em_llik, fwd=em_fwd)
 
 # Compute pointwise acquisitions. 
 acq_funcs_pw <- c("llik_neg_var_gp", "llik_neg_entropy_gp", "llik_neg_var_lik")
+df_acq_types <- data.frame(color=c("max-var", "max-ent", "max-var"), 
+                           linetype=c("gp", "gp", "lik"))
 acq_pw_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_pw, llik_em_list)
 scale_acq <- function(x) scale_inputs(x, target_bounds=c(1,2))
+get_min_idx_acq <- function(x) apply(x, 2, which.min)
+get_opt_val_acq <- function(x) apply(x, 2, min)
 acq_pw_list <- lapply(acq_pw_list, scale_acq)
+opt_list_idx_pw <- lapply(acq_pw_list, get_min_idx_acq)
+opt_list_val_pw <- lapply(acq_pw_list, get_opt_val_acq)
+
+df_acq_types_llik <- df_acq_types
+df_acq_types_llik$u <- test_info$input[opt_list_idx_pw$llik,]
+df_acq_types_llik$val <- opt_list_val_pw$llik
+
+df_acq_types_fwd <- df_acq_types
+df_acq_types_fwd$u <- test_info$input[opt_list_idx_pw$fwd,]
+df_acq_types_fwd$val <- opt_list_val_pw$fwd
 
 # Plot pointwise acquisitions. 
-acq_pw_plt_llik<- plot_curves_1d_helper(test_info$input, acq_pw_list$llik, plot_title="pointwise acq [llik]",
-                                        line_thickness=line_thickness, design_color=design_color,
-                                        design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
-                                        geom_vline(xintercept=drop(design_info$input), 
-                                                    linetype="dashed", color=design_color) 
+acq_pw_plt_llik <- plot_curves_1d_helper(test_info$input, acq_pw_list$llik, 
+                                         plot_title="pointwise acq [llik]",
+                                         df_by=df_acq_types_llik, line_thickness=line_thickness, 
+                                         design_color=design_color, design_pt_size=design_pt_size, 
+                                         xlab="u", ylab="acq") + 
+                                         geom_vline(xintercept=drop(design_info$input), 
+                                                    linetype="dashed", color=design_color) + 
+                                         geom_point(aes(x=u, y=val, color=color, shape=linetype), 
+                                                    df_acq_types_llik, shape=15, size=design_pt_size)
   
 acq_pw_plt_fwd<- plot_curves_1d_helper(test_info$input, acq_pw_list$fwd, plot_title="pointwise acq [fwd]",
+                                       df_by=df_acq_types_fwd,
                                        line_thickness=line_thickness, design_color=design_color,
                                        design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                        geom_vline(xintercept=drop(design_info$input), 
-                                                    linetype="dashed", color=design_color)
+                                                  linetype="dashed", color=design_color) + 
+                                       geom_point(aes(x=u, y=val, color=color, shape=linetype), 
+                                                  df_acq_types_fwd, shape=15, size=design_pt_size)
 
 
 acq_pw_plt_llik <- acq_pw_plt_llik %>% ggformat_journal(legend_position="bottom",
@@ -603,35 +626,54 @@ acq_pw_plt_fwd <- acq_pw_plt_fwd %>% ggformat_journal(legend_position="bottom",
 plot(acq_pw_plt_llik)
 plot(acq_pw_plt_fwd)
 
-# TODO: add star representing the minimum of each acquisition. 
 ggsave(file.path(output_dir, "acq_pw_llik.png"), acq_pw_plt_llik)
 ggsave(file.path(output_dir, "acq_pw_fwd.png"), acq_pw_plt_fwd)
 
 ```
 
 ```{r}
-# Integrated criteria: llik 
+# Integrated criteria. 
+
+# Define integrated acqusition functions to compare. 
 acq_funcs_int <- c("llik_IVAR_grid_gp", "llik_IENT_grid_gp", "llik_IEVAR_grid")
-acq_int_llik <- compare_acq_funcs(test_info$input, acq_funcs_int, em_llik, 
-                                  grid_points=test_info$input)
-acq_int_llik <- scale_acq(acq_int_llik)
-acq_int_plt_llik <- plot_curves_1d_helper(test_info$input, acq_int_llik, 
+df_acq_types_int <- data.frame(color=c("int-var", "int-ent", "int-var"), 
+                               linetype=c("gp", "gp", "lik"))
+
+# Compute acquisition values. 
+acq_int_list <- compare_acq_funcs_by_model(test_info$input, acq_funcs_int, llik_em_list, 
+                                           grid_points=test_info$input, plugin=TRUE)
+acq_int_list <- lapply(acq_int_list, scale_acq)
+
+# Minimize acquisitions over grid. 
+opt_list_idx_int <- lapply(acq_int_list, get_min_idx_acq)
+opt_list_val_int <- lapply(acq_int_list, get_opt_val_acq)
+
+df_acq_types_int_llik <- df_acq_types_int
+df_acq_types_int_llik$u <- test_info$input[opt_list_idx_int$llik,]
+df_acq_types_int_llik$val <- opt_list_val_int$llik
+
+df_acq_types_int_fwd <- df_acq_types_int
+df_acq_types_int_fwd$u <- test_info$input[opt_list_idx_int$fwd,]
+df_acq_types_int_fwd$val <- opt_list_val_int$fwd
+
+acq_int_plt_llik <- plot_curves_1d_helper(test_info$input, acq_int_list$llik, df_by=df_acq_types_int_llik,
                                           plot_title="Integrated acq [llik]",
                                           line_thickness=line_thickness, design_color=design_color,
                                           design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                           geom_vline(xintercept=drop(design_info$input), 
-                                                     linetype="dashed", color=design_color)
+                                                     linetype="dashed", color=design_color) + 
+                                          geom_point(aes(x=u, y=val, color=color, shape=linetype), 
+                                                     df_acq_types_int_llik, shape=15, size=design_pt_size)
 
 # Forward model. 
-acq_int_fwd <- compare_acq_funcs(test_info$input, acq_funcs_int, em_fwd, 
-                                 grid_points=test_info$input, plugin=TRUE)
-acq_int_fwd <- scale_acq(acq_int_fwd)
-acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_fwd, 
+acq_int_plt_fwd <- plot_curves_1d_helper(test_info$input, acq_int_list$fwd, df_by=df_acq_types_int_fwd,
                                          plot_title="Integrated acq [fwd]",
                                          line_thickness=line_thickness, design_color=design_color,
                                          design_pt_size=design_pt_size, xlab="u", ylab="acq") + 
                                          geom_vline(xintercept=drop(design_info$input), 
-                                                    linetype="dashed", color=design_color)
+                                                    linetype="dashed", color=design_color) + 
+                                         geom_point(aes(x=u, y=val, color=color, shape=linetype), 
+                                                    df_acq_types_int_fwd, shape=15, size=design_pt_size)
 
 acq_int_plt_llik <- acq_int_plt_llik %>% ggformat_journal(legend_position="bottom",
                                                           legend.text=element_text(size=20))

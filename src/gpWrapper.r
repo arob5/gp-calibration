@@ -361,6 +361,110 @@ gpWrapper$methods(
     return(plts)
   },
   
+  plot_1d_projection = function(x_names, n_points=100L, X_list=NULL, X_fixed=NULL, include_design=FALSE, 
+                                line_plot=FALSE, include_interval=TRUE, interval_method="pm_std_dev",
+                                N_std_dev=1, CI_prob=0.9, include_nugget=TRUE, ...) {
+    # Plots GP predictions as a single input variable varies, with the remaining variables 
+    # fixed at a single value. The default behavior of the method allows it to be called 
+    # with only the first argument provided; e.g., `plot_1d_projection("x1")`. In this case, 
+    # the remaining variables will by default be fixed at their midpoints with respect to 
+    # the `X_bounds` class attribute. GP predictions will be computed with these variables fixed
+    # and the variable "x1" varied at `n_points` (default 100) equally spaced points between 
+    # its bound values in `X_bounds`. Optional arguments offer much more fine-tuned control; 
+    # e.g. `X_list` controls the points at which the varied variables are plotted, and `X_fixed`
+    # controls the values at which the fixed variables are fixed. One one variable may be 
+    # varied per plot, but multiple variables can be specified in `x_names`, in which multiple 
+    # plots will be produced. Multiple combinations of fixed variables can also be specified 
+    # in `X_fixed`, which will be plotted on the same plot. 
+    #
+    # Args:
+    #    x_names: character, a subset of the `X_names` field determining variables to vary 
+    #             (they will be varied one at a time, a different plot being produced for each).
+    #    n_points: integer, the number of grid points at which predictions will be computed for 
+    #              the varied variables. This is overwritten for variables with input points 
+    #              explicitly provided in `X`.
+    #    X_list: list, optionally provides the input points at which to compute predictions for 
+    #            the varied variables. Names of the list elements should correspond to `x_names`. 
+    #            Elements of the list should be numeric vectors or matrices with a single column. 
+    #            Can contain elements corresponding to a strict subset of `x_names`, in which case
+    #            the default input grid will be used for the remaining variables.
+    #    X_fixed: matrix, determining the values at which the non-varied inputs will be fixed. 
+    #             The columns of this matrix correspond to the input variables, and the 
+    #             `colnames` attribute must be set to the corresponding variable names. Each  
+    #             row of `X_fixed` will contribute one line to each produced plot; i.e., this 
+    #             gives a way to investigate the effect of fixing different values for the 
+    #             non-varied variables. Note that the code will select the columns corresponding
+    #             to the fixed variables by name as needed, so `X_fixed` technically only requires
+    #             columns for variables that will be used as fixed variables at some point. It is 
+    #             typically easiest just to include all variables in this matrix. 
+    #    include_design: logical, whether or not to plot the design points (projected onto 
+    #                    the relevant dimension).
+    #    line_plot: If TRUE, plots lines; else plots points.
+    #    include_interval, interval_method, N_std_dev, CI_prob: all used to plot a confidence
+    #               interval in addition to mean predictions. Same behavior as in other plotting
+    #               functions. 
+    #
+    # Returns:
+    #   List of plots, of length `Y_dim` * `length(x_names)`; i.e., one plot per varied variable 
+    #   per independent GP. Each plot will contain `nrow(X_fixed)` plot elements (lines or 
+    #   point chains).
+    #
+    # TODO: would probably be nice to have helper function(s) that construct input grids that 
+    # only vary one variable.
+    
+    # Argument checking. 
+    x_names <- unique(x_names)
+    assert_that(all(is.element(x_names, .self$X_names)))
+    
+    # Constructing input grids for varied parameters.
+    n_vary <- length(x_names)
+    if(is.null(X_list)) X_list <- list()
+    for(x_name in x_names) {
+      if(is.null(X_list[[x_name]])) {
+        x_bounds <- .self$X_bounds[,x_name]
+        X_list[[x_name]] <- seq(x_bounds[1], x_bounds[2], length.out=n_points)
+      }
+    }
+    
+    # If not provided, set values of fixed parameters to midpoints with respect to 
+    # design bounds.
+    if(is.null(X_fixed)) {
+      X_fixed <- matrix(apply(.self$X_bounds, 2, mean), nrow=1)
+      colnames(X_fixed) <- colnames(.self$X_bounds)
+    }
+    
+    # Determine whether or not design points are included in plot.
+    if(include_design) X_design <- .self$X
+    else X_design <- NULL
+    
+    # Create plots.
+    plts <- list()
+    n_fixed <- .self$X_dim - 1L
+    for(i in seq_len(n_vary)) {
+      # Input matrix for prediction.
+      x_name <- x_names[i]
+      x_names_fixed <- setdiff(.self$X_names, x_name)
+      x_grid <- matrix(X_list[[x_name]], ncol=1, dimnames=list(NULL,x_name))
+      n_grid <- nrow(x_grid)
+      X_pred <- cbind(x_grid, matrix(X_fixed[,x_names_fixed,drop=FALSE], ncol=n_fixed, 
+                                     nrow=n_grid, byrow=TRUE, dimnames=list(NULL,x_names_fixed)))
+      X_pred <- X_pred[, .self$X_names]
+        
+      # Compute GP predictions.
+      pred_list <- .self$predict(X_pred, return_var=include_interval, include_nugget=include_nugget, ...)
+      
+      # Construct plots.
+      for(j in seq_len(gp$Y_dim)) {
+        y_name <- gp$Y_names[j]
+        plts[[y_name]][[x_name]] <- plot_Gaussian_pred_1d(drop(x_grid), pred_mean=pred_list$mean[,j],
+                                                          include_interval=FALSE, X_design=X_design[,x_name], 
+                                                          y_design=gp$Y[,j], ...)
+      }
+      
+    }
+
+  },
+  
   plot_loocv = function() {
     .NotYetImplemented()
   },
