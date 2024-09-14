@@ -299,12 +299,19 @@ llikEmulator$methods(
   },
   
   get_design_inputs = function(...) {
-    .NotYetImplemented()
+    # By default returns NULL, since not all log-likelihood emulators may have design 
+    # points. When desinging classes that inherit from `llikEmulator`, this method 
+    # should be overwritten if the log-likelihood emulator has design points. 
+    NULL
   },
   
   
-  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
-    .NotYetImplemented()
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, ...) {
+    # By default returns NULL, since not all log-likelihood emulators may have design 
+    # points. When desinging classes that inherit from `llikEmulator`, this method 
+    # should be overwritten if the log-likelihood emulator has design points.
+    NULL
   },
   
   
@@ -469,6 +476,110 @@ llikEmulator$methods(
                                   plot_title=plot_title, xlab=xlab, ylab=ylab, ...)
     
     return(plt)
+  }, 
+  
+  plot_1d_projection = function(input_names_proj=NULL, n_points=100L, input_list_proj=NULL,   
+                                input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
+                                include_interval=TRUE, interval_method="pm_std_dev",  
+                                N_std_dev=1, CI_prob=0.9, include_nugget=TRUE,
+                                plot_type="llik", input_bounds=NULL, ...) {
+    # This method is very similar to the gpWrapper method of the same name (see that 
+    # method for detailed comments). The major differences here include the fact that 
+    # llikEmulator's are not required to have design points; if this is the case then 
+    # default input bounds for the inputs cannot be defined so either `input_bounds` or 
+    # `input_list_proj` and `input_fixed` must be explicitly passed. A list of length 
+    #`length(input_names_proj)` is returned containing the plots. 
+    #
+    # TODO: should include the option to use the log of the likelihood predictions. 
+    
+    if(plot_type=="lik") .NotYetImplemented()
+    
+    # If provided, ensure `input_bounds` has colnames set to the input names. 
+    if(!is.null(input_bounds)) {
+      assert_that(setequal(colnames(input_bounds), .self$input_names))
+      assert_that(nrow(input_fixed)==1, 
+                  msg="Currently only supports the case where `input_fixed` has a single row.")
+      input_bounds <- input_bounds[, .self$input_names]
+    }
+    
+    # Determine the inputs that will be varied. 
+    if(is.null(input_names_proj)) {
+      input_names_proj <- .self$input_names
+    } else {
+      input_names_proj <- unique(input_names_proj)
+      assert_that(all(is.element(input_names_proj, .self$input_names)))
+    }
+    
+    # Design points. These are used if `include_design` is TRUE or as a means to determine 
+    # default bounds in the case that `input_list_proj` does not define grids for all 
+    # variables and `input_bounds` is not provided.
+    design_response <- NULL
+    design_inputs <- .self$get_design_inputs(...)
+    if(is.null(input_bounds) && !is.null(design_inputs)) input_bounds <- get_bounds(design_inputs)
+    if(include_design) {
+      design_response <- drop(.self$get_design_llik(lik_par_val, conditional, normalize, ...))
+      if(plot_type=="lik") design_response <- exp(design_response)
+    } else {
+      design_inputs <- NULL
+    }
+    
+    # Constructing input grids for varied parameters.
+    n_proj <- length(input_names_proj)
+    if(is.null(input_list_proj)) input_list_proj <- list()
+    for(input_name in input_names_proj) {
+      if(is.null(input_list_proj[[input_name]])) {
+        if(is.null(input_bounds)) {
+          stop("Failed to construct default `input_bounds`; must explicitly pass this argument.")
+        }
+        input_bounds_curr <- input_bounds[,input_name]
+        input_list_proj[[input_name]] <- seq(input_bounds_curr[1], input_bounds_curr[2], length.out=n_points)
+      }
+    }
+    
+    # If not provided, set values of fixed parameters to midpoints with respect to 
+    # design bounds.
+    if(is.null(input_fixed)) {
+      if(is.null(input_bounds)) {
+        stop("Failed to construct default `input_bounds`; must explicitly pass this argument.")
+      }
+      input_fixed <- matrix(apply(input_bounds, 2, mean), nrow=1)
+      colnames(input_fixed) <- colnames(input_bounds)
+    } 
+    
+    # Create plots.
+    plts <- list()
+    n_fixed <- .self$dim_input - 1L
+    for(i in seq_len(n_proj)) {
+      # Input matrix for prediction.
+      input_name <- input_names_proj[i]
+      input_names_fixed <- setdiff(.self$input_names, input_name)
+      input_1d <- matrix(input_list_proj[[input_name]], ncol=1, dimnames=list(NULL,input_name))
+      n_grid <- nrow(input_1d)
+      inputs <- cbind(input_1d, matrix(input_fixed[,input_names_fixed,drop=FALSE], ncol=n_fixed, 
+                      nrow=n_grid, byrow=TRUE, dimnames=list(NULL,input_names_fixed)))
+      inputs <- inputs[, .self$input_names]
+      
+      # Compute log-likelihood predictions.
+      pred_list <- .self$predict(inputs, lik_par_val=lik_par_val, return_var=include_interval, 
+                                 include_nugget=include_nugget, ...)
+      
+      # Compute prediction interval.  
+      if(include_interval) {
+        interval_list <- .self$get_pred_interval(inputs, lik_par_val=lik_par_val, target_pred_list=pred_list, 
+                                                 target=plot_type, method=interval_method, N_std_dev=N_std_dev,
+                                                 CI_prob=CI_prob, conditional=conditional, normalize=normalize, ...)
+      } else {
+        interval_list <- NULL
+      }
+      
+      # Construct plots.
+      plts[[input_name]] <- plot_pred_1d_helper(drop(input_1d), pred_mean=drop(pred_list$mean), 
+                                                include_CI=include_interval, CI_lower=drop(interval_list$lower),  
+                                                CI_upper=drop(interval_list$upper), X_design=design_inputs[,input_name],
+                                                y_design=design_response, xlab=input_name, ...)
+    }
+    
+    return(plts)
   }
   
 )

@@ -7,6 +7,9 @@
 #
 
 # TODO:
+#    - Need to check llikEmulatorGP and forward emulator and ensure that the 
+#      normalization/conditional parameters are properly defined and resulting 
+#      in the correct posterior approximations.
 #    - Write a function that acts on `par_prior` and returns bounds for each parameter. 
 #      Will be -Inf/Inf for unbounded. 
 #    - Talk with Mike about reasonable priors to use in this experiment. 

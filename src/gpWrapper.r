@@ -362,7 +362,7 @@ gpWrapper$methods(
   },
   
   plot_1d_projection = function(x_names=NULL, n_points=100L, X_list=NULL, X_fixed=NULL, include_design=FALSE, 
-                                line_plot=FALSE, include_interval=TRUE, interval_method="pm_std_dev",
+                                include_interval=TRUE, interval_method="pm_std_dev",
                                 N_std_dev=1, CI_prob=0.9, include_nugget=TRUE, ...) {
     # Plots GP predictions as a single input variable varies, with the remaining variables 
     # fixed at a single value. The default behavior of the method allows it to be called 
@@ -401,7 +401,6 @@ gpWrapper$methods(
     #             typically easiest just to include all variables in this matrix. 
     #    include_design: logical, whether or not to plot the design points (projected onto 
     #                    the relevant dimension).
-    #    line_plot: If TRUE, plots lines; else plots points.
     #    include_interval, interval_method, N_std_dev, CI_prob: all used to plot a confidence
     #               interval in addition to mean predictions. Same behavior as in other plotting
     #               functions. 
@@ -411,13 +410,13 @@ gpWrapper$methods(
     #    per varied variable per independent GP. The returned list has multiple levels, the first 
     #    being a list of length `Y_dim` with names set to the output variable names. Each of these
     #    elements contains a sublist of length `length(x_name)` corresponding to the projection 
-    #    dimension (the variable being varied). Each plot will contain `nrow(X_fixed)` plot  
-    #    elements (lines or point chains).
+    #    dimension (the variable being varied). Each plot will contain `nrow(X_fixed)` lines.
     #
     # TODO: would probably be nice to have helper function(s) that construct input grids that 
     # only vary one variable.
     # TODO: need to generalize code to allow `X_fixed` to have multiple rows; a helper function
-    # will probably be best here as well. 
+    # will probably be best here as well.
+    # TODO: allow ability to pass in true values.
     
     # Determine the variables that will be varied. 
     if(is.null(x_names)) {
