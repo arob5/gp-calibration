@@ -482,7 +482,8 @@ llikEmulator$methods(
                                 input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
                                 include_interval=TRUE, interval_method="pm_std_dev",  
                                 N_std_dev=2, CI_prob=0.9, include_nugget=TRUE,
-                                plot_type="llik", input_bounds=NULL, ...) {
+                                plot_type="llik", input_bounds=NULL, 
+                                conditional=default_conditional, normalize=default_normalize, ...) {
     # This method is very similar to the gpWrapper method of the same name (see that 
     # method for detailed comments). The major differences here include the fact that 
     # llikEmulator's are not required to have design points; if this is the case then 
@@ -567,7 +568,7 @@ llikEmulator$methods(
                                    normalize=normalize, ...)
       } else {
         pred_list <- .self$predict_lik(inputs, lik_par_val=lik_par_val, return_var=include_interval,  
-                                       conditional=onditional, normalize=normalize, log_scale=FALSE, ...)
+                                       conditional=conditional, normalize=normalize, log_scale=FALSE, ...)
       }
       
       # Compute prediction interval.  

@@ -505,7 +505,11 @@ gpWrapper$methods(
                 msg=paste0("Mean function ", mean_func_name, " not found in gpWrapper$valid_mean_funcs"))
     
     return(mean_func_name_map(mean_func_name, ...))
-  }, 
+  },
+  
+  get_default_hyperpar_bounds = function(mean_func_name, kernel_name, X_fit, y_fit, ...) {
+    .NotYetImplemented()
+  },
   
   augment_design = function(X_new, Y_new) {
     assert_that(is.matrix(X_new) && is.matrix(Y_new))
@@ -655,7 +659,10 @@ gpWrapperHet$methods(
     # hetGP will use the "OK" trendtype during the MLE but then we manually override 
     # this post-hoc to change the behavior during prediction. It would be better to  
     # change this pre-MLE but it doesn't appear that hetGP provides an easy way 
-    # to do this. 
+    # to do this.
+    # We opt not to define bounds on the kernel hyperparameters here, as hetGP's 
+    # `auto_bounds()` function tends to work pretty well. If desired, explicit 
+    # bounds can be passed by specifying "lower" and "upper" arguments in `...`.
     
     # Deal with noiseless case. 
     if(estimate_nugget) {
@@ -755,7 +762,7 @@ gpWrapperKerGP$methods(
     # when fitting and predicting. Currently, I am using a hack that adds a jitter
     # to the diagonal of the kernel matrix when the kernel matrix is square. 
     # This is not ideal - ideally `kergp` would make it easier to fix a jitter. 
-    kernel_map <- function(kernel_name, X_fit, y_fit) {
+    kernel_map <- function(kernel_name, mean_func_name, X_fit, y_fit) {
       
       if(kernel_name == "Gaussian") {
         kernFun <- function(x1, x2, par) {
@@ -765,16 +772,14 @@ gpWrapperKerGP$methods(
           if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_nugget, nrow(x1)))
           return(K12)
         }
-        
+
         ker <- covMan(kernel = kernFun,
                       hasGrad = TRUE,
                       acceptMatrix = TRUE,
-                      d = X_dim,
-                      par = c(rep(1, X_dim), 1),
-                      parLower = rep(1e-8, X_dim + 1L),
-                      parUpper = rep(Inf, X_dim + 1L),
+                      d = .self$X_dim,
                       parNames = c(X_names, "sigma2"),
                       label = "Gaussian kernel with jitter.")
+        
       } else if(kernel_name == "Matern5_2") {
         .NotYetImplemented()
       } else if(kernel_name == "Matern3_2") {
@@ -802,27 +807,12 @@ gpWrapperKerGP$methods(
           return(K12)
         }
         
-        # Hyperparameters: lengthscales, marginal variance, additive cst in quadratic kernel.
-        ker_par_names <- c(X_names, "sigma2", "quad_offset") 
-        y_centered <- abs(y_fit-mean(y_fit))
-        max_y <- max(abs(y_centered))
-        qy <- quantile(y_centered, 0.2)
-        lengthscale_bounds <- get_lengthscale_bounds(X_fit, p=c(0.1), include_one_half=FALSE)
-        marg_var_max <- get_marginal_variance_bounds(max_y, p=0.99, return_variance=TRUE)
-        marg_var_default <- get_marginal_variance_bounds(qy, p=0.90, return_variance=TRUE)
-        par_lower <- setNames(c(lengthscale_bounds["min",], 1e-08, 0), ker_par_names)
-        par_upper <- setNames(c(lengthscale_bounds["max",], marg_var_max, 0), ker_par_names)
-        par_default <- setNames(c(lengthscale_bounds[3,], marg_var_default, 0), ker_par_names)
-        
         ker <- covMan(kernel = kernFun,
                       acceptMatrix = TRUE, 
                       hasGrad = TRUE,
-                      d = X_dim,
-                      parNames = ker_par_names, 
-                      parLower = par_lower,
-                      parUpper = par_upper, 
-                      label = "Gaussian plus quadratic kernel with jitter", 
-                      par = par_default)
+                      d = .self$X_dim,
+                      parNames = c(X_names, "sigma2", "quad_offset"), 
+                      label = "Gaussian plus quadratic kernel with jitter")
       } else {
         stop("gpWrapperKerGP does not support kernel ", kernel_name)
       }
@@ -830,6 +820,12 @@ gpWrapperKerGP$methods(
       # Ensure the names attribute used by kergp agrees with the names attribute 
       # used by gpWrapper. 
       inputNames(ker) <- X_names
+      
+      # Specify hyperparameter bounds and defaults. 
+      par_info_list <- .self$get_default_hyperpar_bounds(mean_func_name, kernel_name, X_fit, y_fit)
+      attr(ker, "parLower") <- par_info_list$lower
+      attr(ker, "parUpper") <- par_info_list$upper
+      attr(ker, "par") <- par_info_list$default
       
       return(ker)
     }
@@ -876,7 +872,7 @@ gpWrapperKerGP$methods(
 
     # Fit GP. 
     gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
-                        inputs=X_names, cov=map_kernel_name(kernel_name, X_fit, y_fit), 
+                        inputs=X_names, cov=map_kernel_name(kernel_name, mean_func_name, X_fit, y_fit), 
                         estim=TRUE, beta=beta, noise=FALSE, ...)
     
     # TODO: Commenting this out for now, as we are fixing a jitter within the kernel function. 
@@ -962,6 +958,58 @@ gpWrapperKerGP$methods(
     gp_obj[gls_quantities] <- gls_list[gls_quantities]
 
     return(gp_obj)
+  }, 
+  
+  get_default_hyperpar_bounds = function(mean_func_name, kernel_name, X_fit, y_fit, ...) {
+    hyperpar_list <- list()
+
+    # Statistics summarizing observed response - use to empirically determine 
+    # reasonable default hyperparamter bounds. 
+    y_centered <- abs(y_fit-mean(y_fit))
+    max_y <- max(abs(y_centered))
+
+    if((mean_func_name=="constant") && (kernel_name=="Gaussian")) {
+
+      # Gaussian kernel hyperparameters.
+      ker_par_names <- c(.self$X_names, "sigma2") 
+      ls <- get_lengthscale_bounds(X_fit, p_extra=0.15, dim_by_dim=FALSE,
+                                   include_one_half=FALSE, convert_to_square=FALSE)
+      marg_var_max <- get_marginal_variance_bounds(max_y, p=0.99, return_variance=TRUE)
+      qy <- quantile(y_centered, 0.2)
+      marg_var_default <- get_marginal_variance_bounds(qy, p=0.90, return_variance=TRUE)
+      hyperpar_list$lower <- setNames(c(ls["lower",], 1e-08), ker_par_names)
+      hyperpar_list$upper <- setNames(c(ls["upper",], marg_var_max), ker_par_names)
+      hyperpar_list$default <- setNames(c(ls[3,], marg_var_default), ker_par_names)
+    } else if((mean_func_name=="quadratic") && (kernel_name=="Gaussian")) {
+      ker_par_names <- c(X_names, "sigma2")
+      ls <- get_lengthscale_bounds(X_fit, p_extra=0.15, dim_by_dim=FALSE,
+                                   include_one_half=FALSE, convert_to_square=FALSE)
+      rng_y <- diff(range(y_fit))
+      marg_var_max <- get_marginal_variance_bounds(rng_y/4, p=0.80, return_variance=TRUE)
+      marg_var_default <- get_marginal_variance_bounds(rng_y/8, p=0.80, return_variance=TRUE)
+      
+      hyperpar_list$lower <- setNames(c(ls["lower",], 1e-08), ker_par_names)
+      hyperpar_list$upper <- setNames(c(ls["upper",], marg_var_max), ker_par_names)
+      hyperpar_list$default <- setNames(c(ls[3,], marg_var_default), ker_par_names)
+      
+    } else if((mean_func_name=="constant") && (kernel_name=="Gaussian_plus_Quadratic")) {
+      # Hyperparameters: lengthscales, marginal variance, additive cst in quadratic kernel.
+      ker_par_names <- c(X_names, "sigma2", "quad_offset")
+      ls <- get_lengthscale_bounds(X_fit, p_extra=0.15, dim_by_dim=FALSE,
+                                   include_one_half=FALSE, convert_to_square=FALSE)
+      rng_y <- diff(range(y_fit))
+      marg_var_max <- get_marginal_variance_bounds(rng_y/4, p=0.80, return_variance=TRUE)
+      marg_var_default <- get_marginal_variance_bounds(rng_y/8, p=0.80, return_variance=TRUE)
+      
+      hyperpar_list$lower <- setNames(c(ls["lower",], 1e-08, 0), ker_par_names)
+      hyperpar_list$upper <- setNames(c(ls["upper",], marg_var_max, sqrt(marg_var_max)), ker_par_names)
+      hyperpar_list$default <- setNames(c(ls[3,], marg_var_default, sqrt(marg_var_default)), ker_par_names)
+    } else {
+      stop("No default kergp hyperparameters defined for mean function <", mean_func_name,
+           "> and kernel <", kernel_name, ">")
+    }
+    
+    return(hyperpar_list)
   }
   
 )

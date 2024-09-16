@@ -78,6 +78,7 @@ inv_prob$par_prior$par_true <- inv_prob$par_true
 print(inv_prob$par_prior)
 ```
 
+
 ```{r}
 # Extrapolation Points. 
 load(file.path(output_dir, "extrap_info.RData"))
@@ -151,7 +152,7 @@ for(plt in kde_plts) plot(plt)
 
 ```{r}
 #
-# Log-likelihood emulator predictions. 
+# Analyzing Log-likelihood emulator performance. 
 #
 
 load(file.path(output_dir, "llik_em_list.RData"))
@@ -160,12 +161,41 @@ load(file.path(output_dir, "test_info.RData"))
 em_names <- names(llik_em_list)
 
 for(em_name in em_names) {
+  print(em_name)
+  print(llik_em_list[[em_name]]$emulator_model$gp_model[[1]])
+}
+
+
+```
+
+```{r}
+# Log-likelihood emulator predictions at test points. 
+
+for(em_name in em_names) {
   plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
                                                       emulator_pred_list=emulator_pred_list[[em_name]], 
                                                       plot_type="llik", include_interval=TRUE, 
                                                       interval_method="pm_std_dev", N_std_dev=1.64, 
                                                       plot_title=paste0("llik predictions: ", em_name))
   plot(plt)
+}
+```
+
+
+```{r}
+input_list_proj <- list()
+for(par_name in inv_prob$par_names) {
+  prior_bounds <- c(inv_prob$par_prior[par_name,"param1"], 
+                    inv_prob$par_prior[par_name,"param2"])
+  input_list_proj[[par_name]] <- seq(prior_bounds[1], prior_bounds[2], length.out=100L)
+}
+
+# Plot 1d projections. 
+for(em_name in names(llik_em_list)) {
+  plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj,
+                                                     include_design=TRUE, plot_title=em_name)
+  for(plt in plts) plot(plt)
+  # ggsave(file.path(output_dir, paste0("llik_proj1d_", em_name, ".png")), plt)
 }
 ```
 
