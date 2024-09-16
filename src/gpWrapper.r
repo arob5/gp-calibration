@@ -104,6 +104,59 @@ gpWrapper$methods(
                valid_mean_funcs=c("constant", "linear", "quadratic"), ...)
   },
   
+  gp_is_fit = function() {
+    class(.self$gp_model) != "uninitializedField"
+  },
+  
+  get_summary_str = function(...) {
+    summary_str <- "gpWrapper summary:\n"
+
+    # GP Status.
+    summary_str <- paste0(summary_str, "\n-----> GP Status:\n")
+    gp_obj_exists <- .self$gp_is_fit()
+    summary_str <- paste0(summary_str, "Is fit: ", gp_obj_exists, "\n")
+    if(gp_obj_exists) {
+      summary_str <- paste0(summary_str, "Mean function name: ", .self$mean_func_name, "\n")
+      summary_str <- paste0(summary_str, "Kernel name: ", .self$kernel_name, "\n")
+    }
+    
+    # Design information.
+    summary_str <- paste0(summary_str, "\n-----> Design information:\n")
+    summary_str <- paste0(summary_str, 
+                          "X dimension: ", .self$X_dim, 
+                          "\nY dimension: ", .self$Y_dim, 
+                          "\nX names: ", paste0(.self$X_names, collapse=", "),
+                          "\nY names: ", paste0(.self$Y_names, collapse=", "),
+                          "\nNumber design points: ", nrow(.self$X),
+                          "\nScale input: ", .self$scale_input, 
+                          "\nNormalize output: ", .self$normalize_output, "\n")
+    
+    # Package-specific information. If the gpWrapper package-specific class 
+    # has not implemented the method `get_summary_str_package()` then the 
+    # default is for this method to just return NULL, which will not be printed
+    # by `cat()`. 
+    if(gp_obj_exists) {
+      for(i in seq_len(.self$Y_dim)) {
+        summary_str <- paste0(summary_str, "\n", .self$get_summary_str_package(i,...))
+      }
+    }
+    
+    return(summary_str)
+  },
+  
+  get_summary_str_package = function(...) {
+    # Intended to be implemented by package-specific gpWrapper classes.
+    NULL
+  },
+  
+  summarize = function(...) {
+    # Note that this function can be overwritten by package-specific gpWrapper
+    # classes so that package-specific information is printed in addition to 
+    # the generic gpWrapper info. 
+    
+    cat(.self$get_summary_str(...))
+  },
+  
   scale = function(Xnew, inverse=FALSE) {
     
     if(inverse) {
@@ -721,6 +774,36 @@ gpWrapperHet$methods(
     }
     
     return(hetGP:::update.homGP(gp_model[[output_idx]], Xnew=X_new, Znew=y_new, maxit=0, ...))
+  }, 
+  
+  get_summary_str_package = function(idx, ...) {
+    # This method returns a string summarizing the GP stored in
+    # `.self$gp_model[[idx]]`. The `gpWrapper` method `get_summary_str()`
+    # loops over the GP list to assemble these strings for all GPs.
+    if(!.self$gp_is_fit()) return(NULL)
+    gp_het <- .self$gp_model[[idx]]
+
+    summary_str <- paste0("\n-----> gpWrapperHet GP ", idx, "; output = ", .self$Y_names[idx], ":\n")
+
+    # Mean function.
+    summary_str <- paste0(summary_str, "\n>>> Mean function:\n")
+    summary_str <- paste0(summary_str, "Mean constant: ", gp_het$beta0, "\n")
+    summary_str <- paste0(summary_str, "Trend type: ", gp_het$trendtype, "\n")
+
+    # Kernel.
+    summary_str <- paste0(summary_str, "\n>>> Kernel:\n")
+    summary_str <- paste0(summary_str, "Lengthscales:\n")
+    ls <- sqrt(gp_het$theta)
+    for(i in seq_along(ls)) {
+      summary_str <- paste0(summary_str, "\t", names(ls)[i], ": ", ls[i], "\n")
+    }
+    summary_str <- paste0(summary_str, "Marginal std dev: ", sqrt(gp_het$nu_hat), "\n")
+
+   # Nugget/Noise variance.
+    summary_str <- paste0(summary_str, "\n>>> Nugget/Noise:\n")
+    summary_str <- paste0(summary_str, "Std dev: ", gp_het$g, "\n")
+    
+    return(summary_str)
   }
   
 )
