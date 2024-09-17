@@ -6,8 +6,9 @@
 # Andrew Roberts
 #
 
-
-get_lengthscale_bounds <- function(X, include_one_half=FALSE, p=NULL) {
+get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01, 
+                                   cor_max=0.5, p_extra=NULL, dim_by_dim=FALSE,
+                                   include_one_half=FALSE, convert_to_square=FALSE) {
   # Returns empirically-determined bounds (and quantiles - see below)
   # for the lengthscale parameters of a Gaussian (exponentiated quadratic)
   # covariance function, parameterized for a d-dimensional input 
@@ -16,22 +17,106 @@ get_lengthscale_bounds <- function(X, include_one_half=FALSE, p=NULL) {
   # if `include_one_half` is FALSE and 
   #    k(x,y) = prod_{j=1}^{d} exp{-0.5*(x_j - y_j)^2 / ell_j^2}
   # otherwise. The lengthscale parameters here refer to 
-  # ell_1,...,ell_2 (not their squares). The matrix `X` should 
-  # be of shape (n,d) and is interpretated as a design matrix/
+  # ell_1,...,ell_2 (not their squares) by default. If `convert_to_square`,
+  # then the returned bounds are defined with respect to the squares
+  # of these lengthscales: ell_1^2,...,ell_2^2. The matrix `X` should 
+  # be of shape (n,d) and is interpreted as a design matrix/
   # training inputs. The bounds for ell_j are defined by 
-  # computing all pairwise Euclidean distances between the scalars 
-  # in the vector `X[,j]` (the jth dimension of the design points)
-  # and setting the min/max bounds to the min/max of these 
-  # pairwise distances. This is done independently for each 
-  # dimension. Optionally, a vector of probabilities `p` can be 
-  # provided, in which case the p-quantile of the pairwise 
-  # distances will also be computed for each dimension, and stored
-  # in additional rows of the matrix. 
+  # computing all pairwise Euclidean distances between 
+  #  (1) the scalers in the vector `X[,j]` (the jth dimension of the design points),
+  #      if `dim_by_dim = TRUE`; or 
+  #  (2) the rows of `X` (i.e., using d-dimensional Euclidean distance)
+  #      if `dim_by_dim = FALSE`. 
+  # d_min[,j]/d_max[,j] are then defined as `p_min` and `p_max`
+  # empirical quantiles of the pairwise distances in the jth
+  # dimension. The minimum bound for ell_j is then defined as the 
+  # value that sets the Gaussian correlation to `cor_min` when 
+  # the inputs are distance `d_min` apart. Similarly, the maximum 
+  # bound for ell_j is defined as the value that sets the Gaussian
+  # correlation to `cor_max` when the inputs are distance `d_max`
+  # apart. In addition to returning these bounds, this function 
+  # can also return quantiles of the pairwise distance distribution 
+  # (which can be useful for setting "starting" or "default" values
+  # for the lengthscales).   # Note that the argument defaults are  
+  # typically reasonable when `dim_by_dim = FALSE`; if setting  
+  # `dim_by_dim = TRUE`, the defaults should probably be overwritten; for 
+  # example, by raising the default `cor_min` and `cor_max` to the 1/d
+  # power, where `d = ncol(X)`. 
+  #
+  # References:
+  #  This function was inspired by the hetGP package function 
+  # `auto_bounds()`. The behavior of this function agrees with that of 
+  # `auto_bounds()` when `dim_by_dim = FALSE` and `convert_to_square = TRUE`. 
   #
   # Returns:
   # matrix of dimension (2+length(p),d) [where d=ncol(X)] with the first 
   # row containing the lower bounds for ell_1,...,ell_d, 
   # respectively, and the second row containing the upper bounds. 
+  # The rownames for these two rows is set to ("lower","upper")
+  # The colnames of the matrix is set to `colnames(X)`. If `p` is non-NULL
+  # then one row will be added corresponding to the respective quantiles 
+  # specified by `p`. The rownames for these rows will be set to 
+  # `q<100*pi>` where `pi` is the respective element of `p`; e.g., 
+  # "q10" indicates the 10th percentile (pi = 0.1). Note that these 
+  # quantiles may differ from those returned by `get_pairwise_dist_quantiles()`
+  # since they will be adjusted to account for the 1/2 factor when 
+  # `include_one_half=TRUE`. Note also that these quantiles are returned 
+  # directly, not making the adjustments for the min/max correlation 
+  # constraints, as is the case with the min/max lengthscale bounds.
+
+  # Compute min/max and quantiles of pairwise distances in each dimension.
+  # Note that the first two rows of `dist_q` will be the min/max and the 
+  # remaining rows will correspond to the quantiles. 
+  if(dim_by_dim) {
+    dist_q <- get_pairwise_dist_quantiles_by_dim(X, p=c(p_min, p_max, p_extra))
+  } else {
+    # First scale to [0,1]^d to reduce to isotropic setting.
+    d <- ncol(X)
+    X_bounds <- get_bounds(X)
+    target_bounds <- rbind(rep(0,d), rep(1,d))
+    X <- scale_inputs(X, target_bounds=target_bounds, source_bounds=X_bounds)
+    dist_q <- get_pairwise_dist_quantiles(X, p=c(p_min, p_max, p_extra))
+  }
+  # Adjust if 1/2 factor is included in covariance parameterization.
+  if(include_one_half) dist_q <- dist_q / sqrt(2)
+
+  # Adjust min/max bounds to account for the correlation constraints.
+  # The 3rd and 4th rows correspond to the min and max quantiles. 
+  bounds <- dist_q[3:nrow(dist_q),,drop=FALSE]
+  bounds[1L,] <- bounds[1L,] / sqrt(-log(cor_min))
+  bounds[2L,] <- bounds[2L,] / sqrt(-log(cor_max))
+  rownames(bounds)[1:2] <- c("lower", "upper")
+  
+  # Convert back to original scale. 
+  if(!dim_by_dim) {
+    bounds <- mult_vec_with_mat_rows(X_bounds[2,]-X_bounds[1,], bounds)
+    if(nrow(bounds)>2) {
+      bounds[3:nrow(bounds),] <- add_vec_to_mat_rows(X_bounds[1,], bounds[3:nrow(bounds),,drop=FALSE])  
+    }
+  }
+  
+  if(convert_to_square) return(bounds^2)
+  return(bounds)
+}
+
+
+get_pairwise_dist_quantiles_by_dim <- function(X, p=NULL) {
+  # Computes non-zero pairwise distances over the rows of `X` for each 
+  # dimension (column) of `X` independently. Then returns the empirical 
+  # min, max and quantiles of these pairwise distances. Note that 
+  # each column of `X` is considered independently. The min/max of the 
+  # pairwise distances is returned by default, and additional quantiles
+  # are optionally included by specifying `p`.
+  #
+  # Args:
+  #    X: matrix of shape (n,d), containing `n` points in `d` dimensions. 
+  #    p: numeric vector of probabilities. The quantiles to compute in addition
+  #       to the min and max. If NULL, only returns min and max. 
+  #
+  # Returns:
+  # matrix of dimension (2+length(p),d) [where d=ncol(X)] with the first 
+  # row containing the minimum pairwise distances in each respective dimension, 
+  # and the second row containing the upper bounds. 
   # The rownames for these two rows is set to ("min","max")
   # The colnames of the matrix is set to `colnames(X)`. If `p` is non-NULL
   # then one row will be added corresponding to the respective quantiles 
@@ -70,15 +155,56 @@ get_lengthscale_bounds <- function(X, include_one_half=FALSE, p=NULL) {
       quantiles_j <- NULL
     }
     
-    # Adjust if 1/2 factor is included in covariance parameterization.
-    if(include_one_half) {
-      bounds_j <- bounds_j / sqrt(2)
-      quantiles_j <- quantiles_j / sqrt(2)
-    }
-    
     bounds[,j] <- c(bounds_j, quantiles_j)
   }
   
+  # Row and column names. 
+  rownames(bounds) <- c("min", "max", quantile_names)
+  colnames(bounds) <- colnames(X)
+  
+  return(bounds)
+}
+
+get_pairwise_dist_quantiles <- function(X, p=NULL) {
+  # Like `get_pairwise_dist_quantiles()` but computes the pairwise distances 
+  # using d-dimensional Euclidean distance (viewing each row of `X`) as a 
+  # point in d-dimensional space, instead of computing the distances dimension
+  # by dimension.
+  #
+  # Returns:
+  #  For consistency with `get_pairwise_dist_quantiles()` returns a matrix 
+  #  of the same dimensions, even though the values will be the same across
+  #  the dimensions. See `get_pairwise_dist_quantiles()` for details on the 
+  #  returned matrix. 
+  
+  assert_that(is.matrix(X))
+  if(!is.null(p)) {
+    assert_that(is.vector(p))
+    assert_that(is.numeric(p))
+    assert_that(all(p <= 1.0))
+    assert_that(all(p >= 0.0))
+    quantile_names <- paste0("q", 100*p)
+  } else {
+    quantile_names <- NULL
+  }
+  
+  d <- ncol(X)
+  n_quantiles <- ifelse(is.null(p), 0L, length(p))
+  bounds <- matrix(nrow=2+n_quantiles, ncol=d)
+  
+  # Compute pairwise Euclidean distances. 
+  dists <- as.matrix(dist(X, method="euclidean", diag=FALSE))
+  dists <- dists[upper.tri(dists)]
+  dists <- dists[dists > 0]
+  
+  # Compute min, max, and quantiles of pairwise distances. 
+  bounds[1,] <- min(dists)
+  bounds[2,] <- max(dists)
+  if(!is.null(p)) {
+    quantiles <- quantile(dists, p)
+    for(j in 1:d) bounds[3:nrow(bounds),j] <- quantiles
+  }
+
   # Row and column names. 
   rownames(bounds) <- c("min", "max", quantile_names)
   colnames(bounds) <- colnames(X)

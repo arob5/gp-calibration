@@ -23,6 +23,7 @@ output_dir <- file.path(base_dir, "output", "gp_post_approx_paper",
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
@@ -43,7 +44,13 @@ ylim <- c(0.0777, 0.4)
 
 # Settings for MCMC plotting. 
 burn_in_start <- 100000L
+
+# Settings for confidence intervals displayed in plots. 
+interval_method <- "pm_std_dev"
+N_std_dev <- 1.64
 ```
+
+# Summary of Inverse Problem 
 
 ```{r}
 
@@ -77,25 +84,7 @@ print("Priors and true parameter:")
 inv_prob$par_prior$par_true <- inv_prob$par_true
 print(inv_prob$par_prior)
 ```
-
-```{r}
-# Extrapolation Points. 
-load(file.path(output_dir, "extrap_info.RData"))
-
-df_extrap <- data.frame(extrap_info$input, lpost=extrap_info$lpost)
-for(j in seq_len(inv_prob$dim_par)) {
-  start_idx <- extrap_info$idx[[j]][1]
-  end_idx <- extrap_info$idx[[j]][2]
-  par_name <- inv_prob$par_names[j]
-  cols <- c("lpost", par_name)
-  df_j <- as.data.table(df_extrap)[start_idx:end_idx, ..cols]
-  setnames(df_j, par_name, "u")
-  df_j <- df_j[is.finite(lpost)]
-  plt <- ggplot(df_j, aes(x=u, y=lpost)) + geom_point() + xlab(par_name)
-  plot(plt)
-}
-```
-
+# Inverse Problem Solution via Exact MCMC (no emulation)
 
 ```{r}
 #
@@ -118,6 +107,73 @@ for(plt in corr_plots_exact) plot(plt)
 
 ```
 
+# Emulator Summary and Validation
+
+```{r}
+#
+# Analyzing Log-likelihood emulator performance. 
+#
+
+load(file.path(output_dir, "llik_em_list.RData"))
+load(file.path(output_dir, "emulator_pred_list.RData"))
+load(file.path(output_dir, "test_info.RData"))
+em_names <- names(llik_em_list)
+
+for(em_name in em_names) {
+  print(em_name)
+  cat(llik_em_list[[em_name]]$emulator_model$summarize(), "\n")
+}
+```
+
+```{r}
+# Log-likelihood emulator predictions at test points. 
+
+for(em_name in em_names) {
+  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
+                                                      plot_type="llik", include_interval=TRUE, 
+                                                      interval_method=interval_method, N_std_dev=N_std_dev, 
+                                                      plot_title=paste0("llik predictions: ", em_name))
+  plot(plt)
+}
+```
+
+```{r}
+# Plot 1d projections: log-likelihood emulator distribution  
+
+N_test_proj <- 100L
+input_list_proj <- list()
+for(par_name in inv_prob$par_names) {
+  prior_bounds <- c(inv_prob$par_prior[par_name,"param1"], 
+                    inv_prob$par_prior[par_name,"param2"])
+  input_list_proj[[par_name]] <- seq(prior_bounds[1], prior_bounds[2], length.out=N_test_proj)
+}
+
+# Plot 1d projections. 
+for(em_name in names(llik_em_list)) {
+  plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj,
+                                                     include_design=TRUE, plot_title=em_name,
+                                                     interval_method=interval_method, N_std_dev=N_std_dev)
+  for(plt in plts) plot(plt)
+}
+```
+
+```{r}
+# Plot 1d projections: deterministic likelihood approximations. 
+
+approx_types <- c("mean", "marginal")
+
+for(em_name in names(llik_em_list)) {
+  plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj, 
+                                                     plot_type="lik_approx", 
+                                                     approx_types=approx_types,
+                                                     include_design=TRUE, plot_title=em_name)
+  for(plt in plts) plot(plt)
+}
+```
+
+# GP-Induced Approximate Posterior Samples
+
 ```{r}
 #
 # MCMC Trace Plots: approximate. 
@@ -131,44 +187,25 @@ for(plt in trace_plots_approx) plot(plt)
 ```
 
 ```{r}
-plts <- get_trace_plots(samp_dt, test_label="gp-mean-em_llik_const_GaussQuad",
-                        param_types="par", burn_in_start=1)
-  
-  
-for(plt in plts) plot(plt) 
+test_plts <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                       param_types="par", test_labels=test_labels_approx, 
+                                       param_names="KEXT", test_label_baseline="exact")
 
-
-
-kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
-                                        param_types="par", param_names=NULL,
-                                        test_label_baseline="exact",
-                                        test_labels="gp-mean-em_llik_const_GaussQuad",
-                                        xlab="parameter", ylab="kde", save_dir=NULL) 
-
-for(plt in kde_plts) plot(plt)
+for(plt in test_plts) plot(plt)
 ```
 
 
 ```{r}
-#
-# Log-likelihood emulator predictions. 
-#
+# TODO: there is something weird going on with the plotting here. 
 
-load(file.path(output_dir, "llik_em_list.RData"))
-load(file.path(output_dir, "emulator_pred_list.RData"))
-load(file.path(output_dir, "test_info.RData"))
-em_names <- names(llik_em_list)
+kde_plts <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                        param_types="par", param_names=NULL,
+                                        test_label_baseline="exact",
+                                        test_labels=test_labels_approx,
+                                        xlab="parameter", ylab="kde", save_dir=NULL) 
 
-for(em_name in em_names) {
-  plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
-                                                      emulator_pred_list=emulator_pred_list[[em_name]], 
-                                                      plot_type="llik", include_interval=TRUE, 
-                                                      interval_method="pm_std_dev", N_std_dev=1.64, 
-                                                      plot_title=paste0("llik predictions: ", em_name))
-  plot(plt)
-}
+for(plt in kde_plts) plot(plt)
 ```
-
 
 ```{r}
 # mcmc_par_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start=burn_in_start, 
