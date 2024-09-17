@@ -314,7 +314,6 @@ llikEmulator$methods(
     NULL
   },
   
-  
   plot_samp_1d = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, plot_type="llik",  
                           conditional=default_conditional, normalize=default_normalize, 
                           true_llik=NULL, include_design=TRUE, use_cov=TRUE, ground_truth_col="black",
@@ -482,19 +481,31 @@ llikEmulator$methods(
                                 input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
                                 include_interval=TRUE, interval_method="pm_std_dev",  
                                 N_std_dev=2, CI_prob=0.9, include_nugget=TRUE,
-                                plot_type="llik", input_bounds=NULL, 
-                                conditional=default_conditional, normalize=default_normalize, ...) {
+                                plot_type="llik", approx_types="mean", log_scale=TRUE,
+                                input_bounds=NULL, conditional=default_conditional, 
+                                normalize=default_normalize, ...) {
     # This method is very similar to the gpWrapper method of the same name (see that 
     # method for detailed comments). The major differences here include the fact that 
     # llikEmulator's are not required to have design points; if this is the case then 
     # default input bounds for the inputs cannot be defined so either `input_bounds` or 
     # `input_list_proj` and `input_fixed` must be explicitly passed. A list of length 
-    #`length(input_names_proj)` is returned containing the plots. 
+    #`length(input_names_proj)` is returned containing the plots.
     #
-    # TODO: should include the option to use the log of the likelihood predictions. 
+    # `plot_type` can be "llik", "lik", or "lik_approx". If "lik_approx", the 
+    # specific likelihood approximation is determined by "approx_type", and 
+    # `log_scale` controls whether or not the log of the likelihood approximation 
+    # is plotted. `approx_types` can be a vector of multiple approximation types. 
+    #
+    # TODO: should include the option to use the log of the likelihood predictions.
+    # Currently, `log_scale` only applies to the `lik_approx` type but it should 
+    # also apply to `lik`.
     
-    assert_that(is.element(plot_type, c("llik", "lik")))
+    assert_that(is.element(plot_type, c("llik", "lik", "lik_approx")))
     if(plot_type=="lik") .NotYetImplemented()
+    
+    # Determine if the y-axis will be on the likelihood or log-likelihood scale. 
+    if(plot_type=="llik") log_scale <- TRUE
+    ylab <- ifelse(log_scale, "log likelihood", "likelihood")
     
     # If provided, ensure `input_bounds` has colnames set to the input names. 
     if(!is.null(input_bounds)) {
@@ -520,7 +531,7 @@ llikEmulator$methods(
     if(is.null(input_bounds) && !is.null(design_inputs)) input_bounds <- get_bounds(design_inputs)
     if(include_design) {
       design_response <- drop(.self$get_design_llik(lik_par_val, conditional, normalize, ...))
-      if((plot_type=="lik") && !log_scale) design_response <- exp(design_response)
+      if(is.element(plot_type, c("lik","lik_approx")) && !log_scale) design_response <- exp(design_response)
     } else {
       design_inputs <- NULL
     }
@@ -566,30 +577,45 @@ llikEmulator$methods(
         pred_list <- .self$predict(inputs, lik_par_val=lik_par_val, return_var=include_interval, 
                                    include_nugget=include_nugget, conditional=conditional,
                                    normalize=normalize, ...)
-      } else {
+        list_sel <- "mean"
+      } else if(plot_type=="lik") {
         pred_list <- .self$predict_lik(inputs, lik_par_val=lik_par_val, return_var=include_interval,  
                                        conditional=conditional, normalize=normalize, log_scale=FALSE, ...)
+        list_sel <- ifelse(log_scale, "mean", "log_mean")
+      } else if(plot_type=="lik_approx") {
+        pred_list <- list()
+        list_sel <- "approx"
+        lik_approx_mat <- calc_lik_approx_comparison(inputs, approx_types, lik_par_val=lik_par_val,
+                                                     conditional=conditional, normalize=normalize,
+                                                     log_scale=log_scale, ...)
       }
       
-      # Compute prediction interval.  
-      if(include_interval) {
+      # Compute prediction interval. Only relevant for "llik" and "lik" plot types.
+      if(include_interval && (plot_type != "lik_approx")) {
         interval_list <- .self$get_pred_interval(inputs, lik_par_val=lik_par_val, target_pred_list=pred_list, 
                                                  target=plot_type, method=interval_method, N_std_dev=N_std_dev,
                                                  CI_prob=CI_prob, conditional=conditional, normalize=normalize, ...)
       } else {
         interval_list <- NULL
+        include_interval <- FALSE
       }
       
       # Construct plots.
-      plts[[input_name]] <- plot_pred_1d_helper(drop(input_1d), pred_mean=drop(pred_list$mean), 
-                                                include_CI=include_interval, CI_lower=drop(interval_list$lower),  
-                                                CI_upper=drop(interval_list$upper), X_design=design_inputs[,input_name],
-                                                y_design=design_response, xlab=input_name, ...)
+      if(plot_type != "lik_approx") {
+        plts[[input_name]] <- plot_pred_1d_helper(drop(input_1d), pred_mean=drop(pred_list[[list_sel]]), 
+                                                  include_CI=include_interval, CI_lower=drop(interval_list$lower),  
+                                                  CI_upper=drop(interval_list$upper), X_design=design_inputs[,input_name],
+                                                  y_design=design_response, xlab=input_name, ylab=ylab, ...)
+      } else {
+        plts[[input_name]] <- plot_curves_1d_helper(drop(input_1d), lik_approx_mat,
+                                                    X_design=design_inputs[,input_name], y_design=design_response,
+                                                    xlab=input_name, ylab=ylab, ...)
+      }
     }
     
     return(plts)
-  }
-  
+  } 
+
 )
 
 
