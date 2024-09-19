@@ -11,7 +11,6 @@ knitr::opts_chunk$set(echo = FALSE)
 # TODO: 
 #    - Add a quantile approximation. 
 #    - Estimate observation variance. 
-#    - On pg. 30 of paper draft, potentially change mu_N(u|mu_n(U_B)) to mu_N(u).
 #    - Exponentiate the integrated variance acquisitions if possible; o/w make clear I'm plotting the log. 
 #    - Improve llik emulator GP model (consider using Vehtari method of integrating out trend coefs). 
 #    - Include model discrepancy to make the data generation process differ from the 

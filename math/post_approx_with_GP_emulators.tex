@@ -372,41 +372,38 @@ may outweigh the downsides of log-likelihood emulation in many applications.
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_fwdem.png}}
          \caption{$\fwdEm$}
-         \label{fig:y equals x}
+         \label{fig:gp_dist_fwd}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_fwdem.png}}
          \caption{$\llikEmFwd$}
-         \label{fig:three sin x}
+         \label{fig:llik_dist_fwd}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_fwdem.png}}
          \caption{$\Exp{\llikEmFwd}$}
-         \label{fig:five over x}
+         \label{fig:lik_dist_fwd}
      \end{subfigure}
-          \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_llikem.png}}
-         \caption{$\llikEm$}
-         \label{fig:y equals x}
+     \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik] (equal to llik dist so excluding)
+     \includegraphics[width=\textwidth]{}
      \end{subfigure}
      \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik]
+     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik] 
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_llikem.png}}
          \caption{$\llikEm$}
-         \label{fig:three sin x}
+         \label{fig:llik_dist_llik}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_llikem.png}}
          \caption{$\Exp{\llikEm}$}
-         \label{fig:five over x}
+         \label{fig:lik_dist_llik}
      \end{subfigure}
         \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem ($\dimPar = \dimObs = 1$)
         with $\fwd(\Par) = \sin(\Par) + 0.1 \Par$ and a single observation $\obs = 0$. 
@@ -1615,7 +1612,19 @@ alternatively could consider deriving these results for the normalized densities
 \item Include existence results (check existence result from that new paper)
 \item Viewing noisy MCMC approaches as approximations to the sample-based posterior.
 \item Different views of noisy MCMC approaches, including extending the state space. How does this alg compare to the 
-marginal and mcwmh-ind algs? 
+marginal and mcwmh-ind algs?
+\item Add some sort of theoretical result that demonstrates that the marginal approximation is extremely sensitive to the GP 
+variance. Based on numerical experiments, seems like this result should be given with respect to the dynamic range of the 
+log-likelihood. Also of course depends on how fast the GP variance grows away from the design points, so perhaps should 
+consider fill distance or something like this as well.
+\item Numerical experiment that considers the different ways to weight the integrated uncertainty criteria (i.e., targeting 
+the unnormalized posterior density vs. using the approx posterior samples as weights).
+\item Posterior consistency results for the noisy MCMC emulators; combine the noisy MCMC results with GP approximation 
+results.
+\item Evaluating calibration of GP-approximated posteriors relative to calibration of the underlying GP emulator.
+\item Constrained GPs
+\item Pathwise sampling approach to approximate the sample-based approximation.
+\item Compare noisy MCMC vs. deterministic version that considers integrating over the acceptance prob. 
 \end{enumerate}
 
 \subsection{Emulator Ideas}
@@ -1652,9 +1661,6 @@ variables. I should probably include Lorenz-63 to have a more familiar example t
 \item Large batch, few iteration sequential design experiment. 
 (4 different combinations we could consider) 
 \end{enumerate}
-
-
-
 
 \begin{enumerate}
 \item 1D example for basic illustration. 
