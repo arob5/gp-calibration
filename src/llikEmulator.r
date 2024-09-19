@@ -479,11 +479,11 @@ llikEmulator$methods(
   
   plot_1d_projection = function(input_names_proj=NULL, n_points=100L, input_list_proj=NULL,   
                                 input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
-                                include_interval=TRUE, interval_method="pm_std_dev",  
-                                N_std_dev=2, CI_prob=0.9, include_nugget=TRUE,
-                                plot_type="llik", approx_types="mean", log_scale=TRUE,
-                                input_bounds=NULL, conditional=default_conditional, 
-                                normalize=default_normalize, ...) {
+                                llik_func_true=NULL, include_interval=TRUE,   
+                                interval_method="pm_std_dev", N_std_dev=2, CI_prob=0.9, 
+                                include_nugget=TRUE, plot_type="llik", approx_types="mean", 
+                                log_scale=TRUE, input_bounds=NULL,  
+                                conditional=default_conditional, normalize=default_normalize, ...) {
     # This method is very similar to the gpWrapper method of the same name (see that 
     # method for detailed comments). The major differences here include the fact that 
     # llikEmulator's are not required to have design points; if this is the case then 
@@ -590,6 +590,13 @@ llikEmulator$methods(
                                                      log_scale=log_scale, ...)
       }
       
+      # Optionally compute true baseline values.
+      true_response <- NULL
+      if(!is.null(llik_func_true)) {
+        true_response <- llik_func_true(inputs)
+        if(is.element(plot_type, c("lik","lik_approx")) && !log_scale) true_response <- exp(true_response)
+      }
+      
       # Compute prediction interval. Only relevant for "llik" and "lik" plot types.
       if(include_interval && (plot_type != "lik_approx")) {
         interval_list <- .self$get_pred_interval(inputs, lik_par_val=lik_par_val, target_pred_list=pred_list, 
@@ -605,11 +612,13 @@ llikEmulator$methods(
         plts[[input_name]] <- plot_pred_1d_helper(drop(input_1d), pred_mean=drop(pred_list[[list_sel]]), 
                                                   include_CI=include_interval, CI_lower=drop(interval_list$lower),  
                                                   CI_upper=drop(interval_list$upper), X_design=design_inputs[,input_name],
-                                                  y_design=design_response, xlab=input_name, ylab=ylab, ...)
+                                                  y_design=design_response, y_new=true_response, 
+                                                  xlab=input_name, ylab=ylab, ...)
       } else {
         plts[[input_name]] <- plot_curves_1d_helper(drop(input_1d), lik_approx_mat,
                                                     X_design=design_inputs[,input_name], y_design=design_response,
-                                                    xlab=input_name, ylab=ylab, ...)
+                                                    y_new=true_response, xlab=input_name, ylab=ylab, ...)
+                                                    
       }
     }
     

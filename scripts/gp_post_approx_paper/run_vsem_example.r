@@ -50,6 +50,8 @@ Options:
 
 print("---------------------------------- Setup ----------------------------------")
 
+run_approx_mcmc <- FALSE
+
 # Base directory (i.e., project directory). Required for loading the R project (renv). 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
@@ -287,7 +289,8 @@ ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
                  sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y_true,
                  times=time_points, par_names=rownames(par_prior_params), 
-                 dim_par=dim_par)
+                 dim_par=dim_par, param_to_output_map=param_to_output_map, 
+                 obs_op=obs_op)
 
 # -----------------------------------------------------------------------------
 # Exact log-likelihood object. 
@@ -393,7 +396,6 @@ llik_em_list[["em_llik_const_GaussQuad"]] <- llikEmulatorGP("em_llik_const_Gauss
 # Save log-likelihood emulators. 
 save(llik_em_list, file=file.path(output_dir, "llik_em_list.RData"))
 
-
 # -----------------------------------------------------------------------------
 # Log-Likelihood predictions at test points.   
 # -----------------------------------------------------------------------------
@@ -426,20 +428,21 @@ for(em_name in names(llik_em_list)) {
 
 print("--------------------- GP-Accelerated MCMC -------------------------")
 
-for(em_name in names(llik_em_list)) {
-  print(paste0("----- ", em_name, " -----"))
-  mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
-                                               llik_em_obj=llik_em_list[[em_name]], 
-                                               mcmc_tags=mcmc_tags, save_dir=output_dir, 
-                                               samp_dt=samp_dt, mcmc_list=mcmc_list, 
-                                               test_label_suffix=em_name, N_itr=N_mcmc, 
-                                               par_init=mcmc_par_init, cov_prop=cov_prop_init,
-                                               overwrite=TRUE)
-  
-  samp_dt <- mcmc_info_list$samp
-  mcmc_list <- mcmc_info_list$mcmc_list
+if(run_approx_mcmc) {
+  for(em_name in names(llik_em_list)) {
+    print(paste0("----- ", em_name, " -----"))
+    mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
+                                                 llik_em_obj=llik_em_list[[em_name]], 
+                                                 mcmc_tags=mcmc_tags, save_dir=output_dir, 
+                                                 samp_dt=samp_dt, mcmc_list=mcmc_list, 
+                                                 test_label_suffix=em_name, N_itr=N_mcmc, 
+                                                 par_init=mcmc_par_init, cov_prop=cov_prop_init,
+                                                 overwrite=TRUE)
+    
+    samp_dt <- mcmc_info_list$samp
+    mcmc_list <- mcmc_info_list$mcmc_list
+  }
 }
-
 
 print("-------------------------- End of Script ------------------------------")
 
