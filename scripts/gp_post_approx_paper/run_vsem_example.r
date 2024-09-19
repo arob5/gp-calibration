@@ -289,7 +289,8 @@ ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
                  sig2_eps=sig2_eps, par_true=par_cal_true, output_true=y_true,
                  times=time_points, par_names=rownames(par_prior_params), 
-                 dim_par=dim_par)
+                 dim_par=dim_par, param_to_output_map=param_to_output_map, 
+                 obs_op=obs_op)
 
 # -----------------------------------------------------------------------------
 # Exact log-likelihood object. 

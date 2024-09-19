@@ -384,10 +384,12 @@ plot_true_pred_scatter <- function(y_pred, y_true, include_CI=FALSE, CI_lower=NU
 # ggplot themes and formatting functions. 
 # -----------------------------------------------------------------------------
 
-ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), title_size=35, ...) {
+ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), title_size=35, 
+                            legend_size=20, ...) {
   
   theme_journal <- theme(legend.position=legend_position, 
                          legend.title=legend_title,
+                         legend.text=element_text(size=legend_size),
                          panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
                          panel.background=element_blank(), panel.border=element_blank(), 
                          axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),

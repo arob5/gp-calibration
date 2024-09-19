@@ -25,7 +25,9 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   # this means the full forward model `f_exact` must be run after each new input is acquired. Other options  
   # for `model_response_heuristic` implement heuristics to avoid forward model evaluations. 
   # `model_response_heuristic` can be "KB", "CL_pessimist", "CL_optimist", or "none"; the latter runs the 
-  # full forward model. `opt_method` currently only allows "grid". 
+  # full forward model. `opt_method` currently only allows "grid". This function can act as a typical 
+  # purely sequential design look; it can also act as a single step of a batch sequential design 
+  # loop, provided that a model response heuristic is specified. 
   #
   # Returns:
   #     Note that `gp_updated` will contain the pseudo model responses if a model response 
@@ -33,7 +35,11 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   
   # Should verify that `gp` is of class gpWrapper with `dim_Y==1`. 
   # TODO: validate_args_acquire_batch_input_sequentially()
+
+  assert_that(is_gp(gp))
+  assert_that(gp$Y_dim==1L)
   
+  # TODO: need to add `reoptimize_hyperpar` for gpWrapperKerGP. 
   if((model_response_heuristic != "none") && (reoptimize_hyperpar)) {
     message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is not none.")
   }
@@ -42,7 +48,7 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   gp_copy <- gp$copy(shallow=FALSE)
   
   # Objects to store the acquired inputs and the associated model (perhaps pseudo) responses. 
-  input_batch <- matrix(nrow=N_batch, ncol=gp$X_dim)
+  input_batch <- matrix(nrow=N_batch, ncol=gp_copy$X_dim, dimnames=list(NULL,gp_copy$X_names))
   response_batch <- rep(NA_real_, N_batch)
   
   for(i in 1:N_batch) {
@@ -60,11 +66,12 @@ acquire_batch_input_sequentially <- function(gp, acq_func_name, N_batch, model_r
   }
   
   return(list(input_batch=input_batch, response_batch=response_batch, gp_updated=gp_copy))
-  
 }
 
 
 optimize_acq_single_input <- function(acq_func_name, gp, opt_method, candidate_grid=NULL, ...) {
+  # Optimizes an acquisition function to return the single input minimizing the 
+  # acquisition function. 
   
   # Define objective function for the optimization. 
   acq_func <- get(paste0("acq_", acq_func_name))

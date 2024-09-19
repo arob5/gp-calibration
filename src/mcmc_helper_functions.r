@@ -672,11 +672,15 @@ get_mcmc_2d_density_plots <- function(samp_dt, burn_in_start=NULL, test_labels=N
 
 get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
                                         param_types=NULL, param_names=NULL, test_label_baseline=NULL,
-                                        xlab="parameter", ylab="kde", save_dir=NULL) {
+                                        xlab="parameter", ylab="kde", min_q=0.001, 
+                                        max_q =.999, save_dir=NULL) {
   # Produces one plot per unique param type-param name combination. Each plot contains one line
   # per `test_label` that has samples for that specific parameter. Each line is produced from 
   # a 1d kernel density estimate (KDE) constructed fromn the MCMC samples. N_kde_pts` is the
   # `number of points at which the KDE approximation is evaluated for each univariate variable.
+  # `min_q` and `max_q` are used to determine the cutoff x-limits for each plot. These are 
+  # percentiles across all samples that will be used to generate that plot (from all 
+  # test labels). 
 
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
@@ -697,7 +701,6 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
   # Generate plots. 
   plts <- list()
   for(j in 1:nrow(plt_id_vars)) {
-    
     # Define the parameter being plotted. One KDE will be computed for each test label
     # that has samples for this parameter. 
     param_type_curr <- plt_id_vars[j, param_type]
@@ -707,9 +710,16 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
                                     (param_name == param_name_curr), .(test_label, sample)] 
     test_labels_curr <- unique(samp_dt_param$test_label)
     
+    # Prepare baseline data. 
+    samp_baseline_param <- NULL
+    if(!is.null(test_label_baseline)) {
+      samp_baseline_param <- samp_dt_baseline[(param_type == param_type_curr) & 
+                                              (param_name == param_name_curr), sample] 
+    }
+    
     # Determine the grid of points at which the KDE will be evaluated. 
-    bound_lower <- quantile(samp_dt_param$sample, 0.025)
-    bound_upper <- quantile(samp_dt_param$sample, 0.975)
+    bound_lower <- quantile(c(samp_dt_param$sample, samp_baseline_param), min_q)
+    bound_upper <- quantile(c(samp_dt_param$sample, samp_baseline_param), max_q)
     kde_pts <- seq(bound_lower, bound_upper, length.out=N_kde_pts)
     
     # Loop over test labels, constructing KDE for each label. 
@@ -720,11 +730,9 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
       kde_mat[,lbl] <- dkde1d(kde_pts, kde_fit)
     }
 
-    # Construct KDE for the baseline label, if provided. 
+    # Add KDE for baseline label. 
     kde_baseline <- NULL
     if(!is.null(test_label_baseline)) {
-      samp_baseline_param <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                              (param_name == param_name_curr), sample] 
       kde_fit <- kde1d(samp_baseline_param)
       kde_baseline <- dkde1d(kde_pts, kde_fit)
     }

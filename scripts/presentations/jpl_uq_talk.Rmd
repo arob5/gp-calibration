@@ -31,10 +31,12 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
                         experiment_tag, run_tag)
+jpl_talk_dir <- file.path(base_dir, "output", "jpl_talk_2024")
 
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
@@ -52,6 +54,13 @@ line_thickness <- 1.5
 design_color <- "red"
 xlim <- c(-10, 10)
 ylim <- c(0.0777, 0.4)
+approx_type_labels <- c("mcwmh-ind", "mcwmh-joint", "gp-mean", "gp-marg")
+approx_type_colors <- c("blue", "red", "orange", "purple")
+approx_types <- c("mcwmh-ind-em_llik_const_GaussQuad", "mcwmh-joint-em_llik_const_GaussQuad",
+                  "gp-mean-em_llik_const_GaussQuad", "gp-marg-em_llik_const_GaussQuad")
+approx_type_labels <- setNames(approx_type_labels, approx_types)
+approx_type_colors <- setNames(approx_type_colors, approx_types)
+
 
 # Settings for MCMC plotting. 
 burn_in_start <- 100000L
@@ -72,6 +81,8 @@ em_name_talk <- "em_llik_const_GaussQuad"
 #
 # Plot model outputs and observations.  
 #
+
+dir.create(jpl_talk_dir)
 
 load(file.path(output_dir, "inv_prob_list.RData"))
 
@@ -156,6 +167,8 @@ for(em_name in em_names) {
 ```{r}
 # Plot 1d projections: log-likelihood emulator distribution  
 
+llik_func <- function(u) llik_exact$assemble_llik(u)
+
 N_test_proj <- 100L
 input_list_proj <- list()
 for(par_name in inv_prob$par_names) {
@@ -166,33 +179,65 @@ for(par_name in inv_prob$par_names) {
 
 # Plot 1d projections. 
 for(em_name in names(llik_em_list)) {
+
   plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj,
                                                      include_design=TRUE, plot_title=em_name,
-                                                     interval_method=interval_method, N_std_dev=N_std_dev)
+                                                     interval_method=interval_method, 
+                                                     N_std_dev=N_std_dev, 
+                                                     llik_func_true=llik_func)
   for(plt in plts) plot(plt)
 }
 ```
 
 ```{r}
 # Plot 1d projection onto one variable for slides.
-# TODO: add true posterior. 
-proj_var <- "KEXT"
+proj_var <- inv_prob$par_names
 
 plt_proj_talk <- llik_em_list[[em_name_talk]]$plot_1d_projection(proj_var, input_list_proj=input_list_proj,
                                                                  include_design=FALSE, plot_title=em_name_talk,
-                                                                 interval_method=interval_method, N_std_dev=N_std_dev)[[1]]
-plt_proj_talk_mean_approx <- llik_em_list[[em_name_talk]]$plot_1d_projection(proj_var, input_list_proj=input_list_proj, 
+                                                                 interval_method=interval_method, 
+                                                                 N_std_dev=N_std_dev,
+                                                                 llik_func_true=llik_func) 
+                                                                 
+plt_proj_talk_mean_approx <- llik_em_list[[em_name_talk]]$plot_1d_projection(proj_var,
+                                                                             input_list_proj=input_list_proj, 
                                                                              plot_type="lik_approx", 
                                                                              approx_types="mean",
-                                                                             include_design=TRUE, plot_title=em_name_talk)[[1]]
+                                                                             include_design=TRUE, 
+                                                                             llik_func_true=llik_func,
+                                                                             plot_title=em_name_talk)
+                                                                             
 plt_proj_talk_marg_approx <- llik_em_list[[em_name_talk]]$plot_1d_projection(proj_var, input_list_proj=input_list_proj, 
                                                                              plot_type="lik_approx", 
                                                                              approx_types="marginal",
-                                                                             include_design=TRUE, plot_title=em_name_talk)[[1]]
+                                                                             include_design=TRUE,
+                                                                             llik_func_true=llik_func,
+                                                                             plot_title=em_name_talk)
 
-plot(plt_proj_talk)
-plot(plt_proj_talk_mean_approx)
-plot(plt_proj_talk_marg_approx)
+lbl_mean <- "gp-mean-em_llik_const_GaussQuad"
+lbl_marg <- "gp-marg-em_llik_const_GaussQuad"
+for(i in seq_along(proj_var)) {
+  # Format plots. 
+  plt <- ggformat_journal(plt_proj_talk[[i]], legend_position="none")
+  plot_mean_approx <- ggformat_journal(plt_proj_talk_mean_approx[[i]], legend_position="bottom") + 
+                      scale_color_manual(labels=c("mean"="gp-mean"), 
+                                         values=c("mean"=unname(approx_type_colors[lbl_mean])))
+  plot_marg_approx <- ggformat_journal(plt_proj_talk_marg_approx[[i]], legend_position="bottom") + 
+                      scale_color_manual(labels=c("marginal"="gp-marg"), 
+                                         values=c("marginal"=unname(approx_type_colors[lbl_marg])))
+  
+  # Display plots.
+  plot(plt)
+  plot(plot_mean_approx)
+  plot(plot_marg_approx)
+  
+  # Save plots. 
+  base_name <- paste("proj1d", proj_var[i], em_name_talk, sep="_")
+  ggsave(file.path(jpl_talk_dir, paste0(base_name, "llikdist.png")), plt)
+  ggsave(file.path(jpl_talk_dir, paste0(base_name, "meanapprox.png")), plot_mean_approx)
+  ggsave(file.path(jpl_talk_dir, paste0(base_name, "margapprox.png")), plot_marg_approx)
+}
+
 
 ```
 
@@ -225,6 +270,7 @@ for(plt in trace_plots_approx) plot(plt)
 ```
 
 ```{r}
+# Histograms of marginal samples. 
 test_plts <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
                                        param_types="par", test_labels=test_labels_approx, 
                                        param_names="KEXT", test_label_baseline="exact")
@@ -234,16 +280,72 @@ for(plt in test_plts) plot(plt)
 
 
 ```{r}
-# TODO: there is something weird going on with the plotting here. 
+# 1d KDE plots. 
 
 kde_plts <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                        param_types="par", param_names=NULL,
+                                        param_types="par",
                                         test_label_baseline="exact",
                                         test_labels=test_labels_approx,
                                         xlab="parameter", ylab="kde", save_dir=NULL) 
 
 for(plt in kde_plts) plot(plt)
 ```
+
+```{r}
+# Save KDE plots for talk.
+
+# Noisy MCMC algorithms. 
+lbl_noisy <- c("mcwmh-ind-em_llik_const_GaussQuad", "mcwmh-joint-em_llik_const_GaussQuad")
+for(par_name in inv_prob$par_names) {
+  plt <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                     param_types="par", param_names=par_name,
+                                     test_label_baseline="exact",
+                                     test_labels=lbl_noisy,
+                                     xlab="parameter", ylab="kde")[[1]] + xlab(par_name) + 
+                                     scale_color_manual(labels=approx_type_labels[lbl_noisy],
+                                                        values=approx_type_colors[lbl_noisy])
+                                                        
+  plt <- ggformat_journal(plt, legend_position="bottom")
+  plot(plt)
+  ggsave(file.path(jpl_talk_dir, paste0("mcwmh_GaussQuad_kde_", par_name, ".png")), plt)
+}
+
+
+# Mean approximations.
+lbl_mean <- "gp-mean-em_llik_const_GaussQuad"
+for(par_name in inv_prob$par_names) {
+  plt <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                     param_types="par", param_names=par_name,
+                                     test_label_baseline="exact",
+                                     test_labels=lbl_mean,
+                                     xlab="parameter", ylab="kde")[[1]] + xlab(par_name) + 
+                                     scale_color_manual(labels=approx_type_labels[lbl_mean],
+                                                        values=approx_type_colors[lbl_mean])
+  
+  plt <- ggformat_journal(plt, legend_position="bottom")
+  plot(plt)                                             
+  ggsave(file.path(jpl_talk_dir, paste0("gp-mean_GaussQuad_kde_", par_name, ".png")), plt)
+}
+
+# Marginal approximations.
+lbl_marg <- "gp-marg-em_llik_const_GaussQuad"
+for(par_name in inv_prob$par_names) {
+  plt <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                     param_types="par", param_names=par_name,
+                                     test_label_baseline="exact",
+                                     test_labels=lbl_marg,
+                                     ylab="kde")[[1]] + xlab(par_name) + 
+                                     scale_color_manual(labels=approx_type_labels[lbl_marg],
+                                                        values=approx_type_colors[lbl_marg])
+                                               
+  plt <- ggformat_journal(plt, legend_position="bottom")
+  plot(plt)                                             
+  ggsave(file.path(jpl_talk_dir, paste0("gp-marg_GaussQuad_kde_", par_name, ".png")), plt)
+}
+
+```
+
+
 
 ```{r}
 # mcmc_par_stats <- compute_mcmc_param_stats(samp_dt, burn_in_start=burn_in_start, 
