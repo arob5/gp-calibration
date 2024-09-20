@@ -91,6 +91,9 @@ burn_in_start <- N_mcmc/2
 N_design <- 3L
 design_method <- "LHS"
 
+# Settings for confidence intervals displayed in plots. 
+interval_method <- "pm_std_dev"
+N_std_dev <- 1.64
 ```
 
 
@@ -262,19 +265,15 @@ emulator_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 # Emulator Distribution plots.  
 #
 
-# Probability for confidence intervals to use in plots. 
-CI_prob <- pnorm(1) - pnorm(-1) # i.e., plot +/- 1 std dev 
-N_std_dev <- 1
-
 # (1): Plot the underlying GP emulator predictive distributions.  
 plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
-                                                        interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                                        interval_method=interval_method, N_std_dev=N_std_dev,
                                                         pred_list=emulator_pred_llik, ylab="L(u)",
                                                         Y_new=matrix(test_info$llik, ncol=1), line_thickness=line_thickness,
                                                         design_color=design_color, design_pt_size=design_pt_size, 
                                                         xlab="u", plot_title="GP predictions [llik]")[[1]]
 plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
-                                                      interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                                      interval_method=interval_method, N_std_dev=N_std_dev,
                                                       pred_list=emulator_pred_fwd, ylab="G(u)",
                                                       Y_new=matrix(test_info$fwd, ncol=1), line_thickness=line_thickness,
                                                       design_color=design_color, design_pt_size=design_pt_size, 
@@ -283,13 +282,13 @@ plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_i
 # (2): Plot the log-likelihood emulator predictive distributions. 
 plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_llik,
                                            plot_type="llik", include_interval=TRUE,
-                                           interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                           interval_method=interval_method, N_std_dev=N_std_dev,
                                            true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                            design_color=design_color, design_pt_size=design_pt_size,
                                            xlab="u", plot_title="log-likelihood predictions [llik]", ylab="L(u)")
 plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd,
                                          plot_type="llik", include_interval=TRUE,  
-                                         interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                         interval_method=interval_method, N_std_dev=N_std_dev,
                                          true_llik=test_info$llik, CI_prob=CI_prob, ylab="L(u)",
                                          design_color=design_color, design_pt_size=design_pt_size,
                                          xlab="u", plot_title="log-likelihood predictions [fwd]")
@@ -297,7 +296,7 @@ plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emu
 # (3): Plot the likelihood emulator predictive distributions. 
 plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_llik,
                                           plot_type="lik", include_interval=TRUE, 
-                                          interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                          interval_method=interval_method, N_std_dev=N_std_dev,
                                           true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                           design_color=design_color, design_pt_size=design_pt_size, ylab="exp L(u)",
                                           xlab="u", plot_title="likelihood predictions [llik]")
@@ -305,7 +304,7 @@ plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, emulator_pred_list=em
 # TODO: why doesnt this throw an error when using "CI"?
 plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, emulator_pred_list=emulator_pred_fwd, 
                                         plot_type="lik", include_interval=TRUE, 
-                                        interval_method="pm_std_dev", N_std_dev=N_std_dev,
+                                        interval_method=interval_method, N_std_dev=N_std_dev,
                                         true_llik=test_info$llik, CI_prob=CI_prob, line_thickness=line_thickness,
                                         design_color=design_color, design_pt_size=design_pt_size, ylab="exp L(u)",
                                         xlab="u", plot_title="likelihood predictions [fwd]")
