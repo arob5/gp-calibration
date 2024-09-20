@@ -379,11 +379,20 @@ for(plt in scatter_stat_plts) plot(plt)
 ```
 
 ```{r}
-coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start,
+tst_lbls <- approx_types
+coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", test_labels=tst_lbls, 
+                                           burn_in_start=burn_in_start,
                                            param_types="par", probs=seq(.5, .99, .05))
 coverage_plts <- coverage_plt_list$plots
 
-for(plt in coverage_plts) plot(plt)
+for(i in seq_along(coverage_plts)) {
+  plot_name <- names(coverage_plts)[i]
+  plt <- ggformat_journal(coverage_plts[[i]], remove_title=FALSE, legend_position="bottom") + 
+         scale_color_manual(labels=approx_type_labels[tst_lbls],
+                            values=approx_type_colors[tst_lbls])
+  plot(plt)
+  ggsave(file.path(jpl_talk_dir, paste0("coverage_", plot_name, ".png")), plt)
+}
 ```
 
 

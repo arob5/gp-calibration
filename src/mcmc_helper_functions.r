@@ -880,7 +880,7 @@ get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=N
 
 get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NULL, test_labels=NULL,
                                   param_types=NULL, param_names=NULL, xlab="observed", ylab="predicted", 
-                                  save_dir=NULL, probs=seq(0.5, 1.0, .1)) {
+                                  save_dir=NULL, probs=seq(0.5, 1.0, .1), color_exact="black") {
   # Produces one plot per unique (param type, param name) combination. Each plot will contain one line 
   # per test label that has samples associated with the specific parameter being plotted. These lines 
   # summarize the coverage of the distributions (i.e., the samples for each test label) with respect 
@@ -961,8 +961,8 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
     plt <- ggplot(dt_plt_param) + 
             geom_point(aes(x=prob, y=actual_coverage, color=test_label)) + 
             geom_line(aes(x=prob, y=actual_coverage, color=test_label)) + 
-            geom_abline(slope=1, intercept=0, color="red", linetype="dashed") + 
-            ggtitle(paste0("Coverage: ", lbl_curr)) + xlab("Nominal Coverage") + ylab("Actual Coverage")
+            geom_abline(slope=1, intercept=0, color=color_exact, linetype="dashed") + 
+            ggtitle(param_name_curr) + xlab("Nominal Coverage") + ylab("Actual Coverage")
         
     plt_list[[lbl_curr]] <- plt
     
