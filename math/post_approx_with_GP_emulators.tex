@@ -1030,27 +1030,27 @@ using a log-likelihood emulator. The natural analogs of these acquisition functi
 
 \begin{figure}
      \centering
-     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
+     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [fwd]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_fwd.png}}
          \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
          \label{fig:y equals x}
      \end{subfigure}
      \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
+     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [llik]
          \centering
          \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_llik.png}}
          \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
          \label{fig:three sin x}
      \end{subfigure}
-        \caption{Pointwise maximum uncertainty acquisition functions evaluated at a grid of input values computed
+     \caption{Pointwise maximum uncertainty acquisition functions evaluated at a grid of input values computed
         using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
         The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
         emulator, respectively. Solid lines correspond to the acquisition functions in \Cref{acq_max_var_ent}; i.e., 
         those are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions in 
         \Cref{acq_max_exp_var_ent}; i.e., the analogous criteria tailored to the goal of posterior approximation.
         Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
-        each acquisition function computed over the input grid. 
+        each acquisition function computed over the input grid.} 
         \label{fig:pw_max_uncertainty_1d}
 \end{figure}
 
@@ -1064,12 +1064,39 @@ processes (LNP). The $\maxexpvarLabel$ acquisition is considered in
 \cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
 while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
 
+% Integrated Expected Variance
 \subsubsection{Integrated Expected Variance}
-We now focus on adapting the integrated variance criterion \ref{acq_int_var} to LNPs. 
-In the log-likelihood emulation 
-setting, we will be able to derive a closed-form integrand, as was the case in \ref{acq_int_var}. In the special case 
-of a Gaussian likelihood, the analogous criterion in the forward model emulation setting also admits a closed-form 
-integrand. 
+We now focus on adapting the integrated variance criterion \ref{acq_int_var} to target the goal of posterior approximation.  
+In the log-likelihood emulation setting, we will be able to derive a closed-form integrand, as was the case in \ref{acq_int_var}. 
+In the special case of a Gaussian likelihood, the analogous criterion in the forward model emulation setting also admits a 
+closed-form integrand.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % Integrated acquisitions [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_int_fwd.png}}
+         \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
+         \label{fig:y equals x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % Integrated acquisitions [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_int_llik.png}}
+         \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
+         \label{fig:three sin x}
+     \end{subfigure}
+     \caption{Integrated conditional uncertainty acquisition functions evaluated at a grid of input values computed
+        using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
+        The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
+        emulator, respectively. Solid lines correspond to the acquisition functions \ref{acq_int_var} and \ref{acq_int_ent};
+        i.e., those that are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions
+        \ref{def:int_exp_var_llik} and \ref{fwd-int-exp-var}; i.e., the analogous criteria tailored to the goal of posterior approximation.
+        Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
+        each acquisition function computed over the input grid.
+        \todo: need to define the integrated entropy acquisition targeting posterior approximation.} 
+        \label{fig:pw_max_uncertainty_1d}
+\end{figure}
 
 \paragraph{Log-Likelihood Emulation}
 We begin with the log-likelihood emulation case. Recall that the 
@@ -1204,19 +1231,19 @@ ordinary differential equations
 \dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
 \end{align}
 where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
-(PAR; \textrm{MJ/$m^2$/day}), and the above dynamics rely on the following parameterized model of 
+(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
 Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
 \begin{align}
 \NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
 \GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
 \LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
 \end{align} 
-We note that the ODE is of the form \ref{ode_ivp}, where the nonlinear dynamics $\odeRHS$ additionally depend on a 
+We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
 time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
 $\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables. 
 For all experiments, the model is discretized via a standard forward Euler scheme operating at a daily time step using the 
 software provided in the R \verb+BayesianTools+ package \citep{vsem}. The forcing PAR data is simulated using the basic
-radiation model provided by the \verb+VSEMcreatePAR+ function in this package.
+radiation model provided by the \verb+VSEMcreatePAR+ function in this package. \\
 \todo: list default and true parameter values. \\
 \todo: Introduce the notation $\ParTrue$ for the true parameter value used to simulate the data. \\
 \todo: Introduce model misspecification by letting the ground truth fixed parameter differ from their defaults, but use the 
@@ -1232,12 +1259,12 @@ that the number of time steps is $\NTimeStep \Def 365 \cdot 3$. The observable i
 year average of $\LAI$. Using the notation from \cref{dynamical_models}, we define the likelihood by 
 \begin{align*}
 \obs &= (\obsOp \circ \solutionOp)(\Par) + \noise \\
-\noise &\sim \Gaussian(0, 0.277^2)
+\noise &\sim \Gaussian(0, 0.277^2),
 \end{align*}
 with
 \begin{align*}
 \obsOp(\indexTime[1]{\state}, \dots, \indexTime[\NTimeStep]{\state}) 
-\Def \frac{1}{\NTimeStep} \sum_{\timeIndex=1}^{\NTimeStep}  \LAR \cdot \indexTime{\left(\stateV\right)}
+\Def \frac{1}{\NTimeStep} \sum_{\timeIndex=1}^{\NTimeStep}  \LAR \cdot \indexTime{\left(\stateV\right)}.
 \end{align*}
 The ground truth observable is given by $\fwd(\ParTrue) = (\obsOp \circ \solutionOp)(\ParTrue) \approx 5.55$ with 
 the single observation $\obs \approx 5.17$ simulated by adding a draw from the Gaussian noise, as specified above. 

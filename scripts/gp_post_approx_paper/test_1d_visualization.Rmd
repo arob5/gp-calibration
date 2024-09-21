@@ -686,10 +686,6 @@ ggsave(file.path(output_dir, "acq_int_llik.png"), acq_int_plt_llik)
 ggsave(file.path(output_dir, "acq_int_fwd.png"), acq_int_plt_fwd)
 
 # TODO:
-#    - Should add design points to the set of test points, so that we can see behavior or 
-#      acquisitions at the design points. 
-#    - Figure out plot formatting/display; add dashed vertical lines for design points, and 
-#      stars marking the minima.
 #    - When implementing these methods and the acquisition functions that call these methods, 
 #      need to think about the case when there are multiple underlying GPs. 
 ```
