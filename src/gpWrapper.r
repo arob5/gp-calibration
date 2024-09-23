@@ -1093,6 +1093,45 @@ gpWrapperKerGP$methods(
     }
     
     return(hyperpar_list)
+  }, 
+  
+  get_summary_str_package = function(idx, ...) {
+    # This method returns a string summarizing the GP stored in
+    # `.self$gp_model[[idx]]`. The `gpWrapper` method `get_summary_str()`
+    # loops over the GP list to assemble these strings for all GPs.
+    if(!.self$gp_is_fit()) return(NULL)
+    gp_kergp <- .self$gp_model[[idx]]
+    
+    summary_str <- paste0("\n-----> gpWrapperKerGP GP ", idx, "; output = ", .self$Y_names[idx], ":\n")
+    
+    # Mean function.
+    mean_coefs <- gp_kergp$betaHat
+    summary_str <- paste0(summary_str, "\n>>> Mean function:\n")
+    summary_str <- paste0(summary_str, "Estimted trend: ", !gp_kergp$trendKnown, "\n")
+    summary_str <- paste0(summary_str, "Mean function coefs:\n")
+    for(i in seq_along(mean_coefs)) {
+      summary_str <- paste0(summary_str, "\t", names(mean_coefs)[i], ": ", mean_coefs[i], "\n")
+    }
+    
+    # Kernel.
+    # TODO: need to standardize parameter names to be able to extract the correct
+    # parameters from the parameter vector. And need to account for different 
+    # kernel types like quadratic. 
+    cov_obj <- gp_kergp$covariance
+    summary_str <- paste0(summary_str, "\n>>> Kernel:\n")
+    summary_str <- paste0(summary_str, "Kernel description: ", attr(cov_obj,"label"), "\n")
+    summary_str <- paste0(summary_str, "Lengthscales:\n")
+    ls <- attr(cov_obj, "par")[.self$X_names]
+    for(i in seq_along(ls)) {
+      summary_str <- paste0(summary_str, "\t", names(ls)[i], ": ", ls[i], "\n")
+    }
+    summary_str <- paste0(summary_str, "Marginal std dev: ", sqrt(attr(cov_obj, "par")["sigma2"]), "\n")
+    
+    # Nugget/Noise variance.
+    summary_str <- paste0(summary_str, "\n>>> Nugget/Noise:\n")
+    summary_str <- paste0(summary_str, "Std dev: ", sart(.self$default_nugget), "\n")
+    
+    return(summary_str)
   }
   
 )

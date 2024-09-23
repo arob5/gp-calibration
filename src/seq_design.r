@@ -18,6 +18,8 @@
 # 
 # Andrew Roberts
 # 
+# Dependencies:
+#    gpWrapper.r, llikEmulator.r, statistical_helper_functions.r
 
 # -----------------------------------------------------------------------------
 # Acquisition Function Framework 
@@ -137,13 +139,27 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
 
 get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidates=NULL, 
                              design_candidate_weights=NULL, ...) {
+  # LHS = Latin Hypercube Sample
+  # tensor_product_grid = tensor product of equally-spaced 1d grids in each dimension. 
+  # simple = simple iid random sample.
   
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
   else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else if(method == "tensor_product_grid") return(get_tensor_product_grid(N_batch, prior_dist_info=prior_params, ...))
+  else if(method == "simple") return(get_simple_random_sample(N_batch, prior_dist_info=prior_params))
   else stop("Design method ", method, " not supported.")
 }
 
+
+get_simple_random_sample <- function(N_batch, prior_dist_info) {
+  d <- nrow(prior_dist_info)
+  samp <- matrix(nrow=N_batch, ncol=d, dimnames=list(NULL,rownames(prior_dist_info)))
+  for(i in 1:N_batch) {
+    samp[i,] <- sample_prior_theta(prior_dist_info)
+  }
+  
+  return(samp)
+}
 
 get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=FALSE, ...) {
   # Produces a Latin Hypercube Sample (LHS) with `N_batch` points. The LHS is first sampled
