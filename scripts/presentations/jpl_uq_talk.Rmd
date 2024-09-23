@@ -61,7 +61,6 @@ approx_types <- c("mcwmh-ind-em_llik_const_GaussQuad", "mcwmh-joint-em_llik_cons
 approx_type_labels <- setNames(approx_type_labels, approx_types)
 approx_type_colors <- setNames(approx_type_colors, approx_types)
 
-
 # Settings for MCMC plotting. 
 burn_in_start <- 100000L
 
