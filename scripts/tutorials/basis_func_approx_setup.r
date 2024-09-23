@@ -9,6 +9,9 @@ library(ggplot2)
 library(data.table)
 library(docopt)
 
+# For reproducibility. 
+set.seed(15643352)
+
 # File path setup. 
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
@@ -68,8 +71,6 @@ driver <- BayesianTools::VSEMcreatePAR(days=time_points)
 # multiple time series of a few different output variables, but we will start 
 # by looking at a single one: leaf area index (LAI). This is a quantitative 
 # measure of the quantity of leaves in an area. 
-
-# Map from calibration parameter to VSEM outputs.
 output_var <- "LAI"
 output_names <- get_vsem_output_names()
 output_var_idx <- which(output_names==output_var) 

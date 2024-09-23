@@ -9,6 +9,9 @@ library(ggplot2)
 library(data.table)
 library(docopt)
 
+# For reproducibility.
+set.seed(7543463)
+
 # File path setup. 
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
@@ -55,18 +58,79 @@ rownames(par_prior_params) <- par_prior_params$par_name
 print("Prior on calibration parameter:")
 print(par_prior_params)
 
+# The variable `n_time` defines the number of days that the model will be run 
+# for. This will determine the dimension of the output space for the model G(u).
+n_year <- 3
+n_time <- 365*n_year
+time_points <- 1:n_time
+
+# The VSEM model is driven (i.e., "forced") by sunlight. This code simulates some 
+# synthetic radiation data for this purpose. Don't worry about this for now, 
+# but it needs to be set up to run the model. 
+driver <- BayesianTools::VSEMcreatePAR(days=time_points)
+
+# This sets up the map from model parameters to the time series of model outputs. 
+# This model actually returns multiple time series of a few different output 
+# variables, but we will start by looking at a single one: leaf area index (LAI). 
+# This is a quantitative measure of the quantity of leaves in an area. 
+output_var <- "LAI"
+output_names <- get_vsem_output_names()
+output_var_idx <- which(output_names==output_var) 
+par_to_output_map <- get_vsem_fwd_model(driver, dim_par, par_cal_idx, par_default, simplify=FALSE)
 
 # -----------------------------------------------------------------------------
 # Bayesian Inverse Problem Setup
 #
-# The Very Simple Ecosystem Model (VSEM) is a convenient toy model to use 
-# for testing algorithms. It is implemented in the R package `BayesianTools`. 
-# To make it easier to work with, I wrote a variety of wrapper functions which 
-# are defined in `inv_prob_test_functions.r`. 
+# We now set up the components defining a Bayesian inverse problem: the 
+# forward model, data, likelihood, and prior.
 # -----------------------------------------------------------------------------
 
+# Forward model, a.k.a. the parameter-to-observable map. The function from 
+# parameters to the model predictions of whatever quantity for which we 
+# have data. As discussed below, we will be assuming we have daily LAI 
+# observations, so the observation operator will simply extract the LAI 
+# portion of the VSEM output. 
+fwd_model <- function(u) {
+  # Run VSEM model with input parameters `u`. 
+  model_outputs <- par_to_output_map(u)
+  
+  # Extract the output variable we are interested in. 
+  single_run <- (dim(model_outputs)[1]==1L)
+  var_trajectory <- model_outputs[,,output_var_idx]
+  if(single_run) var_trajectory <- matrix(var_trajectory, nrow=1L)
+  var_trajectory
+}
 
+# Simulating synthetic observations. Let's start simple and consider the 
+# situation where we have daily noisy LAI observations. We will simulate 
+# fake observations by assuming that the observations are generated 
+# according to the VSEM model predictions at some "true" parameter value, 
+# plus some Gaussian observation noise. For now, we will assume that we 
+# know the variance of the observation noise. 
 
+# Ground truth parameter and outputs. 
+u_true <- get_vsem_default_pars()[par_cal_idx]
+y_true <- drop(fwd_model(u_true))
+
+# Observed data. `sig2_eps` is the observation variance. 
+signal_to_noise_ratio <- 20
+sig2_eps <- mean(y_true) / signal_to_noise_ratio
+y <- y_true + sqrt(sig2_eps)*rnorm(n=length(y_true))
+
+# Plot ground truth vs. observed data.
+plt_data <- ggplot(data.frame(t=time_points, y_true=y_true, y=y)) + 
+            geom_point(aes(x=t, y=y), color="black") + 
+            geom_line(aes(x=t, y=y_true), color="red") + 
+            xlab("days") + ylab("LAI") + ggtitle("True vs Observed LAI")
+plot(plt_data)
+
+# Likelihood: we will use the same likelihood that was used to generate the 
+# data, which means we are assuming the statistical model is well-specified (i.e.,
+# there is no model discrepancy). We can consider more realistic example later.
+# The function defined here is actually the log-likelihood ("llik").
+llik <- function(u) {
+  
+}
 
 
 
