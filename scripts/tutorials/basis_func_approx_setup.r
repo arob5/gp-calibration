@@ -17,7 +17,7 @@ src_dir <- file.path(base_dir, "src")
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 
 # Load functions for sampling from prior distribution.  
-source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
 
 # Load functions for plotting.   
 source(file.path(src_dir, "plotting_helper_functions.r"))
