@@ -16,6 +16,9 @@ set.seed(7543463)
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
 
+# Load general helper functions.    
+source(file.path(src_dir, "general_helper_functions.r"))
+
 # Load functions for setting up tests with the VSEM model. 
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 
@@ -89,7 +92,10 @@ par_to_output_map <- get_vsem_fwd_model(driver, dim_par, par_cal_idx, par_defaul
 # parameters to the model predictions of whatever quantity for which we 
 # have data. As discussed below, we will be assuming we have daily LAI 
 # observations, so the observation operator will simply extract the LAI 
-# portion of the VSEM output. 
+# portion of the VSEM output. Note that this function is vectorized so 
+# that you can evaluate at multiple values of `u`. To do so, the values 
+# of `u` should be stacked as rows in a matrix. See examples later in this 
+# script. 
 fwd_model <- function(u) {
   # Run VSEM model with input parameters `u`. 
   model_outputs <- par_to_output_map(u)
@@ -129,10 +135,23 @@ plot(plt_data)
 # there is no model discrepancy). We can consider more realistic example later.
 # The function defined here is actually the log-likelihood ("llik").
 llik <- function(u) {
+  # Run forward model (note that `u` can be a matrix of multiple parameter
+  # values). 
+  fwd <- fwd_model(u)
   
+  # Compute Gaussian log-likelihood.
+  squared_err <- add_vec_to_mat_rows(-y, fwd)^2
+  -0.5*n_time*log(2*pi*sig2_eps) - 0.5*(1/sig2_eps)*rowSums(squared_err)
 }
 
 
+# Define prior distribution on calibration parameters. I wrote a function that
+# sets up a default uniform prior. 
+par_cal_idx <- which(par_names %in% par_cal_names)
+par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
+rownames(par_prior_params) <- par_prior_params$par_name
+print("Prior on calibration parameter:")
+print(par_prior_params)
 
 
 
