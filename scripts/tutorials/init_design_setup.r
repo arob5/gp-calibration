@@ -133,7 +133,9 @@ plot(plt_data)
 # Likelihood: we will use the same likelihood that was used to generate the 
 # data, which means we are assuming the statistical model is well-specified (i.e.,
 # there is no model discrepancy). We can consider more realistic example later.
-# The function defined here is actually the log-likelihood ("llik").
+# The function defined here is actually the log-likelihood ("llik"). It is 
+# implemented to be vectorized, so that `u` can be a matrix containing multiple 
+# inputs stacked in the rows of the matrix. 
 llik <- function(u) {
   # Run forward model (note that `u` can be a matrix of multiple parameter
   # values). 
@@ -152,6 +154,60 @@ par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
 rownames(par_prior_params) <- par_prior_params$par_name
 print("Prior on calibration parameter:")
 print(par_prior_params)
+
+# Posterior distribution: in this simple 2d example, we can simply set up a 
+# 2d grid over values of the two calibration parameters and evaluate the 
+# (unnormalized) posterior density at each grid point. The below code does 
+# this and plots the (unnormalized) log posterior density at each grid point.
+n_grid <- 51^2
+u_grid <- get_batch_design("tensor_product_grid", N_batch=n_grid, 
+                           prior_params=par_prior_params)
+llik_grid <- llik(u_grid)
+lprior_grid <- calc_lprior_theta(u_grid, par_prior_params)
+lpost_grid <- lprior_grid + llik_grid
+plt_post <- plot_heatmap(u_grid, lpost_grid, main_title="True Log Posterior Density", 
+                         raster=TRUE, xlab=par_names[1], ylab=par_names[2],
+                         legend_label="lpost")
+plot(plt_post)
+
+
+# -----------------------------------------------------------------------------
+# Exploring Designs. 
+#
+# In more realistic settings: (1) the forward model is much more expensive to 
+# run; and (2) there are more than 2 input parameters. These challenges imply 
+# that it will no longer be possible to characterize the posterior by simply  
+# computing the posterior density over a dense grid. Using our emulation 
+# approach, we instead typically evaluate the posterior density at a much 
+# smaller number of points. A typical approach is to choose these inputs points 
+# such that they are "spread out" over the input space; this is known as  
+# "space-filling design". 
+# -----------------------------------------------------------------------------
+
+n_design <- 7
+
+# Perhaps the most obvious starting point for a space-filling design is simply
+# to draw random iid samples from the prior distribution. However, iid samples
+# tend to be "clumpy" - not actually as spread out as you might expect.
+u_uniform <- get_batch_design("simple", N_batch=n_design, 
+                              prior_params=par_prior_params)
+plt_uniform <- plot_heatmap(u_grid, lpost_grid, main_title="Uniform design", 
+                            raster=TRUE, xlab=par_names[1], ylab=par_names[2],
+                            legend_label="lpost", points_mat=u_uniform)
+plot(plt_uniform)
+
+
+# A popular alternative is to use latin hypercube designs. These designs have 
+# a guarantee that the marginal distributions of the design points will be 
+# spread out (see Gramacy chapter 4). In the below code, 
+# LHS = "Latin Hypercube Sample".
+u_lhs <- get_batch_design("LHS", N_batch=n_design, 
+                          prior_params=par_prior_params)
+plt_lhs <- plot_heatmap(u_grid, lpost_grid, main_title="Latin Hypercube Design", 
+                        raster=TRUE, xlab=par_names[1], ylab=par_names[2],
+                        legend_label="lpost", points_mat=u_lhs)
+plot(plt_lhs)
+
 
 
 
