@@ -9,6 +9,7 @@
 \newcommand{\cst}{C}
 \newcommand{\eqDist}{\overset{d}{=}} % Equality in distribution 
 \newcommand{\diag}{\textrm{diag}}
+\newcommand{\law}{\textrm{law}}
 
 
 % --------------------------------------------------------------------------------------------------
@@ -84,6 +85,7 @@
 \newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
 \newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
+\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{samp}}}
 
 % Marginal approximations. 
 \newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
@@ -169,14 +171,18 @@
 \newcommand{\llikSampProp}{\tilde{\ell}} 
 \newcommand{\llikSampDist}{\nu}
 \newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
-\newcommand{\NMCMC}{K_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\sampleIndex}{k} % Generic index for samples. 
+\newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
+\newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
+\newcommand{\NMCMC}{\NSample_{\text{MCMC}}} % Proposal covariance matrix
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 \newcommand{\avgAccProbMH}{\overline{a}}
 \newcommand{\accProbRatio}{r}
 \newcommand{\likRatio}{\lambda}
 \newcommand{\MarkovKernel}{P}
-\newcommand{\mcmcIndex}{k}
-\newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
+\newcommand{\mcmcIndex}{\sampleIndex}
+% \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
+\newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
@@ -195,7 +201,7 @@
 \newcommand{\obsOp}{\mathcal{H}}
 \newcommand{\timeIndex}{\mcmcIndex}
 \newcommand{\indexTime}[2][\timeIndex]{{#2}_{#1}}
-\newcommand{\NTimeStep}{K}
+\newcommand{\NTimeStep}{\NSample}
 \newcommand{\forcing}{w}
 
 % --------------------------------------------------------------------------------------------------
