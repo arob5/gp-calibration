@@ -443,14 +443,25 @@ with normalizing constant given by
 &= \int \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} d\Par \label{norm_cst_random_llik}. 
 \end{align}
 The density $\llikEmRdm[\Ndesign]{\postDensNorm}$ is random; each sample trajectory from the 
-underlying GP induces a different posterior. It is worth noting that $\llikEmRdmDens[\Ndesign](\Par)$,
+underlying GP induces a different posterior.
+\footnote{In general, \ref{norm_cst_random_llik} can be defined as a random probability measure. We simplify the 
+discussion by considering the case where almost all sample paths of the log-likelihood emulator induce probability 
+distributions that admit a Lebesgue density.}
+It is worth noting that $\llikEmRdmDens[\Ndesign](\Par)$,
 the unnormalized random density evaluated at an input $\Par$, inherits its randomness only from the scalar random 
 variable $\llikEm(\Par)$. However, its normalized counterpart $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$ depends 
 on the entire (infinite-dimensional) GP distribution through the normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$.
 Given that \ref{post_dens_random_llik} fully incorporates the GP predictive distribution, we consider 
 $\llikEmRdm[\Ndesign]{\postDensNorm}$ to be the baseline posterior approximation to which other methods will
 be compared. Following \citet{StuartTeck1}, we refer to $\llikEmRdm[\Ndesign]{\postDensNorm}$ as the 
-\textit{sample-based} approximation. This approximation can be understood from a Monte Carlo perspective, 
+\textit{sample-based} approximation. In theory, inference for the parameters $\Par$ can then be performed 
+by marginalizing the emulator, resulting in the deterministic density
+\begin{align}
+\llikEmSampDensNorm[\Ndesign](\Par)
+&\Def \E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par^\prime) \Exp{\llikEm[\Ndesign](\Par^\prime)} d\Par^\prime} \right].
+\label{samp_dens_norm}
+\end{align}
+This approximation can be understood from a Monte Carlo perspective, 
 as summarized in \Cref{alg:sample-approx} [\todo: subscript notation indexing samples in algorithm might 
 be a bit confusing given subscript on prior density; maybe change this or just define the algorithm as returning 
 a single sample]. 
@@ -462,7 +473,7 @@ a single sample].
     \Function{sampleApprox}{$\llikEm, \NSample$}     
         \For{$\sampleIndex \gets1,\NSample$} 
         		\State $\indexSample{\ell} \sim \law(\llikEm)$ \Comment{Sample GP trajectory}
-		\State $\indexSample{\postDens}(\Par) \gets \priorDens(\Par)\Exp{\ell(\Par)}$ \Comment{Induced unnormalized density}
+		\State $\indexSample{\postDens}(\Par) \gets \priorDens(\Par)\Exp{\indexSample{\ell}(\Par)}$ \Comment{Induced unnormalized density}
 		\State $\indexSample{\Par} \sim \postDensNorm$ \Comment{Draw from sampled density}
 	\EndFor
 	\State \Return $(\indexSample[1]{\Par}, \dots, \indexSample[\NSample]{\Par})$
@@ -470,13 +481,11 @@ a single sample].
     \end{algorithmic}
 \end{algorithm}
 
-Alternatively, we can think of the density of the $\Par$-samples generated via this procedure, which 
-can be seen to be
-\begin{align}
-\llikEmSampDensNorm[\Ndesign](\Par)
-&\Def \E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par^\prime) \Exp{\llikEm[\Ndesign](\Par^\prime)} d\Par^\prime} \right]
-\label{samp_dens_norm}
-\end{align}
+However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm infeasible in practice. 
+Various discretized approximations might be considered, but face challenges beyond trivial low-dimensional 
+examples. 
+
+
 
  % The Forward Model Emulation Setting
 \subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
