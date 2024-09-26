@@ -141,7 +141,7 @@ from observations, we consider the solution operator
 mapping parameters to state trajectories over some time horizon $[\timeStart, \timeEnd]$. In practice, the solution 
 is often approximated via a numerical discretization of the form 
 \begin{align}
-\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]. 
+\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
 \end{align}
 Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
@@ -150,13 +150,12 @@ Going forward, we focus on the approximate solution operator $\solutionOp$, negl
 for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
 noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
 $\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the state trajectory to a 
-$\dimObs$-dimensional observable quantity. Equipping the parameters with a prior $\Par \sim \priorDens$,
-we assume the observations are generated as 
+$\dimObs$-dimensional observable quantity. We assume the observations are generated as 
 \begin{align}
-\obs &= (\obsOp \circ \solutionOp)(\Par) + \noise \nonumber \\
+\obs &= (\obsOp \circ \solutionOp)(\ParTrue) + \noise \\
 \noise &\sim \Gaussian(0, \likPar) \nonumber 
 \end{align}
-for some parameter value in the support of the prior distribution. Observe that this falls within the generic 
+for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this falls within the generic 
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Some of the methods discussed below readily 
 generalize to more complicated settings that consider non-additive or non-Gaussian noise, or the presence of 
@@ -420,6 +419,60 @@ may outweigh the downsides of log-likelihood emulation in many applications.
 
 % Posterior Approximation
 \section{Posterior Approximation}
+With a fit GP emulator in hand, we now turn to the question of how best to utilize the emulator in approximating the posterior 
+distribution of the Bayesian inverse problem. We systematically review the various methods that have been considered in the 
+literature, and propose a new approach based on noisy approximations of MCMC algorithms. For succinctness, we restrict 
+to the log-likelihood emulation setting when introducing posterior approximation methods throughout this section. Natural 
+analogs exist in the forward model emulation setting, with the caveat that the availability of closed-form computations will 
+be dependent on the specific choice of likelihood. Such considerations for posterior approximation using forward model 
+surrogates are discussed in \Cref{post_approx_fwd}. 
+
+% Random Densities and the Sample-Based Approximation
+\subsection{Random Densities and the Sample-Based Approximation}
+We begin by recalling that the log-likelihood GP emulator results in the Gaussian predictor 
+ $\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$
+ at any parameter set $\parMat$.
+ 
+ % The Forward Model Emulation Setting
+\subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
+ In this section, we discuss notable differences in the above posterior approximation methods when working 
+with a forward model emulator. In general, each of the previously-discussed methods naturally generalizes 
+to this setting by replacing $\llikEm[\Ndesign]$ with $\llikEmFwd[\Ndesign]$ in the definitions. Continuing 
+along the lines of previous notation, we will differentiate the approximated posterior density using forward 
+model emulation by a superscript $\fwd$. In the log-likelihood emulation case, the marginal and quantile 
+unnormalized density approximations admit closed-form characterizations 
+owing to the log-normality of the likelihood surrogate. Under a forward model emulator, the distribution of 
+$\llikEmFwd[\Ndesign]$ will be dependent on the particular likelihood under consideration, so closed-form 
+marginal and quantile approximations may not be available. In such cases, one might still sample from 
+$\fwdEmMargDens[\Ndesign]$ via pseudo-marginal MCMC \citep{seudoMarginalMCMC}.
+Under a Gaussian likelihood (e.g., \ref{inv_prob_Gaussian}), a closed-form marginal approximation is
+available, given by
+\begin{align}
+\fwdEmMargDens[\Ndesign](\Par) 
+&\Def \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \nonumber  \\
+&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right] \nonumber \\
+&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)), \label{post_dens_marg_fwd_Gaussian}
+\end{align}
+which follows immediately from the fact that the expectation is of the form of a convolution 
+of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix).
+The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
+can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
+\begin{align}
+\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
+v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber \\
+\Par &\sim \priorDens \nonumber, 
+\end{align}
+where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
+\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
+from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
+[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
+of distance from $\obs$ to the GP mean prediction].  
+The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
+\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}.
+
+% Posterior Approximation: OLD
+\section{Posterior Approximation}
 The forward model and log-likelihood emulation approaches result in the random log-likelihood approximations 
 $\llikEmFwd[\Ndesign]$ and $\llikEm[\Ndesign]$, respectively. The latter results in a Gaussian predictor 
 $\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$ 
@@ -534,37 +587,10 @@ reduces to the mean approximation. Otherwise, the inflation factor is an increas
 $\emKer[\Ndesign]{\llik}(\Par)$, irrespective of the mean $\emMean[\Ndesign]{\llik}(\Par)$. 
 While the unnormalized posterior density \ref{post_dens_marg_var_inflation}
 can be plugged into off-the-shelf sampling algorithms, the uncertainty inflation term can cause highly multi-modal 
-distributions which prove difficult for standard MCMC schemes. (\todo: add plot) This difficulty is noted in the 
+distributions which prove difficult for standard MCMC schemes. (\todo: add plot; or remove this comment here
+and include a more detailed discussion of the behavior of this approximation, its differences in the llik/fwd emulator 
+setting, and its comparison to the sample-based approximation). This difficulty is noted in the 
 supplement of \cite{VehtariParallelGP}. 
-
-The expectation in the forward model emulation case 
-\ref{post_dens_marg_fwd} is generally intractable, though pseudo-marginal MCMC methods offer a potential 
-avenue for inference \cite{pseudoMarginalMCMC}. \Cref{fwd_em_lik_emulator_moments_Gaussian} provides the 
-following closed-form expression in the special case of a Gaussian likelihood
-\begin{align}
-\fwdEmMargDens[\Ndesign](\Par) 
-&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right]
-\nonumber \\
-&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)),
-\label{post_dens_marg_fwd_Gaussian}
-\end{align}
-which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix). 
-The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
-can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
-\begin{align}
-\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
-v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber \\
-\Par &\sim \priorDens \nonumber, 
-\end{align}
-where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
-\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
-from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
-[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
-of distance from $\obs$ to the GP mean prediction].  
-The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
-\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}. 
 
 Finally we note that generalizations of $\text{median}(\Exp{\llikEm[\Ndesign](\Par)})$ have been considered, 
 resulting in the $\quantileProb$-quantile, $\quantileProb \in (0,1)$ approximations 
@@ -808,24 +834,54 @@ $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) 
 This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
 $\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
 
+% Comparing to the Sample-Based Approximation
+\subsection{Comparing to the Sample-Based Approximation}
+\todo: need to be clear on definitions here, clarifying the difference between the random measure, and 
+$\Par$ samples that are generated from sample paths of the random measure. The random measure 
+essentially defines a Markov kernel that can be used to generate $u$ samples. 
+In this subsection, we take the viewpoint of treating the \textit{sample-based} approximation 
+(\ref{post_dens_random_fwd} and \ref{post_dens_random_llik}) as a baseline 
+that the other methods seek to approximate. In some sense, this is the method that fully propagates 
+the full GP distribution. In theory, samples from this approximate posterior can be obtained generatively by 
+the following procedure:
+\begin{enumerate}
+\item Sample a trajectory (i.e., sample path) from the GP $\llikEm[\Ndesign]$, which induces a sample 
+path of the random density $\llikEmRdm[\Ndesign]{\postDensNorm}$.
+\item Draw a sample $u$ from the sampled density.
+\end{enumerate}
+A similar procedure applies to the forward model emulation setting. This procedure is not realizable in 
+practice due to the requirement of sampling a GP trajectory. An alternative view of this approach comes 
+from considering the density of the sample $u$ generated by the above procedure:
+\begin{align}
+\E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par) \Exp{\llik Em[\Ndesign](\Par)} d\Par} \right]
+\end{align}
+
+
 % Perspectives on Posteriors Induced by Gaussian Process Surrogates 
 \subsection{Perspectives on Posteriors Induced by Gaussian Process Surrogates}
 In the preceding subsections, we have summarized a wide variety of GP-induced posteriors that have been considered 
 in the literature, as well as proposed a new approach based on a noisy approximation of a MH algorithm. This leads to 
 the natural question: \textit{which is the correct posterior approximation to use?} We argue that the answer to this question 
 depends largely on the goal at hand. The existing literature in this area tends to implicitly favor one of two potential 
-objectives: (1) forward uncertainty propagation or; (2) posterior error minimization. The former perspective tends to 
+viewpoints: (1) forward uncertainty propagation or; (2) posterior error minimization. The former perspective tends to 
 accept that computation is limited and hence completely reducing surrogate-induced error is infeasible. The goal thus 
-becomes to ``honestly'' propagate the surrogate uncertainty with the goal of achieving reasonable posterior coverage 
-(within reason, one typically favors over, rather than under, coverage). The latter perspective emphasizes minimizing 
+becomes to ``honestly'' propagate the surrogate uncertainty with the goal of achieving reasonable posterior coverage. 
+The latter perspective emphasizes minimizing 
 error with respect to the true posterior, and ensuring posterior convergence as the number of design points increases
-(surrogate refinement via the selection of additional design points is the topic of  \Cref{seq_des}). It is not difficult to 
-imagine scenarios where these two goals are at odds; for example, the GP plug-in mean approximation may beat its
-competitors with respect to common error metrics (e.g., $L^2$, Hellinger) but fall short when uncertainty calibration 
-is emphasized. We of course should hope for the ideal, whereby computation-limited approximations exhibit favorable 
+(surrogate refinement via the selection of additional design points is the topic of  \Cref{seq_des}). We of course should 
+hope for the ideal, whereby computation-limited approximations exhibit favorable 
 uncertainty calibration in some sense, while also converging towards the true posterior in the event that more 
-computational resources become available.    
-
+computational resources become available. Various papers have theoretically studied the latter property, in which results 
+take the form of posterior consistency statements as $\Ndesign \to \infty$
+ \citep{StuartTeck1,StuartTeck2,random_fwd_models,gp_surrogates_random_exploration}. To our knowledge, there is 
+ currently no analogous theoretical framework for comparing the quality of various GP-induced posterior approximations
+ from an uncertainty calibration perspective. We believe that such a framework should evaluate posterior calibration with 
+ respect to the calibration of the GP emulators. If the underlying GP fit is poor, then one would expect the resulting posterior 
+ calibration to be poor; the quality of the posterior approximation method should not be conflated with the quality of the 
+ underlying GP in this setting. We leave the development of a theoretical framework addressing such questions to future 
+ work. In the present article, we take care to assess the various posterior approximation methods using a variety of GP 
+ models with different characteristics. 
+ 
 \todo: Add comments on the effect of approximating the unnormalized posterior density. 
 
 
