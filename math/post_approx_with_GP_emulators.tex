@@ -26,6 +26,9 @@
 \pgfplotsset{compat=1.8}
 \usepackage{tikz}
 
+% Tables. 
+\usepackage{multirow}
+
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_gp_inv_prob}
@@ -483,7 +486,39 @@ a single sample].
 
 However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm infeasible in practice. 
 Various discretized approximations might be considered, but face challenges beyond trivial low-dimensional 
-examples. 
+examples. Owing to the difficulties of working with the sample-based approximation, common approaches in the 
+literature opt for different approaches to derive a deterministic posterior approximation using the random 
+measure $\llikEmRdm[\Ndesign]{\postDensNorm}$. Given that the primary difficulties stem from the normalizing constant
+\ref{norm_cst_random_llik}, the typical approach is to instead focus on approximations of the \textit{unnormalized}
+random density $\llikEmRdm[\Ndesign]{\postDens}$. We discuss such approaches in the following subsection, and 
+propose a new class of GP-induced posterior approximations in \Cref{post_approx_mcmc}. \Cref{tbl:post-approx}
+summarizes the various approximations considered. 
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{ |p{3cm}||p{3cm}|p{3cm}|p{3cm}|  } 
+ \hline
+ \multicolumn{4}{|c|}{GP-Induced Posterior Approximations} \\
+ \hline
+ Approximation Target& Plug-In Mean & Pointwise Expectation & Joint Expectation\\
+ \hline
+ $\llikEmRdm[\Ndesign]{\postDensNorm}$ & $\llikEmMeanDens[\Ndesign]$ & 
+ 	$\llikEmSampDensNorm[\Ndesign]$ & $\llikEmSampDensNorm[\Ndesign]$ \\
+ $\llikEmRdm[\Ndesign]{\postDens}$& $\llikEmMeanDens[\Ndesign]$ & $\llikEmMargDens[\Ndesign]$   &-\\
+ $\textrm{MH}(\Em[\Ndesign]{\likRatio})$ & $\llikEmMeanDens[\Ndesign]$ & &  \\
+  $\textrm{MH}(\Em[\Ndesign]{\accProbMH})$ & $\llikEmMeanDens[\Ndesign]$ & &  \\
+ \hline
+\end{tabular} 
+\caption{\todo: caption}
+\label{tbl:post-approx}
+\end{table}
+
+ % Approximating the Unnormalized Density
+\subsection{Approximating the Unnormalized Posterior Density} \label{post_approx_unn_dens}
+
+
+ % Approximate MCMC
+\subsection{Approximate MCMC} \label{post_approx_mcmc}
 
 
 
