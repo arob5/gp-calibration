@@ -609,94 +609,40 @@ multimodal, or heavily concentrated in small regions with high predictive varian
 This pathology is noted in \cite{VehtariParallelGP}, who recommend against the use of the marginal approximation 
 in their application of interest (log-likelihood emulation with noisy log-likelihood evaluations). 
 \citet{StuartTeck1} and \citet{StuartTeck2} theoretically analyze the marginal approximation under the assumption of 
-a Gaussian likelihood. 
+a Gaussian likelihood. The marginal approximation can be justified as optimal in an $L^2$ sense, but again 
+with no guarantee of optimality for the normalized density \citep{VehtariParallelGP, StuartTeck1}. 
 
 \todo: might be nice to have a plot that compares the level of posterior inflation for these various algorithms as 
 a function of the number of predictive standard deviations. 
 
  % Approximate MCMC
 \subsection{Approximate MCMC} \label{post_approx_mcmc}
+The methods discussed in the previous section approach the problem of GP-induced posterior approximation 
+by deriving an approximation of the unnormalized posterior density, which can then be passed to standard 
+algorithms to conduct inference (e.g., MCMC). We now propose an alternative approach, whereby the 
+GP surrogate is used to directly approximate the inference algorithm, bypassing an approximation of the 
+unnormalized density. We start by reinterpreting the approximate posteriors introduced in the previous section 
+as inducing different approximations of the Metropolis-Hastings (MH) acceptance probability. 
+We then generalize this idea by introducing acceptance probability approximations that incorporate the 
+GP predictive covariance, a feature that is not possible when targeting the unnormalized posterior 
+density on a $\Par$-by-$\Par$ basis. We consider deterministic approximations of this sort, and also introduce
+a class of MCMC algorithms that produce stochastic approximations to the MH acceptance probability. 
+We analyze these algorithms using results from the so-called noisy MCMC literature 
+\citep{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}.
 
-
-
- % The Forward Model Emulation Setting
-\subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
- In this section, we discuss notable differences in the above posterior approximation methods when working 
-with a forward model emulator. In general, each of the previously-discussed methods naturally generalizes 
-to this setting by replacing $\llikEm[\Ndesign]$ with $\llikEmFwd[\Ndesign]$ in the definitions. Continuing 
-along the lines of previous notation, we will differentiate the approximated posterior density using forward 
-model emulation by a superscript $\fwd$. In the log-likelihood emulation case, the marginal and quantile 
-unnormalized density approximations admit closed-form characterizations 
-owing to the log-normality of the likelihood surrogate. Under a forward model emulator, the distribution of 
-$\llikEmFwd[\Ndesign]$ will be dependent on the particular likelihood under consideration, so closed-form 
-marginal and quantile approximations may not be available. In such cases, one might still sample from 
-$\fwdEmMargDens[\Ndesign]$ via pseudo-marginal MCMC \citep{seudoMarginalMCMC}.
-Under a Gaussian likelihood (e.g., \ref{inv_prob_Gaussian}), a closed-form marginal approximation is
-available, given by
-\begin{align}
-\fwdEmMargDens[\Ndesign](\Par) 
-&\Def \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \nonumber  \\
-&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right] \nonumber \\
-&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)), \label{post_dens_marg_fwd_Gaussian}
-\end{align}
-which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix).
-The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
-can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
-\begin{align}
-\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
-v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber \\
-\Par &\sim \priorDens \nonumber, 
-\end{align}
-where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
-\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
-from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
-[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
-of distance from $\obs$ to the GP mean prediction].  
-The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
-\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}.
-
-% Posterior Approximation: OLD
-\section{Posterior Approximation}
-
-\subsection{Approximating the Unnormalized Posterior Density}
-Marginal approximations can be justified in various ways. \todo
-
-\subsection{Approximate MCMC}
-We now interpret the approximate posteriors introduced in the previous section as inducing different 
-approximations of the Metropolis-Hastings (MH) acceptance probability. This perspective motivates 
-an alternative approach to GP-induced posterior approximation; instead of first deriving an 
-approximation of the unnormalized posterior density, we consider the approximation to the MCMC 
-scheme as the starting point. In addition to deterministic approximations,
-we consider a class of MCMC algorithms which produce stochastic approximations to the MH acceptance 
-probability, and thus fall into the noisy MCMC 
-framework which has been considered in the literature 
-\cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}. 
-
-\subsubsection{Deterministic Metropolis-Hastings Approximations}
+Before proceeding to the algorithms, we briefly review the MH algorithm and establish notation relevant to the 
+approximate MCMC schemes outlined in the subsequent sections. 
 We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
 $\propDens(\Par, \cdot)$. If the Markov chain is in the current state $\Par \in \parSpace$ then 
 the next state is defined by sampling a proposal $\propPar \sim \propDens(\Par, \cdot)$ which is 
 accepted with probability $\accProbMH(\Par, \propPar)$, defined by 
-
 \begin{align}
 &\accProbMH(\Par, \propPar) = 
 \min\left\{1, \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)} \right\}.
 \label{MH_acc_prob_exact}
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
-This procedure is summarized in \Cref{alg:MH}. For notational convenience in deriving approximations 
-of the acceptance probability, we define 
-\begin{align}
-&\accProbRatio(\Par, \propPar) 
-= \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)}, 
-&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}},
-\label{MH_acc_prob_exact}
-\end{align}
-and refer to $\accProbRatio(\Par, \propPar)$ and $\likRatio(\Par, \propPar)$ 
-as the \textit{acceptance ratio} and \textit{likelihood ratio}, respectively.
-
+This procedure is summarized in \Cref{alg:MH}. 
 \begin{algorithm}
     \caption{Metropolis-Hastings}
     \label{alg:MH}
@@ -717,16 +663,25 @@ as the \textit{acceptance ratio} and \textit{likelihood ratio}, respectively.
     \end{algorithmic}
 \end{algorithm}
 
-We can define approximate surrogate-based MCMC algorithms by utilizing $\llikEm[\Ndesign]$ 
-or $\llikEmFwd[\Ndesign]$ to approximate $\accProbMH(\Par, \propPar)$, either directly or by plugging 
-in approximations of $\accProbRatio(\Par, \propPar)$ or $\likRatio(\Par, \propPar)$.  
-For brevity, we focus on the log-likelihood emulation setting here, as the definitions are similar in the forward 
-model emulation case. 
-We thus consider the random variables $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$,
-$\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$, and 
-$\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ defined by inserting the emulated log-likelihoods 
-$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ in place of their exact counterparts
-in \ref{MH_acc_prob_exact}. The mean, marginal, and quantile approximate posteriors introduced in the previous 
+For notational convenience in deriving approximations 
+of the acceptance probability, we define 
+\begin{align}
+&\accProbRatio(\Par, \propPar) 
+= \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)}, 
+&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}},
+\label{MH_acc_prob_exact}
+\end{align}
+and refer to $\accProbRatio(\Par, \propPar)$ and $\likRatio(\Par, \propPar)$ 
+as the \textit{acceptance ratio} and \textit{likelihood ratio}, respectively. We can now define approximate 
+surrogate-based MCMC algorithms by utilizing $\llikEm[\Ndesign]$ to approximate $\accProbMH(\Par, \propPar)$, 
+either directly or by plugging in approximations of $\accProbRatio(\Par, \propPar)$ or $\likRatio(\Par, \propPar)$.  
+We thus consider the random variables $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$, $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$, 
+and $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ defined by inserting the emulated log-likelihood evaluations
+$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ in place of their exact counterparts in \ref{MH_acc_prob_exact}. 
+
+% Deterministic Approximations
+\subsubsection{Deterministic Approximations}
+ The mean, marginal, and quantile approximate posteriors introduced in the previous 
 section correspond to the following deterministic, plug-in estimates of $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$:
 \begin{align}
 \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
@@ -759,23 +714,12 @@ distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which 
 The joint marginal approximation inflates the acceptance probability when the GP is uncertain about the 
 \textit{difference} in log-likelihood values at the locations $\propPar$ and $\Par$. For example, it is possible
 that the marginal uncertainty at each location is large, but a large covariance between the locations 
-might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par)$. 
-
-The marginal approximation can be taken a step further by integrating $\llikEm$ out of 
+might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par)$. The 
+marginal approximation can be taken a step further by integrating $\llikEm$ out of 
 $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ or $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead of 
-$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. The former case 
-\begin{align}
-\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-&= \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
-\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)
-\label{acc_ratio_joint_marg}
-\end{align}
-follows immediately from \ref{lik_ratio_joint_marg}, 
-given that $\accProbRatio(\Par, \propPar)$ differs from $\likRatio(\Par, \propPar)$ only by a multiplicative 
-constant (with respect to the emulator). Thus, the approximations 
-$\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ and 
-$\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)$ induce identical inference algorithms. 
-Marginalizing the acceptance probability directly instead yields 
+$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. The $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ case changes 
+little, given that $\accProbRatio(\Par, \propPar)$ differs from $\likRatio(\Par, \propPar)$ only by a multiplicative 
+constant. Instead, taking the expectation of $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ yields 
 \begin{align}
 \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
 &\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] \\
@@ -785,7 +729,10 @@ Marginalizing the acceptance probability directly instead yields
 where 
 \begin{align*}
 w_1(\Par, \propPar) &\Def \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
-w_2(\Par, \propPar) &\Def \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right).
+w_2(\Par, \propPar) &\Def \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right) \\
+\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
+&= \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
+\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)
 \end{align*}
 This is derived in \Cref{prop:joint-marg-accept-prob} in the appendix. While the plug-in acceptance probability 
 approximation based on $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ yields 
@@ -794,15 +741,14 @@ $\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead takes the form 
 $1$ and $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$, with weights given by the probabilities 
 $w_1(\Par, \propPar)$, $w_2(\Par, \propPar)$.
 
-\subsubsection{Noisy Metropolis-Hastings Approximations}
+% Stochastic Approximations
+\subsubsection{Stochastic Approximations}
 The previous section considered deterministic approximations to the MH acceptance probability. Here we turn 
 to random approximations, thus entering the realm of so-called ``noisy'' MCMC algorithms 
 \cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}. The general framework,
 summarized in \Cref{alg:noisy-MH}, is characterized by the choice of distribution $\llikSampDist_{\Par, \propPar}$
-from which to sample log-likelihood values $\llikSamp$ and $\llikSampProp$ which replace the exact 
-log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ when computing the MH acceptance probability. 
-For brevity we will continue to specialize the definitions to the log-likelihood emulation setting, but the forward model 
-emulation case is nearly identical, with $\llikEmFwd$ replacing $\llikEm$. 
+from which to sample the log-likelihood values $\llikSamp$ and $\llikSampProp$ replacing the exact 
+log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ in $\accProbMH(\Par, \propPar)$.
 
 \begin{algorithm}
     \caption{Noisy Metropolis-Hastings}
@@ -864,7 +810,7 @@ comparison to assess the influence of incorporating the GP covariance in the app
 An algorithm similar to $\mcwmhIndLabel$ is utilized to calibrate expensive ecosystem models 
 in \cite{FerEmulation}. 
 
-\paragraph{Pseudo-Marginal Metropolis-Hastings.}
+\paragraph{Pseudo-Marginal Metropolis-Hastings.} \label{pseudo-marg}
 Note that the two previous algorithms produce new log-likelihood samples at both the current $\Par$ and proposed 
 $\propPar$ locations at each iteration of the algorithm. An alternative is to draw a new sample only at the 
 proposed location, while recycling the sample at the current location from the previous iteration. Formally, this procedure
@@ -881,29 +827,47 @@ $\llikSamp$, then by definition the unnormalized posterior approximation $\prior
 an unbiased estimator of 
 $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
 This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
-$\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}. 
+$\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}.
 
-% Comparing to the Sample-Based Approximation
-\subsection{Comparing to the Sample-Based Approximation}
-\todo: need to be clear on definitions here, clarifying the difference between the random measure, and 
-$\Par$ samples that are generated from sample paths of the random measure. The random measure 
-essentially defines a Markov kernel that can be used to generate $u$ samples. 
-In this subsection, we take the viewpoint of treating the \textit{sample-based} approximation 
-(\ref{post_dens_random_fwd} and \ref{post_dens_random_llik}) as a baseline 
-that the other methods seek to approximate. In some sense, this is the method that fully propagates 
-the full GP distribution. In theory, samples from this approximate posterior can be obtained generatively by 
-the following procedure:
-\begin{enumerate}
-\item Sample a trajectory (i.e., sample path) from the GP $\llikEm[\Ndesign]$, which induces a sample 
-path of the random density $\llikEmRdm[\Ndesign]{\postDensNorm}$.
-\item Draw a sample $u$ from the sampled density.
-\end{enumerate}
-A similar procedure applies to the forward model emulation setting. This procedure is not realizable in 
-practice due to the requirement of sampling a GP trajectory. An alternative view of this approach comes 
-from considering the density of the sample $u$ generated by the above procedure:
+ % The Forward Model Emulation Setting
+\subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
+ In this section, we discuss notable differences in the above posterior approximation methods when working 
+with a forward model emulator. In general, each of the previously-discussed methods naturally generalizes 
+to this setting by replacing $\llikEm[\Ndesign]$ with $\llikEmFwd[\Ndesign]$ in the definitions. Continuing 
+along the lines of previous notation, we will differentiate the approximated posterior density using forward 
+model emulation by a superscript $\fwd$. In the log-likelihood emulation case, the marginal and quantile 
+unnormalized density approximations admit closed-form characterizations 
+owing to the log-normality of the likelihood surrogate. Under a forward model emulator, the distribution of 
+$\llikEmFwd[\Ndesign]$ will be dependent on the particular likelihood under consideration, so closed-form 
+marginal and quantile approximations may not be available. In such cases, one might still sample from 
+$\fwdEmMargDens[\Ndesign]$ via the pseudo-marginal method discussed in \Cref{pseudo-marg}.
+Under a Gaussian likelihood (e.g., \ref{inv_prob_Gaussian}), a closed-form marginal approximation is
+available, given by
 \begin{align}
-\E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par) \Exp{\llik Em[\Ndesign](\Par)} d\Par} \right]
+\fwdEmMargDens[\Ndesign](\Par) 
+&\Def \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \nonumber  \\
+&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right] \nonumber \\
+&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)), \label{post_dens_marg_fwd_Gaussian}
 \end{align}
+which follows immediately from the fact that the expectation is of the form of a convolution 
+of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix).
+The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
+can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
+\begin{align}
+\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
+v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber \\
+\Par &\sim \priorDens \nonumber, 
+\end{align}
+where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
+\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
+from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
+The noisy MCMC algorithms defined above only require the ability to sample from the log-likelihood
+approximation, and thus are agnostic to the particular choice of likelihood. 
+[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
+of distance from $\obs$ to the GP mean prediction].  
+The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
+\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}.
 
 
 % Perspectives on Posteriors Induced by Gaussian Process Surrogates 
@@ -1849,6 +1813,11 @@ results.
 \item Constrained GPs
 \item Pathwise sampling approach to approximate the sample-based approximation.
 \item Compare noisy MCMC vs. deterministic version that considers integrating over the acceptance prob. 
+\item Analyze effect of incorporating GP covariance structure; does it result in posteriors closer to the sample-based posterior? 
+\item Compare marginal and sample-based approx.
+\item Compare marginal approx in log-likelihood vs. forward model setting. 
+\item Analyze distribution of likelihood under forward model emulation [I think this is the exponential of a folded Gaussian random variable]. 
+How does its tail compare to the lognormal tail? 
 \end{enumerate}
 
 \subsection{Emulator Ideas}
