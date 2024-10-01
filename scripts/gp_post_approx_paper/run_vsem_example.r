@@ -207,7 +207,7 @@ print("Parameter defaults:")
 print(data.frame(par_name=par_names, default_value=par_default))
 
 # Parameters to calibrate.
-par_cal_names <- c("KEXT", "LUE", "tauV")
+par_cal_names <- c("KEXT", "LAR", "LUE", "tauV", "tauS", "tauR")
 dim_par <- length(par_cal_names)
 
 # Define prior on calibration parameter.
@@ -284,6 +284,7 @@ ggsave(file.path(output_dir, "true_vs_obs.png"), plt_obs)
 
 #
 # Collect inverse problem components in list, save plots summarizing data.
+#
 
 # List containing inverse problem components.
 inv_prob <- list(y=y, fwd=fwd_model, fwd_vect=fwd_model, par_prior=par_prior_params,
@@ -340,7 +341,9 @@ save(test_info, file=file.path(output_dir, "test_info.RData"))
 # Exact MCMC. 
 # -----------------------------------------------------------------------------
 
-# Initial condition and covariance proposal for MCMC. 
+# Initial condition and covariance proposal for MCMC.
+# TODO: could also use joint Gaussian approximation that Meng is working on to 
+# set these quantities here. 
 mcmc_par_init <- design_info$input[which.max(design_info$llik + design_info$lprior),]
 cov_prop_init <- cov(design_info$input)
 print(paste0("MCMC initial value:", mcmc_par_init))

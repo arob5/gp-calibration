@@ -72,6 +72,10 @@ get_vsem_default_priors <- function() {
   # Ensure parameter names/order is correct. 
   vsem_par_name_order <- get_vsem_par_names()
   assert_that(all(vsem_par_name_order==par_priors$par_name))
+  
+  # Set rownames attribute to the parameter names for compatiblity with prior
+  # distribution functions. 
+  rownames(par_priors) <- par_priors$par_name
 
   return(par_priors)
 }
@@ -217,6 +221,81 @@ get_vsem_fwd_model <- function(driver, n_par_cal, par_cal_idx=NULL,
 }
 
 
+get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3, 
+                              par_true=NULL, par_prior_params=NULL, sample_truth_from_prior=TRUE,
+                              sig2_method="estimate", signal_to_noise_ratio=20, driver_seed=NULL,
+                              par_true_seed=NULL) {
+  # Currently this function defines a Gaussian likelihood consisting of additive 
+  # Gaussian errors with variance `sig2_true`. This can be generalized in the future
+  # to consider non-diagonal covariance structure or non-Gaussian likelihoods.
+  # If `sig2_true` then this value is determined by`signal_to_noise_ratio`. 
+  # The value `sig2_true` is used in generating the synthetic data. If 
+  # `sig2_method = "known"` then this true value is also used to define the 
+  # inverse problem (i.e., the likelihood is correctly specified). If 
+  # `sig2_method = "estimate"` (default) then the variance defining the inverse 
+  # problem is fixed at its sample variance estimate. 
+  
+  # Generate driver/forcing data.
+  if(!is.null(driver_seed)) set.seed(driver_seed)
+  time_points <- seq(1,n_day)
+  driver <- BayesianTools::VSEMcreatePAR(days=time_points)
+
+  # VSEM default parameter values. If `sample_truth_from_prior` is FALSE and, 
+  # `par_true` is NULL these will also correspond to the ground truth parameter 
+  # values used to generate the the synthetic data.
+  par_names <- get_vsem_par_names()
+  par_default <- get_vsem_default_pars()
+  
+  # Prior distributions on parameter values. If `sample_truth_from_prior` is TRUE 
+  # and `par_true` is NULL then the ground truth parameter values will be samples 
+  # from this prior.
+  if(is.null(par_prior_params)) par_prior_params <- get_vsem_default_priors()
+  assert_that(setequal(par_names, rownames(par_prior_params)))
+  
+  # Define the "ground truth" parameter values that will be used to generate the 
+  # synthetic data. The argument `par_true` takes priority. If this is not 
+  # provided then the ground truth is either sampled from the prior 
+  # (when `sample_truth_from_prior` is TRUE), or otherwise set to `par_default`.
+  par_fixed_exact <- FALSE 
+  if(is.null(par_true)) {
+    if(sample_truth_from_prior) {
+      if(!is.null(par_true_seed)) set.seed(par_true_seed)
+      par_true <- sample_prior_theta(par_prior_params)
+    } else {
+      par_true <- par_default
+      par_fixed_exact <- FALSE
+    }
+  }
+  
+  # Determine the subset of parameters that will be calibrated.
+  assert_that(all(par_cal_names %in% par_names))
+  assert_that(all(!duplicated(par_cal_names)))
+  par_cal_idx <- match(par_cal_names, par_names)
+  par_cal_prior <- par_prior_params[par_cal_names,,drop=FALSE]
+  dim_par <- length(par_cal_names)
+  
+  # Forward map from calibration parameters to VSEM outputs. If the default 
+  # parameters differ from the true parameters, then there will be two maps 
+  # here: one "true" map used to generate the synthetic data and one map that 
+  # will be used to define the inverse problem.
+  par_to_output_map <- get_vsem_fwd_model(driver, dim_par, par_cal_idx, 
+                                          par_default, simplify=FALSE)
+  par_to_output_map_true <- get_vsem_fwd_model(driver, dim_par, par_cal_idx, 
+                                               par_true, simplify=FALSE)
+
+  # Define the parameter-to-observation map by taking the composition of the 
+  # VSEM forward model with the observation operator. 
+  par_to_obs_op <- function(par_cal) {obs_op(par_to_output_map(par_cal))}
+  par_to_obs_op_true <- function(par_cal) {obs_op(par_to_output_map_true(par_cal))}
+  
+  # Generate ground truth output signal and observed data, which is a perturbed 
+  # version of the output signal.
+  
+  
+  
+  
+  
+}
 
 
 
