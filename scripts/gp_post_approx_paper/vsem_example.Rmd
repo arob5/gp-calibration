@@ -53,14 +53,27 @@ N_std_dev <- 1.64
 # Summary of Inverse Problem 
 
 ```{r}
-
 #
-# Plot model outputs and observations.  
+# Plot model driver.  
 #
 
 load(file.path(output_dir, "inv_prob_list.RData"))
 
-df_inv_prob_data <- data.frame(t=inv_prob$times, y_true=drop(inv_prob$output_true), 
+driver_plt <- ggplot(data.frame(t=inv_prob$time_points,PAR=inv_prob$driver)) + 
+                     geom_point(aes(x=t,y=PAR)) + 
+                     ggtitle("Model Driver (PAR)") + 
+                     xlab("Day") + ylab("PAR")
+
+plot(driver_plt)
+```
+
+
+```{r}
+#
+# Plot true observable vs. observations.  
+#
+
+df_inv_prob_data <- data.frame(t=inv_prob$time_points, y_true=drop(inv_prob$y_true), 
                                y=drop(inv_prob$y))
 plt_outputs <- ggplot(data=df_inv_prob_data) +
                       geom_point(aes(x=t, y=y), color="red") + 
@@ -69,6 +82,34 @@ plt_outputs <- ggplot(data=df_inv_prob_data) +
 
 plot(plt_outputs)
 ```
+
+```{r}
+# Plot other model outputs. 
+
+df_model_outputs_true <- data.frame(inv_prob$model_output_true[1,,])
+colnames(df_model_outputs_true) <- inv_prob$output_names
+df_model_outputs_true$time <- inv_prob$time_points
+for(output_var in output_names) {
+  output_var <- sym(output_var)
+  plt <- ggplot(df_model_outputs_true) + geom_line(aes(x=time,y=!!output_var)) + 
+         ggtitle("Ground Truth Trajectory") + xlab("Days") + ylab(output_var)
+  plot(plt)
+}
+
+```
+
+```{r}
+# Info on parameters. 
+inv_prob$par_info
+```
+
+```{r}
+# Info on likelihood. 
+
+print(paste0("Likelihood SD true: ", sqrt(inv_prob$sig2_true)))
+print(paste0("Likelihood SD model: ", sqrt(inv_prob$sig2_model)))
+```
+
 
 ```{r}
 # Print settings. 
@@ -84,8 +125,18 @@ print("Priors and true parameter:")
 inv_prob$par_prior$par_true <- inv_prob$par_true
 print(inv_prob$par_prior)
 ```
-# Inverse Problem Solution via Exact MCMC (no emulation)
 
+
+# Investigating exact log-likelihood, varying one parameter at a time. 
+```{r}
+plt_proj <- llik_exact$plot_1d_projection(n_points=100, 
+                                          input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
+                                          plot_type="llik")
+
+for(plt in plt_proj) plot(plt)
+```
+
+# Inverse Problem Solution via Exact MCMC (no emulation)
 ```{r}
 #
 # MCMC Plots: exact.  
@@ -94,8 +145,8 @@ print(inv_prob$par_prior)
 samp_dt <- fread(file.path(output_dir, "mcmc_samp.csv"))
 
 # MCMC Plots: exact. 
-trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", 
-                                     param_types="par", burn_in_start=burn_in_start)
+trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", param_types="par",
+                                     param_names=inv_prob$par_names, burn_in_start=burn_in_start)
 hist_plots_exact <- get_hist_plot_comparisons(samp_dt, test_labels="exact", 
                                               param_types="par", burn_in_start=burn_in_start)
 corr_plots_exact <- get_mcmc_2d_density_plots(samp_dt, test_labels="exact", 
@@ -150,10 +201,13 @@ for(par_name in inv_prob$par_names) {
 }
 
 # Plot 1d projections. 
+llik_func_true <- function(par) llik_exact$assemble_llik(par)
 for(em_name in names(llik_em_list)) {
   plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj,
-                                                     include_design=TRUE, plot_title=em_name,
-                                                     interval_method=interval_method, N_std_dev=N_std_dev)
+                                                     include_design=FALSE, plot_title=em_name,
+                                                     interval_method=interval_method, 
+                                                     N_std_dev=N_std_dev, 
+                                                     llik_func_true=llik_func_true)
   for(plt in plts) plot(plt)
 }
 ```

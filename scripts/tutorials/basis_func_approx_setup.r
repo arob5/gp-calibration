@@ -49,7 +49,7 @@ print(data.frame(par_name=par_names, default_value=par_default))
 
 # Define prior distribution on calibration parameters. I wrote a function that
 # sets up a default uniform prior. 
-par_cal_idx <- which(par_names %in% par_cal_names)
+par_cal_idx <- match(par_cal_names, par_names)
 par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
 rownames(par_prior_params) <- par_prior_params$par_name
 print("Prior on calibration parameter:")
@@ -121,6 +121,10 @@ plot(plt_test)
 n_samples <- 5
 u_test <- get_batch_design("simple", N_batch=n_samples, prior_params=par_prior_params)
 g_test <- G(u_test)
+
+plt_test <- plot_curves_1d_helper(time_points, t(g_test), 
+                                  plot_title="VSEM output: varying parameter values",
+                                  xlab="days", ylab="LAI")
 
 plt_test <- plot_curves_1d_helper(time_points, t(g_test), 
                                   plot_title="VSEM output: varying parameter values",

@@ -510,9 +510,14 @@ llikEmulator$methods(
     # If provided, ensure `input_bounds` has colnames set to the input names. 
     if(!is.null(input_bounds)) {
       assert_that(setequal(colnames(input_bounds), .self$input_names))
+      input_bounds <- input_bounds[, .self$input_names]
+    }
+    
+    # Code currently only supports fixing fixed paramters at a single value; i.e., 
+    # only one line plotted per plot. 
+    if(!is.null(input_fixed)) {
       assert_that(nrow(input_fixed)==1, 
                   msg="Currently only supports the case where `input_fixed` has a single row.")
-      input_bounds <- input_bounds[, .self$input_names]
     }
     
     # Determine the inputs that will be varied. 
@@ -1456,7 +1461,7 @@ llikEmulatorExactGaussDiag$methods(
   initialize = function(llik_lbl, y_obs, dim_par, fwd_model=NULL, fwd_model_vectorized=NULL, 
                         sig2=NULL, default_conditional=FALSE, default_normalize=FALSE, 
                         use_fixed_lik_par=FALSE, par_names=NULL, ...) {
-                        
+
     # Forward model must be provided, either vectorized or single-input version. 
     assert_that(is.null(fwd_model) || is.function(fwd_model))
     assert_that(is.null(fwd_model_vectorized) || is.function(fwd_model_vectorized))
@@ -1538,18 +1543,33 @@ llikEmulatorExactGaussDiag$methods(
     input
   },
   
-  sample = function(input, lik_par=NULL, emulator_pred_list=NULL, N_samp=1, 
+  sample = function(input, lik_par_val=NULL, emulator_pred_list=NULL, N_samp=1, 
                     conditional=default_conditional, normalize=default_normalize, ...) {
     
     # Compute unnormalized or normalized log-likelihood (exact, deterministic 
     # calculation - no sampling is actually performed). For consistency with 
     # other classes, duplicates the exact likelihood calculation when `N_samp`>1.
-    matrix(assemble_llik(get_input(input), lik_par, conditional, normalize), 
+    matrix(assemble_llik(get_input(input), lik_par_val, conditional, normalize), 
            nrow=nrow(input), ncol=N_samp)
-  }
+  }, 
   
+  predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, return_cross_cov=FALSE, 
+                     conditional=default_conditional, normalize=default_normalize, ...) {
+    # Also just evaluates the exact log-likelihood. For consistency with other 
+    # llikEmulator classes, these exact evaluations are stored as the "mean" 
+    # element of a list. If requested, predictive variances and covariances 
+    # are set to 0.
+    return_list <- list()
+    if(return_mean) {
+      return_list$mean <- assemble_llik(get_input(input), lik_par_val, conditional, normalize)
+    }
+    if(return_var) return_list$var <- rep(0, nrow(input))
+    if(return_cov) return_list$cov <- rep(0, nrow(input))
+    
+    return(return_list)
+  }
 )
-
 
 # -----------------------------------------------------------------------------
 # llikEmulatorFwdGauss class.

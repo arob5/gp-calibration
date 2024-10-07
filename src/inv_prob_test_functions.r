@@ -220,11 +220,11 @@ get_vsem_fwd_model <- function(driver, n_par_cal, par_cal_idx=NULL,
   return(fwd)
 }
 
-
 get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3, 
-                              par_true=NULL, par_prior_params=NULL, sample_truth_from_prior=TRUE,
-                              sig2_method="estimate", signal_to_noise_ratio=20, driver_seed=NULL,
-                              par_true_seed=NULL) {
+                              par_true=NULL, par_prior=NULL, sample_truth_from_prior=TRUE,
+                              sig2_method="estimate", sig2_fixed=NULL, 
+                              signal_to_noise_ratio=20, driver_seed=NULL, par_true_seed=NULL, 
+                              obs_seed=NULL) {
   # Currently this function defines a Gaussian likelihood consisting of additive 
   # Gaussian errors with variance `sig2_true`. This can be generalized in the future
   # to consider non-diagonal covariance structure or non-Gaussian likelihoods.
@@ -233,12 +233,17 @@ get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3
   # `sig2_method = "known"` then this true value is also used to define the 
   # inverse problem (i.e., the likelihood is correctly specified). If 
   # `sig2_method = "estimate"` (default) then the variance defining the inverse 
-  # problem is fixed at its sample variance estimate. 
+  # problem is fixed at its sample variance estimate.
+  #
+  # The convention in the returned list is that "par" refers to the calibration 
+  # parameters, while "vsem_par" refers to the entire set of VSEM parameters 
+  # (including those that are being fixed).
   
   # Generate driver/forcing data.
   if(!is.null(driver_seed)) set.seed(driver_seed)
   time_points <- seq(1,n_day)
   driver <- BayesianTools::VSEMcreatePAR(days=time_points)
+  output_names <- get_vsem_output_names()
 
   # VSEM default parameter values. If `sample_truth_from_prior` is FALSE and, 
   # `par_true` is NULL these will also correspond to the ground truth parameter 
@@ -249,8 +254,8 @@ get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3
   # Prior distributions on parameter values. If `sample_truth_from_prior` is TRUE 
   # and `par_true` is NULL then the ground truth parameter values will be samples 
   # from this prior.
-  if(is.null(par_prior_params)) par_prior_params <- get_vsem_default_priors()
-  assert_that(setequal(par_names, rownames(par_prior_params)))
+  if(is.null(par_prior)) par_prior <- get_vsem_default_priors()
+  assert_that(setequal(par_names, rownames(par_prior)))
   
   # Define the "ground truth" parameter values that will be used to generate the 
   # synthetic data. The argument `par_true` takes priority. If this is not 
@@ -260,18 +265,23 @@ get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3
   if(is.null(par_true)) {
     if(sample_truth_from_prior) {
       if(!is.null(par_true_seed)) set.seed(par_true_seed)
-      par_true <- sample_prior_theta(par_prior_params)
+      par_true <- sample_prior_theta(par_prior)
     } else {
       par_true <- par_default
       par_fixed_exact <- FALSE
     }
+  } else {
+    # Ensure all parameters are present and sort to align with required order.
+    assert_that(setequal(names(par_true), par_names))
+    par_true <- par_true[par_names]
   }
   
   # Determine the subset of parameters that will be calibrated.
   assert_that(all(par_cal_names %in% par_names))
   assert_that(all(!duplicated(par_cal_names)))
   par_cal_idx <- match(par_cal_names, par_names)
-  par_cal_prior <- par_prior_params[par_cal_names,,drop=FALSE]
+  par_cal_prior <- par_prior[par_cal_names,,drop=FALSE]
+  par_cal_true <- par_true[par_cal_idx]
   dim_par <- length(par_cal_names)
   
   # Forward map from calibration parameters to VSEM outputs. If the default 
@@ -288,17 +298,113 @@ get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3
   par_to_obs_op <- function(par_cal) {obs_op(par_to_output_map(par_cal))}
   par_to_obs_op_true <- function(par_cal) {obs_op(par_to_output_map_true(par_cal))}
   
-  # Generate ground truth output signal and observed data, which is a perturbed 
-  # version of the output signal.
+  # Generate ground truth output signal. 
+  if(!is.null(obs_seed)) set.seed(obs_seed)
+  model_output_true <- par_to_output_map_true(par_cal_true)
+  y_true <- obs_op(model_output_true)
   
+  # Set true observation variance parameter.
+  if(is.null(sig2_true)) {
+    sig2_true <- (mean(y_true) / signal_to_noise_ratio)^2
+  }
   
+  # Generate synthetic observed data, which is a perturbed version of the 
+  # output signal.
+  dim_output <- length(drop(y_true))
+  y <- y_true + sqrt(sig2_true)*rnorm(n=dim_output)
   
+  # Set variance parameter that will be used in defining the inverse problem.
+  if(sig2_method=="estimate") {
+    sig2_model <- var(drop(y))
+  } else if(sig2_method=="known") {
+    sig2_model <- sig2_true
+  } else if(sig2_method=="fixed") {
+    assert_that(!is.null(sig2_fixed))
+    sig2_model <- sig2_fixed
+  } else {
+    stop("Invalid `sig2_method` argument: ", sig2_method)
+  }
   
+  # Assemble list to return.
+  inv_prob_list <- list(time_points=time_points, driver=driver, 
+                        vsem_par_names=par_names, par_names=par_cal_names,
+                        par_cal_idx=par_cal_idx, output_names=output_names,
+                        vsem_par_default=par_default, vsem_par_true=par_true,
+                        par_true=par_true[par_cal_names],
+                        vsem_par_prior=par_prior, par_prior=par_cal_prior,
+                        par_fixed_exact=par_fixed_exact,
+                        n_day=n_day, dim_par=dim_par, dim_output=dim_output,
+                        par_to_output_map=par_to_output_map, 
+                        par_to_output_map_true=par_to_output_map, 
+                        obs_op=obs_op, par_to_obs_op=par_to_obs_op,
+                        par_to_obs_op=par_to_obs_op_true,
+                        sig2_true=sig2_true, sig2_model=sig2_model, 
+                        sig2_method=sig2_method, model_output_true=model_output_true,
+                        y_true=y_true, y=y, driver_seed=NULL, par_true_seed=NULL, 
+                        obs_seed=NULL)
+  
+  # Add data.frame providing a convenient summary of all parameters and their 
+  # priors.
+  par_info <- inv_prob_list$vsem_par_prior
+  par_info$calibrate <- rownames(par_info) %in% inv_prob_list$par_cal_names
+  par_info$default <- inv_prob_list$vsem_par_default
+  par_info$true_value <- inv_prob_list$vsem_par_true
+  inv_prob_list$par_info <- par_info
+  
+  return(inv_prob_list)
   
 }
 
 
-
+get_vsem_test_1 <- function(default_conditional=FALSE, default_normalize=TRUE) {
+  # A convenience function that sets up an inverse problem using VSEM in a 
+  # reproducible fashion. 
+  
+  # Random seeds. 
+  driver_seed <- 623434
+  par_true_seed <- 7854332
+  obs_seed <- 5632
+  
+  # Observation operator (map from model outputs to observable): daily LAI observations. 
+  output_names <- get_vsem_output_names()
+  observed_output <- "LAI"
+  lai_idx <- match(observed_output, output_names)
+  obs_op <- function(model_outputs) {
+    single_run <- (dim(model_outputs)[1]==1L)
+    lai_trajectory <- model_outputs[,,lai_idx]
+    if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
+    lai_trajectory
+  }
+  
+  # Ground truth parameters (differ from VSEM defaults). 
+  par_true <- c(KEXT=0.42, LAR=1.6, LUE=0.006, GAMMA=0.2, tauV=1000, tauS=30000,
+                tauR=1000, Av=0.3, Cv=3.4, Cs=14.0, Cr=2.6)
+  
+  # Parameters to calibrate. 
+  par_cal_names <- c("KEXT", "GAMMA", "LUE", "Av", "tauV", "Cv")
+  
+  # Priors: using defaults with some modifications.
+  par_prior <- get_vsem_default_priors()
+  par_prior["Av","param2"] <- 0.7
+  
+  # Set up inverse problem. 
+  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, par_prior=par_prior,
+                                sig2_method="fixed", sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
+                                driver_seed=driver_seed, par_true_seed=par_true_seed, 
+                                obs_seed=obs_seed)
+  
+  # Define exact log-likelihood object. 
+  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
+                                           fwd_model_vectorized=inv_prob$par_to_obs_op,
+                                           y_obs=inv_prob$y, dim_par=as.integer(inv_prob$dim_par),
+                                           use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_model,
+                                           par_names=inv_prob$par_names, 
+                                           default_conditional=default_conditional, 
+                                           default_normalize=default_normalize)
+  inv_prob$llik_obj <- llik_exact
+  
+  return(inv_prob)
+}
 
 
 

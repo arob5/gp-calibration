@@ -148,8 +148,8 @@ llik <- function(u) {
 
 
 # Define prior distribution on calibration parameters. I wrote a function that
-# sets up a default uniform prior. 
-par_cal_idx <- which(par_names %in% par_cal_names)
+# sets up a default uniform prior.
+par_cal_idx <- match(par_cal_names, par_names)
 par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
 rownames(par_prior_params) <- par_prior_params$par_name
 print("Prior on calibration parameter:")

@@ -1129,7 +1129,7 @@ gpWrapperKerGP$methods(
     
     # Nugget/Noise variance.
     summary_str <- paste0(summary_str, "\n>>> Nugget/Noise:\n")
-    summary_str <- paste0(summary_str, "Std dev: ", sart(.self$default_nugget), "\n")
+    summary_str <- paste0(summary_str, "Std dev: ", sqrt(.self$default_nugget), "\n")
     
     return(summary_str)
   }
