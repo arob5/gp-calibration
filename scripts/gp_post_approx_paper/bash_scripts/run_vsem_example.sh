@@ -22,7 +22,7 @@ MCMC_TAGS="gp-mean,gp-marg,mcwmh-joint,mcwmh-ind"
 
 # Create output directory. Creation of this directory is handled (if necessary)
 # within the R script. 
-SIM_RUN_ID="${RUN_TAG}_d${DIM_PAR}_p${DIM_OUTPUT}_N${N_DESIGN}_${DESIGN_METHOD}"
+SIM_RUN_ID="${RUN_TAG}_N${N_DESIGN}_${DESIGN_METHOD}"
 LOG_FILENAME="${JOB_NAME}.o${JOB_ID}"
 OUTPUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_post_approx_paper/${EXPERIMENT_TAG}/${SIM_RUN_ID}"
 

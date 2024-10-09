@@ -49,6 +49,7 @@ Options:
 print("---------------------------------- Setup ----------------------------------")
 
 interactive_mode <- interactive()
+print(paste0("Interactive mode: ", interactive_mode))
 
 # Base directory (i.e., project directory). Required for loading the R project (renv). 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
@@ -71,8 +72,7 @@ if(interactive()) {
   arguments <- list(par_cal_names=c("KEXT","LAR"), N_design=20,
                     N_design_test=200, design_method="LHS",
                     design_method_test="LHS", N_mcmc=100000L,
-                    mcmc_tags=c("gp-mean", "gp-marg", "gp-quantile", 
-                                "mcwmh-joint", "mcwmh-ind"),
+                    mcmc_tags=c("gp-mean", "gp-marg", "mcwmh-joint", "mcwmh-ind"),
                     run_id="test", output_dir="")
 } else {
   # Read command line arguments. 
@@ -82,7 +82,7 @@ if(interactive()) {
 run_id <- arguments$run_id
 output_dir <- arguments$output_dir
 required_settings <- c("N_design", "N_design_test", "design_method",
-                       "design_method_test", "N_mcmc")
+                       "design_method_test", "N_mcmc", "mcmc_tags")
 settings <- arguments[required_settings]
 
 # Source and output paths.  
@@ -163,9 +163,6 @@ print("--------------------- User specified settings -------------------------")
 print("--> General settings")
 print(paste0("run ID: ", run_id))
 print(paste0("output directory: ", output_dir))
-print(paste0("Driver data generation seed (driver_seed): ", driver_seed))
-print(paste0("True parameter sampling seed (par_true_seed): ", par_true_seed))
-print(paste0("Synthetic data generation seed (obs_seed): ", obs_seed))
 print(paste0("Design sampling seed (design_seed): ", design_seed))
 print(paste0("Likelihood densities conditional: ", default_conditional))
 print(paste0("Likelihood densities normalized: ", default_normalize))
@@ -300,6 +297,7 @@ save(emulator_pred_list, file=file.path(output_dir, "emulator_pred_list.RData"))
 
 print("--------------------- GP-Accelerated MCMC -------------------------")
 
+run_approx_mcmc <- TRUE
 if(run_approx_mcmc) {
   for(em_name in names(llik_em_list)) {
     print(paste0("----- ", em_name, " -----"))

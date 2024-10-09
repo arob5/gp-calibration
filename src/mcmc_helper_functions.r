@@ -673,14 +673,15 @@ get_mcmc_2d_density_plots <- function(samp_dt, burn_in_start=NULL, test_labels=N
 get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
                                         param_types=NULL, param_names=NULL, test_label_baseline=NULL,
                                         xlab="parameter", ylab="kde", min_q=0.001, 
-                                        max_q =.999, save_dir=NULL) {
+                                        max_q =.999, bandwidth_mult=NA, save_dir=NULL) {
   # Produces one plot per unique param type-param name combination. Each plot contains one line
   # per `test_label` that has samples for that specific parameter. Each line is produced from 
   # a 1d kernel density estimate (KDE) constructed fromn the MCMC samples. N_kde_pts` is the
   # `number of points at which the KDE approximation is evaluated for each univariate variable.
   # `min_q` and `max_q` are used to determine the cutoff x-limits for each plot. These are 
   # percentiles across all samples that will be used to generate that plot (from all 
-  # test labels). 
+  # test labels). `bandwidth` is used to scale the bandwidth parameter for the KDE and is 
+  # passed to the `mult` argument of `kde1d()`. 
 
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
@@ -726,14 +727,14 @@ get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NU
     kde_mat <- matrix(nrow=N_kde_pts, ncol=length(test_labels_curr), 
                       dimnames=list(NULL, test_labels_curr))
     for(lbl in test_labels_curr) {
-      kde_fit <- kde1d(samp_dt_subset[test_label==lbl, sample])
+      kde_fit <- kde1d(samp_dt_subset[test_label==lbl, sample], mult=bandwidth_mult)
       kde_mat[,lbl] <- dkde1d(kde_pts, kde_fit)
     }
 
     # Add KDE for baseline label. 
     kde_baseline <- NULL
     if(!is.null(test_label_baseline)) {
-      kde_fit <- kde1d(samp_baseline_param)
+      kde_fit <- kde1d(samp_baseline_param, mult=bandwidth_mult)
       kde_baseline <- dkde1d(kde_pts, kde_fit)
     }
     

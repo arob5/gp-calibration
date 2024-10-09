@@ -15,7 +15,7 @@ library(gridExtra)
 library(data.table)
 
 experiment_tag <- "vsem"
-run_tag <- "test_d3_p1_N30_LHS"
+run_tag <- "6d_N140_LHS"
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
@@ -25,6 +25,7 @@ source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "llikEmulator.r"))
@@ -89,7 +90,7 @@ plot(plt_outputs)
 df_model_outputs_true <- data.frame(inv_prob$model_output_true[1,,])
 colnames(df_model_outputs_true) <- inv_prob$output_names
 df_model_outputs_true$time <- inv_prob$time_points
-for(output_var in output_names) {
+for(output_var in inv_prob$output_names) {
   output_var <- sym(output_var)
   plt <- ggplot(df_model_outputs_true) + geom_line(aes(x=time,y=!!output_var)) + 
          ggtitle("Ground Truth Trajectory") + xlab("Days") + ylab(output_var)
@@ -129,12 +130,28 @@ print(inv_prob$par_prior)
 
 # Investigating exact log-likelihood, varying one parameter at a time. 
 ```{r}
+llik_exact <- inv_prob$llik_obj
 plt_proj <- llik_exact$plot_1d_projection(n_points=100, 
                                           input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
                                           plot_type="llik")
 
 for(plt in plt_proj) plot(plt)
 ```
+
+```{r}
+# Looking into what's going on with "Cv" parameter. 
+random_idx <- sample(1:nrow(test_info$input), 10)
+
+for(i in random_idx) {
+  plt_proj <- llik_exact$plot_1d_projection(n_points=100, input_names_proj="Cv",  
+                                            input_fixed=test_info$input[i,,drop=FALSE], 
+                                            input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
+                                            plot_type="llik")
+  plot(plt_proj[["Cv"]])
+}
+
+```
+
 
 # Inverse Problem Solution via Exact MCMC (no emulation)
 ```{r}
@@ -162,7 +179,7 @@ for(plt in corr_plots_exact) plot(plt)
 
 ```{r}
 #
-# Analyzing Log-likelihood emulator performance. 
+# Summarize GP fits.  
 #
 
 load(file.path(output_dir, "llik_em_list.RData"))
@@ -213,6 +230,26 @@ for(em_name in names(llik_em_list)) {
 ```
 
 ```{r}
+# Focus on single paramter. 
+par_name <- "tauV"
+
+for(i in random_idx) {
+  for(em_name in names(llik_em_list)) {
+    plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj[par_name],
+                                                       input_names_proj=par_name,
+                                                       input_fixed=test_info$input[i,,drop=FALSE],
+                                                       include_design=FALSE, plot_title=em_name,
+                                                       interval_method=interval_method, 
+                                                       N_std_dev=N_std_dev, 
+                                                       llik_func_true=llik_func_true)
+    plot(plts[[par_name]])
+  }
+}
+
+```
+
+
+```{r}
 # Plot 1d projections: deterministic likelihood approximations. 
 
 approx_types <- c("mean", "marginal")
@@ -221,9 +258,31 @@ for(em_name in names(llik_em_list)) {
   plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj, 
                                                      plot_type="lik_approx", 
                                                      approx_types=approx_types,
-                                                     include_design=TRUE, plot_title=em_name)
+                                                     llik_func_true=llik_func_true, 
+                                                     include_design=FALSE, plot_title=em_name)
   for(plt in plts) plot(plt)
 }
+```
+
+```{r}
+# Focus on single paramter. 
+par_name <- "tauV"
+
+for(i in random_idx) {
+  for(em_name in names(llik_em_list)) {
+    plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj[par_name],
+                                                       input_names_proj=par_name,
+                                                       plot_type="lik_approx", 
+                                                       approx_types=approx_types,
+                                                       input_fixed=test_info$input[i,,drop=FALSE],
+                                                       include_design=FALSE, plot_title=em_name,
+                                                       interval_method=interval_method, 
+                                                       N_std_dev=N_std_dev, 
+                                                       llik_func_true=llik_func_true)
+    plot(plts[[par_name]])
+  }
+}
+
 ```
 
 # GP-Induced Approximate Posterior Samples
@@ -234,31 +293,42 @@ for(em_name in names(llik_em_list)) {
 #
 
 test_labels_approx <- setdiff(unique(samp_dt$test_label), "exact")
-trace_plots_approx <- get_trace_plots(samp_dt, test_label=test_labels_approx,
-                                      param_types="par", burn_in_start=burn_in_start)
+trace_plots_approx <- get_trace_plots(samp_dt[itr <= 2000],
+                                      test_label=test_labels_approx,
+                                      param_types="par",
+                                      burn_in_start=burn_in_start)
 
 for(plt in trace_plots_approx) plot(plt) 
 ```
 
 ```{r}
 test_plts <- get_hist_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                       param_types="par", test_labels=test_labels_approx, 
-                                       param_names="KEXT", test_label_baseline="exact")
+                                       param_types="par", param_names="tauV",
+                                       test_labels=test_labels_approx,
+                                       test_label_baseline="exact")
 
 for(plt in test_plts) plot(plt)
 ```
 
 
 ```{r}
-# TODO: there is something weird going on with the plotting here. 
+# TODO: `get_1d_kde_plot_comparisons` seems to have a bug that causes the plots 
+# to be off when `param_names` contains more than one name. Need to figure out 
+# what's going on here. 
 
-kde_plts <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
-                                        param_types="par", param_names=NULL,
-                                        test_label_baseline="exact",
-                                        test_labels=test_labels_approx,
-                                        xlab="parameter", ylab="kde", save_dir=NULL) 
+test_labels_noisy <- c("mcwmh-joint-em_llik_const_GaussQuad", 
+                       "mcwmh-ind-em_llik_const_GaussQuad")
 
-for(plt in kde_plts) plot(plt)
+for(par_name in inv_prob$par_names) {
+  kde_plts <- get_1d_kde_plot_comparisons(samp_dt, burn_in_start=burn_in_start, 
+                                          param_types="par", param_names=par_name,
+                                          test_label_baseline="exact",
+                                          test_labels=test_labels_noisy, bandwidth_mult=2.0,
+                                          xlab="parameter", ylab="kde", save_dir=NULL) 
+  plot(kde_plts[[1]])
+}
+
+# for(plt in kde_plts) plot(plt)
 ```
 
 ```{r}
@@ -273,19 +343,9 @@ for(plt in kde_plts) plot(plt)
 
 
 ```{r}
-#
-# 1d marginal plots (KDEs)
-#
+# TODO: should linearly scale all of theses so that the parameters are on the 
+# same scale, and the magnitude of their errors can be compared. 
 
-kde_plts <- get_1d_kde_plot_comparisons(samp_dt, N_kde_pts=100, burn_in_start=burn_in_start, 
-                                        param_types="par", param_names=NULL,
-                                        test_label_baseline="exact",
-                                        xlab="parameter", ylab="kde", save_dir=NULL) 
-
-for(plt in kde_plts) plot(plt)
-```
-
-```{r}
 scatter_stat_plts <- get_mcmc_moments_scatter_plot_comparisons(samp_dt, test_label_baseline="exact",
                                                                burn_in_start=burn_in_start, param_types="par")
 
@@ -294,7 +354,7 @@ for(plt in scatter_stat_plts) plot(plt)
 
 ```{r}
 coverage_plt_list <- get_1d_coverage_plots(samp_dt, "exact", burn_in_start=burn_in_start,
-                                           param_types="par", probs=seq(.5, .99, .05))
+                                           param_types="par", probs=seq(.1, .99, .05))
 coverage_plts <- coverage_plt_list$plots
 
 for(plt in coverage_plts) plot(plt)
