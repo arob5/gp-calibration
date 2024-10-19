@@ -9,29 +9,87 @@ library(HDInterval)
 library(kde1d)
 
 # ------------------------------------------------------------------------------
-# MCMC Formatting Functions. 
+# Description of required data.table formatting:
+#
+# Bespoke functions for storing and manipulating MCMC output geared towards the  
+# use case of comparing different MCMC algorithms. The primary object that 
+# these functions operate on is a data.table that by convention is named 
+# `samp_dt`. This data.table, storing the MCMC samples, is required to have the 
+# following columns: test_label, chain_idx, param_type, param_name, itr, sample.
+#    test_label: a character uniquely identifying an MCMC "test". This is 
+#                typically used to differentiate different algorithms, but it 
+#                could also allow for other groupings (e.g., the same algorithm
+#                run with different settings).
+#    chain_idx: Integer used to index different MCMC chains/trajectories within 
+#               a single MCMC test. Must be unique within a single `test_label`.
+#    param_type: character, used to define groups of parameters. For example, 
+#                output from an MCMC run might consist of samples from a 
+#                coefficient vector and a variance parameter. Two `param_type`
+#                labels could be defined to group these two types of parameters.
+#                The `param_type` labels must be unique within a unique 
+#                (test_label, chain) combination.
+#    param_name: character, the parameter names. Must be unique within a unique
+#                (test_label, chain, param_type) combination.
+#    itr: integer, the MCMC iteration index. Index starts from 1. Must be unique
+#         within a unique (test_label, chain, param_type, param_name) combination.
+#    sample: numeric, the sample values.
 # ------------------------------------------------------------------------------
 
-format_mcmc_output <- function(samp_list, test_label) {
-  # This function re-formats the output returned by a single MCMC run. This MCMC run is identified with 
-  # the label `test_label`. The function combines matrices containing MCMC samples of different parameter 
-  # types (see `samp_list` description below) into a single data.table. The returned data.table is in a 
-  # long format in that it has columns "test_label", "param_type", "param_name", "itr", and "sample". 
+# ------------------------------------------------------------------------------
+# Functions for creating `samp_dt` objects.
+# ------------------------------------------------------------------------------
+
+assert_is_samp_dt <- function(samp_dt) {
+  # Checks that the argument `samp_dt` satisfies the requirements for the 
+  # data.table storing MCMC output.
+  # TODO: add checks for the uniqueness requirements.
   #
   # Args:
-  #    samp_list: named list, each element must have name set to the relevant parameter type (e.g. "theta" or "sig_eps"). 
-  #               Each element is a matrix where rows contain MCMC samples of that parameter type. The column names of 
-  #               these matrices must be set to the parameter names. Given that the samples are all from the same MCMC run, 
-  #               the matrices will all typically have the same number of rows. However, this is not required. 
-  #    test_label: character, a string providing a label for the MCMC run. 
+  #    samp_dt: object to check.
   #
-  # Returns: 
-  #    data.table with column names "test_label", "param_type", "param_name", "itr", and "sample". The column "test_label" will be 
-  #    constant with value set to `test_label`. The values in column "param_type" are taken from the names of `samp_list`, 
-  #    while the values in column "param_name" are taken from the column names in the matrices within `samp_list`. The 
-  #    column `itr` contains the integer MCMC iteration. The column `sample` contains the MCMC numeric sample values. 
+  # Returns:
+  #  None, will throw exception if `samp_dt` fails any of the tests.
   
-  samp_dt <- data.table(param_type=character(), itr=integer(), param_name=character(), sample=numeric())
+  required_cols <- c("test_label"="character", "chain_idx"="integer", 
+                     "param_type"="character", "param_name"="character", 
+                     "itr"="integer", "sample"="numeric")
+  
+  assert_that(is.data.table(samp_dt))
+  assert_that(setequal(colnames(samp_dt), names(required_cols)))
+  assert_that(all(sapply(samp_dt, class)[names(required_cols)] == required_cols))
+}
+
+format_mcmc_output <- function(samp_list, test_label, chain_idx=1L) {
+  # Formats output from a single MCMC run (i.e., a single test label and chain)
+  # into the required data.table format. 
+  #
+  # Args:
+  #    samp_list: named list, with one element per parameter type. Each element 
+  #               is a matrix with rows containing MCMC samples of the respective
+  #               parameter type, and columns corresponding to different 
+  #               parameters falling within that type. The names of `samp_list`
+  #               must be set to the parameter type names. Given that the samples 
+  #               are all from the same MCMC run, the matrices will all 
+  #               typically have the same number of rows. However, this is not 
+  #               required.
+  #    test_label: character, the test label uniquely identifying the MCMC run.
+  #    chain_idx: integer, the index used to uniquely identify different MCMC chains
+  #               within a single MCMC run. This function assumes only a single 
+  #               chain has been run; for mutliple chains, see 
+  #               `format_mcmc_output_multi_chain()`.
+  #
+  # Returns:
+  # data.table with column names:
+  # "test_label", "chain_idx", param_type", "param_name", "itr", and "sample". 
+  # The columns "test_label" and "chain_idx" will be constant with values set to 
+  # the `test_label` and `chain` function arguments, respectively. The values 
+  # in column "param_type" are taken from the names of `samp_list`, while the 
+  # values in column "param_name" are taken from the column names in the 
+  # matrices within `samp_list`. The column `itr` contains the integer MCMC 
+  # iteration. The column `sample` contains the MCMC numeric sample values. 
+  
+  samp_dt <- data.table(param_type=character(), itr=integer(), 
+                        param_name=character(), sample=numeric())
   
   for(j in seq_along(samp_list)) {
     # Format samples for current variable. 
@@ -49,53 +107,158 @@ format_mcmc_output <- function(samp_list, test_label) {
     }
   }
   
-  # Add test label. 
+  # Add test label and chain index.
   samp_dt[, test_label := test_label]
-  
+  samp_dt[, chain_idx := as.integer(chain_idx)]
   
   return(samp_dt)
-  
 }
 
 
-append_mcmc_output <- function(mcmc_samp_dt, samp_list, test_label) {
-  # Appends a new `samp_list` to an existing MCMC samp data.table. First 
-  # formats the list via `format_mcmc_output()` then appends it. 
-  # Ensures that the `test_label` is not already present in the data.table, 
-  # but this could be relaxed if needed in the future. 
+append_mcmc_output <- function(samp_dt, samp_list, test_label, chain_idx=1L) {
+  # Appends a new MCMC test to an existing `samp_dt` object. The new test
+  # label `test_label` must not already be present in `samp_dt`. This is 
+  # a convenience wrapper that essentially calls 
+  # `format_mcmc_output(samp_list, test_label)` and then appends the result
+  # to `samp_dt`. This function only appends a single chain; for multiple
+  # chains see `append_mcmc_output_multi_chain()`.
+  # 
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_list, test_label, chain_idx: all passed to `format_mcmc_output()`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new MCMC test appended.
   
-  assert_that(is.data.table(mcmc_samp_dt))
-  assert_that(setequal(colnames(mcmc_samp_dt), 
-                       c("param_type", "itr", "param_name", "sample", "test_label")))
-  assert_that(!(test_label %in% mcmc_samp_dt$test_label))
+  assert_is_samp_dt(samp_dt)
+
+  # Ensure test label is not already in list.
+  assert_that(!(test_label %in% samp_dt$test_label))
   
-  mcmc_samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label)
-  mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_new), use.names=TRUE)
+  samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label, 
+                                    chain_idx=chain_idx)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
   
-  return(mcmc_samp_dt)
-  
+  return(samp_dt)
 }
 
-
-select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
-                             return_burnin=FALSE) {
-  # Operates on the long data.table format, as returned by `format_mcmc_output()`. Selects rows corresponding to 
-  # valid combinations of `test_labels`, `param_types`, `param_names`. Also removes iterations specified as "burn-in". 
-  # See `burn_in_start` for details. 
+append_chain <- function(samp_dt, samp_list, test_label, chain_idx=NULL) {
+  # Appends sample output to `samp_dt` corresponding to a new chain of an MCMC 
+  # test that is already present in `samp_dt`.
   #
   # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_list: list satisfying the requirements specified in 
+  #               `format_mcmc_output()`. The sample output from a new chain/
+  #               trajectory of the MCMC test identified by `test_label`.
+  #    test_label: character, a test label already present in `samp_dt`.
+  #    chain_idx: integer, the index for the new chain. If NULL, looks for the 
+  #               current maximum chain index for the specified test label, and 
+  #               increments by 1.
+  #
+  # Returns:
+  #  The data.table `samp_dt` with the output from the new chain appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure the test is already present.
+  assert_that(test_label %in% samp_dt$test_label)
+
+  # If chain index not specified, increment current maximum index by 1.
+  if(is.null(chain_idx)) {
+    chain_idx <- 1L + samp_dt[test_label==test_label, max(chain_idx)]
+  } else {
+    assert_that(is.integer(chain_idx))
+    assert_that(!(chain_idx %in% samp_dt[test_label==test_label, unique(chain_idx)]))
+  }
+  
+  # Format the MCMC output for the new chain.
+  samp_dt_new <- format_mcmc_output(samp_list, test_label, chain_idx=chain_idx)
+  
+  # Append new output to current data.table.
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+  
+  return(samp_dt)
+}
+
+
+format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
+  # A wrapper around `format_mcmc_output()` that allows for appending multiple 
+  # chains. See `format_mcmc_output()` for more details.
+  #
+  # Args:
+  #    chain_samp_list: a list, where each element is a `samp_list`, as 
+  #                     described in `format_mcmc_output()`; i.e., each element
+  #                     of the outer list corresponds to a different chain.
+  #    test_label: character, the unique label identifying the MCMC test.
+  #
+  # Returns:
+  #  A `samp_dt` data.table. The chain indices are set to 1,2,...,n_chains.
+  
+  assert_that(is.list(chain_samp_list))
+  n_chains <- length(chain_samp_list)
+  
+  # First create the data.table for only the first chain.
+  samp_dt <- format_mcmc_output(chain_samp_list[[1]], test_label, chain_idx=1L)
+  if(n_chains==1L) return(samp_dt)
+  
+  # Now loop over remaining chains and append to data.table.
+  for(idx in 2:n_chains) {
+    samp_dt <- append_chain(samp_dt, chain_samp_list[[idx]], test_label, chain_idx=idx)
+  }
+  
+  return(samp_dt)
+}
+
+append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label) {
+  # A wrapper around `append_mcmc_output()` that allows for appending a new MCMC
+  # test containing multiple chains. See `format_mcappend_mcmc_output()` for more 
+  # details.
+  # 
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    chain_samp_list: a list, where each element is a `samp_list`, as 
+  #                     described in `format_mcmc_output()`; i.e., each element
+  #                     of the outer list corresponds to a different chain.
+  #    test_label: character, the label uniquely identifying the new MCMC test.
+  #                Must not already be present in `samp_dt`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new MCMC test appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure test label is not already in list.
+  assert_that(!(test_label %in% samp_dt$test_label))
+  
+  samp_dt_new <- format_mcmc_output_multi_chain(chain_samp_list, test_label)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+  
+  return(samp_dt)
+}
+
+
+# ------------------------------------------------------------------------------
+# Functions for manipulating/subsetting `samp_dt` objects.
+# ------------------------------------------------------------------------------
+
+# TODO: need to generalize to allow itr_start/itr_stop to vary by test_label.
+select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=NULL, 
+                             param_types=NULL, param_names=NULL) {
+  # Selects rows from `samp_dt` corresponding to valid combinations of 
+  # `test_labels`, `param_types`, and `param_names`. Also restricts the output
+  # to the iteration range specified by `itr_start` and `itr_stop`.
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples. 
+  #    itr_start: the minimum iteration number to be included. Defaults to the 
+  #               first iteration.
+  #    itr_stop: the maximum iteration number to be included. NULL, the default,
+  #              indicates that no maximum should be enforced.
+  #    The remaining arguments are vectors of values used to subset `samp_dt`
+  #    by selecting values from the columns "test_label", "param_type", and 
+  #    "param_name". NULL value will include all values found in the respective
+  #    column in `samp_dt`. 
   #
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
@@ -112,11 +275,42 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
                             (param_type %in% param_types) & 
                             (param_name %in% param_names)]
   
-  # Remove (or select) burn-in iterations; burn-in can differ by test label. 
-  samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start, return_burnin)
-  
+  # Restrict to specified iteration bounds.
+  samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start, itr_stop)
+
   return(samp_dt_subset)
+}
+
+
+select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
+  # Returns a subset of the rows of `samp_dt` obtained by restricting the 
+  # iteration column `itr` to rows with values falling in the interval 
+  # [itr_start, itr_stop]. 
+  #
+  # Args:
+  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
+  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1 AND unnamed, this is 
+  #                   interpreted as the starting iteration for all parameters - all earlier iterations
+  #                   are dropped. If a named vector, must  be a named vector with names set
+  #                   to valid test label values. This allows application of a different 
+  #                   burn-in start iteration for different test labels. If only some test labels are 
+  #                   specified by the vector, then the others will not be affected. 
+  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
+  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
+  #                   the burn-in, returning all iterations greater than or equal to the 
+  #                   burn_in_start values. 
+  #
+  # Returns:
+  #    data.table, a copy of `samp_dt` which is row subsetted to either drop the burn-in or 
+  #    non-burn-in iterations, depending on the value of `return_burnin`. 
   
+  # Argument checking.
+  if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
+  assert_that(itr_start >= 1L)
+  assert_that(is.integer(itr_start) && is.integer(itr_stop))
+
+  # Restrict to specified iteration range.
+  samp_dt[(itr >= itr_start) & (itr <= itr_stop)]
 }
 
 
