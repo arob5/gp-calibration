@@ -7,13 +7,98 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
+
+library(data.table)
+library(assertthat)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
 ```
 
+# Creating `samp_dt` object.
+Let's consider an example where we are comparing 2 sampling algorithms, which 
+we will label "test1" and "test2", respectively. The first has two chains and 
+two parameter types (groups), which we will call "group1" and "group2". The 
+first group will have two parameters called "par1" and "par2" while the second 
+group has a single parameter called "par". "test2" will be the same except 
+only with one chain and the first parameter type.
+
+## Creating some samples for example.
+Note that samples will typically come from an MCMC algorithm, but we are keeping
+things simple here and sampling from Gaussians.
 ```{r}
+set.seed(236643)
 
+n_samp <- 1000
+m1 <- c(0,0)
+C1 <- matrix(c(1,.8,.8, 1), nrow=2)
+
+# Helper functions for simulating some samples.
+samp_group1 <- function(m, C, n) {
+  Z <- matrix(rnorm(2*n, 0, 1), nrow=2, ncol=n)
+  L <- t(chol(C))
+  samp_mat <- add_vec_to_mat_rows(m, t(L %*% Z))
+  colnames(samp_mat) <- c("par1","par2")
+  return(samp_mat)
+}
+
+samp_group2 <- function(n) {
+  samp_mat <- matrix(rnorm(n), ncol=1)
+  colnames(samp_mat) <- "par"
+  return(samp_mat)
+}
+
+# Generate samples for test1.
+test1_chain1 <- list(type1 = samp_group1(m1, C1, n_samp),
+                     type2 = samp_group2(n_samp))
+test1_chain2 <- list(type1 = samp_group1(m1, C1, n_samp),
+                     type2 = samp_group2(n_samp))
+test1_chain_list <- list(test1_chain1, test1_chain2)
+
+# Generate samples for test2.
+shift <- c(.5,.5)
+test2_list <- list(type1 = samp_group1(m1+shift, C1, n_samp))
 ```
 
+## Generating the `samp_dt` object.
+```{r}
+# Start by creating the samples data.table object for test1.
+samp_dt <- format_mcmc_output_multi_chain(test1_chain_list, test_label="test1")
 
+# Now we append the samples from test2, which only has one chain. If this 
+# list used multiple chains we would have to use 
+# `append_mcmc_output_multi_chain()` instead.
+samp_dt <- append_mcmc_output(samp_dt, test2_list, test_label="test2")
 
+# Can use this function to check that an R object satisfies the requirements 
+# to be a data.table samples object.
+assert_is_samp_dt(samp_dt)
+
+# Printing number of samples in each category.
+by_cols <- c("test_label", "param_type", "param_name", "chain_idx")
+samp_dt[,.N, by=by_cols]
+```
+
+## Subsetting the `samp_dt` data.table.
+The main function for subsetting is `select_mcmc_samp()`. It subsets the rows 
+of `samp_dt` by selecting specified values of test labels, parameter types, 
+parameter names, chain indices, and iteration ranges. Iteration ranges can be 
+selected by test label.
+```{r}
+# Example 1: select iterations in [200,500] from all parameters in all test 
+# labels from only chains with index 1 and in param type 1.
+samp_dt_subset1 <- select_mcmc_samp(samp_dt, itr_start=200L, itr_stop=500L,
+                                    param_types="type1", chain_idcs=1L)
+print(samp_dt_subset1[,.(min_itr=min(itr), max_itr=max(itr)), by=by_cols])
+
+# Example 2: Define different iteration range for different test labels.
+itr_start <- c(test1=100L, test2=900L)
+itr_stop <- c(test1=200L, test2=1000L)
+samp_dt_subset2 <- select_mcmc_samp(samp_dt, itr_start=itr_start, itr_stop=itr_stop)
+print(samp_dt_subset2[,.(min_itr=min(itr), max_itr=max(itr)), by=by_cols])
+```
 
 

@@ -210,6 +210,7 @@ format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
   return(samp_dt)
 }
 
+
 append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label) {
   # A wrapper around `append_mcmc_output()` that allows for appending a new MCMC
   # test containing multiple chains. See `format_mcappend_mcmc_output()` for more 
@@ -242,23 +243,22 @@ append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label)
 # Functions for manipulating/subsetting `samp_dt` objects.
 # ------------------------------------------------------------------------------
 
-# TODO: need to generalize to allow itr_start/itr_stop to vary by test_label.
 select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=NULL, 
-                             param_types=NULL, param_names=NULL) {
+                             param_types=NULL, param_names=NULL, chain_idcs=NULL) {
   # Selects rows from `samp_dt` corresponding to valid combinations of 
   # `test_labels`, `param_types`, and `param_names`. Also restricts the output
   # to the iteration range specified by `itr_start` and `itr_stop`.
   #
   # Args:
   #    samp_dt: data.table of MCMC samples. 
-  #    itr_start: the minimum iteration number to be included. Defaults to the 
-  #               first iteration.
-  #    itr_stop: the maximum iteration number to be included. NULL, the default,
-  #              indicates that no maximum should be enforced.
+  #    itr_start: the minimum iteration number to be included. Named vector 
+  #               allows varying the start iteration by test label. See 
+  #               `select_mcmc_itr()` for details.
+  #    itr_stop: Same as `itr_start` but specifying the upper iteration cutoff.
   #    The remaining arguments are vectors of values used to subset `samp_dt`
-  #    by selecting values from the columns "test_label", "param_type", and 
-  #    "param_name". NULL value will include all values found in the respective
-  #    column in `samp_dt`. 
+  #    by selecting values from the columns "test_label", "param_type", 
+  #    "param_name", and "chain_idx". NULL value will include all values found 
+  #    in the respective column in `samp_dt`. 
   #
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
@@ -269,11 +269,13 @@ select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=N
   if(is.null(test_labels)) test_labels <- samp_dt_subset[, unique(test_label)]
   if(is.null(param_types)) param_types <- samp_dt_subset[, unique(param_type)]
   if(is.null(param_names)) param_names <- samp_dt_subset[, unique(param_name)]
+  if(is.null(chain_idcs)) chain_idcs <- samp_dt_subset[, unique(chain_idx)]
   
   # Select rows corresponding to label-type-name combinations. 
   samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
                             (param_type %in% param_types) & 
-                            (param_name %in% param_names)]
+                            (param_name %in% param_names) &
+                            (chain_idx %in% chain_idcs)]
   
   # Restrict to specified iteration bounds.
   samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start, itr_stop)
@@ -285,37 +287,79 @@ select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=N
 select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   # Returns a subset of the rows of `samp_dt` obtained by restricting the 
   # iteration column `itr` to rows with values falling in the interval 
-  # [itr_start, itr_stop]. 
+  # [itr_start, itr_stop]. Alternatively, such intervals can be specified 
+  # by test label, so that different iteration ranges can be selected for 
+  # different test labels. See `Args` for details.
   #
   # Args:
-  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1 AND unnamed, this is 
-  #                   interpreted as the starting iteration for all parameters - all earlier iterations
-  #                   are dropped. If a named vector, must  be a named vector with names set
-  #                   to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. If only some test labels are 
-  #                   specified by the vector, then the others will not be affected. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
+  #    samp_dt: data.table of MCMC samples. 
+  #    itr_start: integer vector specifying the lower iteration cutoff. If integer 
+  #               of length 1 AND unnamed, this is interpreted as the starting 
+  #               iteration for all test labels - all earlier iterations
+  #               are dropped. If a named vector, must have names set to 
+  #               valid test label values. This allows application of a different 
+  #               burn-in start iteration for different test labels. If only 
+  #               some test labels are specified by the vector, then the others 
+  #               will not be affected. 
+  #    itr_stop: same as `itr_start` but defining the upper cutoff. A NULL value
+  #              implies that no upper cutoff should be enforced.
   #
   # Returns:
-  #    data.table, a copy of `samp_dt` which is row subsetted to either drop the burn-in or 
-  #    non-burn-in iterations, depending on the value of `return_burnin`. 
+  #    data.table, a copy of `samp_dt` which is row subsetted to select the 
+  #    specified iteration ranges.
   
   # Argument checking.
   if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
-  assert_that(itr_start >= 1L)
+  assert_that(all(itr_start >= 1L))
   assert_that(is.integer(itr_start) && is.integer(itr_stop))
+  
+  # If no row subsetting is required just return the data.table.
+  if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
+  
+  # If `itr_stop` is NULL, set to maximum iteration.
+  if(is.null(itr_stop)) itr_stop <- samp_dt[,max(itr)]
+  
+  # Get set of unique test labels.
+  test_labels <- samp_dt[,unique(test_label)]
+  n_labels <- length(test_labels)
+  
+  # Helper function for processing the arguments `itr_start` and `itr_stop`.
+  get_itr_bound <- function(itr_arg) {
+    # If `itr_start` and/or `itr_stop` are unnamed vectors of length 1, then 
+    # the iteration cutoff will be applied to all test labels.
+    if((length(itr_arg)==1L) && is.null(names(itr_arg))) {
+      return(setNames(rep(itr_arg,n_labels), test_labels))
+    }
+    
+    # If `itr_start` and/or `itr_stop` are named vectors, apply values separately 
+    # for each test label.
+    extra_labels <- setdiff(names(itr_arg), test_labels)
+    missing_labels <- setdiff(test_labels, names(itr_arg))
+    if(length(extra_labels) > 0) message("Extra labels not used: ", 
+                                         paste(extra_labels, collapse=", "))
+    if(length(missing_labels) > 0) message("Labels not affected: ", 
+                                           paste(missing_labels, collapse=", "))
+    return(itr_arg[intersect(test_labels,names(itr_arg))])
+  }
+  
+  itr_start <- get_itr_bound(itr_start)
+  itr_stop <- get_itr_bound(itr_stop)
 
-  # Restrict to specified iteration range.
-  samp_dt[(itr >= itr_start) & (itr <= itr_stop)]
+  # Subset `samp_dt` by selecting iteration ranges by test label.
+  samp_dt_subset <- copy(samp_dt)
+  for(lbl in names(itr_start)) {
+    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= itr_start[lbl])]
+  }
+  for(lbl in names(itr_stop)) {
+    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr <= itr_stop[lbl])]
+  }
+
+  return(samp_dt_subset)
 }
 
 
-select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, burn_in_start=NULL, 
-                                 return_burnin=FALSE) {
+select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, 
+                                 itr_start=1L, itr_stop=NULL) {
   # Converts MCMC samples from long to wide format. Wide format means that a 
   # matrix is returned where each row is a sample. A `param_type` (e.g. "theta") must be selected so 
   # that each row of the matrix is a valid parameter vector (e.g. each row is a sampled parameter 
@@ -335,12 +379,6 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   #                by `param_type` and contained within the test label specified by `test_label`. 
   #                If NULL, selects all parameters within the param type, and no explicit ordering 
   #                is performed. 
-  #    burn_in_start: integer(1), the starting iteration to use for the samples from the test label. 
-  #                   If NULL, does not drop any burn-in. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
   #
   # Returns:
   #    matrix, where each row is a sample from the selected parameters, with burn-in dropped or 
@@ -348,7 +386,8 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
   
   if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
   
-  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_names, return_burnin)
+  samp <- select_mcmc_samp(samp_dt, itr_start, itr_stop, test_label, param_type, 
+                           param_names)
   if(nrow(samp)==0) stop("Cant convert zero length data.table to wide matrix format.")
   
   samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
@@ -363,66 +402,12 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NU
 }
 
 
-remove_mcmc_samp_burnin <- function(samp_dt, burn_in_start, return_burnin=FALSE) {
-  # Acts on a data.table in long format containing MCMC samples and either drops 
-  # burn-in iterations or returns only the burn-in iterations. Burn-in can either 
-  # differ by test label or a single burn-in cutoff can be applied to all test 
-  # labels. 
-  #
-  # Args:
-  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1 AND unnamed, this is 
-  #                   interpreted as the starting iteration for all parameters - all earlier iterations
-  #                   are dropped. If a named vector, must  be a named vector with names set
-  #                   to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. If only some test labels are 
-  #                   specified by the vector, then the others will not be affected. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
-  #
-  # Returns:
-  #    data.table, a copy of `samp_dt` which is row subsetted to either drop the burn-in or 
-  #    non-burn-in iterations, depending on the value of `return_burnin`. 
-  
-  samp_dt_subset <- copy(samp_dt)
-  
-  # If `burn_in_start` is NULL, either returns entire data.table or empty data.table. 
-  if(is.null(burn_in_start)) {
-    if(return_burnin) return(samp_dt_subset[0])
-    return(samp_dt_subset)
-  }
-  
-  # If `burn_in_start` unnamed vector of length 1, apply to all test labels. 
-  if((length(burn_in_start) == 1) && is.null(names(burn_in_start))) {
-    if(return_burnin) return(samp_dt_subset[itr < burn_in_start]) 
-    else return(samp_dt_subset[itr >= burn_in_start]) 
-  }
-  
-  # If `burn_in_start` is named vector, apply burn-in values separately for each test label. 
-  test_labels <- samp_dt_subset[, unique(test_label)]
-  extra_labels <- setdiff(names(burn_in_start), test_labels)
-  missing_labels <- setdiff(test_labels, names(burn_in_start))
-  if(length(extra_labels) > 0) message("Extra labels not used: ", paste(extra_labels, collapse=", "))
-  if(length(missing_labels) > 0) message("Labels not affected: ", paste(missing_labels, collapse=", "))
-  test_labels <- setdiff(test_labels, missing_labels)
-  
-  for(lbl in test_labels) {
-    if(return_burnin) samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr < burn_in_start[lbl])]
-    else samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= burn_in_start[lbl])]
-  }
-  
-  return(samp_dt_subset)
-}
-
-
 # ------------------------------------------------------------------------------
 # Computing statistics and errors from MCMC samples. 
 # ------------------------------------------------------------------------------
 
 compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL,
-                                      param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
+                                     param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
   #
   # Args:
