@@ -243,8 +243,9 @@ append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label)
 # Functions for manipulating/subsetting `samp_dt` objects.
 # ------------------------------------------------------------------------------
 
-select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=NULL, 
-                             param_types=NULL, param_names=NULL, chain_idcs=NULL) {
+select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
+                             param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                             chain_idcs=NULL) {
   # Selects rows from `samp_dt` corresponding to valid combinations of 
   # `test_labels`, `param_types`, and `param_names`. Also restricts the output
   # to the iteration range specified by `itr_start` and `itr_stop`.
@@ -284,6 +285,93 @@ select_mcmc_samp <- function(samp_dt, itr_start=1L, itr_stop=NULL, test_labels=N
 }
 
 
+select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
+                                 param_names=NULL, itr_start=1L, itr_stop=NULL,
+                                 chain_idcs=NULL, return_chain_list=FALSE) {
+  # A wrapper around `select_mcmc_samp()` that converts the selected samples 
+  # to a matrix format, where each row is a sample. Unlike `select_mcmc_samp()`,
+  # a single value of `test_label` and `param_type` must be specified. However,
+  # `param_names` can be used to return a subset of the parameters for the 
+  # specified parameter type. It is recommended to pass this argument 
+  # even if all parameters of a specific type are to be returned, as passing 
+  # `param_names` will order to the columns according to `param_names`, which 
+  # ensures that the ordering is correct. Also allows subsetting by the chain 
+  # indices. Can either return a list of matrices (one per chain), or a single 
+  # matrix in which all chains have been grouped together.
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples. 
+  #    test_label: character, the single test label to select. 
+  #    param_type: character, the single parameter type to select. Must be a  
+  #                type within the specified `test_label`. 
+  #    itr_start: the minimum iteration number to be included. Named vector 
+  #               allows varying the start iteration by test label. See 
+  #               `select_mcmc_itr()` for details.
+  #    itr_stop: Same as `itr_start` but specifying the upper iteration cutoff.
+  #    param_names: character, if provided then selects the specific parameter 
+  #                 names provided, and also orders the columns of the returned 
+  #                 matrix in the order they are provided in this argument. The 
+  #                 parameters specified here must be of the type specified 
+  #                 by `param_type` and contained within the test label specified 
+  #                 by `test_label`. If NULL, selects all parameters within the 
+  #                 param type, and no explicit ordering is performed. 
+  #    chain_idcs: integer, the chain indices to select.
+  #    return_chain_list: logical, if TRUE returns a list with each element 
+  #                       containing a matrix storing the samples for a specific
+  #                       chain. Otherwise, all samples are put in a single 
+  #                       matrix. See "Returns" for details.
+  #
+  # Returns:
+  #    If `return_chain_list` is TRUE, a list with each element containing a 
+  #    matrix storing the samples for a specific chain. The list names are set 
+  #    to the chain indices. The rownames of each matrix is set to the iteration
+  #    numbers. If return_chain_list` is FALSE, all samples are put in a single 
+  #    matrix. In this case, the rownames of the matrix take the form 
+  #    "<chain_idx>_<itr>". In either case, each row of the matrix corresponds 
+  #    to a single sample, and each column to a parameter within the selected 
+  #    parameter type. The columns are ordered according to `param_names`, if 
+  #    this argument is provided. 
+  
+  assert_that(length(test_label)==1L)
+  assert_that(length(param_type)==1L)
+  assert_is_samp_dt(samp_dt)
+  
+  # Select specified subset of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_label, 
+                                     param_types=param_type, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  if(nrow(samp_dt_subset)==0L) {
+    stop("Cant convert zero length data.table to wide matrix format.")
+  }
+  
+  # Create one matrix per chain.
+  chain_idcs <- samp_dt_subset[,unique(chain_idx)]
+  mat_chain_list <- lapply(chain_idcs, 
+                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i]))
+  
+  # If `param_names` is provided, sort columns based on this order.
+  if(!is.null(param_names)) {
+    for(i in seq_along(mat_chain_list)) {
+      mat_chain_list[[i]] <- mat_chain_list[[i]][,param_names, drop=FALSE]
+    }
+  }
+    
+  # If returning a single matrix, stack all matrices into one.
+  if(!return_chain_list) {
+    for(i in seq_along(chain_idcs)) {
+      rownames(mat_chain_list[[i]]) <- paste(chain_idcs[i], 
+                                           rownames(mat_chain_list[[i]]),
+                                           sep="_")
+    }
+    return(do.call(rbind, mat_chain_list))
+  }
+  
+  names(mat_chain_list) <- chain_idcs
+  return(mat_chain_list)
+}
+
+
 select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   # Returns a subset of the rows of `samp_dt` obtained by restricting the 
   # iteration column `itr` to rows with values falling in the interval 
@@ -307,6 +395,8 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   # Returns:
   #    data.table, a copy of `samp_dt` which is row subsetted to select the 
   #    specified iteration ranges.
+  
+  assert_is_samp_dt(samp_dt)
   
   # Argument checking.
   if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
@@ -358,47 +448,24 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
 }
 
 
-select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, 
-                                 itr_start=1L, itr_stop=NULL) {
-  # Converts MCMC samples from long to wide format. Wide format means that a 
-  # matrix is returned where each row is a sample. A `param_type` (e.g. "theta") must be selected so 
-  # that each row of the matrix is a valid parameter vector (e.g. each row is a sampled parameter 
-  # calibration vector). Alternatively, a subset of the parameters for a specific parameter type 
-  # can be returned by passing the `param_names` argument. It is recommended to pass this argument 
-  # even if all parameters of a specific type are to be returned, as passing `param_names` will 
-  # order to the columns according to `param_names`, which ensures that the ordering is correct. 
+convert_samp_to_mat <- function(samp_dt) {
+  # A helper function used by `select_mcmc_samp_mat()` to convert sample output
+  # in data.table form for a single test label/parameter type combination to 
+  # a matrix format.
   #
   # Args:
-  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
-  #    test_label: character(1), the single test label to select. 
-  #    param_type: character(1), the single parameter type to select. Must be a type within the  
-  #                specified `test_label`. 
-  #    param_names: character, if provided then selects the specific parameter names provided, and 
-  #                also orders the columns of the returned matrix in the order they are provided
-  #                in this argument. The parameters specified here must be of the type specified 
-  #                by `param_type` and contained within the test label specified by `test_label`. 
-  #                If NULL, selects all parameters within the param type, and no explicit ordering 
-  #                is performed. 
+  #    samp_dt: data.table in the typical form. Only columns "itr", "param_name", 
+  #             and "sample" are used here.
   #
   # Returns:
-  #    matrix, where each row is a sample from the selected parameters, with burn-in dropped or 
-  #    returned if specified. Rownames are set to the iteration numbers. 
-  
-  if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
-  
-  samp <- select_mcmc_samp(samp_dt, itr_start, itr_stop, test_label, param_type, 
-                           param_names)
-  if(nrow(samp)==0) stop("Cant convert zero length data.table to wide matrix format.")
-  
-  samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
-  itrs <- samp$itr
-  samp_mat <- as.matrix(samp[, .SD, .SDcols=!"itr"])
-  rownames(samp_mat) <- itrs
-  
-  if(!is.null(param_names)) samp_mat <- samp_mat[,param_names, drop=FALSE]
-  
-  return(samp_mat)
-  
+  #    matrix, with samples in the rows and columns corresponding to the 
+  #    different parameters. The rownames attribute is set to the iterations.
+  samp_wide <- dcast(data=samp_dt[,.(itr, param_name, sample)], 
+                     formula=itr~param_name, value.var="sample")
+  itrs <- samp_wide$itr
+  samp_wide <- as.matrix(samp_wide[, .SD, .SDcols=!"itr"])
+  rownames(samp_wide) <- itrs
+  return(samp_wide)
 }
 
 
@@ -411,7 +478,7 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NU
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
   #
   # Args:
-  #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`
+  #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`.
   #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to subset `samp_dt` to determine which
   #                                            parameters and samples will be included in the metric computations.
   #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired form so do not call `select_mcmc_samp()`. 
@@ -710,102 +777,146 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mea
 # MCMC Plotting Functions. 
 # ------------------------------------------------------------------------------
 
-
-get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, xlab="samples", ylab="density", 
-                          main_title="Histogram", data_names=NULL) {
-  # Generates a single plot with one or more histograms. The input data `samples_list` must be a list of matrices. 
-  # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
-  # second element a matrix of samples from an approximate distribution. This function will select one column from 
-  # each matrix based on the index `col_sel`. Each selected column will be turned into a histogram. 
-  # Note that the matrices may have different lengths (numbers of samples).
+get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
+                            param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                            chain_idcs=NULL, save_dir=NULL, overlay_chains=TRUE) {
+  # Extracts the specified subset of `samp_dt` then generates one trace plot per
+  # valid `param_name`-`param_type`-`test_label`-`chain_idx` combination. If 
+  # `overlay_chains` is TRUE, then the chains within each unique
+  # `param_name`-`param_type`-`test_label` combination are all plotted on the 
+  # same plot with different colors.
   #
   # Args:
-  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
-  #    col_sel: integer(1), the column index to select from each matrix. i.e. this selects a particular parameter, whose
-  #             samples will be transformed into a histogram. 
-  #    bins: integer(1), number of bins to use in histogram. 
-  #    vertical_line: If not NULL, the x-intercept to be used for a plotted vertical line. 
-  #    xlab, ylab, main_title: x and y axis labels and plot title. 
-  #    data_names: character(), vector equal to the length of the list `samples_list`. These are the names used in 
-  #                the legend to identify the different histograms. 
-  #
-  # Returns:
-  #    ggplot2 object. 
-  
-  # Pad with NAs in the case that the number of samples is different across different parameters. 
-  N_samp <- sapply(samples_list, nrow)
-  if(length(unique(N_samp)) > 1) {
-    N_max <- max(N_samp)
-    for(j in seq_along(samples_list)) {
-      if(nrow(samples_list[[j]]) < N_max) {
-        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow=N_max - nrow(samples_list[[j]]), ncol=ncol(samples_list[[j]])))
-      }
-    }
-  }
-  
-  dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
-  if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
-  dt <- melt(dt, measure.vars = colnames(dt), na.rm=TRUE)
-  
-  plt <- ggplot(data = dt, aes(x=value, color=variable)) + 
-    geom_histogram(aes(y=..density..), bins=bins, fill="white", alpha=0.2, position="identity") + 
-    xlab(xlab) + 
-    ylab(ylab) + 
-    ggtitle(main_title)
-  
-  if(!is.null(vertical_line)) {
-    plt <- plt + geom_vline(xintercept=vertical_line, color="red")
-  }
-  
-  return(plt)
-  
-}
-
-
-get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, 
-                            param_names=NULL, save_dir=NULL) {
-  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
-  # MCMC trace plot per valid `param_name`-`param_type`-`test_label` combination. 
-  #
-  # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
+  #    samp_dt: existing data.table object storing samples.
+  #    overlay_chains: If TRUE, chains are overlaid on the same plot, otherwise
+  #                    each chain is plotted on a different plot.
   #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
   #
   # Returns:
-  #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
+  #    list of ggplot objects, the plots as described above. 
+  
+  assert_is_samp_dt(samp_dt)
   
   # Determine which plots to create by subsetting rows of `samp_dt`. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("test_label", "param_type", "param_name")
+  if(!overlay_chains) id_cols <- id_cols <- c(id_cols, "chain_idx")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
   
   # Generate plots. 
   plts <- list()
   for(j in 1:nrow(plt_id_vars)) {
-    test_label_curr <- plt_id_vars[j, test_label]
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste(id_vals$test_label, 
+                       paste0(id_vals$param_type, ": ", id_vals$param_name),
+                       sep=" | ")
+    if(!overlay_chains) plt_title <- paste(plt_title, 
+                                           paste0("Chain ", id_vals$chain_idx), 
+                                           sep=" | ")
     
-    plts[[plt_label]] <- ggplot(data = samp_dt_subset[(test_label == test_label_curr) & 
-                                                        (param_type == param_type_curr) & 
-                                                        (param_name == param_name_curr)], aes(x=itr, y=sample)) + 
-      geom_line() + 
-      ggtitle(paste0("Trace Plot: ", plt_label)) + 
-      xlab("Iteration")
+    # Select data for plot.
+    chain_idx <- NULL
+    if(!overlay_chains) chain_idx <- id_vals$chain_idx
+    samp_dt_plt <- select_mcmc_samp(samp_dt_subset, test_labels=id_vals$test_label,
+                                    param_types=id_vals$param_type, 
+                                    param_names=id_vals$param_name, 
+                                    chain_idcs=chain_idx)
+    
+    # Create trace plot.
+    if(overlay_chains) {
+      plt <- ggplot(samp_dt_plt, aes(x=itr, y=sample, color=as.factor(chain_idx)))
+    } else {
+      plt <- ggplot(samp_dt_plt, aes(x=itr, y=sample))
+    }
+    
+    plt <- plt + geom_line() + ggtitle(plt_title) + xlab("Iteration")
+    if(overlay_chains) plt <- plt + guides(color=guide_legend(title="Chain"))
+    plts[[plt_label]] <- plt
   }
   
+  # Optionally save to file.
   if(!is.null(save_dir)) save_plots(plts, "trace", save_dir)
   
-  return(plts)
+  return(invisible(plts))
+}
+
+
+get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
+                           param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                           chain_idcs=NULL, save_dir=NULL, combine_chains=TRUE,
+                           plot_type="hist", bins=30) {
+  # Plots one histogram plot per unique `param_type`-`param_name` combination.
+  # All MCMC runs containing output for this parameter are overlaid on the same 
+  # plot (see Args and Returns for specifics on this). These plots can thus get
+  # quite cluttered with more than a few histograms on a single plot. If 
+  # there is a clear baseline against which all other MCMC runs should be 
+  # compared, see `get_hist_plot_comparisons()` instead.
+  #
   
+  assert_is_samp_dt(samp_dt)
+  assert_that(plot_type %in% c("hist","freqpoly"))
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+  legend_label <- ifelse(combine_chains, "test lbl", "test lbl + chain")
+  
+  # Plot histogram of frequency polygon.
+  if(plot_type == "hist") {
+    plt_func <- function() geom_histogram(fill="white", alpha=0.2, 
+                                          bins=bins, position="identity")
+  } else if(plot_type == "freqpoly") {
+    plt_func <- function() geom_freqpoly(bins=bins, position="identity")
+  }
+  
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste0(id_vals$param_type, ": ", id_vals$param_name)
+    param_name <- id_vals$param_name
+
+    # Select data for plot.
+    samp_dt_plt <- select_mcmc_samp(samp_dt_subset,
+                                    param_types=id_vals$param_type, 
+                                    param_names=id_vals$param_name)
+
+    # Create histogram plot.
+    if(combine_chains) {
+      plt <- ggplot(samp_dt_plt, aes(x=sample, color=test_label))
+    } else {
+      plt <- ggplot(samp_dt_plt, 
+                    aes(x=sample, color=interaction(test_label, 
+                                                    as.factor(chain_idx), sep=":")))
+    }
+    
+    plt <- plt + plt_func() + 
+                 ggtitle(plt_title) + 
+                 guides(color=guide_legend(title=legend_label)) +
+                 xlab(param_name)
+    plts[[plt_label]] <- plt
+  }
+  
+  # Optionally save to file.
+  if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
+  
+  return(invisible(plts))
 }
 
 

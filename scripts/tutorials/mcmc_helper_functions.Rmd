@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
 
+library(ggplot2)
 library(data.table)
 library(assertthat)
 
@@ -82,7 +83,7 @@ by_cols <- c("test_label", "param_type", "param_name", "chain_idx")
 samp_dt[,.N, by=by_cols]
 ```
 
-## Subsetting the `samp_dt` data.table.
+# Subsetting the `samp_dt` data.table.
 The main function for subsetting is `select_mcmc_samp()`. It subsets the rows 
 of `samp_dt` by selecting specified values of test labels, parameter types, 
 parameter names, chain indices, and iteration ranges. Iteration ranges can be 
@@ -100,5 +101,72 @@ itr_stop <- c(test1=200L, test2=1000L)
 samp_dt_subset2 <- select_mcmc_samp(samp_dt, itr_start=itr_start, itr_stop=itr_stop)
 print(samp_dt_subset2[,.(min_itr=min(itr), max_itr=max(itr)), by=by_cols])
 ```
+
+
+There is also a similar function that returns the samples for a specific 
+test label/parameter type combination in a typical matrix format. Samples 
+belonging to different chains may each be returned in their matrix, or all 
+chains can be combined into a single matrix. The `param_names` argument 
+here is useful for controlling the order of the columns in the returned matrices.
+
+```{r}
+# Example 1: return list of matrices, one per chain. Explicitly passing the 
+# parameter names to emphasize the effect on the column order of the matrices.
+# Rownames are set to iteration names.
+samp_mat_list <- select_mcmc_samp_mat(samp_dt, test_label="test1", param_type="type1",
+                                      param_names=c("par2","par1"), itr_start=1L, 
+                                      itr_stop=6L, return_chain_list=TRUE)
+print(samp_mat_list$`1`) # Chain 1
+print(samp_mat_list$`2`) # Chain 2
+
+# Example 2: combine into single matrix. Rownames are of the form 
+# "<chain_idx>_<itr>".
+samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="test1", param_type="type1",
+                                 param_names=c("par2","par1"), itr_start=1L, 
+                                 itr_stop=6L, return_chain_list=FALSE)
+print(samp_mat)
+```
+
+# Plotting
+The plot functions all use the same row selection/subsetting interface as 
+`select_mcmc_samp()`, which is used to control which test labels, parameters, etc.
+are plotted. 
+
+## Trace Plots
+A single parameter is plotted on each plot. Different chains can be overlaid 
+on the same plot, or plotted on separate plots.
+```{r}
+# Example 1: overlay chains on single plot.
+trace1 <- get_trace_plots(samp_dt, test_labels="test1", param_type="type1",
+                          itr_start=500L, overlay_chains=TRUE)
+for(plt in trace1) plot(plt)
+
+# Example 2: each chain gets a separate plot.
+trace2 <- get_trace_plots(samp_dt, test_labels="test1", param_type="type1",
+                          itr_start=500L, overlay_chains=FALSE)
+for(plt in trace2) plot(plt)
+```
+
+## Histograms
+```{r}
+# Example 1: Combining samples across all chains.
+hist1 <- get_hist_plots(samp_dt, param_types="type1", combine_chains=TRUE, bins=30)
+for(plt in hist1) plot(plt)
+
+# Example 2: Same thing but with frequency polygon instead of histogram.
+hist2 <- get_hist_plots(samp_dt, param_types="type1", combine_chains=TRUE, 
+                        plot_type="freqpoly", bins=30)
+for(plt in hist2) plot(plt)
+
+# Example 3: Keeping chains separate. Only looking at first test label here to 
+# avoid having too many histograms on the same plot.
+hist3 <- get_hist_plots(samp_dt, test_labels="test1", param_types="type1", 
+                        chain_idcs=NULL, combine_chains=FALSE, bins=30)
+for(plt in hist3) plot(plt)
+```
+
+
+
+
 
 
