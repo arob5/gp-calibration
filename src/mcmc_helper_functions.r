@@ -3,7 +3,9 @@
 # Primarily functions to post-process, organize, and plot MCMC samples. 
 #
 # Andrew Roberts
-# 
+#
+# Dependencies:
+#    general_helper_functions.r, plotting_helper_functions.r
 
 library(HDInterval)
 library(kde1d)
@@ -856,10 +858,26 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
   # Plots one histogram plot per unique `param_type`-`param_name` combination.
   # All MCMC runs containing output for this parameter are overlaid on the same 
   # plot (see Args and Returns for specifics on this). These plots can thus get
-  # quite cluttered with more than a few histograms on a single plot. If 
+  # quite cluttered with more than a few histograms on a single plot. Using
+  # `plot_type = "freqpoly"` can be helpful to reduce clutter in this case. If 
   # there is a clear baseline against which all other MCMC runs should be 
   # compared, see `get_hist_plot_comparisons()` instead.
   #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    combine_chains: logical. If TRUE, samples from all chain indices are 
+  #                    pooled together. Otherwise, distinct chains are plotted 
+  #                    separately, overlaid on the same plot.
+  #    plot_type: character, either "hist" or "freqpoly" to produce a histogram
+  #               or frequency polygon.
+  #    bins: integer, passed to either geom_histogram() or geom_freqpoly()
+  #          `bins` argument.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list of ggplot objects, one plot per unique `param_type`-`param_name` 
+  # combination.
   
   assert_is_samp_dt(samp_dt)
   assert_that(plot_type %in% c("hist","freqpoly"))
@@ -920,124 +938,269 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
 }
 
 
-get_mcmc_2d_density_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL,
-                                      param_names=NULL, save_dir=NULL) {
-  # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
-  # variables from samples. Will produce one plot per pair of variables within 
-  # each value of `test_label`.
-  # TODO: for now this is restricted to param_type="par". Need to think about how 
-  #       to handle multiple param_types. 
-
-  # Determine which plots to create by subsetting rows of `samp_dt`. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types="par", param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_name)])
-  test_lbls <- unique(plt_id_vars[, test_label])
+get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL, 
+                                      test_labels=NULL, param_types=NULL,  
+                                      param_names=NULL, itr_start=1L, 
+                                      itr_stop=NULL, chain_idcs=NULL, 
+                                      save_dir=NULL, combine_chains=TRUE,
+                                      plot_type="hist", bins=30) {
+  # A convenience wrapper around `get_hist_plots()` that generates figures with 
+  # two histograms on each plot: one coming from a "baseline" test label, and 
+  # the other from any other test label. This is helpful if comparing algorithms
+  # against some ground truth or baseline samples. If the baseline test label 
+  # has certain parameters that are not in the other test label, then the 
+  # plot will only contain the histogram for the baseline.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a 
+  #                         valid test label with associated samples in 
+  #                         `samp_dt`. In this case, the histograms 
+  #                         corresponding to this baseline test label will be 
+  #                         overlaid on the plots for all other test labels.
+  #    combine_chains: logical. If TRUE, samples from all chain indices are 
+  #                    pooled together. Otherwise, distinct chains are plotted 
+  #                    separately, overlaid on the same plot.
+  #    plot_type: character, either "hist" or "freqpoly" to produce a histogram
+  #               or frequency polygon.
+  #    bins: integer, passed to either geom_histogram() or geom_freqpoly()
+  #          `bins` argument.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`. 
+  #
+  # Returns: 
+  #    list, each element being a ggplot object. 
   
-  # Create plots between pairs of variables within each test label.
-  plts <- list()
-  for(lbl in test_lbls) {
-    plts[[lbl]] <- list()
-    samp_dt_lbl <- select_mcmc_samp(samp_dt_subset, test_labels=lbl)
-    par_names <- unique(samp_dt_lbl[test_label==lbl, param_name])
-    n_par <- length(par_names)
-    for(i in 1:(n_par-1)) {
-      for(j in (i+1):n_par) {
-        par_i <- par_names[i]
-        par_j <- par_names[j]
-        plot_tag <- paste(par_i, par_j, sep="-")
-        samp_dt_pars <- select_mcmc_samp(samp_dt_lbl, param_names=c(par_i,par_j))[, .(itr,param_name,sample)]
-        samp_dt_pars <- data.table::dcast(samp_dt_pars, "itr~param_name", value.var="sample")
-        setnames(samp_dt_pars, c(par_i,par_j), c("var1","var2"))
-        plts[[lbl]][[plot_tag]] <- ggplot(samp_dt_pars, aes(x=var1, y=var2)) + 
-                                   geom_density_2d() + xlab(par_i) + ylab(par_j)
-      }
-    }
-  }
-  
-  if(!is.null(save_dir)) save_plots(unlist(plts,recursive=FALSE), "density2d", save_dir)
-  return(plts)
-}
-
-
-get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
-                                        param_types=NULL, param_names=NULL, test_label_baseline=NULL,
-                                        xlab="parameter", ylab="kde", min_q=0.001, 
-                                        max_q =.999, bandwidth_mult=NA, save_dir=NULL) {
-  # Produces one plot per unique param type-param name combination. Each plot contains one line
-  # per `test_label` that has samples for that specific parameter. Each line is produced from 
-  # a 1d kernel density estimate (KDE) constructed fromn the MCMC samples. N_kde_pts` is the
-  # `number of points at which the KDE approximation is evaluated for each univariate variable.
-  # `min_q` and `max_q` are used to determine the cutoff x-limits for each plot. These are 
-  # percentiles across all samples that will be used to generate that plot (from all 
-  # test labels). `bandwidth` is used to scale the bandwidth parameter for the KDE and is 
-  # passed to the `mult` argument of `kde1d()`. 
-
   # Determine which plots to create by subsetting rows of `samp_dt`. 
-  if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
+  if(!is.null(test_label_baseline) && !is.null(test_labels) && 
+     !(test_label_baseline %in% test_labels)) {
     test_labels <- c(test_labels, test_label_baseline)
   }
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
   
-  # One plot is generated for each unique `param_type`-`param_name` combination. 
-  plt_id_vars <- unique(samp_dt_subset[, .(param_type, param_name)])
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
+                                     param_types=param_types, 
+                                     param_names=param_names, 
+                                     itr_start=itr_start, itr_stop=itr_stop,
+                                     chain_idcs=chain_idcs)
   
-  # Separate out data to be used as the baseline for comparison in each plot, if provided. 
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("test_label", "param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+
+  # Separate out baseline label. 
   if(!is.null(test_label_baseline)) {
-    samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
-    samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
+    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
   }
   
   # Generate plots. 
   plts <- list()
   for(j in 1:nrow(plt_id_vars)) {
-    # Define the parameter being plotted. One KDE will be computed for each test label
-    # that has samples for this parameter. 
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(param_type_curr, param_name_curr, sep="_")
-    samp_dt_param <- samp_dt_subset[(param_type == param_type_curr) & 
-                                    (param_name == param_name_curr), .(test_label, sample)] 
-    test_labels_curr <- unique(samp_dt_param$test_label)
+    # Current test label.
+    test_lbl_curr <- c(plt_id_vars[j, test_label], test_label_baseline)
+
+    # Produce histograms for current test label.
+    plts_curr <- get_hist_plots(samp_dt_subset, test_labels=test_lbl_curr,
+                                combine_chains=combine_chains, 
+                                plot_type=plot_type, bins=bins)
+    plts <- c(plts, plts_curr)
+  }
+  
+  if(!is.null(save_dir)) save_plots(plts, "hist_comparison", save_dir)
+  return(invisible(plts))
+}
+
+
+get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL, 
+                             test_labels=NULL, param_types=NULL,  
+                             param_names=NULL, itr_start=1L, 
+                             itr_stop=NULL, chain_idcs=NULL, 
+                             save_dir=NULL, combine_chains=TRUE,
+                             N_kde_pts=100, min_q=0.001, max_q =.999,
+                             bandwidth_mult=1.0) {
+  # Returns plots with kernel density estimates (KDE) for 1-dimensional marginal
+  # distributions. Produces one plot per unique param type-param name combination.
+  # Each plot contains one line per `test_label` that has samples for that 
+  # specific parameter. Each line is produced from a 1d KDE constructed from the
+  # samples using the kde1d package. If `test_label_baseline` is provided, then 
+  # this test label will be treated as the baseline for comparison and plotted 
+  # as a black dashed line.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a 
+  #                         valid test label with associated samples in 
+  #                         `samp_dt`. Designates a special test label, which 
+  #                         typically indicates a baseline/ground truth.
+  #    combine_chains: logical. Currently only supports TRUE, which groups all
+  #                    chains together.
+  #    N_kde_pts: integer, number of points at which the KDE approximation is 
+  #               evaluated for each univariate parameter.
+  #    min_q, max_q: numeric in (0,1], percentiles used as cutoffs to define the 
+  #                  interval over which the KDE is computed.
+  #    bandwidth_mult: passed to the `mult` arg of `kde1d()`.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list of ggplot objects, one per param type-param name combination.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  if(!combine_chains) {
+    stop("Currently `get_1d_kde_plots()` only supports `combine_chains = TRUE`.")
+  }
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`.
+  test_labels_all <- test_labels
+  if(!is.null(test_label_baseline) && !is.null(test_labels) && 
+     !(test_label_baseline %in% test_labels)) {
+    test_labels_all <- c(test_labels, test_label_baseline)
+  }
+  
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels_all, 
+                                     param_types=param_types, 
+                                     param_names=param_names, 
+                                     itr_start=itr_start, itr_stop=itr_stop,
+                                     chain_idcs=chain_idcs)
+  
+  # Separate out baseline label. 
+  if(!is.null(test_label_baseline)) {
+    samp_dt_baseline <- samp_dt_subset[test_label == test_label_baseline]
+    samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
+  }
+  
+  # One plot is generated for each unique `param_type`-`param_name` combination.
+  id_cols <- c("param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste0(id_vals$param_type, ": ", id_vals$param_name)
+    param_name <- id_vals$param_name
+    
+    # Prepare non-baseline data.
+    samp_dt_param <- samp_dt_subset[(param_type == id_vals$param_type) & 
+                                    (param_name == id_vals$param_name), 
+                                    .(sample, test_label)]
+    test_labels_curr <- samp_dt_param[,unique(test_label)]
     
     # Prepare baseline data. 
-    samp_baseline_param <- NULL
+    samp_dt_baseline_param <- NULL
     if(!is.null(test_label_baseline)) {
-      samp_baseline_param <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                              (param_name == param_name_curr), sample] 
+      samp_dt_baseline_param <- samp_dt_baseline[(param_type == id_vals$param_type) & 
+                                                 (param_name == id_vals$param_name), sample] 
     }
     
     # Determine the grid of points at which the KDE will be evaluated. 
-    bound_lower <- quantile(c(samp_dt_param$sample, samp_baseline_param), min_q)
-    bound_upper <- quantile(c(samp_dt_param$sample, samp_baseline_param), max_q)
+    bound_lower <- quantile(c(samp_dt_param$sample, samp_dt_baseline_param), min_q)
+    bound_upper <- quantile(c(samp_dt_param$sample, samp_dt_baseline_param), max_q)
     kde_pts <- seq(bound_lower, bound_upper, length.out=N_kde_pts)
     
     # Loop over test labels, constructing KDE for each label. 
     kde_mat <- matrix(nrow=N_kde_pts, ncol=length(test_labels_curr), 
                       dimnames=list(NULL, test_labels_curr))
     for(lbl in test_labels_curr) {
-      kde_fit <- kde1d(samp_dt_subset[test_label==lbl, sample], mult=bandwidth_mult)
+      kde_fit <- kde1d(samp_dt_param[test_label==lbl, sample], mult=bandwidth_mult)
       kde_mat[,lbl] <- dkde1d(kde_pts, kde_fit)
     }
-
+    
     # Add KDE for baseline label. 
     kde_baseline <- NULL
     if(!is.null(test_label_baseline)) {
-      kde_fit <- kde1d(samp_baseline_param, mult=bandwidth_mult)
+      kde_fit <- kde1d(samp_dt_baseline_param, mult=bandwidth_mult)
       kde_baseline <- dkde1d(kde_pts, kde_fit)
     }
     
     # Construct KDE comparison plot for the current parameter. 
     plt_curr <- plot_curves_1d_helper(kde_pts, kde_mat, y_new=kde_baseline,
-                                      plot_title=plt_label, xlab=plt_label, ylab="kde")
+                                      plot_title=plt_title, xlab=param_name, 
+                                      ylab="kde")
     plts[[plt_label]] <- plt_curr
   }
   
   if(!is.null(save_dir)) save_plots(plts, "kde1d", save_dir)
   
-  return(plts)
+  return(invisible(plts))
+}
+
+
+get_2d_density_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
+                                 param_names=NULL, itr_start=1L, itr_stop=NULL,
+                                 chain_idcs=NULL, save_dir=NULL, 
+                                 combine_chains=TRUE) {
+  # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
+  # parameters from samples. Will produce one plot per pair of parameters within 
+  # each value of `test_label`.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    combine_chains: logical. Currently only supports TRUE, which groups all
+  #                    chains together.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list, nested so that the elements of the first level correspond to the 
+  # test labels. The sub-lists for each test label then contain the ggplot 
+  # objects falling within that test label.
+
+  assert_is_samp_dt(samp_dt)
   
+  if(!combine_chains) {
+    stop("Currently `get_1d_kde_plots()` only supports `combine_chains = TRUE`.")
+  }
+
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Store unique `test_label`-`param_type`-`param_name` combinations.
+  id_cols <- c("test_label", "param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+  test_lbls <- unique(plt_id_vars$test_label)
+  
+  # Create plots between pairs of parameters within each test label.
+  plts <- list()
+  for(lbl in test_lbls) {
+    # Get parameters for current test label.
+    plt_id_vars_lbl <- plt_id_vars[test_label==lbl]
+    plts[[lbl]] <- list()
+    n_par <- nrow(plt_id_vars_lbl)
+    
+    # Subset to current label.
+    samp_dt_lbl <- select_mcmc_samp(samp_dt_subset, test_labels=lbl)
+    
+    for(i in 1:(n_par-1)) {
+      par_i <- paste(plt_id_vars_lbl[i,param_type], 
+                     plt_id_vars_lbl[i,param_name], sep="-")
+      for(j in (i+1):n_par) {
+        par_j <- paste(plt_id_vars_lbl[j,param_type], 
+                       plt_id_vars_lbl[j,param_name], sep="-")
+        plot_tag <- paste(par_i, par_j, sep="_")
+        samp_dt_i <- select_mcmc_samp(samp_dt_lbl, 
+                                      param_types=plt_id_vars_lbl[i,param_type],
+                                      param_names=plt_id_vars_lbl[i,param_name])
+        samp_dt_j <- select_mcmc_samp(samp_dt_lbl, 
+                                      param_types=plt_id_vars_lbl[j,param_type],
+                                      param_names=plt_id_vars_lbl[j,param_name])
+        samp_dt_pars <- data.table(par1=samp_dt_i$sample, par2=samp_dt_j$sample)
+        plts[[lbl]][[plot_tag]] <- ggplot(samp_dt_pars, aes(x=par1, y=par2)) + 
+                                    geom_density_2d() + xlab(par_i) + ylab(par_j)
+      }
+    }
+  }
+
+  if(!is.null(save_dir)) {
+    save_plots(unlist(plts,recursive=FALSE), "density2d", save_dir)
+  }
+  
+  return(invisible(plts))
 }
 
 
@@ -1093,78 +1256,6 @@ get_mcmc_moments_scatter_plot_comparisons <- function(samp_dt, test_label_baseli
   if(!is.null(save_dir)) save_plots(plts, "kde1d", save_dir)
   
   return(plt_list)
-  
-}
-
-
-get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
-                                      test_label_baseline=NULL, xlab="samples", ylab="density", bins=30, save_dir=NULL) {
-  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
-  # MCMC marginal histogram plot per valid `param_name`-`param_type`-`test_label` combination. If `test_label_baseline`
-  # is non-NULL, then each plot will include a second histogram corresponding to the specified test label; this is 
-  # useful if wanting to compare approximate samples against some sort of baseline, for example. 
-  #
-  # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
-  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a valid test label with associated 
-  #                         samples in `samp_dt`. In this case, the histograms corresponding to this baseline 
-  #                         test label will be overlaid on the plots for all other test labels. 
-  #    xlab, ylab, bins: ggplot arguments, all passed to `get_hist_plot()`. 
-  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
-  #
-  # Returns: 
-  #    list, each element being a ggplot object. 
-  
-  # Determine which plots to create by subsetting rows of `samp_dt`. 
-  if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
-    test_labels <- c(test_labels, test_label_baseline)
-  }
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
-  
-  # Separate out data to be used as the baseline for comparison in each plot, if provided. 
-  if(!is.null(test_label_baseline)) {
-    samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
-    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
-  }
-  
-  # Generate plots. 
-  plts <- list()
-  for(j in 1:nrow(plt_id_vars)) {
-    test_label_curr <- plt_id_vars[j, test_label]
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
-    samp <- samp_dt_subset[(test_label == test_label_curr) & 
-                             (param_type == param_type_curr) & 
-                             (param_name == param_name_curr), sample]
-    samp_list <- list()
-    samp_list[[1]] <- matrix(samp, ncol=1)
-    data_names <- test_label_curr
-    
-    if(!is.null(test_label_baseline)) {
-      samp_baseline <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                          (param_name == param_name_curr), sample] 
-      
-      samp_list[[2]] <- matrix(samp_baseline, ncol=1)
-      data_names <- c(data_names, test_label_baseline)
-    }
-    
-    plts[[plt_label]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
-                                       main_title=test_label_curr, data_names=data_names) 
-    
-  }
-  
-  if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
-  return(plts)
   
 }
 

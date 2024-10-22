@@ -5,6 +5,10 @@ date: "2024-10-19"
 output: html_document
 ---
 
+This file provides an introduction to the functions defined in 
+`mcmc_helper_functions.r`. This file is fairly heavily commented, so see 
+comments for additional details.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
 
@@ -17,6 +21,7 @@ src_dir <- file.path(base_dir, "src")
 
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
 ```
 
 # Creating `samp_dt` object.
@@ -148,6 +153,8 @@ for(plt in trace2) plot(plt)
 ```
 
 ## Histograms
+The main function for generating histograms (or frequency polygons) is 
+`get_hist_plots()`.
 ```{r}
 # Example 1: Combining samples across all chains.
 hist1 <- get_hist_plots(samp_dt, param_types="type1", combine_chains=TRUE, bins=30)
@@ -165,8 +172,37 @@ hist3 <- get_hist_plots(samp_dt, test_labels="test1", param_types="type1",
 for(plt in hist3) plot(plt)
 ```
 
+An alternative, `get_hist_plot_comparisons()` is useful when comparing different
+methods to some baseline or ground truth method. Here we treat test1 as the 
+baseline.
+```{r}
+# Histograms with "test1" as a baseline.
+hist_comp <- get_hist_plot_comparisons(samp_dt, test_label_baseline="test1",
+                                       combine_chains=TRUE, 
+                                       bins=30)
+for(plt in hist_comp) plot(plt)
+```
+## Density Plots
 
+### 1d Kernel Density Plots
 
+First we consider KDE plots for 1d marginal distributions. As with 
+`get_hist_plot_comparisons()` above, this function allows one test label 
+to be designated as a baseline.
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="test1", 
+                             param_types="type1")
+for(plt in kde_plts) plot(plt)
+```
 
+### 2d density contour plots
+Two-dimensional marginals can be summarized by `get_wd_density_plots()`. This 
+function will produce a separate plot for each unique combination of parameters
+within each test label. In the below example, there is only one such combination
+so only one plot is generated.
+```{r}
+dens2d <- get_2d_density_plots(samp_dt, test_labels="test1", param_types="type1")
+for(plt in unlist(dens2d, recursive=FALSE)) plot(plt)
+```
 
 
