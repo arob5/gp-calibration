@@ -26,21 +26,6 @@
 # by principal components analysis (PCA).
 # ------------------------------------------------------------------------------
 
-project_orthog_scalar <- function(G, B) {
-  # Compute the magnitude of the projections of vectors onto an orthonormal 
-  # basis `B` - i.e., the "scalar projections". 
-  #
-  # Args:
-  #    G: matrix of dimension (n,p), with rows containing the vectors to project.
-  #    B: matrix of dimension (p,r), with columns containing orthonormal vectors
-  #
-  # Returns:
-  #    matrix of dimension (n,r). The (i,j) entry contains <g_i,b_j>, the 
-  #    inner product of the ith vector and the jth basis vector.
-  
-  G %*% B
-}
-
 eval_basis_weights <- function(U, fwd, B, m=NULL) {
   # Computes the weights w_j(u) = <G(u)-m, b_j> by first evaluating the forward 
   # model and then computing the inner product. Vectorized over multiple input 
@@ -62,11 +47,28 @@ eval_basis_weights <- function(U, fwd, B, m=NULL) {
   if(is.null(m)) m <- rep(0, ncol(B))
   
   # Evaluate forward model at inputs and center the outputs.
-  G <- add_vec_to_mat_rows(fwd(U), -m)
+  G <- add_vec_to_mat_rows(-m, fwd(U))
   
   # Compute the weights (magnitude of the projections).
   project_orthog_scalar(G, B)
 }
+
+
+project_orthog_scalar <- function(G, B) {
+  # Compute the magnitude of the projections of vectors onto an orthonormal 
+  # basis `B` - i.e., the "scalar projections". 
+  #
+  # Args:
+  #    G: matrix of dimension (n,p), with rows containing the vectors to project.
+  #    B: matrix of dimension (p,r), with columns containing orthonormal vectors
+  #
+  # Returns:
+  #    matrix of dimension (n,r). The (i,j) entry contains <g_i,b_j>, the 
+  #    inner product of the ith vector and the jth basis vector.
+  
+  G %*% B
+}
+
 
 pca <- function(G, r=ncol(G)) {
   # Given a (n,p) matrix `G` with observations given in the rows, computes 
@@ -91,14 +93,14 @@ pca <- function(G, r=ncol(G)) {
   
   # Center the matrix.
   g_mean <- colMeans(G)
-  G_centered <- add_vec_to_mat_rows(G, -g_mean)
+  G_centered <- add_vec_to_mat_rows(-g_mean, G)
 
   # Eigendecomposition of covariance.
-  C <- cov(G_centered)
-  eig <- eigen(C, symmetric=TRUE)
-
-  return(list(mean=g_mean, vec=eig$vectors[,1:r,drop=FALSE], 
-              val=diag(eig$values)[1:r]))
+  pca_result <- prcomp(G_centered, center=FALSE, scale.=FALSE, rank.=r)
+  sqrt_eigvals <- pca_result$sdev
+  eigvecs <- pca_result$rotation
+   
+  return(list(mean=g_mean, vec=eigvecs, sqrt_val=sqrt_eigvals))
 }
 
 

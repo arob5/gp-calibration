@@ -7,7 +7,6 @@
 library(lhs)
 library(ggplot2)
 library(data.table)
-library(docopt)
 
 # For reproducibility. 
 set.seed(15643352)
@@ -39,7 +38,7 @@ source(file.path(src_dir, "plotting_helper_functions.r"))
 # values. Here we are starting with the simplest case of a single parameter
 # to make visualization easy. The variable `par_cal_names` is short for 
 # "calibration parameter names", the parameters you will be varying. The 
-# varible `par_names` contains all 11 VSEM parameters.
+# variable `par_names` contains all 11 VSEM parameters.
 par_cal_names <- "KEXT"
 dim_par <- length(par_cal_names)
 par_names <- get_vsem_par_names()
