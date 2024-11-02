@@ -52,7 +52,7 @@ G <- g(U)
 ```{r}
 # Plot a subset of the function evaluations.
 idx <- sample(1:nrow(G), size=20L)
-plt_design <- plot_curves_1d_helper(inv_prob$time_points, t(G[idx,]), 
+plt_design <- plot_curves_1d_helper(inv_prob$time_points, t(G[idx,,drop=FALSE]), 
                                     plot_title="Model runs at design points",
                                     xlab="days", ylab="LAI")
               
@@ -64,6 +64,7 @@ plot(plt_design + theme(legend.position="none"))
 pca_list <- pca(G) 
 sdev <- pca_list$sqrt_val # square root of eigenvalues of empirical covariance.
 V <- pca_list$vec # eigenvectors.
+m <- pca_list$mean
 ```
 
 ```{r}
@@ -83,12 +84,58 @@ plt_eig <- plot_curves_1d_helper(inv_prob$time_points, V[,1:r, drop=FALSE],
 plot(plt_eig)
 ```
 
-We define a cutoff and only include the dominant principal components.
+We define a cutoff and only include the dominant principal components. We 
+visually compare true evaluations of $g(u)$ versus evaluations of $g(u)$ that 
+have been approximated by projecting the functions outputs on the subspace 
+spanned by the dominant eigenvalues. The plot considers a set of new 
+"out-of-sample" $u$ values. 
 ```{r}
 # Basis vectors.
 B <- V[,1:r, drop=FALSE]
 sdev_r <- sdev[1:r]
 ```
+
+
+```{r}
+# Define the approximate map g(), which evaluates g() and then projects 
+# the output onto the subspace spanned by the dominant principal components.
+
+g_hat <- function(U) {
+  # Vectorized to work over `m` inputs in the rows of `U`. Returns 
+  # matrix that approximates g(U).
+  W <- eval_basis_weights(U, g, B, m)
+  proj <- tcrossprod(B, W)
+  t(add_vec_to_mat_cols(m, proj))
+}
+
+```
+
+
+```{r}
+# Test approximation at a set of test points.
+n_test <- 5
+U_test <- get_batch_design("LHS", N_batch=n_test, prior_params=inv_prob$par_prior)
+
+# Evaluate true vs. approximate function.
+G_test <- g(U_test)
+G_test_hat <- g_hat(U_test)
+
+# Plot comparison.
+df_test <- rbindlist(list(data.table(G_test), data.table(G_test_hat)))
+colnames(df_test) <- as.character(1:ncol(df_test))
+df_test[, id := as.factor(c(1:n_test, 1:n_test))]
+df_test[, type := c(rep("true",n_test), rep("approx",n_test))]
+df_test <- melt.data.table(df_test, id.vars=c("id", "type"), 
+                           variable.name="time", value.name="value")
+df_test[, time := as.integer(time)]
+
+plt_approx <- ggplot(df_test) + 
+              geom_line(aes(x=time, y=value, color=id, linetype=type)) + 
+              labs(xlab="days", ylab="LAI", title="True vs. Approximated g()")
+plot(plt_approx)
+
+```
+
 
 
 Below we plot the basis weight functions $w_j(u)$ over a grid of $u$ values. 
