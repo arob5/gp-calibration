@@ -629,9 +629,11 @@ llikEmulator$methods(
     
     return(plts)
   } 
-
 )
 
+is_llik_em <- function(model) {
+  inherits(model, "llikEmulator")
+}
 
 # -----------------------------------------------------------------------------
 # llikSumEmulator Class 
@@ -1454,7 +1456,6 @@ llikEmulatorExactGaussDiag <- setRefClass(
   fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="matrix", 
                 N_output="integer", N_obs="integer")
 )
-
 
 llikEmulatorExactGaussDiag$methods(
   

@@ -77,7 +77,7 @@ plot(scree_plt)
 
 ```{r}
 # Plot the dominant eigenvectors.
-r <- 3
+r <- 1
 plt_eig <- plot_curves_1d_helper(inv_prob$time_points, V[,1:r, drop=FALSE], 
                                  plot_title="Dominant eigenvectors",
                                  xlab="days", ylab="LAI")

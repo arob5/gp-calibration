@@ -8,6 +8,8 @@
 # Depends:
 #    gpWrapper, llikEmulator, general_helper_functions, mcmc_helper_functions
 
+library(parallel)
+
 # -----------------------------------------------------------------------------
 # Code Standards and Conventions:
 #
@@ -29,7 +31,9 @@
 # -----------------------------------------------------------------------------
 # Core MCMC algorithms. 
 #
-# At present, there are three primary approximate MCMC schemes. 
+# At present, there are three primary approximate MCMC schemes, as well as one 
+# wrapper function to allow access to the samplers in the `BayesianTools` R 
+# package for exact MCMC.
 #    1.) mcmc_noisy_llik: An MCMC algorithm defined with respect to a stochastic
 #        approximation of the log-likelihood. This function implements methods 
 #        that only require sampling from the log-likelihood surrogate, thus 
@@ -45,6 +49,9 @@
 #        defined by a deterministic approximation to the true acceptance 
 #        probability. This function relies on the helper function 
 #        `get_gp_mh_acc_prob_approx()`.
+#    4.) mcmc_bt_wrapper: A wrapper that provides access to the MCMC algorithms
+#        implemented in the `BayesianTools` package. Hence, this function is 
+#        only for inference with exact log-likelihood objects.
 #
 # At this point, these algorithms are only applicable when the true likelihood
 # is of a multiplicative Gaussian form. This is due to the way that the 
@@ -58,7 +65,7 @@
 # TODO: need to have checking in llikSumEmulator to make sure the same input parameters are 
 # used for each term. 
 
-mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
+mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=NULL,
                             sig2_prior=NULL, mode="mcwmh", use_joint=TRUE,  
                             n_itr=50000L, cov_prop=NULL, log_scale_prop=NULL, 
                             adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
@@ -100,20 +107,27 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. 
   # And that the names include the names of the outputs where sig2 must be 
   # learned. Ensure `par_init` has names as well. 
-  
-  assert_that(is_llik_em(llik_emulator))
-  if(mode != "MCMH") .NotYetImplemented()
 
+  # TODO: for some reason, `inherits(llik_emulator, "llikEmulator")` always 
+  # evaluates to FALSE when this is called from parLapply(). Need to figure 
+  # out why. 
+  # assert_that(is_llik_em(llik_emulator))
+  
+  if(mode != "mcwmh") {
+    .NotYetImplemented(msg="Only `mode=mcwmh` currently implemented.")
+  }
+  
   # Objects to store samples. 
   d <- llik_emulator$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
   colnames(par_samp) <- llik_emulator$input_names
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior)
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
-  lprior_par_curr <- calc_lprior_theta(par_curr, par_prior)
+  lprior <- get_lprior_dens(par_prior, check_bounds=TRUE)
+  lprior_par_curr <- lprior(par_curr)
   
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
@@ -145,12 +159,14 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
     prop_sd_comb <- matrix(nrow=n_itr, ncol=d, 
                            dimnames=list(NULL, llik_emulator$input_names))
     prop_sd_comb[1,] <- exp(log_scale_prop) * sqrt(diag(cov_prop)) 
+  } else {
+    prop_sd_comb <- NULL
   }
   
   # Main MCMC loop. 
   tryCatch(
     {
-      for(itr in 2:n_itr) {
+      for(itr in 2L:n_itr) {
         #
         # Metropolis step for calibration parameters.
         #
@@ -159,7 +175,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
         par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
         
         # Compute prior. 
-        lprior_par_prop <- calc_lprior_theta(par_prop, par_prior)
+        lprior_par_prop <- lprior(par_prop)
         
         # Sample SSR. 
         emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), 
@@ -232,15 +248,18 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
         }
       }
     },  error = function(cond) {
+      err <- cond
       message("mcmc_gp_noisy() MCMC error; iteration ", itr)
       message(conditionMessage(cond))
     }, finally = {
-      return(list(samp=list(par=par_samp, sig2=sig2_samp, 
-                            prop_sd_comb=prop_sd_comb), 
-                  log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
-                  par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr))
     }
   )
+  
+  return(list(samp=list(par=par_samp, sig2=sig2_samp, 
+                        prop_sd_comb=prop_sd_comb), 
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
+              par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
+              itr_curr=itr, condition=err))
   
 }
 
@@ -300,7 +319,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   }
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior_params)
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   par_curr_mat <- matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
@@ -448,7 +467,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
   }
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior_theta(par_prior_params)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior_params)
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
@@ -529,6 +548,112 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
 }
 
 
+mcmc_bt_wrapper <- function(llik_emulator, par_prior, par_init=NULL, 
+                            n_itr=50000L, sampler="DEzs", settings_list=list(), ...) {
+  # This function provides a wrapper around the BayesianTools package 
+  # `runMCMC()` function, thus providing access to a variety of different 
+  # MCMC algorithms. This wrapper is designed so that the argument interface
+  # and returned value align with the other MCMC functions in this file.
+  # In particular, `mcmc_bt_wrapper()` is set up to run a single chain of 
+  # MCMC using a `llik_emulator` object. Parallelization for multichain runs 
+  # should be accomplished using `run_mcmc_multichain()`, as for the other 
+  # MCMC functions implemented here. The MCMC output from BayesianTools is 
+  # transformed to have the same format as the other MCMC functions here (e.g.,
+  # `mcmc_noisy_llik()`). Note that the `parallel` element of the BayesianTools
+  # settings object refers to within-chain parallelization, for MCMC algorithms
+  # for which parallel likelihood evaluations makes sense; it does not control 
+  # the running of multiple chains in parallel.
+  #
+  # Note that BayesianTools appears to require `priorSampler` to be passed to 
+  # the bayesianSetup object when the prior is a R function representing a 
+  # log prior density. Certain algorithms (e.g., "DEzs") require generating 
+  # an initial "population" of samples. In this case, it is recommended to 
+  # set `par_init` to NULL and let the BayesianTools code setup the initial 
+  # population. 
+  #
+  # Args:
+  #    llik_emulator: an object for which `is_llik_em(llik_emulator)` is TRUE.
+  #    par_prior: data.frame defining the prior distribution for `par`. 
+  #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
+  #              falls back on the default BayesianTools behavior for setting 
+  #              the initial condition, which typically implies sampling from 
+  #              the prior.
+  #    n_itr: integer, the number of MCMC iterations.
+  #    sampler: the MCMC algorithm used by `BayesianTools::runMCMC()`. See the
+  #             BayesianTools documentation for options. The default "DEzs"
+  #             aligns with the BayesianTools default, which refers to a 
+  #             specific implementation of a differential evolution MCMC 
+  #             algorithm.
+  #   settings_list: There are many settings that can be altered in the MCMC 
+  #                  algorithms implemented by `runMCMC()`, which are passed
+  #                  via the `runMCMC()` "settings" argument. The list provided
+  #                  in this argument is passed to this "settings" argument, 
+  #                  with a couple caveats: the "n_itr" argument above is 
+  #                  used to set `settings_list$iterations` which controls the 
+  #                  number of MCMC iterations. Also, `settings_list$nrChains`
+  #                  is always set to 1, since this function is designed to run 
+  #                  a single MCMC chain. settings_list$startValue` is
+  #                  set to `par_init`, which is sampled from the prior if 
+  #                  `par_init` is NULL.
+  #   ...: additional arguments passed to `llik_emulator$assemble_llik()`.
+  #
+  # Returns: 
+  # Returns a list with elements "samp" and "bt_output". "samp" follows the 
+  # formatting described in e.g. `mcmc_noisy_llik()`. "bt_output" is the object 
+  # returned by the `runMCMC()` function. Note that some MCMC algorithms 
+  # (e.g., the differential evolution algorithms) run multiple chains in order 
+  # to design better proposal distributions. For these algorithms, the returned 
+  # sample matrices incorporate samples combined from all of these chains. The 
+  # original output from each chain separately can be found in
+  # "bt_output$chain". 
+  
+  assert_that(is_llik_em(llik_emulator))
+  assert_that(llik_emulator$exact_llik)
+  
+  # Log-likelihood function. Set up to accept numeric vector `par` as an 
+  # argument.
+  llik <- function(par) {
+    par <- matrix(par, nrow=1)
+    llik_emulator$assemble_llik(par, ...)
+  }
+  
+  # Log prior density and sampling function.
+  lprior <- get_lprior_dens(par_prior)
+  prior_sampler <- get_prior_sampler(par_prior)
+  
+  # Create BayesianSetup object.
+  bayesianSetup <- BayesianTools::createBayesianSetup(likelihood=llik, 
+                                                      prior=lprior, 
+                                                      parallel=FALSE,
+                                                      priorSampler=prior_sampler, 
+                                                      names=llik_emulator$input_names)
+  
+  # MCMC settings list. Ensure number of MCMC iterations and number of MCMC 
+  # chains are in the list; other BayesianTools MCMC settings can optionally be 
+  # included.
+  settings_list$iterations <- n_itr
+  settings_list$nrChains <- 1L
+  
+  # Set initial condition.
+  if(!is.null(par_init) && is.numeric(par_init)) {
+    settings_list$startValue <- matrix(par_init, nrow=1L)
+  }
+  
+  # Run MCMC.
+  bt_output <- BayesianTools::runMCMC(bayesianSetup=bayesianSetup, 
+                                      sampler=sampler, settings=settings_list)
+  
+  # Convert output into a form that aligns with other MCMC functions. Note that 
+  # for certain algorithms (e.g., "DEzs") that return multiple trajectories, 
+  # this function will combine the trajectories in to a single chain.
+  bt_samp <- BayesianTools::getSample(bt_output, parametersOnly=TRUE)
+
+  # Return list with samples stored in matrices as well as the MCMC object 
+  # directly returned by BayesianTools.
+  return(list(samp=bt_samp, bt_output=bt_output))
+}
+
+
 # ------------------------------------------------------------------------------
 # Proposal Covariance Adaptation 
 # ------------------------------------------------------------------------------
@@ -576,31 +701,131 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 #  For running chains in parallel and setting initial conditions.
 # ------------------------------------------------------------------------------
 
-run_mcmc_multichain <- function(mcmc_func_name, n_chain=4, par_init=NULL, 
-                                par_prior=NULL, lik_par_init=NULL, 
-                                lik_par_prior=NULL, ...) {
+run_mcmc_multichain <- function(mcmc_func_name, llik_emulator, n_chain=4L, 
+                                par_init=NULL, par_prior=NULL, lik_par_init=NULL, 
+                                lik_par_prior=NULL, ic_sample_method="LHS", 
+                                try_parallel=TRUE, n_cores=NULL, package_list=NULL, 
+                                dll_list=NULL, obj_list=NULL, 
+                                test_label="default_lbl", ...) {
   # This wrapper function runs multiple MCMC chains in parallel. If initial 
   # conditions are not supplied by the user, then they will be sampled from 
   # their prior distribution. This function collects the output from all chains
   # into a single data.table satisfying the `samp_dt` requirements outlined 
-  # in `mcmc_helper_functions.r`. 
+  # in `mcmc_helper_functions.r`. Let d denote the dimension of the parameter 
+  # space.
   #
+  # Args:
+  #    mcmc_func_name: character, the name of the MCMC function to call.
+  #    llik_emulator: llikEmulator object encoding the exact or approximate 
+  #                   log-likelihood.
+  #    n_chain: integer, number of independent MCMC chains to run.
+  #    par_init: matrix of dimension (n_chain,d), each row containing the 
+  #              initial condition for one of the MCMC chains.
+  #    par_prior: data.frame storing the prior distribution for the parameters.
+  #    ic_sample_method: the sampling method used to sample the initial 
+  #                      conditions for the chains. Default is Latin Hypercube 
+  #                      sampling.
+  #   ...: should contain all arguments to be passed to the MCMC function, other 
+  #        than the initial conditions and priors.
   #
-  #
-  # ...: should contain all arguments to be passed to the MCMC function, other 
-  #      than the initial conditions and priors.
+  # TODO: Need to generalize to handle `lik_par_init`/`lik_par_prior`.
   
+  # Sample initial conditions from prior if not provided.
+  if(is.null(par_init)) {
+    par_init <- get_batch_design(ic_sample_method, N_batch=n_chain, 
+                                 prior_params=par_prior)
+  } else {
+    assert_that(length(par_init) == n_chain)
+  }
+  par_init_list <- lapply(1:n_chain, function(i) par_init[i,])
+  mcmc_func <- function(ic) get(mcmc_func_name)(llik_emulator=llik_emulator,
+                                                par_prior=par_prior,
+                                                par_init=ic, ...)
+  
+  if(try_parallel) {
+    # Prepare for parallel run. 
+    if(is.null(n_cores)) {
+      n_cores <- parallel::detectCores()
+    } else {
+      n_cores <- min(n_cores, parallel::detectCores())
+    }
+    n_cores <- min(n_chain, n_cores)
+    cl <- parallel::makeCluster(n_cores)
+    
+    # Ensure required packages, objects, and DLLs will be available during the 
+    # parallel execution.
+    export_list <- get_parallel_exports(package_list, dll_list, obj_list)
+    parallel::clusterCall(cl, export_list$load_func, export_list$packages, 
+                          export_list$dlls)
+    parallel::clusterExport(cl, varlist=export_list$objects)
+    mcmc_chain_list <- parLapply(cl, X=par_init_list, fun=mcmc_func)
+    parallel::stopCluster(cl)
+  } else {
+    mcmc_chain_list <- lapply(par_init_list, mcmc_func)
+  }
+
+  # TODO: wrap above in trycatch and put stopCluster in finally block.
+  
+  # Convert to `samp_dt` data.table format
+  samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, function(l) l$samp), 
+                                            test_label=test_label)
+  
+  # Non-sample output stored in its own list. 
+  mcmc_outputs_list <- vector(mode="list", length=length(mcmc_chain_list)) 
+  for(i in seq_along(mcmc_outputs_list)) {
+    non_samp_elements <- setdiff(names(mcmc_chain_list[[i]]), "samp")
+    mcmc_outputs_list[[i]] <- mcmc_chain_list[[i]][non_samp_elements]
+  }
+  
+  return(list(samp=samp_dt, output_list=mcmc_outputs_list))
 }
 
 
-mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init, sig2_init=NULL,
-                            sig2_prior=NULL, mode="mcwmh", use_joint=TRUE,  
-                            n_itr=50000L, cov_prop=NULL, log_scale_prop=NULL, 
-                            adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
-                            adapt=adapt_cov_prop||adapt_scale_prop, 
-                            return_prop_sd=FALSE, accept_rate_target=0.24, 
-                            adapt_factor_exponent=0.8, adapt_factor_numerator=10, 
-                            adapt_interval=200, ...)
+get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL) {
+  # In using `parallel` apply functions, objects and packages must explicitly 
+  # be made available in the cluster environment. This function returns lists 
+  # containing R objects, packages, and dynamic-linked libraries (DLLs) that 
+  # can then be passed to `parallel::clusterCall()` and 
+  # `parallel::clusterExport()` to make all of these available in the cluster 
+  # environment. This function is closely modeled after the function 
+  # `generateParallelExecutor()` in the R `BayesianTools` package. By default, 
+  # this function will return all loaded packages, DLLs, and objects in the 
+  # global environment. This can be wasteful when the function being executed 
+  # in parallel only relies on a small subset of these. The arguments of this 
+  # function can thus explicitly pass the objects to include when the 
+  # dependencies of the function are explicitly known. 
+  #
+
+  # Select all loaded packages if not explicitly passed.
+  if(is.null(package_list)) package_list <- .packages()
+  
+  # Select all DLLs if not explicitly passed. Returns object of class 
+  # `DLLInfoList`, which can be iterated and DLLs extracted as strings.
+  if(is.null(dll_list)) {
+    dll_list <- getLoadedDLLs()
+    dll_list <- sapply(dll_list, function(x) x[[2]])
+  }
+  
+  # Select all objects in global environment if not explicitly passed.
+  if(is.null(obj_list)) obj_list <- ls(envir=.GlobalEnv)
+
+  # Helper function to load packages and DLLs in the parallel cluster.
+  load_package_dll <- function(package_list=NULL, dll_list=NULL) {
+    # Load packages. 
+    if(!is.null(package_list)) {
+      for(package_name in package_list) library(package_name, character.only=TRUE)
+    }
+    
+    # Load DLLs.
+    if(!is.null(dll_list)) {
+      for(dll_name in dll_list) try(dyn.load(dll_name), silent=TRUE)
+    }
+  }
+  
+  return_list <- list(packages=package_list, dlls=dll_list, objects=obj_list,
+                      load_func=load_package_dll)
+  return(return_list)
+}
 
 
 # ------------------------------------------------------------------------------

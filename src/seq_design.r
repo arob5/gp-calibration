@@ -51,10 +51,6 @@ is_gp <- function(model) {
   inherits(model, "gpWrapper")
 }
 
-is_llik_em <- function(model) {
-  inherits(model, "llikEmulator")
-}
-
 
 evaluate_acq_func_vectorized <- function(acq_func, input_mat, model=NULL, ...) {
   # Evaluates the objective function `acq_func` at a set of inputs `input_mat` using 
@@ -155,11 +151,12 @@ get_simple_random_sample <- function(N_batch, prior_dist_info) {
   d <- nrow(prior_dist_info)
   samp <- matrix(nrow=N_batch, ncol=d, dimnames=list(NULL,rownames(prior_dist_info)))
   for(i in 1:N_batch) {
-    samp[i,] <- sample_prior_theta(prior_dist_info)
+    samp[i,] <- sample_prior(prior_dist_info)
   }
   
   return(samp)
 }
+
 
 get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=FALSE, ...) {
   # Produces a Latin Hypercube Sample (LHS) with `N_batch` points. The LHS is first sampled

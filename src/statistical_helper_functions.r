@@ -5,123 +5,142 @@
 # Andrew Roberts
 # 
 
-calc_lprior_theta <- function(theta_vals, theta_prior_params, check_bounds=FALSE) {
-  # A wrapper around `calc_lprior_theta_single_input()` that allows computation of the 
-  # log prior density at multiple input values. 
-  #
-  # Args:
-  #    theta_vals: matrix, each row is an input point. The number of columns equals the dimension of the input space.  
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2", and potentially columns 
-  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
-  #                         should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper)
-  #                         and "Truncatd_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
-  #                         bound_upper = upper truncation value). 
-  #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
-  #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 
-  #                  exist there is no effect. Similarly, if the columns exist but some rows have NA values these rows 
-  #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
-  #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
-  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE. 
-  #
-  # Returns:
-  #    numeric, vector of log prior density evaluations, of equal length as the number of rows in `theta_vals`. 
+get_lprior_dens <- function(par_prior, check_bounds=FALSE) {
+  # Returns a function representing the log-prior density. The returned function 
+  # is vectorized so that it accepts matrix inputs where each row is a different 
+  # parameter vector at which to evaluate the prior. In this case, the log-prior
+  # density function returns a vector of length equal to the number of rows in 
+  # the input matrix. See `calc_lprior_single_input()` for requirements on 
+  # `par_prior` and `check_bounds`.  
   
+  function(par) calc_lprior(par, par_prior, check_bounds)
+}
+
+
+calc_lprior <- function(par, par_prior, check_bounds=FALSE) {
+  # A wrapper around `calc_lprior_single_input()` that allows computation 
+  # of the log prior density at multiple input values. Here, `par` is a matrix
+  # with each row being an input parameter vector, and each column representing
+  # a dimension of the parameter space. The returned value is a numeric vector 
+  # of length equal to the number of rows in `par`, with each entry being the 
+  # corresponding log-prior density evaluation. `par` can also be a numeric 
+  # vector corresponding to a single input vector. See 
+  # `calc_lprior_single_input()` for requirements on `par_prior` and 
+  # `check_bounds`.  
+
   # If single input is passed as a numeric vector. 
-  if(is.null(nrow(theta_vals))) theta_vals <- matrix(theta_vals, nrow=1)
+  if(is.null(nrow(par))) par <- matrix(par, nrow=1)
   
-  return(apply(theta_vals, 1, function(theta) calc_lprior_theta_single_input(theta, theta_prior_params, check_bounds)))
+  return(apply(par, 1, function(u) calc_lprior_single_input(u, par_prior, check_bounds)))
   
 }
 
 
-calc_lprior_theta_single_input <- function(theta, theta_prior_params, check_bounds=FALSE) {
-  # Evaluates the log prior density on calibration functions at specific values of the settings.  
+calc_lprior_single_input <- function(par, par_prior, check_bounds=FALSE) {
+  # Evaluates the log prior density at a single input parameter vectir `par`. 
+  # This function currently only works for independent priors on each parameter.
+  # The definition of the prior for each input parameter is encoded in the 
+  # data.frame `par_prior`. Currently accepted distributions:
+  #    "Gaussian", param1=mean, param2=standard deviation
+  #    "Uniform", param1=lower, param2=upper
+  #    "Truncated_Gaussian", param1=mean, param2=standard deviation (the moments
+  #     of the Gaussian distribution inducing the truncated Gaussian), 
+  #     bound_lower=lower truncation value, bound_upper=upper truncation value.
   #
   # Args:
-  #    theta: numeric vector, the value of the calibration parameters at which to evaluate the prior density. 
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2", and potentially columns 
-  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
-  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper)
-  #                         and "Truncated_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
-  #                         bound_upper = upper truncation value). 
-  #    check_bounds: logical(1), if TRUE checks if the parameter `theta` lies within the bounds defined in the 
-  #                  columns of `theta_prior_params` called "bound_lower" and "bound_upper". If these columns do not 
-  #                  exist there is not effect. Similarly, if the columns exist but some rows have NA values these rows 
-  #                  will also be ignored. Otherwise, if `theta` does not lie within the bounds, then the function returns 
-  #                  -Inf. This prevents having to evaluate all of the prior densities, which will result in the same return 
-  #                  value. If `check_bounds` is FALSE, no check is performed. Default is FALSE. 
+  #    par: numeric, the vector at which to evaluate the log prior density.
+  #    par_prior: data.frame, with columns "dist", "param1", and "param2". The 
+  #               ith row of the data.frame should correspond ot the ith entry 
+  #               of `par`. `par_prior` can also optionally include the columns 
+  #               "bound_lower" and "bound_upper". Some distributions (e.g., 
+  #               truncated Gaussian) require these parameters, but they can 
+  #               be provided for other distributions as well. See `check_bounds`
+  #               for more details.
+  #    check_bounds: logical(1), if TRUE checks if the parameter `par` lies 
+  #                  within the bounds defined in the columns of `par_prior`
+  #                  called "bound_lower" and "bound_upper". If these columns do 
+  #                  not exist or contain NA values then there is not effect.
+  #                  Otherwise, if `par` does not lie within the bounds, then 
+  #                  the function returns -Inf. If `check_bounds` is FALSE, no 
+  #                  check is performed.
   #
   # Returns:
-  #    The prior density evaluation log p(theta). Assumes prior independence, so the log-prior is the sum of the log-prior
-  #    evaluations for each entry of 'theta'. Note that in certain cases the log prior can be negative infinity; e.g. for 
-  #    a uniform prior where `theta` is not contained within the upper and lower bound. 
+  #    The prior density evaluation log p(par). Note that in certain cases the 
+  #    log prior can be negative infinity; e.g. for a uniform prior where `par` 
+  #    is not contained within the upper and lower bound, or if `check_bounds`
+  #    is enforced.
   
   if(check_bounds) {
-    if(any(theta < theta_prior_params[["bound_lower"]], na.rm=TRUE) ||
-       any(theta > theta_prior_params[["bound_upper"]], na.rm=TRUE)) {
+    if(any(par < par_prior[["bound_lower"]], na.rm=TRUE) ||
+       any(par > par_prior[["bound_upper"]], na.rm=TRUE)) {
       return(-Inf)
     }
   }
   
   lprior <- 0
-  theta_prior_params[, "val"] <- theta
-  Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Gaussian",]
-  Uniform_priors <- theta_prior_params[theta_prior_params$dist == "Uniform",]
-  Truncated_Gaussian_priors <- theta_prior_params[theta_prior_params$dist == "Truncated_Gaussian",]
+  par_prior[, "val"] <- par
+  Gaussian_priors <- par_prior[par_prior$dist == "Gaussian",]
+  Uniform_priors <- par_prior[par_prior$dist == "Uniform",]
+  Truncated_Gaussian_priors <- par_prior[par_prior$dist == "Truncated_Gaussian",]
   
   if(nrow(Gaussian_priors) > 0) {
-    lprior <- lprior + sum(dnorm(Gaussian_priors$val, Gaussian_priors$param1, Gaussian_priors$param2, log=TRUE))
+    lprior <- lprior + sum(dnorm(Gaussian_priors$val, Gaussian_priors$param1, 
+                                 Gaussian_priors$param2, log=TRUE))
   }
   
   if(nrow(Uniform_priors) > 0) {
-    lprior <- lprior + sum(dunif(Uniform_priors$val, Uniform_priors$param1, Uniform_priors$param2, log=TRUE))
+    lprior <- lprior + sum(dunif(Uniform_priors$val, Uniform_priors$param1, 
+                                 Uniform_priors$param2, log=TRUE))
   }
   
   if(nrow(Truncated_Gaussian_priors) > 0) {
-    lprior <- lprior + sum(sapply(seq(1, nrow(Truncated_Gaussian_priors)), function(i) log(dtruncnorm(Truncated_Gaussian_priors$val[i],                                                                                                    sd = Truncated_Gaussian_priors$param2[i]))))
+    lprior <- lprior + sum(sapply(seq(1, nrow(Truncated_Gaussian_priors)), 
+                                  function(i) log(dtruncnorm(Truncated_Gaussian_priors$val[i],                                                                                                    sd = Truncated_Gaussian_priors$param2[i]))))
   }
   
   return(lprior)  
 }
 
 
-sample_prior_theta <- function(theta_prior_params) {
-  # Return sample from prior distribution on the calibration parameters (theta). 
-  #
-  # Args:
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2"; and potentially also columns 
-  #                        "bound_lower" and "bound_upper". The ith row of the data.frame
-  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper), 
-  #                        and "Truncated_Gaussian" (param1 = mean, param2 = std dev, bound_lower = lower truncation value, 
-  #                        bound_upper = upper truncation value).  
-  #
-  # Returns:
-  #    numeric vector of length equal to number of rows of `theta_prior_params`, the prior sample. 
-  
-  theta_samp <- vector(mode = "numeric", length=nrow(theta_prior_params))
-  
-  for(i in seq_along(theta_samp)) {
-    if(theta_prior_params[i, "dist"]=="Gaussian") {
-      theta_samp[i] <- rnorm(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-    } else if(theta_prior_params[i, "dist"]=="Uniform") {
-      theta_samp[i] <- runif(1, theta_prior_params[i, "param1"], theta_prior_params[i, "param2"])
-    } else if(theta_prior_params[i, "dist"]=="Truncated_Gaussian") {
-      theta_samp[i] <- rtruncnorm(1, a=theta_prior_params[i, "bound_lower"], b=theta_prior_params[i, "bound_upper"], 
-                                  mean=theta_prior_params[i, "param1"], sd=theta_prior_params[i, "param2"])
-    } else {
-      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
-    }
-  }
-  
-  return(theta_samp)  
+get_prior_sampler <- function(par_prior) {
+  # Returns a function with no arguments that returns a single sample from the 
+  # prior distribution encoded by `par_prior`.
+  function(...) sample_prior(par_prior)
 }
 
 
-truncate_prior_theta <- function(theta_prior_params, input_bounds) {
-  # Converts the prior parameters on the calibration parameters (theta) so that they are truncated
+sample_prior <- function(par_prior) {
+  # Return sample from prior distribution defined by `par_prior`. Currently 
+  # only supports priors that assume prior independence across parameters. See
+  # `calc_lprior_single_input()` for the requirements on `par_prior`.
+  #
+  # Returns:
+  #  numeric vector of length equal to number of rows of `par_prior`, a sample
+  #  from the prior.
+  
+  par_samp <- vector(mode="numeric", length=nrow(par_prior))
+  
+  for(i in seq_along(par_samp)) {
+    if(par_prior[i, "dist"]=="Gaussian") {
+      par_samp[i] <- rnorm(1, par_prior[i, "param1"], par_prior[i, "param2"])
+    } else if(par_prior[i, "dist"]=="Uniform") {
+      par_samp[i] <- runif(1, par_prior[i, "param1"], par_prior[i, "param2"])
+    } else if(par_prior[i, "dist"]=="Truncated_Gaussian") {
+      par_samp[i] <- rtruncnorm(1, a=par_prior[i, "bound_lower"], 
+                                   b=par_prior[i, "bound_upper"], 
+                                   mean=par_prior[i, "param1"], 
+                                   sd=par_prior[i, "param2"])
+    } else {
+      stop("Prior distribution ", par_prior[i, "dist"], " not supported.")
+    }
+  }
+  
+  return(par_samp)  
+}
+
+
+truncate_prior <- function(par_prior, input_bounds) {
+  # Converts the prior parameters on the calibration parameters (par) so that they are truncated
   # in that they assign 0 probability mass beyond the bounds specified in `input_bounds`. 
   # `input_bounds` is typically determined by the extent of the design points, so this
   # function modifies the prior so that posterior evaluations are 0 outside of the 
@@ -135,8 +154,8 @@ truncate_prior_theta <- function(theta_prior_params, input_bounds) {
   # the bounds in `input_bounds` (e.g. an existing lower bound will not be made any lower). 
   #
   # Args:
-  #    theta_prior_params: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
-  #                        should correspond to the ith entry of 'theta'. Currently, accepted values of "dist" are 
+  #    par_prior: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
+  #                        should correspond to the ith entry of 'par'. Currently, accepted values of "dist" are 
   #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
   #    input_bounds: matrix of dimension 2 x d, where d is the number of parameters. The first row contains lower bounds 
   #                  on the parameters and the second row contains upper bounds (these are often determined by the 
@@ -144,32 +163,32 @@ truncate_prior_theta <- function(theta_prior_params, input_bounds) {
   #                  and upper bounds, so sampled parameters that do not satisfy the constraints will be rejected until 
   #                  the constraint is satisfied. Note that this implies that the resulting samples are from a truncated 
   #                  version of the prior distribution, rather than the prior itself. The columns of `input_bounds` must be 
-  #                  sorted in the same order as the rows of `theta_prior_params.` Default is NULL, which imposes 
+  #                  sorted in the same order as the rows of `par_prior.` Default is NULL, which imposes 
   #                  no constraints. 
   #
   # Returns:
-  #    data.frame, the updated version of `theta_prior_params`. 
+  #    data.frame, the updated version of `par_prior`. 
   
-  for(i in seq(1, nrow(theta_prior_params))) {
+  for(i in seq(1, nrow(par_prior))) {
     l <- input_bounds[1, i]
     u <- input_bounds[2, i]
     
-    if(theta_prior_params[i, "dist"] == "Gaussian") {
-      theta_prior_params[i, "dist"] <- "Truncated_Gaussian"
-      theta_prior_params[i, "bound_lower"] <- l
-      theta_prior_params[i, "bound_upper"] <- u
-    } else if(theta_prior_params[i, "dist"] == "Uniform") {
-      if(theta_prior_params[i, "param1"] < l) theta_prior_params[i, "param1"] <- l
-      if(theta_prior_params[i, "param2"] > u) theta_prior_params[i, "param2"] <- u
-    } else if(theta_prior_params[i, "dist"] == "Truncated_Gaussian") { 
-      if(theta_prior_params[i, "bound_lower"] < l) theta_prior_params[i, "bound_lower"] <- l
-      if(theta_prior_params[i, "bound_upper"] > u) theta_prior_params[i, "bound_upper"] <- u
+    if(par_prior[i, "dist"] == "Gaussian") {
+      par_prior[i, "dist"] <- "Truncated_Gaussian"
+      par_prior[i, "bound_lower"] <- l
+      par_prior[i, "bound_upper"] <- u
+    } else if(par_prior[i, "dist"] == "Uniform") {
+      if(par_prior[i, "param1"] < l) par_prior[i, "param1"] <- l
+      if(par_prior[i, "param2"] > u) par_prior[i, "param2"] <- u
+    } else if(par_prior[i, "dist"] == "Truncated_Gaussian") { 
+      if(par_prior[i, "bound_lower"] < l) par_prior[i, "bound_lower"] <- l
+      if(par_prior[i, "bound_upper"] > u) par_prior[i, "bound_upper"] <- u
     } else {
-      stop("Prior distribution ", theta_prior_params[i, "dist"], " not supported.")
+      stop("Prior distribution ", par_prior[i, "dist"], " not supported.")
     }
   }
   
-  return(theta_prior_params)
+  return(par_prior)
 }
 
 

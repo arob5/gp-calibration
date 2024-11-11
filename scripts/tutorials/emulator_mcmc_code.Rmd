@@ -1,0 +1,138 @@
+---
+title: "Emulator MCMC Code"
+author: "Andrew Roberts"
+date: "2024-10-22"
+output: html_document
+---
+
+This file provides an introduction to the functions defined in 
+`gp_mcmc_functions.r`. The functions in this file implement various MCMC 
+algorithms based on likelihood approximations given by a log-likelihood 
+emulator object (as defined in `llikEmulator.r`). Note that the name 
+`gp_mcmc_functions.r` will ultimately be changed to something like 
+`emulator_mcmc_functions.r` to better reflect this.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(lhs)
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+# Running Exact MCMC
+
+## Setting up example inverse problem
+```{r}
+# Example inverse problem based on calibrating parameters of the 
+# VSEM vegetation model.
+inv_prob <- get_vsem_test_1()
+
+# Exact likelihood (no emulation).
+llik_exact <- inv_prob$llik_obj
+
+# Priors. 
+par_prior <- inv_prob$par_prior
+
+# Noise variance parameter (assumed fixed here).
+sig2 <- inv_prob$sig2_model
+```
+
+## Exact MCMC
+By exact MCMC we mean MCMC using an exact likelihood, rather than an emulated/
+approximation likelihood. The `llikEmulator` class was primarily designed to 
+encapsulate noisy (log) likelihood approximations, but can all encode exact 
+(log) likelihoods, which is useful for code testing and validation. The 
+`exact_llik` attribute in the `llikEmulator` class is a logical indicator of 
+whether the likelihood being encapsulated represents an approximation or not.
+```{r}
+# Confirming this is an "exact" log-likelihood object.
+print(paste0("Exact log-likelihood: ", llik_exact$exact_llik))
+```
+
+The MCMC algorithms in `gp_mcmc_functions.r` are primarily designed to 
+perform inference using a stochastic log-likelihood surrogate. However, these
+algorithms are implemented such that they reduce to standard exact MCMC 
+algorithms when the `llikEmulator` object is of the exact variety. For example, 
+the algorithm implemented in `mcmc_noisy_llik()` reduces to standard adaptive 
+Metropolis-Hastings for exact likelihood objects. We demonstrate running this 
+algorithm below. We run with most settings set to their defaults for 
+simplicity. Some of the arguments to `mcmc_noisy_llik()` (`mode` and `use_joint`)
+are irrelevant when sampling using an exact `llikEmulator` object.
+```{r}
+# Run adaptive Metropolis-Hastings using exact likelihood. 
+n_mcmc <- 10L
+mcmc_output_exact <- mcmc_noisy_llik(llik_exact, par_prior, sig2_init=sig2, n_itr=n_mcmc)
+
+# Print names of the returned list.
+print("Items in returned MCMC list:")
+print(paste(names(mcmc_output_exact), sep=", "))
+
+# Print the first few samples.
+print("Items in `samp`:")
+mcmc_output_exact$samp
+```
+The above code demonstrates running the MCMC function `mcmc_noisy_llik()` by 
+calling it directly. The form of the arguments and return value is standardized, 
+and aligns with that of other MCMC functions. It is typically recommended to 
+instead run MCMC via the wrapper function `run_mcmc_multichain()`, which allows 
+running multiple chains. Parallel execution will be attempted if 
+`try_parallel=TRUE`; otherwise, the chains are run serially. For algorithms 
+that don't take long to run, sometimes the serial execution can be faster as 
+it avoids the overhead required by the parallel execution. The output 
+of this function is a list with two elements: `samp` is a data.table 
+storing the sample from all chains in a standardized format that is compatible 
+with the functions in `mcmc_helper_functions.r`. `output_list` is a list over 
+the chains, containing the other non-sample information from the run 
+(e.g., the final value of the proposal covariance). 
+
+
+```{r}
+n_mcmc <- 10000L
+mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
+                                 par_prior=par_prior, n_itr=n_mcmc, try_parallel=TRUE)
+
+# Samples stored in a data.table as before.
+samp_dt <- mcmc_list$samp
+head(samp_dt)
+```
+
+## MCMC Plotting and Diagnostics
+We briefly demonstrate some of the plotting and MCMC diagnostic helper functions
+that are designed to be compatible with the `samp_dt` `data.table`. These 
+functions are explained in more detail in 
+`gp-calibration/scripts/tutorials/mcmc_helper_functions.Rmd`.
+
+### Trace Plots
+```{r}
+trace_plots <- get_trace_plots(samp_dt, overlay_chains=TRUE)
+for(plt in trace_plots) plot(plt)
+```
+
+```{r}
+mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=100L, sampler="Metropolis")
+
+head(mcmc_list$samp)
+
+```
+
+
+
+
+
