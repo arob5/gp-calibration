@@ -123,7 +123,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
   colnames(par_samp) <- llik_emulator$input_names
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior(par_prior)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   lprior <- get_lprior_dens(par_prior, check_bounds=TRUE)
@@ -162,6 +162,9 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
   } else {
     prop_sd_comb <- NULL
   }
+  
+  # Variable to store error condition, if it occurs.
+  err <- NULL
   
   # Main MCMC loop. 
   tryCatch(
@@ -248,19 +251,17 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
         }
       }
     },  error = function(cond) {
-      err <- cond
+      err <<- cond
       message("mcmc_gp_noisy() MCMC error; iteration ", itr)
       message(conditionMessage(cond))
-    }, finally = {
     }
   )
-  
+
   return(list(samp=list(par=par_samp, sig2=sig2_samp, 
                         prop_sd_comb=prop_sd_comb), 
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, condition=err))
-  
 }
 
 
@@ -319,7 +320,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
   }
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior(par_prior_params)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior_params, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   par_curr_mat <- matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
@@ -467,7 +468,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
   }
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior(par_prior_params)
+  if(is.null(par_init)) par_init <- sample_prior(par_prior_params, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
@@ -650,7 +651,7 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, par_init=NULL,
 
   # Return list with samples stored in matrices as well as the MCMC object 
   # directly returned by BayesianTools.
-  return(list(samp=bt_samp, bt_output=bt_output))
+  return(list(samp=list(par=bt_samp), bt_output=bt_output))
 }
 
 
@@ -703,9 +704,10 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 
 run_mcmc_multichain <- function(mcmc_func_name, llik_emulator, n_chain=4L, 
                                 par_init=NULL, par_prior=NULL, lik_par_init=NULL, 
-                                lik_par_prior=NULL, ic_sample_method="LHS", 
-                                try_parallel=TRUE, n_cores=NULL, package_list=NULL, 
-                                dll_list=NULL, obj_list=NULL, 
+                                lik_par_prior=NULL, ic_sample_method="LHS",
+                                estimate_cov=FALSE, n_samp_cov_est=100L,
+                                try_parallel=TRUE, n_cores=NULL,  
+                                package_list=NULL, dll_list=NULL, obj_list=NULL, 
                                 test_label="default_lbl", ...) {
   # This wrapper function runs multiple MCMC chains in parallel. If initial 
   # conditions are not supplied by the user, then they will be sampled from 
@@ -725,6 +727,12 @@ run_mcmc_multichain <- function(mcmc_func_name, llik_emulator, n_chain=4L,
   #    ic_sample_method: the sampling method used to sample the initial 
   #                      conditions for the chains. Default is Latin Hypercube 
   #                      sampling.
+  #    estimate_cov: If TRUE, estimates the posterior covariance matrix, and 
+  #                  uses the estimate to initialize the proposal covariance.
+  #                  Currently estimate is produced by simulating from the prior
+  #                  and computing an importance sampling estimate. Other methods
+  #                  may be implemented in the future; e.g., using estimate
+  #                  resulting from ensemble Kalman inversion.
   #   ...: should contain all arguments to be passed to the MCMC function, other 
   #        than the initial conditions and priors.
   #
@@ -738,36 +746,47 @@ run_mcmc_multichain <- function(mcmc_func_name, llik_emulator, n_chain=4L,
     assert_that(length(par_init) == n_chain)
   }
   par_init_list <- lapply(1:n_chain, function(i) par_init[i,])
-  mcmc_func <- function(ic) get(mcmc_func_name)(llik_emulator=llik_emulator,
-                                                par_prior=par_prior,
-                                                par_init=ic, ...)
+  mcmc_func <- get(mcmc_func_name)
+  mcmc_func_ic <- function(ic) mcmc_func(llik_emulator=llik_emulator,
+                                         par_prior=par_prior,
+                                         par_init=ic, ...)
   
-  if(try_parallel) {
-    # Prepare for parallel run. 
-    if(is.null(n_cores)) {
-      n_cores <- parallel::detectCores()
+  mcmc_chain_list <- tryCatch({
+    if(try_parallel) {
+      # Prepare for parallel run. 
+      if(is.null(n_cores)) {
+        n_cores <- parallel::detectCores()
+      } else {
+        n_cores <- min(n_cores, parallel::detectCores())
+      }
+      n_cores <- min(n_chain, n_cores)
+      cl <- parallel::makeCluster(n_cores)
+      
+      # Ensure required packages, objects, and DLLs will be available during the 
+      # parallel execution.
+      export_list <- get_parallel_exports(package_list, dll_list, obj_list)
+      parallel::clusterCall(cl, export_list$load_func, export_list$packages, 
+                            export_list$dlls)
+      parallel::clusterExport(cl, varlist=export_list$objects)
+      mcmc_chain_list <- parallel::parLapply(cl=cl, X=par_init_list, fun=mcmc_func_ic)
     } else {
-      n_cores <- min(n_cores, parallel::detectCores())
+      mcmc_chain_list <- lapply(par_init_list, mcmc_func_ic)
     }
-    n_cores <- min(n_chain, n_cores)
-    cl <- parallel::makeCluster(n_cores)
-    
-    # Ensure required packages, objects, and DLLs will be available during the 
-    # parallel execution.
-    export_list <- get_parallel_exports(package_list, dll_list, obj_list)
-    parallel::clusterCall(cl, export_list$load_func, export_list$packages, 
-                          export_list$dlls)
-    parallel::clusterExport(cl, varlist=export_list$objects)
-    mcmc_chain_list <- parLapply(cl, X=par_init_list, fun=mcmc_func)
-    parallel::stopCluster(cl)
-  } else {
-    mcmc_chain_list <- lapply(par_init_list, mcmc_func)
-  }
-
-  # TODO: wrap above in trycatch and put stopCluster in finally block.
+  }, error = function(cond) {
+    message("run_mcmc_multichain() error:")
+    message(conditionMessage(cond))
+    err_list <- list(err=cond)
+    if(exists("mcmc_chain_list")) err_list$partial_output <- mcmc_chain_list
+    return(err_list)
+  }, finally = {
+    if(try_parallel) try(parallel::stopCluster(cl))
+  })
+  
+  if(isTRUE("err" %in% names(mcmc_chain_list))) return(mcmc_chain_list)
   
   # Convert to `samp_dt` data.table format
-  samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, function(l) l$samp), 
+  samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
+                                            function(l) l$samp), 
                                             test_label=test_label)
   
   # Non-sample output stored in its own list. 
@@ -827,6 +846,35 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
   return(return_list)
 }
 
+
+estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
+  # Produces an estimate of the posterior covariance matrix by sampling from
+  # the prior and computing an importance sampling estimate. This requires 
+  # the ability to evaluate the unnormalized log posterior density.
+  #
+  # Args:
+  #    lpost_dens: function, the (unnormalized) log posterior density. Assumed
+  #                that `lpost_dens` is vectorized so that it can accept a 
+  #                matrix of inputs with each row a parameter vector.
+  #    par_prior: the data.frame encoding the prior distribution.
+  #    n_samp: the number of samples to draw from the prior to compute the 
+  #            importance sampling estimate. Note that this is also the number 
+  #            of log posterior density evaluations required.
+  #
+  # Returns:
+  #    matrix, the estimated covariance matrix.
+  
+  .NotYetImplemented()
+  
+  # # Sample from prior.
+  # samp <- sample_prior(par_prior, n=n_samp)
+  # 
+  # # Evaluate unnormalized log posterior density.
+  # lpost <- lpost_dens(samp)
+  # 
+  # # Compute log of the importance weights.
+  # log_w <- lpost_dens(samp) - calc_lprior_dens(samp, par_prior)
+}
 
 # ------------------------------------------------------------------------------
 # Metropolis-Hastings acceptance probability approximations using 

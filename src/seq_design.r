@@ -142,19 +142,8 @@ get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidat
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
   else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else if(method == "tensor_product_grid") return(get_tensor_product_grid(N_batch, prior_dist_info=prior_params, ...))
-  else if(method == "simple") return(get_simple_random_sample(N_batch, prior_dist_info=prior_params))
+  else if(method == "simple") return(sample_prior(prior_params, n=N_batch))
   else stop("Design method ", method, " not supported.")
-}
-
-
-get_simple_random_sample <- function(N_batch, prior_dist_info) {
-  d <- nrow(prior_dist_info)
-  samp <- matrix(nrow=N_batch, ncol=d, dimnames=list(NULL,rownames(prior_dist_info)))
-  for(i in 1:N_batch) {
-    samp[i,] <- sample_prior(prior_dist_info)
-  }
-  
-  return(samp)
 }
 
 

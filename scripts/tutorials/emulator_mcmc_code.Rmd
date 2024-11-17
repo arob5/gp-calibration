@@ -104,9 +104,9 @@ the chains, containing the other non-sample information from the run
 
 
 ```{r}
-n_mcmc <- 10000L
+n_mcmc <- 50000L
 mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
-                                 par_prior=par_prior, n_itr=n_mcmc, try_parallel=TRUE)
+                                 par_prior=par_prior, n_itr=n_mcmc, try_parallel=FALSE)
 
 # Samples stored in a data.table as before.
 samp_dt <- mcmc_list$samp
@@ -126,13 +126,16 @@ for(plt in trace_plots) plot(plt)
 ```
 
 ```{r}
-mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=100L, sampler="Metropolis")
+mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=50000L, sampler="DEzs")
+samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="bt_DEzs")
 
-head(mcmc_list$samp)
-
+trace_plots <- get_trace_plots(samp_dt, overlay_chains=FALSE)
+for(plt in trace_plots) plot(plt)
 ```
 
-
-
+```{r}
+dens2d_plots <- get_2d_density_plots(samp_dt, itr_start=20000L)
+for(plt in unlist(dens2d_plots, recursive=FALSE)) plot(plt)
+```
 
 

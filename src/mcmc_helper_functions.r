@@ -408,9 +408,6 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   # If no row subsetting is required just return the data.table.
   if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
   
-  # If `itr_stop` is NULL, set to maximum iteration.
-  if(is.null(itr_stop)) itr_stop <- samp_dt[,max(itr)]
-  
   # Get set of unique test labels.
   test_labels <- samp_dt[,unique(test_label)]
   n_labels <- length(test_labels)

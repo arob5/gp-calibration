@@ -5,7 +5,7 @@
 # Authors: Meng Lai and Andrew Roberts
 #
 # Depends: 
-#    general_helper_functions.r
+#    general_helper_functions.r, seq_design.r
 
 compute_enkf_update <- function(U, y, Y, C_uy, C_y=NULL, L_y=NULL) {
   # Applies the standard EnKF update (analysis step) to an ensemble of particles 
@@ -41,6 +41,101 @@ compute_enkf_update <- function(U, y, Y, C_uy, C_y=NULL, L_y=NULL) {
 }
 
 
+run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
+                    transform_pars=TRUE, par_map=NULL, design_method="LHS", 
+                    n_ens=NULL) {
+  # Runs Ensemble Kalman inversion (EKI) for `n_itr` iterations. This extends 
+  # the one-step update implemented by `run_eki_step()` via a likelihood 
+  # tempering approach. At present, this function assumes that the inverse 
+  # problem has a Gaussian likelihood with covariance `Sig`, but this can 
+  # potentially be generalized in the future. To be explicit, the current 
+  # assumption is an additive Gaussian noise model, with independent noise 
+  # eps ~ N(0,Sig). Each iteration of EKI requires evaluation of the forward 
+  # model `fwd`. The final ensemble returned by this function provides a 
+  # Monte Carlo approximation of the posterior p(u|y). For linear Gaussian 
+  # inverse problems, these samples will be exactly distributed according to 
+  # p(u|y), otherwise this represents a pure approximation. Since this EnKF
+  # based method relies on Gaussian approximations, it is typically advisable 
+  # to transform the parameter ensemble members to an unconstrained space 
+  # prior to performing the EnKF updates. The arguments `transform_pars` and 
+  # `par_map` allow for such transformations. See details below.
+  # 
+  # Args:
+  #    y: numeric vector of length `P`, where `P` is the observation dimension. 
+  #       This vector is the observation being conditioned on.
+  #    fwd: function, representing the forward model. Must be vectorized so 
+  #         that it can accept a matrix with each row representing a different 
+  #         parameter vector inputs. It should return a matrix with rows 
+  #         corresponding to the different inputs, and number of columns equal 
+  #         to `P`, the dimension of the observation space.
+  #    Sig: matrix of shape (P,P), the covariance matrix for the Gaussian 
+  #         likelihood.
+  #    n_itr: integer, the number of iterations the algorithm will be run.
+  #    par_prior: data.frame storing the prior distributions for the parameters.
+  #               This is required if `U0` is not provided, or if 
+  #               `transform_pars` is TRUE but `par_map` is FALSE.
+  #    U0: matrix, initial parameter ensemble of dimension (J,D), where J is 
+  #        the number  of ensemble members and D the parameter space dimension. 
+  #        If not  provided will be sampled from prior.
+  #    G0: matrix, representing the output of `fwd(U0)`, the model outputs based
+  #        on the initial ensemble. Optional.
+  #    transform_pars: if TRUE, will use `par_map()` (or the default transport
+  #                    map) to transform the ensemble members to an unconstrained 
+  #                    space prior to the application of the EnKF analysis step. 
+  #                    The inverse transformation is then applied before executing
+  #                    the next round of forward model evaluations.
+  #    par_map: function, representing the parameter transformation map (i.e., 
+  #             transport map) and its inverse. See comments on the return value
+  #             of `get_default_par_map()` for the requirements on this function.
+  #    design_method: character, the sampling method used to generate the 
+  #                   initial ensemble; only used if `U0` is NULL. See 
+  #                   `get_batch_design()` for the different sampling options.
+  #    n_ens: integer, the number of ensemble members J. Only required if 
+  #           `U0` is NULL. 
+  #
+  # Returns:
+  # For now, only returns the final parameter ensemble.
+  
+  # If initial ensemble is not provided, sample from prior.
+  if(is.null(U0)) {
+    assert_that(!is.null(n_ens) && !is.null(par_prior))
+    U <- get_batch_design(design_method, N_batch=n_ens, prior_params=par_prior)
+  } else {
+    assert_that(is.matrix(U0))
+    n_ens <- nrow(U0)
+    U <- U0
+  }
+  
+  # Construct default transport map, if not explicitly provided.
+  if(transform_pars && is.null(par_map)) {
+    map_list <- get_default_par_map(par_prior)
+    par_map <- map_list$map
+    par_map_inv <- map_list$map_inv
+  }
+  
+  for(k in 1:n_step) {
+    
+    # Run forward model. On first iteration, don't run if initial forward 
+    # model evaluations have been explicitly passed in args.
+    if((k==1L) && !is.null(G0)) G <- G0
+    else G <- fwd(U)
+    
+    # Transform ensemble members to unconstrained space.
+    if(transform_pars) U <- par_map(U)
+    
+    # EnKF update with tempered likelihood.
+    Sig_scaled <- n_step * Sig
+    eki_list <- run_eki_step(U=U, y=y, G=G, Sig=Sig_scaled)
+    U <- eki_list$ens
+    
+    # Map parameters back to original space.
+    if(transform_pars) U <- par_map_inv(U)
+  }
+  
+  return(U)
+}
+
+
 run_eki_step <- function(U, y, G, Sig) {
   # Computes one iteration of Ensemble Kalman inversion, which involves 
   # computing the sample mean and covariance estimates using the current 
@@ -50,7 +145,8 @@ run_eki_step <- function(U, y, G, Sig) {
   # assumes that the inverse problem has a Gaussian likelihood with covariance 
   # `Sig`, but this can potentially be generalized in the future. To be explicit,
   # the current assumption is an additive Gaussian noise model, with independent
-  # noise eps ~ N(0,Sig). 
+  # noise eps ~ N(0,Sig). Note that no parameter transformations are performed
+  # here; see `run_eki()` for such transformations.
   # 
   # Args:
   #    U: matrix of shape (J,D), where J = number of ensemble members and 
@@ -99,6 +195,143 @@ run_eki_step <- function(U, y, G, Sig) {
   list(ens=U_updated, m_u=m_u, m_y=m_y, C_u=C_u, C_y=C_y,
        L_y=L_y, C_uy=C_uy)
 }
+
+
+# ------------------------------------------------------------------------------
+# Parameter Transformations
+# ------------------------------------------------------------------------------
+
+get_default_par_map <- function(par_prior) {
+  # Given a prior distribution object `par_prior`, returns a function 
+  # representing a map from the original prior space to a new (typically 
+  # unconstrained) space. The function also contains an argument allowing 
+  # it to also represent the inverse of this map. This is a convenience 
+  # function returning a default map, where each parameter is treated 
+  # independently and the default univariate maps for each parameter are 
+  # determined by `get_default_dist_map()`.
+  #
+  # Args:
+  #    par_prior: data.frame, the prior distribution object.
+  # 
+  # Returns:
+  # A function with arguments "U" and "inverse". The latter is an argument 
+  # controlling whether the function evaluates the transport map (from u to phi)
+  # or its inverse (from phi to u). The first argument "U" is a matrix 
+  # with column names set to the parameter names, and each row representing a
+  # different parameter value. The function returns a matrix of the same 
+  # shape, representing the application of the transport map or its inverse 
+  # to each row of "U".
+  
+  n_par <- nrow(par_prior)
+  par_names <- par_prior$par_name
+  par_map_list <- list()
+  for(j in 1:nrow(par_prior)) {
+    par_map_list[[par_names[j]]] <- get_default_dist_map(par_names$dist_name[j],
+                                                         par_names$param1[j],
+                                                         par_names$param2[j],
+                                                         par_names$bound_lower[j],
+                                                         par_names$bound_upper[j])
+  }
+
+  par_map <- function(U, inverse=FALSE) {
+    map_sel <- ifelse(inverse, "inv", "map")
+    Phi <- lapply(colnames(U), 
+                  function(par_name) par_map_list[[par_name]][[map_sel]](U[,par_name]))
+    Phi <- do.call(cbind, Phi)
+    colnames(Phi) <- colnames(U)
+    return(Phi)
+  }
+  
+  return(par_map)
+}
+
+
+get_default_dist_map <- function(dist_name, param1=NULL, param2=NULL, 
+                                 bound_lower=NULL, bound_upper=NULL) {
+  # A convenience function that returns a default transport map and its 
+  # inverse for a given distribution. The defaults here are chosen to 
+  # transform random variables to N(0,1) Gaussians, using the inverse
+  # transform method. This is a reasonable default for methods relying 
+  # on the EnKF (which relies on Gaussian approximations), but note that 
+  # this only guarantees that each transformed parameter will be marginally 
+  # Gaussian. Other multivariate transformations may be preferable in 
+  # certain applications. The variable names below use "u" to refer to the 
+  # original parameter, and "phi" to refer to the transformed/unconstrained
+  # parameter.
+  #
+  # Args:
+  #    dist_name: character, character string defining the distribution, 
+  #               aligning with the naming conventions used in the typical
+  #               `par_prior` object.
+  #    Remaining arguments correspond to the other columns in the `par_prior`
+  #    object, and specify the parameters defining the specific distribution 
+  #    within the parameterized distribution family specified by `dist_name`.
+  #
+  # Returns:
+  # list, with elements "map" and "inv". "map" contains a function that maps
+  # u to phi, and "phi" is the functiojn representing the inverse of "map". 
+  # These functions are vectorized to accept vectors of multiple inputs.
+
+  map_list <- list()
+  
+  if(dist_name == "Gaussian") {
+    # Identity maps.
+    map_list$map <- function(u) u
+    map_list$inv <- function(phi) phi
+  } else if(dist_name == "Uniform") {
+    map_list$map <- function(u) qnorm(punif(u, param1, param2))
+    map_list$inv <- function(phi) qunif(pnorm(u), param1, param2)
+  } else if(dist_name == "Truncated_Gaussian") {
+    map_list$map <- function(u) qnorm(truncnorm::ptruncnorm(u, a=bound_lower, 
+                                                            b=bound_upper, 
+                                                            mean=param1, 
+                                                            sd=param2))
+    map_list$inv <- function(phi) truncnorm::qtruncnorm(pnorm(u), a=bound_lower, 
+                                                        b=bound_upper, 
+                                                        mean=param1, 
+                                                        sd=param2)  
+  } else {
+    stop("Prior distribution ", dist_name, " not supported.")
+  }
+  
+  return(map_list)
+}
+
+
+logit_map <- function(theta, a, b) {
+  if (length(theta) != length(a) || length(theta) != length(b)) {
+    stop("vector length differ")
+  }
+  if (any(theta < a | theta > b)) {
+    stop("param outbound")
+  }
+  log((theta - a) / (b - theta))
+}
+
+
+inv_logit <- function(phi, a, b) {
+  if (length(phi) != length(a) || length(phi) != length(b)) {
+    stop("vector length differ")
+  }
+  a + (b - a) / (1 + exp(-phi))
+}
+
+### each row of dataframe
+
+logit_map_mat <- function(df, a, b) {
+  mapped <- apply(df, 1, function(row) {logit_map(row, a, b)}) 
+  t(mapped)
+}
+
+inv_logit_mat <- function(df, a, b) {
+  mapped <- apply(df, 1, function(row) {inv_logit(row, a, b)}) 
+  t(mapped)
+}
+
+
+# ------------------------------------------------------------------------------
+# Linear Gaussian model helper functions 
+# ------------------------------------------------------------------------------
 
 calc_lin_Gauss_cond_moments <- function(G_fwd, y, m0, C0=NULL, Sig=NULL, 
                                         L0=NULL, L_Sig=NULL) {

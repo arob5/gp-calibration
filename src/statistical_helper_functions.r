@@ -10,33 +10,33 @@ get_lprior_dens <- function(par_prior, check_bounds=FALSE) {
   # is vectorized so that it accepts matrix inputs where each row is a different 
   # parameter vector at which to evaluate the prior. In this case, the log-prior
   # density function returns a vector of length equal to the number of rows in 
-  # the input matrix. See `calc_lprior_single_input()` for requirements on 
+  # the input matrix. See `calc_lprior_denssingle_input()` for requirements on 
   # `par_prior` and `check_bounds`.  
   
-  function(par) calc_lprior(par, par_prior, check_bounds)
+  function(par) calc_lprior_dens(par, par_prior, check_bounds)
 }
 
 
-calc_lprior <- function(par, par_prior, check_bounds=FALSE) {
-  # A wrapper around `calc_lprior_single_input()` that allows computation 
+calc_lprior_dens <- function(par, par_prior, check_bounds=FALSE) {
+  # A wrapper around `calc_lprior_dens_single_input()` that allows computation 
   # of the log prior density at multiple input values. Here, `par` is a matrix
   # with each row being an input parameter vector, and each column representing
   # a dimension of the parameter space. The returned value is a numeric vector 
   # of length equal to the number of rows in `par`, with each entry being the 
   # corresponding log-prior density evaluation. `par` can also be a numeric 
   # vector corresponding to a single input vector. See 
-  # `calc_lprior_single_input()` for requirements on `par_prior` and 
+  # `calc_lprior_dens_single_input()` for requirements on `par_prior` and 
   # `check_bounds`.  
 
   # If single input is passed as a numeric vector. 
   if(is.null(nrow(par))) par <- matrix(par, nrow=1)
   
-  return(apply(par, 1, function(u) calc_lprior_single_input(u, par_prior, check_bounds)))
+  return(apply(par, 1, function(u) calc_lprior_dens_single_input(u, par_prior, check_bounds)))
   
 }
 
 
-calc_lprior_single_input <- function(par, par_prior, check_bounds=FALSE) {
+calc_lprior_dens_single_input <- function(par, par_prior, check_bounds=FALSE) {
   # Evaluates the log prior density at a single input parameter vectir `par`. 
   # This function currently only works for independent priors on each parameter.
   # The definition of the prior for each input parameter is encoded in the 
@@ -105,37 +105,75 @@ calc_lprior_single_input <- function(par, par_prior, check_bounds=FALSE) {
 get_prior_sampler <- function(par_prior) {
   # Returns a function with no arguments that returns a single sample from the 
   # prior distribution encoded by `par_prior`.
-  function(...) sample_prior(par_prior)
+  function(n=1L, ...) sample_prior(par_prior, n=n)
 }
 
 
-sample_prior <- function(par_prior) {
-  # Return sample from prior distribution defined by `par_prior`. Currently 
-  # only supports priors that assume prior independence across parameters. See
-  # `calc_lprior_single_input()` for the requirements on `par_prior`.
+sample_prior <- function(par_prior, n=1L) {
+  # Return independent samples from prior distribution defined by `par_prior`. 
+  # Currently only supports priors that assume prior independence across 
+  # parameters. 
+  #
+  # Args:
+  #    par_prior: See `calc_lprior_dens_single_input()` for the requirements on 
+  #               `par_prior`.
+  #    n: integer, the number of samples to draw from the prior.
   #
   # Returns:
-  #  numeric vector of length equal to number of rows of `par_prior`, a sample
-  #  from the prior.
+  # matrix, with number of rows equal to `n`, the number of samples, and 
+  # number of columns equal to the number of parameters. The rows contain 
+  # independent samples from the prior. Column names are set to parameter 
+  # names.
   
-  par_samp <- vector(mode="numeric", length=nrow(par_prior))
-  
-  for(i in seq_along(par_samp)) {
-    if(par_prior[i, "dist"]=="Gaussian") {
-      par_samp[i] <- rnorm(1, par_prior[i, "param1"], par_prior[i, "param2"])
-    } else if(par_prior[i, "dist"]=="Uniform") {
-      par_samp[i] <- runif(1, par_prior[i, "param1"], par_prior[i, "param2"])
-    } else if(par_prior[i, "dist"]=="Truncated_Gaussian") {
-      par_samp[i] <- rtruncnorm(1, a=par_prior[i, "bound_lower"], 
-                                   b=par_prior[i, "bound_upper"], 
-                                   mean=par_prior[i, "param1"], 
-                                   sd=par_prior[i, "param2"])
+  n_pars <- nrow(par_prior)
+  par_samp <- matrix(nrow=n, ncol=n_pars)
+
+  for(j in 1:n_pars) {
+    if(par_prior[j, "dist"]=="Gaussian") {
+      par_samp[,j] <- rnorm(n, par_prior[j, "param1"], par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"]=="Uniform") {
+      par_samp[,j] <- runif(n, par_prior[j, "param1"], par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"]=="Truncated_Gaussian") {
+      par_samp[,j] <- truncnorm::rtruncnorm(n, a=par_prior[j, "bound_lower"], 
+                                            b=par_prior[j, "bound_upper"], 
+                                            mean=par_prior[j, "param1"], 
+                                            sd=par_prior[j, "param2"])
     } else {
-      stop("Prior distribution ", par_prior[i, "dist"], " not supported.")
+      stop("Prior distribution ", par_prior[j, "dist"], " not supported.")
     }
   }
   
+  colnames(par_samp) <- par_prior$par_name
   return(par_samp)  
+}
+
+
+plot_prior_samp <- function(par_prior, n=10000L) {
+  # Samples from the prior and then returns a list of histograms, summarizing 
+  # the marginal distribution of each parameter. Currently only supports 
+  # independent priors for each parameter.
+  #
+  # Args:
+  #    par_prior: See `calc_lprior_dens_single_input()` for the requirements on 
+  #               `par_prior`.
+  #    n: integer, the number of samples to draw from the prior.
+  #
+  # Returns:
+  #    list of ggplot objects, of length equal to the number of parameters.
+  
+  samp <- sample_prior(par_prior, n=n)
+  plot_list <- setNames(vector(mode="list", length=ncol(samp)),
+                        colnames(samp))
+  
+  for(par_name in names(plot_list)) {
+    x <- sym(par_name)
+    plot_list[[par_name]] <- ggplot(data.frame(x=samp[,par_name])) + 
+                             geom_histogram(aes(x=x)) + 
+                             labs(title=paste0("Prior Samples: ", par_name),
+                                  y=par_name)
+  }
+  
+  return(plot_list)
 }
 
 

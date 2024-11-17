@@ -381,17 +381,18 @@ get_vsem_test_1 <- function(default_conditional=FALSE, default_normalize=TRUE) {
                 tauR=1000, Av=0.3, Cv=3.4, Cs=14.0, Cr=2.6)
   
   # Parameters to calibrate. 
-  par_cal_names <- c("KEXT", "GAMMA", "LUE", "Av", "tauV", "Cv")
+  par_cal_names <- c("KEXT", "GAMMA", "LUE", "tauV", "Cv")
   
   # Priors: using defaults with some modifications.
   par_prior <- get_vsem_default_priors()
-  par_prior["Av","param2"] <- 0.7
+  # par_prior["Av","param2"] <- 0.7
   
   # Set up inverse problem. 
-  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, par_prior=par_prior,
-                                sig2_method="fixed", sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
-                                driver_seed=driver_seed, par_true_seed=par_true_seed, 
-                                obs_seed=obs_seed)
+  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, 
+                                par_prior=par_prior, sig2_method="fixed", 
+                                sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
+                                driver_seed=driver_seed, 
+                                par_true_seed=par_true_seed, obs_seed=obs_seed)
   
   # Define exact log-likelihood object. 
   llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
