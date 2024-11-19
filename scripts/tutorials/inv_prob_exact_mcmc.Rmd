@@ -54,7 +54,7 @@ inv_prob <- get_vsem_test_1()
 # Exact likelihood (no emulation).
 llik_exact <- inv_prob$llik_obj
 
-# Priors distribution.
+# Prior distribution.
 par_prior <- inv_prob$par_prior
 
 # Noise variance parameter (assumed fixed here).
@@ -83,17 +83,29 @@ parallel evaluation is being finicky, then this argument can be set to `FALSE`
 to execute the chains serially.
 ```{r}
 # Run adaptive Metropolis-Hastings using exact likelihood. 
-n_mcmc <- 1000L
+n_mcmc <- 50000L
 mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
                                  par_prior=par_prior, n_itr=n_mcmc, 
                                  try_parallel=TRUE)
 samp_dt <- mcmc_list$samp
 ```
 
+## Differential Evolution Metropolis-Hastings
+We next utilize the wrapper function `mcmc_bt_wrapper()`, which provides access
+to the MCMC samplers implemented in the `BayesianTools` package. We run 
+a differential evolution MCMC algorithm, which runs multiple chains and uses 
+information across chains to generate better proposals without requiring 
+derivatives.
+```{r}
+bt_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=n_mcmc, sampler="DEzs")
+samp_dt <- format_mcmc_output(bt_list$samp, test_label="DEzs") 
+```
+
 
 ## MCMC Diagnostics
 ```{r}
-trace_plots <- get_trace_plots(samp_dt, overlay_chains=FALSE)
+burn_in_start <- c(DEzs=10000L)
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
 for(plt in trace_plots) plot(plt)
 ```
 

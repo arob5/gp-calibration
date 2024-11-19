@@ -374,10 +374,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   #               which MCMC algorithms will be run. Valid options include 
   #               "gp-mean", "gp-marg", "gp-quantile", "mcwmh-joint", 
   #               "mcwmh-ind", "pseudo-marg", "acc-prob-marg". 
-  #    samp_dt: data.table, with colnames "test_label", "param_type", "param_name",   
-  #             "itr", and "sample". If non-NULL, then this function will append
-  #              to this data.table. Otherwise a new one will be
-  #             created. 
+  #    samp_dt: data.table, with colnames "test_label", "chain_idx", "param_type", 
+  #             "param_name", "itr", and "sample". If non-NULL, then this 
+  #              function will append to this data.table. Otherwise a new one 
+  #              will be created. 
   #    mcmc_list: list, an optional list storing MCMC information returned by 
   #               the MCMC functions other than the samples themselves (e.g., 
   #               proposal covariance). If provided, will be appended to. Otherwise
@@ -402,8 +402,9 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   
   # Create new data.table for samples if an existing one is not provided. 
   if(is.null(samp_dt)) {
-    samp_dt <- data.table(test_label=character(), param_type=character(), 
-                          param_name=character(), itr=integer(), sample=numeric())
+    samp_dt <- data.table(test_label=character(), chain_idx=integer(),
+                          param_type=character(), param_name=character(), 
+                          itr=integer(), sample=numeric())
   }
   if(is.null(mcmc_list)) {
     mcmc_list <- list()
@@ -420,8 +421,8 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
   # Add hyphen before the suffix. 
   if(!is.null(test_label_suffix)) test_label_suffix <- paste0("-", test_label_suffix)
   
-  # Output directory: Create if it doesn't exist. If filenames already exist, append
-  # timestamp to avoid overwriting. 
+  # Output directory: Create if it doesn't exist. If filenames already exist, 
+  # append timestamp to avoid overwriting. 
   samp_filename <- "mcmc_samp"
   list_filename <- "mcmc_list"
   if(!is.null(save_dir)) {
@@ -448,7 +449,10 @@ run_approx_mcmc_comparison <- function(inv_prob_list, llik_em_obj, mcmc_tags, sa
     
     tryCatch(
     {
-      mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, par_prior_params=inv_prob_list$par_prior, 
+      
+      
+      mcmc_output <- mcmc_gp_unn_post_dens_approx(llik_emulator=llik_em_obj, 
+                                                  par_prior_params=inv_prob_list$par_prior, 
                                                   approx_type="mean", ...)
       lbl <- paste0("gp-mean", test_label_suffix)
       samp_dt <- append_mcmc_output(samp_dt, mcmc_output$samp, test_label=lbl)

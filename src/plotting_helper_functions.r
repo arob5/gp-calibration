@@ -118,16 +118,19 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 }
 
 
-plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.null(X_design), 
-                                  y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y", ground_truth_col="black", design_color="black", 
-                                  design_pt_size=1.5, line_thickness=1.0) {
+plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, 
+                                  include_design=!is.null(X_design), 
+                                  y_new=NULL, X_design=NULL, y_design=NULL, 
+                                  plot_title=NULL, xlab="x", ylab="y", 
+                                  ground_truth_col="black", design_color="black", 
+                                  design_pt_size=1.5, line_thickness=1.0, 
+                                  legend=FALSE) {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
   # `pred` is a matrix of dimension `(nrow(X_new), K)`, where `K` is the number of curves
   # to plot. A baseline curve will also be plotted if `y_new` is provided. 
-  # By default, if `def_by` is NULL then each line (column of `pred`) will be plotted a 
+  # By default, if `df_by` is NULL then each line (column of `pred`) will be plotted a 
   # different color. The names of the lines in the legend will be taken from `colnames(pred)`
   # if is it non-NULL; otherwise default names will be assigned. Passing `df_by` allows 
   # specifying a finer mapping based on both color and linetype. `df_by` should have number
@@ -147,8 +150,6 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
     ids <- colnames(pred)
   }
 
-  # if(is.null(colnames(pred))) colnames(pred) <- paste0("y", 1:ncol(pred))
-  
   df_pred <- cbind(x=drop(X_new), as.data.frame(pred))
   df_pred <- melt(df_pred, id.vars="x", variable.name="id", value.name="y")
   
@@ -162,13 +163,6 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
   }
   
   plt <- ggplot()
-  
-  # True values at prediction locations. 
-  if(!is.null(y_new)) {
-    df_true <- data.frame(x=drop(X_new), y=drop(y_new))
-    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, 
-                           linetype="dashed", linewidth=line_thickness)  
-  }
   
   # Plot lines. 
   by_color <- TRUE
@@ -192,11 +186,21 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
     stop("No by cols identified.")
   }
   
+  # True values at prediction locations. 
+  if(!is.null(y_new)) {
+    df_true <- data.frame(x=drop(X_new), y=drop(y_new))
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, 
+                           linetype="dashed", linewidth=line_thickness)  
+  }
+  
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
     plt <- plt + geom_point(aes(x,y), df_design, color=design_color, size=design_pt_size)
   }
+  
+  # Remove legend, if requested.
+  if(!legend) plt <- plt + theme(legend.position="none")
   
   return(plt)
 }

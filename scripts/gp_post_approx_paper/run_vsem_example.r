@@ -205,7 +205,7 @@ design_info$input <- get_batch_design(design_info$design_method, N_design,
                                       prior_params=inv_prob$par_prior)
 design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
 design_info$llik <- llik_exact$assemble_llik(design_info$input)
-design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
+design_info$lprior <- calc_lprior_dens(design_info$input, inv_prob$par_prior)
 design_info$bounds <- get_bounds(design_info$input)
 save(design_info, file=file.path(output_dir, "design_info.RData"))
 
@@ -214,7 +214,7 @@ u_grid <- get_batch_design(design_method_test, N_design_test, prior_params=inv_p
 test_info <- list(input=u_grid, design_method=design_method_test, N_design=N_design_test)
 test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
 test_info$llik <- llik_exact$assemble_llik(test_info$input)
-test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+test_info$lprior <- calc_lprior_dens(test_info$input, inv_prob$par_prior)
 save(test_info, file=file.path(output_dir, "test_info.RData"))
 
 # -----------------------------------------------------------------------------
@@ -225,14 +225,17 @@ save(test_info, file=file.path(output_dir, "test_info.RData"))
 # TODO: could also use joint Gaussian approximation that Meng is working on to 
 # set these quantities here. 
 mcmc_par_init <- design_info$input[which.max(design_info$llik + design_info$lprior),]
-cov_prop_init <- cov(design_info$input)
+cov_prop_init <- cov(design_info$input) # This doesn't make sense; should use importance sampling estimate here.
 print(paste0("MCMC initial value:", mcmc_par_init))
 print("Initial proposal covariance:")
 print(cov_prop_init)
 
-# MCMC sampling using exact likelihood. 
-mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
-                                 mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
+# MCMC sampling using exact likelihood.
+mcmc_exact_list <- mcmc_bt_wrapper(inv_prob$llik_obj, inv_prob$par_prior, 
+                                   n_itr=N_mcmc, sampler="DEzs")
+
+# mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
+#                                  mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
 samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
 mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
 

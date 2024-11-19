@@ -108,12 +108,12 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
   
   # Construct default transport map, if not explicitly provided.
   if(transform_pars && is.null(par_map)) {
-    map_list <- get_default_par_map(par_prior)
-    par_map <- map_list$map
-    par_map_inv <- map_list$map_inv
+    par_map <- get_default_par_map(par_prior)
+  } else {
+    par_map <- NULL
   }
   
-  for(k in 1:n_step) {
+  for(k in 1:n_itr) {
     
     # Run forward model. On first iteration, don't run if initial forward 
     # model evaluations have been explicitly passed in args.
@@ -124,15 +124,15 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
     if(transform_pars) U <- par_map(U)
     
     # EnKF update with tempered likelihood.
-    Sig_scaled <- n_step * Sig
+    Sig_scaled <- n_itr * Sig
     eki_list <- run_eki_step(U=U, y=y, G=G, Sig=Sig_scaled)
     U <- eki_list$ens
     
     # Map parameters back to original space.
-    if(transform_pars) U <- par_map_inv(U)
+    if(transform_pars) U <- par_map(U, inverse=TRUE)
   }
   
-  return(U)
+  return(list(ens=U, par_map=par_map))
 }
 
 
@@ -214,32 +214,38 @@ get_default_par_map <- function(par_prior) {
   #    par_prior: data.frame, the prior distribution object.
   # 
   # Returns:
-  # A function with arguments "U" and "inverse". The latter is an argument 
+  # A function with arguments "inputs" and "inverse". The latter is an argument 
   # controlling whether the function evaluates the transport map (from u to phi)
-  # or its inverse (from phi to u). The first argument "U" is a matrix 
+  # or its inverse (from phi to u). The first argument "inputs" is a matrix 
   # with column names set to the parameter names, and each row representing a
   # different parameter value. The function returns a matrix of the same 
   # shape, representing the application of the transport map or its inverse 
-  # to each row of "U".
+  # to each row of "inputs".
+  #
+  # Note: 
+  # Be careful with scoping issues for the closure in this function. Everything
+  # seems to be working now, but before had an issue that every element of 
+  # `par_map_list` was being assigned the prior parameters for the last 
+  # parameter.
   
+  # Construct univariate map for each parameter.
   n_par <- nrow(par_prior)
   par_names <- par_prior$par_name
-  par_map_list <- list()
-  for(j in 1:nrow(par_prior)) {
-    par_map_list[[par_names[j]]] <- get_default_dist_map(par_names$dist_name[j],
-                                                         par_names$param1[j],
-                                                         par_names$param2[j],
-                                                         par_names$bound_lower[j],
-                                                         par_names$bound_upper[j])
-  }
+  par_map_list <- lapply(1:n_par, function(j) get_default_dist_map(par_prior$dist[j],
+                                                                   par_prior$param1[j],
+                                                                   par_prior$param2[j],
+                                                                   par_prior$bound_lower[j], 
+                                                                   par_prior$bound_upper[j]))
+  names(par_map_list) <- par_names
 
-  par_map <- function(U, inverse=FALSE) {
-    map_sel <- ifelse(inverse, "inv", "map")
-    Phi <- lapply(colnames(U), 
-                  function(par_name) par_map_list[[par_name]][[map_sel]](U[,par_name]))
-    Phi <- do.call(cbind, Phi)
-    colnames(Phi) <- colnames(U)
-    return(Phi)
+  # Construct multivariate transport map by combining the univariate maps for 
+  # each parameter.
+  par_map <- function(inputs, inverse=FALSE) {
+    outputs <- lapply(colnames(inputs), 
+                      function(par_name) par_map_list[[par_name]](inputs[,par_name], inverse))
+    outputs <- do.call(cbind, outputs)
+    colnames(outputs) <- colnames(inputs)
+    return(outputs)
   }
   
   return(par_map)
@@ -268,33 +274,40 @@ get_default_dist_map <- function(dist_name, param1=NULL, param2=NULL,
   #    within the parameterized distribution family specified by `dist_name`.
   #
   # Returns:
-  # list, with elements "map" and "inv". "map" contains a function that maps
-  # u to phi, and "phi" is the functiojn representing the inverse of "map". 
-  # These functions are vectorized to accept vectors of multiple inputs.
+  # function, with arguments "inputs" and "inverse". The latter is an argument 
+  # controlling whether the function evaluates the transport map (from u to phi)
+  # or its inverse (from phi to u). The former is a numeric vector of inputs 
+  # (either u or phi) that will be fed through the univariate map.
 
   map_list <- list()
   
   if(dist_name == "Gaussian") {
     # Identity maps.
-    map_list$map <- function(u) u
-    map_list$inv <- function(phi) phi
+    map_u_to_phi <- function(u) u
+    map_phi_to_u <- function(phi) phi
   } else if(dist_name == "Uniform") {
-    map_list$map <- function(u) qnorm(punif(u, param1, param2))
-    map_list$inv <- function(phi) qunif(pnorm(u), param1, param2)
+    map_u_to_phi <- function(u) qnorm(punif(u, param1, param2))
+    map_phi_to_u <- function(phi) qunif(pnorm(phi), param1, param2)
   } else if(dist_name == "Truncated_Gaussian") {
-    map_list$map <- function(u) qnorm(truncnorm::ptruncnorm(u, a=bound_lower, 
+    map_u_to_phi <- function(u) qnorm(truncnorm::ptruncnorm(u, a=bound_lower, 
                                                             b=bound_upper, 
                                                             mean=param1, 
                                                             sd=param2))
-    map_list$inv <- function(phi) truncnorm::qtruncnorm(pnorm(u), a=bound_lower, 
+    map_phi_to_u <- function(phi) truncnorm::qtruncnorm(pnorm(phi), a=bound_lower, 
                                                         b=bound_upper, 
                                                         mean=param1, 
-                                                        sd=param2)  
+                                                        sd=param2)
   } else {
     stop("Prior distribution ", dist_name, " not supported.")
   }
   
-  return(map_list)
+  # Define the forward and inverse map.
+  par_map <- function(inputs, inverse=FALSE) {
+    if(inverse) return(map_phi_to_u(inputs))
+    map_u_to_phi(inputs)
+  }
+  
+  return(par_map)
 }
 
 

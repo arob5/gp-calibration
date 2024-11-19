@@ -265,101 +265,87 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
 }
 
 
-mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
-                                         sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
-                                         log_scale_prop=NULL, approx_type="marginal",
+mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL, 
+                                         sig2_init=NULL, sig2_prior=NULL, 
+                                         approx_type="marginal", n_itr=50000L, 
+                                         alpha_quantile=0.9, 
+                                         cov_prop=NULL, log_scale_prop=NULL, 
                                          adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
-                                         adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
-                                         adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, 
-                                         alpha=0.9, ...) {
-  # GP-accelerated MCMC algorithms which define an approximate posterior distribution by approximating 
-  # the unnormalized posterior density. Examples of this include the "mean" approximation, in which 
-  # the GP predictive mean is simply plugged into the unnormalized posterior density, and the "marginal" 
-  # approximation, in which the expectation of the unnormalized posterior density is taken with 
-  # respect to the GP. 
-  # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
-  # TODO: need to update the name of this function and the above one to reflect that these functions are valid
-  # only for Gaussian likelihoods with sig2 params assigned independent IG priors, or likelihoods with 
-  # fixed likelihood parameters. 
-  # Supported values for `approx_type`: "marginal", "mean", "quantile". 
-  # `alpha` is only relevant for the "quantile" approximation, and defines the 
-  # pointwise quantile of the GP predictive distribution to use in the approximation. 
-  
-  # Validation and setup for log-likelihood emulator. 
-  # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
-  # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
-  # validate_args_mcmc_gp_deterministic_approx(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
-  #                                           cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
-  
-  # This should be moved to the argument validation function, once it is written. 
-  # TODO: need to update this check to include forward model emulator with Gaussian likelihood. 
-  # if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
-  
+                                         adapt=adapt_cov_prop||adapt_scale_prop, 
+                                         return_prop_sd=FALSE, accept_rate_target=0.24, 
+                                         adapt_factor_exponent=0.8, 
+                                         adapt_factor_numerator=10, 
+                                         adapt_interval=200, ...) {
+  # An adaptive Metropolis-Hastings sampler, where the likelihood is given by 
+  # a deterministic likelihood approximation defined by a call to 
+  # `llik_emulator$calc_lik_approx()`. Currently this function assumes that 
+  # likelihood parameters are fixed, though this will be generalized in the 
+  # future.
+  #
+  # Arguments:
+  #    approx_type: character, currently supports "mean", marginal", and 
+  #                 "quantile".
+  #    alpha_quantile: numeric, number in (0,1), specifying the quantile to use 
+  #                    in the quantile approximation. Only used if `approx_type`
+  #                    if "quantile".
+  #    The remaining arguments are the same as those required by the other 
+  #    MCMC functions implemented here.
+
   # Objects to store samples. 
   d <- llik_emulator$dim_input
-  par_samp <- matrix(nrow=N_itr, ncol=d)
+  par_samp <- matrix(nrow=n_itr, ncol=d)
   colnames(par_samp) <- llik_emulator$input_names
   
-  # Setup for `sig2` (observation variances). Safe to assume that all of the 
-  # non-fixed likelihood parameters are `sig2` since this is verified by 
-  # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
-  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
-  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
-  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
-  
-  if(include_sig2_Gibbs_step) {
-    .NotYetImplemented()
-    
-    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
-    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
-    sig2_samp[1,] <- sig2_curr
-  } else {
-    sig2_curr <- NULL
-    sig2_samp <- NULL
-  }
-  
+  # At present, this function assumes that the likelihood parameters are fixed.
+  learn_sig2 <- FALSE
+  sig2_curr <- NULL
+  sig2_samp <- NULL
+
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior(par_prior_params, n=1L)[1,]
+  if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
-  par_curr_mat <- matrix(par_curr, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
+  par_curr_mat <- matrix(par_curr, nrow=1, 
+                         dimnames=list(NULL, llik_emulator$input_names))
   llik_pred_curr <- llik_emulator$calc_lik_approx(par_curr_mat, approx_type, 
-                                                  lik_par_val=sig2_curr, log_scale=TRUE, 
-                                                  alpha=alpha, ...) 
-  lpost_pred_curr <- llik_pred_curr + calc_lprior_theta(par_curr_mat, par_prior_params)
+                                                  lik_par_val=sig2_curr, 
+                                                  log_scale=TRUE, 
+                                                  alpha=alpha_quantile, ...)
+  lpost_pred_curr <- llik_pred_curr + calc_lprior_dens(par_curr_mat, par_prior)
   
   # Proposal covariance.
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
   if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
   L_cov_prop <- t(chol(cov_prop))
-  accept_count <- 0
-  times_adapted <- 0
+  accept_count <- 0L
+  times_adapted <- 0L
+  
+  # Variable to store error condition, if it occurs.
+  err <- NULL
   
   tryCatch(
     {
-      for(itr in 2:N_itr) {
-        #
-        # Metropolis step for calibration parameters.
-        #
-        
+      for(itr in 2L:N_itr) {
         # Random walk proposal. 
         par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
         
         # Compute prior. 
-        lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
+        lprior_par_prop <- calc_lprior_dens(par_prop, par_prior)
         
-        # Immediately reject if proposal has prior density zero (which will often happen when the 
-        # prior has been truncated to stay within the design bounds). 
+        # Immediately reject if proposal has prior density zero (which will 
+        # often happen when the prior has been truncated to stay within the 
+        # design bounds). 
         if(is.infinite(lprior_par_prop)) {
           par_samp[itr,] <- par_samp[itr-1,]
-          SSR_idx <- 1
         } else {
           # Compute log-posterior approximation. 
-          par_prop_mat <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_emulator$input_names))
+          par_prop_mat <- matrix(par_prop, nrow=1,
+                                 dimnames=list(NULL, llik_emulator$input_names))
           llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, 
-                                                          lik_par_val=sig2_curr, log_scale=TRUE, alpha=alpha, ...) 
-          lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior_params)
+                                                          lik_par_val=sig2_curr, 
+                                                          log_scale=TRUE, 
+                                                          alpha=alpha_quantile, ...) 
+          lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior)
           
           # Accept-Reject step.
           alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
@@ -368,19 +354,18 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
             lpost_pred_curr <- lpost_pred_prop
-            SSR_idx <- 2 
-            accept_count <- accept_count + 1 
+            accept_count <- accept_count + 1L 
           } else {
             par_samp[itr,] <- par_curr
-            SSR_idx <- 1
           }
           
           # Adapt proposal covariance matrix and scaling term.
           if(adapt && (((itr-1) %% adapt_interval) == 0)) {
-            times_adapted <- times_adapted + 1
+            times_adapted <- times_adapted + 1L
             adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
                                                 times_adapted=times_adapted, 
-                                                adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
+                                                adapt_cov=adapt_cov_prop, 
+                                                adapt_scale=adapt_scale_prop,
                                                 samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
                                                 accept_rate=accept_count/adapt_interval, accept_rate_target, 
                                                 adapt_factor_exponent, adapt_factor_numerator)
@@ -390,26 +375,19 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior_params, par_in
             accept_count <- 0
           }
         }
-        
-        #
-        # Gibbs step for sig2. 
-        #
-        
-        if(include_sig2_Gibbs_step) {
-          .NotYetImplemented()
-        }
-        
       }
       
     }, error = function(cond) {
+      err <<- cond
       message("mcmc_gp_unn_post_dens_approx() MCMC error; iteration ", itr)
       message(conditionMessage(cond))
-    }, finally = {
-      return(list(samp=list(par=par_samp, sig2=sig2_samp), 
-                  log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, par_curr=par_curr,
-                  par_prop=par_prop, sig2_curr=sig2_curr))
     }
   )
+  
+  return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
+              par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
+              itr_curr=itr, condition=err))
 }
 
 

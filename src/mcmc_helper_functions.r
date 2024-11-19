@@ -61,9 +61,108 @@ assert_is_samp_dt <- function(samp_dt) {
   assert_that(all(sapply(samp_dt, class)[names(required_cols)] == required_cols))
 }
 
+
+get_empty_samp_dt <- function() {
+  # Returns a data.table with zero rpows with the column names and types 
+  # required by the `samp_dt` conventions.
+
+  data.table(test_label=character(), chain_idx=integer(), param_type=character(),
+             param_name=character(), itr=integer(), sample=numeric())
+}
+
+
+format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
+  # Converts a matrix of samples from a single parameter type into the 
+  # `samp_dt` format. For the case where there is a list of matrices of 
+  # different parameter types, see `format_mcmc_output()`. This is essentially
+  # the lowest level function for converting samples to the `samp_dt` format, 
+  # handling the most basic case of single parameter type, single test lable, 
+  # and single chain. Wrapper functions implemented below handle the cases when 
+  # there are multiple of any of these quantities.
+  #
+  # Args:
+  #    samp_mat: matrix, with each row representing a sample and each column 
+  #              a parameter. Column names are used to set the parameter names 
+  #              in the `samp_dt` object.
+  #    param_type: character, the single parameter type that will be assigned to 
+  #                all samples in `samp_mat`.
+  #    test_label: character, the single test label that will be assigned to all 
+  #                samples in `samp_mat`.
+  #    chain_idx: integer, the single chain index that will be assigned to all 
+  #               samples in `samp_mat`.
+  #
+  # Returns:
+  # data.table satisfying the `samp_dt` requirements containin the samples in 
+  # `samp_mat`.
+  
+  # If there are no samples, return empty `samp_dt` object.
+  if(nrow(samp_mat) == 0) return(get_empty_samp_dt())
+  
+  # Convert samples to long format required by `samp_dt`.
+  samp_dt <- as.data.table(samp_mat)
+  samp_dt[, param_type := param_type]
+  samp_dt[, itr := 1:.N]
+  samp_dt <- melt.data.table(data=samp_dt, 
+                             id.vars=c("param_type", "itr"), 
+                             variable.name="param_name", 
+                             value.name="sample", na.rm=TRUE, 
+                             variable.factor=FALSE)
+  
+  # Add test label and chain index.
+  samp_dt[, test_label := test_label]
+  samp_dt[, chain_idx := as.integer(chain_idx)]
+  
+  return(samp_dt)
+}
+
+
+append_samples_mat <- function(samp_dt, samp_mat, param_type, test_label, 
+                               chain_idx=1) {
+  # Appends a new matrix of samples `samp_mat` to an existing sample table 
+  # `samp_dt`. Assumes that the combination of values 
+  # (`param_type`, `test_label`, `chain_idx`) are not already present in 
+  # `samp_dt`, else an error is thrown. This restriction can be lifted in the 
+  # future to be able to upload samples in batches where only the iteration 
+  # numbers differ. See `append_mcmc_output()` and 
+  # `append_mcmc_output_multi_chain()` for appending samples corresponding to 
+  # multiple parameter types and/or chains.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_mat, param_type, test_label, chain_idx: all passed to 
+  #    `format_samples_mat()`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new samples appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure duplicates are not being added.
+  # TODO: need to clean this up. Annoying that the variable names need to be 
+  # changed here to make this work.
+  test_label_new <- test_label
+  param_type_new <- param_type
+  chain_idx_new <- chain_idx
+  n_rows <- samp_dt[(test_label==test_label_new) & 
+                    (param_type==param_type_new) & 
+                    (chain_idx==chain_idx_new), .N]
+  assert_that(n_rows==0L, 
+              msg="test_label, param_type, chain_idx combination already in `samp_dt`.")
+  
+  # Append new samples
+  samp_dt_new <- format_samples_mat(samp_mat, param_type, test_label, chain_idx)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+
+  return(samp_dt)
+}
+
+
 format_mcmc_output <- function(samp_list, test_label, chain_idx=1L) {
-  # Formats output from a single MCMC run (i.e., a single test label and chain)
-  # into the required data.table format. 
+  # A wrapper around `format_samples_mat()` that allows conversion of a list 
+  # of sample matrices (one per parameter type) into the valid `samp_dt` 
+  # format. This is the typical form of the output returned by the MCMC 
+  # functions in `gp_mcmc_functions.r`. This function assumes the samples are 
+  # all from a single test label and chain index.
   #
   # Args:
   #    samp_list: named list, with one element per parameter type. Each element 
@@ -91,28 +190,20 @@ format_mcmc_output <- function(samp_list, test_label, chain_idx=1L) {
   # iteration. The column `sample` contains the MCMC numeric sample values. 
   
   samp_dt <- data.table(param_type=character(), itr=integer(), 
-                        param_name=character(), sample=numeric())
+                        param_name=character(), test_label=character(),
+                        chain_idx=integer(), sample=numeric())
   
   for(j in seq_along(samp_list)) {
-    # Format samples for current variable. 
-    samp_param_dt <- as.data.table(samp_list[[j]])
+    # Create sample table for single parameter type.
+    samp_param_dt <- format_samples_mat(samp_list[[j]], 
+                                        param_type=names(samp_list)[j], 
+                                        test_label=test_label, 
+                                        chain_idx=chain_idx)
     
-    if(nrow(samp_param_dt) > 0) {
-      samp_param_dt[, param_type := names(samp_list)[j]]
-      samp_param_dt[, itr := 1:.N]
-      samp_param_dt <- melt.data.table(data=samp_param_dt, id.vars=c("param_type", "itr"), 
-                                       variable.name="param_name", value.name="sample", na.rm=TRUE, 
-                                       variable.factor=FALSE)
-      
-      # Append to samples for existing variables. 
-      samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names=TRUE)  
-    }
+    # Append to samples for existing variables. 
+    samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names=TRUE)  
   }
-  
-  # Add test label and chain index.
-  samp_dt[, test_label := test_label]
-  samp_dt[, chain_idx := as.integer(chain_idx)]
-  
+
   return(samp_dt)
 }
 
@@ -143,6 +234,7 @@ append_mcmc_output <- function(samp_dt, samp_list, test_label, chain_idx=1L) {
   
   return(samp_dt)
 }
+
 
 append_chain <- function(samp_dt, samp_list, test_label, chain_idx=NULL) {
   # Appends sample output to `samp_dt` corresponding to a new chain of an MCMC 
@@ -1012,7 +1104,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
                              param_names=NULL, itr_start=1L, 
                              itr_stop=NULL, chain_idcs=NULL, 
                              save_dir=NULL, combine_chains=TRUE,
-                             N_kde_pts=100, min_q=0.001, max_q =.999,
+                             N_kde_pts=100, min_q=0.001, max_q=.999,
                              bandwidth_mult=1.0) {
   # Returns plots with kernel density estimates (KDE) for 1-dimensional marginal
   # distributions. Produces one plot per unique param type-param name combination.
@@ -1040,7 +1132,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
   #
   # Returns:
   # list of ggplot objects, one per param type-param name combination.
-  
+
   assert_is_samp_dt(samp_dt)
   
   if(!combine_chains) {
@@ -1089,7 +1181,8 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
     samp_dt_baseline_param <- NULL
     if(!is.null(test_label_baseline)) {
       samp_dt_baseline_param <- samp_dt_baseline[(param_type == id_vals$param_type) & 
-                                                 (param_name == id_vals$param_name), sample] 
+                                                 (param_name == id_vals$param_name), sample]
+      if(length(samp_dt_baseline_param)==0L) samp_dt_baseline_param <- NULL
     }
     
     # Determine the grid of points at which the KDE will be evaluated. 
@@ -1107,7 +1200,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
     
     # Add KDE for baseline label. 
     kde_baseline <- NULL
-    if(!is.null(test_label_baseline)) {
+    if(!is.null(test_label_baseline) && !is.null(samp_dt_baseline_param)) {
       kde_fit <- kde1d(samp_dt_baseline_param, mult=bandwidth_mult)
       kde_baseline <- dkde1d(kde_pts, kde_fit)
     }

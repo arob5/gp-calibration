@@ -157,15 +157,18 @@ llikEmulator$methods(
     # https://docs.tibco.com/pub/enterprise-runtime-for-R/6.0.0/doc/html/Language_Reference/methods/setRefClass.html
     
     # Note that for some reason this doesn't work if called like `.self$usingMethods()`. 
-    usingMethods(calc_lik_marginal_approx, calc_lik_mean_approx, calc_lik_sample_approx)
+    usingMethods(calc_lik_marginal_approx, calc_lik_mean_approx, 
+                 calc_lik_quantile_approx, calc_lik_sample_approx)
     
     if(is.null(emulator_pred_list)) {
       emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
     }
 
     lik_approx_method_name <- paste0("calc_lik_", approx_type, "_approx")
-    get(lik_approx_method_name)(input=input, lik_par_val=lik_par_val, emulator_pred_list=emulator_pred_list, 
-                                conditional=conditional, normalize=normalize, log_scale=log_scale, ...)
+    get(lik_approx_method_name)(input=input, lik_par_val=lik_par_val, 
+                                emulator_pred_list=emulator_pred_list, 
+                                conditional=conditional, normalize=normalize, 
+                                log_scale=log_scale, ...)
   },
   
   calc_lik_approx_comparison = function(input, approx_types, lik_par_val=NULL, emulator_pred_list=NULL,
@@ -174,7 +177,6 @@ llikEmulator$methods(
     # A wrapper around `calc_lik_approx` that allows multiple likelihood approximation types 
     # to be computed. Returns a matrix of dimension `(nrow(input), length(approx_types))`, 
     # each column containing a different likelihood approximation type. 
-    
     if(is.null(emulator_pred_list)) {
       emulator_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
     }
@@ -295,7 +297,6 @@ llikEmulator$methods(
     }
     
     return(interval_list)
-    
   },
   
   get_design_inputs = function(...) {
@@ -1119,10 +1120,17 @@ llikEmulatorGP$methods(
   },
   
   
-  calc_lik_quantile_approx = function(input, alpha=0.9, lik_par_val=NULL, emulator_pred_list=NULL, 
-                                      conditional=default_conditional, normalize=default_normalize,
+  calc_lik_quantile_approx = function(input, alpha=0.9, lik_par_val=NULL, 
+                                      emulator_pred_list=NULL, 
+                                      conditional=default_conditional, 
+                                      normalize=default_normalize,
                                       include_nugget=TRUE, log_scale=FALSE, ...) {
+    # Deterministic likelihood approximation that is given by the alpha
+    # quantile of the likelihood surrogate. Since the likelihood surrogate is 
+    # log-normally distributed in this case, this function simply computes the 
+    # known expression for a log-normal quantile.
     
+    assert_that((alpha > 0) && (alpha <=1))
     input <- .self$get_input(input)
     
     if(is.null(emulator_pred_list)) {
@@ -1133,8 +1141,9 @@ llikEmulatorGP$methods(
     }
     
     q <- qnorm(alpha)
-    emulator_pred_list$mean + q * sqrt(emulator_pred_list$var)
-    
+    log_lik_approx <- emulator_pred_list$mean + q * sqrt(emulator_pred_list$var)
+    if(log_scale) return(log_lik_approx)
+    return(exp(log_lik_approx))
   },
   
   
