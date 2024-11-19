@@ -94,8 +94,15 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
   #           `U0` is NULL. 
   #
   # Returns:
-  # For now, only returns the final parameter ensemble.
-  
+  # list, with elements:
+  #    `U`: matrix, the final JxD parameter ensemble in the untransformed 
+  #         (original) space.
+  #    `par_map`: function, the transport map used in the algorithm. NULL if 
+  #               `transform_pars` is FALSE.
+  #    `eki_list`: list of length `n_itr`. The kth element is the list returned 
+  #                by the call to `run_eki_step()` at the kth iteration of the 
+  #                algorithm.
+
   # If initial ensemble is not provided, sample from prior.
   if(is.null(U0)) {
     assert_that(!is.null(n_ens) && !is.null(par_prior))
@@ -113,6 +120,9 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
     par_map <- NULL
   }
   
+  # List storing intermediate outputs.
+  eki_list <- vector(mode="list", length=n_itr)
+  
   for(k in 1:n_itr) {
     
     # Run forward model. On first iteration, don't run if initial forward 
@@ -125,14 +135,15 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
     
     # EnKF update with tempered likelihood.
     Sig_scaled <- n_itr * Sig
-    eki_list <- run_eki_step(U=U, y=y, G=G, Sig=Sig_scaled)
-    U <- eki_list$ens
+    eki_step_list <- run_eki_step(U=U, y=y, G=G, Sig=Sig_scaled)
+    U <- eki_step_list$U
+    eki_list[[k]] <- eki_step_list
     
     # Map parameters back to original space.
     if(transform_pars) U <- par_map(U, inverse=TRUE)
   }
   
-  return(list(ens=U, par_map=par_map))
+  return(list(U=U, par_map=par_map, eki_list=eki_list))
 }
 
 
@@ -160,7 +171,8 @@ run_eki_step <- function(U, y, G, Sig) {
   #
   # Returns:
   #  list, with elements:
-  #     `ens`: the updated "u" ensemble, stored in a (J,D) matrix.
+  #     `U`: the updated "u" ensemble, stored in a (J,D) matrix.
+  #     `G`: the argument `G`.
   #     `m_u`: the estimated mean for the "u" part of the joint Gaussian 
   #            approximation.
   #     `m_y`: the estimated mean for the "y" part. 
@@ -192,7 +204,7 @@ run_eki_step <- function(U, y, G, Sig) {
   U_updated <- compute_enkf_update(U, y, Y, C_uy, L_y=L_y)
   
   # Return list.
-  list(ens=U_updated, m_u=m_u, m_y=m_y, C_u=C_u, C_y=C_y,
+  list(U=U_updated, G=G, m_u=m_u, m_y=m_y, C_u=C_u, C_y=C_y,
        L_y=L_y, C_uy=C_uy)
 }
 

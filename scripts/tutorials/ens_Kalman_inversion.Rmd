@@ -123,8 +123,9 @@ can be overwritten by explicitly passing a map via the `par_map` argument.
 
 ```{r}
 # Run single step of EKI.
-eki_list <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G) 
-U_new <- eki_list$ens
+eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G) 
+U_new <- eki_output$U
+eki_list <- eki_output$eki_list
 ```
 
 ```{r}
