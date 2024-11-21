@@ -7,6 +7,23 @@
 #
 
 # TODO:
+# - save samp_dt for exact mcmc separately 
+# - update the function that runs a bunch of different mcmc algs; wrapper 
+#   function should maybe be called something like "run_mcmc_llik_em()", which 
+#   translates an mcmc tag into the algorithm to be called. Then can write a 
+#   wrapper around this called `run_mcmc_llik_em_approx()` which basically just
+#   loops over `run_mcmc_llik_em()`. Save `samp_dt` separately for each to 
+#   avoid one massive data.table.
+
+
+
+
+
+
+
+
+
+# TODO:
 #    - Need to check llikEmulatorGP and forward emulator and ensure that the 
 #      normalization/conditional parameters are properly defined and resulting 
 #      in the correct posterior approximations.
@@ -188,7 +205,8 @@ print("--------------------- Bayesian Inverse Problem Setup --------------------
 print("Creating VSEM inverse problem.")
 inv_prob <- get_vsem_test_1(default_conditional=default_conditional, 
                             default_normalize=default_normalize)
-llik_exact <- inv_prob$llik_obj
+llik_obj_exact <- inv_prob$llik_obj
+par_prior <- inv_prob$par_prior
 save(inv_prob, file=file.path(output_dir, "inv_prob_list.RData"))
 
 # -----------------------------------------------------------------------------
@@ -199,45 +217,37 @@ print("--------------------- Constructing design -------------------------")
 
 set.seed(design_seed)
 
-# Generate design. 
-design_info <- list(design_method=design_method, N_design=N_design, seed=design_seed)
-design_info$input <- get_batch_design(design_info$design_method, N_design, 
-                                      prior_params=inv_prob$par_prior)
-design_info$fwd <- llik_exact$run_fwd_model(design_info$input)
-design_info$llik <- llik_exact$assemble_llik(design_info$input)
-design_info$lprior <- calc_lprior_dens(design_info$input, inv_prob$par_prior)
-design_info$bounds <- get_bounds(design_info$input)
+# Generate training design. 
+design_info <- get_init_design_list(inv_prob, design_method, N_design)
 save(design_info, file=file.path(output_dir, "design_info.RData"))
 
-# Test points. 
-u_grid <- get_batch_design(design_method_test, N_design_test, prior_params=inv_prob$par_prior)
-test_info <- list(input=u_grid, design_method=design_method_test, N_design=N_design_test)
-test_info$fwd <- llik_exact$run_fwd_model(test_info$input) 
-test_info$llik <- llik_exact$assemble_llik(test_info$input)
-test_info$lprior <- calc_lprior_dens(test_info$input, inv_prob$par_prior)
+# Generate validation design.
+test_info <- get_init_design_list(inv_prob, design_method_test, N_design_test)
 save(test_info, file=file.path(output_dir, "test_info.RData"))
 
 # -----------------------------------------------------------------------------
 # Exact MCMC. 
 # -----------------------------------------------------------------------------
 
+print("--------------------- Running exact MCMC ---------------------")
+
 # Initial condition and covariance proposal for MCMC.
 # TODO: could also use joint Gaussian approximation that Meng is working on to 
 # set these quantities here. 
 mcmc_par_init <- design_info$input[which.max(design_info$llik + design_info$lprior),]
-cov_prop_init <- cov(design_info$input) # This doesn't make sense; should use importance sampling estimate here.
-print(paste0("MCMC initial value:", mcmc_par_init))
+cov_prop_init <- cov(design_info$input) # TODO: replace with IS estimate
+print(paste0("MCMC initial value:", paste(mcmc_par_init, collapse=", ")))
 print("Initial proposal covariance:")
 print(cov_prop_init)
 
 # MCMC sampling using exact likelihood.
-mcmc_exact_list <- mcmc_bt_wrapper(inv_prob$llik_obj, inv_prob$par_prior, 
-                                   n_itr=N_mcmc, sampler="DEzs")
+mcmc_exact_list <- run_mcmc("mcmc_bt_wrapper", llik_obj_exact, defer_ic=TRUE,
+                            sampler="DEzs", n_chain=4L, par_prior=par_prior, 
+                            n_itr=N_mcmc, test_label="exact", try_parallel=FALSE)
 
-# mcmc_exact_list <- mcmc_gp_noisy(inv_prob$llik_obj, inv_prob$par_prior, N_itr=N_mcmc, 
-#                                  mode="MCMH", par_init=mcmc_par_init, cov_prop=cov_prop_init)
-samp_dt <- format_mcmc_output(mcmc_exact_list$samp, test_label="exact")
-mcmc_list <- list(exact=mcmc_exact_list[setdiff(names(mcmc_exact_list), "samp")])
+# Table storing MCMC samples.
+samp_dt <- mcmc_exact_list$samp
+mcmc_list <- list(exact=mcmc_exact_list$output_list)
 
 # -----------------------------------------------------------------------------
 # Fitting Emulators.   
@@ -300,22 +310,34 @@ save(emulator_pred_list, file=file.path(output_dir, "emulator_pred_list.RData"))
 
 print("--------------------- GP-Accelerated MCMC -------------------------")
 
-run_approx_mcmc <- TRUE
-if(run_approx_mcmc) {
-  for(em_name in names(llik_em_list)) {
-    print(paste0("----- ", em_name, " -----"))
-    mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
-                                                 llik_em_obj=llik_em_list[[em_name]], 
-                                                 mcmc_tags=mcmc_tags, save_dir=output_dir, 
-                                                 samp_dt=samp_dt, mcmc_list=mcmc_list, 
-                                                 test_label_suffix=em_name, N_itr=N_mcmc, 
-                                                 par_init=mcmc_par_init, cov_prop=cov_prop_init,
-                                                 overwrite=TRUE)
-    
-    samp_dt <- mcmc_info_list$samp
-    mcmc_list <- mcmc_info_list$mcmc_list
-  }
-}
+llik_em <- llik_em_list[[1]]
+mcmc_mcwmh_list <- run_mcmc("mcmc_noisy_llik", llik_em, par_prior=par_prior,
+                            n_chain=4L, n_itr=N_mcmc, test_label="mcwmh-joint",
+                            try_parallel=FALSE, use_joint=TRUE, 
+                            cov_prop=cov_prop_init)
+
+samp_dt <- combine_samp_dt(samp_dt, mcmc_mcwmh_list$samp)
+mcmc_list[["mcwmh-joint"]] <- mcmc_mcwmh_list$output_list
+
+fwrite(samp_dt, file.path(output_dir, "mcmc_samp.csv"))
+save(mcmc_list, file=file.path(output_dir, "mcmc_list.RData"))
+
+# run_approx_mcmc <- TRUE
+# if(run_approx_mcmc) {
+#   for(em_name in names(llik_em_list)) {
+#     print(paste0("----- ", em_name, " -----"))
+#     mcmc_info_list <- run_approx_mcmc_comparison(inv_prob_list=inv_prob, 
+#                                                  llik_em_obj=llik_em_list[[em_name]], 
+#                                                  mcmc_tags=mcmc_tags, save_dir=output_dir, 
+#                                                  samp_dt=samp_dt, mcmc_list=mcmc_list, 
+#                                                  test_label_suffix=em_name, N_itr=N_mcmc, 
+#                                                  par_init=mcmc_par_init, cov_prop=cov_prop_init,
+#                                                  overwrite=TRUE)
+#     
+#     samp_dt <- mcmc_info_list$samp
+#     mcmc_list <- mcmc_info_list$mcmc_list
+#   }
+# }
 
 print("-------------------------- End of Script ------------------------------")
 

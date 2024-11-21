@@ -11,9 +11,9 @@
 # being run so that the correct library path is set. 
 
 # Settings to pass to Rscript. 
-RUN_TAG="6d"
+RUN_TAG="5d_2"
 EXPERIMENT_TAG="vsem"
-N_DESIGN=140
+N_DESIGN=250
 N_DESIGN_TEST=600
 DESIGN_METHOD="LHS"
 DESIGN_METHOD_TEST="LHS"

@@ -147,6 +147,44 @@ get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidat
 }
 
 
+get_init_design_list <- function(inv_prob, design_method, N_design) {
+  # A convenience function that constructs an initial design for an inverse 
+  # problem and returns a list containing the design inputs, as well as 
+  # associated log-likelihood, log-prior, and forward model evaluations.
+  # 
+  # Args:
+  #    inv_prob: list, defining the inverse problem, following the conventions
+  #              described in `inv_prob_test_functions.r`. Must have elements
+  #              "llik_obj" and "par_prior". 
+  #    design_method: character, passed to the "method" argument of 
+  #                   `get_batch_design()`.
+  #    N_design: integer, number of design points.
+  #
+  # Returns:
+  # list, with elements:
+  #    "input": matrix with design inputs in the rows.
+  #    "llik": numeric vector of log-likelihood evaluations at design inputs.
+  #    "lprior": numeric vector of log-prior evaluations at design inputs.
+  #    "bounds": matrix storing bounding box for design inputs.
+  #    "fwd": if applicable, matrix of forward model outputs at design points.
+  
+  # Design inputs. 
+  design_info <- list(design_method=design_method, N_design=N_design)
+  design_info$input <- get_batch_design(design_method, N_design, 
+                                        prior_params=inv_prob$par_prior)
+  
+  # Associated log-likelihood and log prior evaluations.
+  design_info$llik <- inv_prob$llik_obj$assemble_llik(design_info$input)
+  design_info$lprior <- calc_lprior_dens(design_info$input, inv_prob$par_prior)
+  design_info$bounds <- get_bounds(design_info$input)
+  
+  # Not all log-likelihood objects have the `run_fwd_model()` method.
+  design_info$fwd <- try(inv_prob$llik_obj$run_fwd_model(design_info$input))
+  
+  return(design_info)
+}
+
+
 get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=FALSE, ...) {
   # Produces a Latin Hypercube Sample (LHS) with `N_batch` points. The LHS is first sampled
   # uniformly in the unit hypercube using `lhs` package, then an inverse cumulative 

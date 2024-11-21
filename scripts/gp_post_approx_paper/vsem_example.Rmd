@@ -15,7 +15,7 @@ library(gridExtra)
 library(data.table)
 
 experiment_tag <- "vsem"
-run_tag <- "6d_N140_LHS"
+run_tag <- "5d_N250_LHS"
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
@@ -52,14 +52,28 @@ N_std_dev <- 1.64
 ```
 
 # Summary of Inverse Problem 
-
 ```{r}
-#
-# Plot model driver.  
-#
-
 load(file.path(output_dir, "inv_prob_list.RData"))
+par_prior <- inv_prob$par_prior
+```
 
+## Prior Distribution
+```{r}
+print(inv_prob$par_info)
+
+prior_plots <- plot_prior_samp(par_prior)
+for(plt in prior_plots) plot(plt)
+```
+
+## Likelihood
+```{r}
+print(llik_obj_exact$lik_description)
+print(paste0("Likelihood variance ground truth: ", inv_prob$sig2_true))
+print(paste0("Likelihood variance model: ", llik_obj_exact$get_lik_par()[1]))
+```
+
+## Model Driver
+```{r}
 driver_plt <- ggplot(data.frame(t=inv_prob$time_points,PAR=inv_prob$driver)) + 
                      geom_point(aes(x=t,y=PAR)) + 
                      ggtitle("Model Driver (PAR)") + 
@@ -68,13 +82,10 @@ driver_plt <- ggplot(data.frame(t=inv_prob$time_points,PAR=inv_prob$driver)) +
 plot(driver_plt)
 ```
 
-
+## Ground truth observable vs. observations
 ```{r}
-#
-# Plot true observable vs. observations.  
-#
-
-df_inv_prob_data <- data.frame(t=inv_prob$time_points, y_true=drop(inv_prob$y_true), 
+df_inv_prob_data <- data.frame(t=inv_prob$time_points, 
+                               y_true=drop(inv_prob$y_true), 
                                y=drop(inv_prob$y))
 plt_outputs <- ggplot(data=df_inv_prob_data) +
                       geom_point(aes(x=t, y=y), color="red") + 
@@ -84,9 +95,9 @@ plt_outputs <- ggplot(data=df_inv_prob_data) +
 plot(plt_outputs)
 ```
 
+## Other model outputs
 ```{r}
 # Plot other model outputs. 
-
 df_model_outputs_true <- data.frame(inv_prob$model_output_true[1,,])
 colnames(df_model_outputs_true) <- inv_prob$output_names
 df_model_outputs_true$time <- inv_prob$time_points
@@ -98,79 +109,28 @@ for(output_var in inv_prob$output_names) {
 }
 
 ```
+# Inverse Problem Solution via Exact MCMC (no emulation)
 
+## Exact log-likelihood, varying one parameter at a time. 
 ```{r}
-# Info on parameters. 
-inv_prob$par_info
-
-# Prior plots.
-prior_plots <- plot_prior_samp(inv_prob$par_prior)
-for(plt in prior_plots) plot(plt)
-```
-
-```{r}
-# Info on likelihood. 
-
-print(paste0("Likelihood SD true: ", sqrt(inv_prob$sig2_true)))
-print(paste0("Likelihood SD model: ", sqrt(inv_prob$sig2_model)))
-```
-
-
-```{r}
-# Print settings. 
-
-load(file.path(output_dir, "design_info.RData"))
-
-print("Settings:")
-print(paste0("Parameter space dimension: ", nrow(inv_prob$par_prior)))
-print(paste0("Number design points: ", design_info$N_design))
-print(paste0("Design method: ", design_info$design_method))
-
-print("Priors and true parameter:")
-inv_prob$par_prior$par_true <- inv_prob$par_true
-print(inv_prob$par_prior)
-```
-
-
-# Investigating exact log-likelihood, varying one parameter at a time. 
-```{r}
-llik_exact <- inv_prob$llik_obj
-plt_proj <- llik_exact$plot_1d_projection(n_points=100, 
-                                          input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
-                                          plot_type="llik")
-
+plt_proj <- llik_obj_exact$plot_1d_projection(n_points=100, 
+                                              input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
+                                              plot_type="llik")
 for(plt in plt_proj) plot(plt)
 ```
 
+## Exact MCMC
 ```{r}
-# Looking into what's going on with "Cv" parameter. 
-random_idx <- sample(1:nrow(test_info$input), 10)
-
-for(i in random_idx) {
-  plt_proj <- llik_exact$plot_1d_projection(n_points=100, input_names_proj="Cv",  
-                                            input_fixed=test_info$input[i,,drop=FALSE], 
-                                            input_bounds=t(inv_prob$par_prior[,c("param1","param2")]), 
-                                            plot_type="llik")
-  plot(plt_proj[["Cv"]])
-}
-
-```
-
-
-# Inverse Problem Solution via Exact MCMC (no emulation)
-```{r}
-#
-# MCMC Plots: exact.  
-#
-
-samp_dt <- fread(file.path(output_dir, "mcmc_samp.csv"))
+samp_dt_exact <- fread(file.path(output_dir, "mcmc_samp_exact.csv"))
 
 # MCMC Plots: exact. 
-trace_plots_exact <- get_trace_plots(samp_dt, test_label="exact", param_types="par",
-                                     param_names=inv_prob$par_names, itr_start=burn_in_start)
-hist_plots_exact <- get_hist_plot_comparisons(samp_dt, test_labels="exact", 
-                                              param_types="par", itr_start=burn_in_start)
-corr_plots_exact <- get_mcmc_2d_density_plots(samp_dt, test_labels="exact", 
+trace_plots_exact <- get_trace_plots(samp_dt_exact, test_labels="exact", 
+                                     param_types="par",
+                                     itr_start=burn_in_start)
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt_exact, test_labels="exact", 
+                                              param_types="par", 
+                                              itr_start=burn_in_start)
+corr_plots_exact <- get_mcmc_2d_density_plots(samp_dt_exact, test_labels="exact", 
                                               itr_start=burn_in_start)$exact
 
 for(plt in trace_plots_exact) plot(plt) 
@@ -178,16 +138,28 @@ for(plt in hist_plots_exact) plot(plt)
 for(plt in corr_plots_exact) plot(plt)
 ```
 
-# Emulator Summary and Validation
+# Gaussian process emulators
 
+## Design information
 ```{r}
-#
-# Summarize GP fits.  
-#
+load(file.path(output_dir, "design_info.RData"))
+load(file.path(output_dir, "test_info.RData"))
 
+print("Initial design (training) data:")
+print(paste0("Number design points: ", design_info$N_design))
+print(paste0("Design method: ", design_info$design_method))
+
+print("Validation data:")
+print(paste0("Number validation points: ", test_info$N_design))
+print(paste0("Validation point sampling method: ", test_info$design_method))
+```
+
+
+## GP Summary
+```{r}
 load(file.path(output_dir, "llik_em_list.RData"))
 load(file.path(output_dir, "emulator_pred_list.RData"))
-load(file.path(output_dir, "test_info.RData"))
+
 em_names <- names(llik_em_list)
 
 for(em_name in em_names) {
@@ -196,9 +168,9 @@ for(em_name in em_names) {
 }
 ```
 
+## Log-likelihood predictions at validation points
 ```{r}
 # Log-likelihood emulator predictions at test points. 
-
 for(em_name in em_names) {
   plt <- llik_em_list[[em_name]]$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
                                                       emulator_pred_list=emulator_pred_list[[em_name]], 
@@ -209,15 +181,16 @@ for(em_name in em_names) {
 }
 ```
 
+## Log-likelihood emulators, varying one parameter at a time.
 ```{r}
 # Plot 1d projections: log-likelihood emulator distribution  
-
 N_test_proj <- 100L
 input_list_proj <- list()
 for(par_name in inv_prob$par_names) {
   prior_bounds <- c(inv_prob$par_prior[par_name,"param1"], 
                     inv_prob$par_prior[par_name,"param2"])
-  input_list_proj[[par_name]] <- seq(prior_bounds[1], prior_bounds[2], length.out=N_test_proj)
+  input_list_proj[[par_name]] <- seq(prior_bounds[1], prior_bounds[2], 
+                                     length.out=N_test_proj)
 }
 
 # Plot 1d projections. 
@@ -232,30 +205,19 @@ for(em_name in names(llik_em_list)) {
 }
 ```
 
+
+# Deterministic Likelihood Approximations
+
+## Deterministic likelihood predictions at validation points
 ```{r}
-# Focus on single paramter. 
-par_name <- "tauV"
-
-for(i in random_idx) {
-  for(em_name in names(llik_em_list)) {
-    plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj[par_name],
-                                                       input_names_proj=par_name,
-                                                       input_fixed=test_info$input[i,,drop=FALSE],
-                                                       include_design=FALSE, plot_title=em_name,
-                                                       interval_method=interval_method, 
-                                                       N_std_dev=N_std_dev, 
-                                                       llik_func_true=llik_func_true)
-    plot(plts[[par_name]])
-  }
-}
-
+# TODO
 ```
 
 
+## Deterministic likelihood predictions, varying one parameter at a time.
 ```{r}
 # Plot 1d projections: deterministic likelihood approximations. 
-
-approx_types <- c("mean") #, "marginal")
+approx_types <- c("mean", "quantile")
 
 for(em_name in names(llik_em_list)) {
   plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj, 
@@ -267,39 +229,14 @@ for(em_name in names(llik_em_list)) {
 }
 ```
 
+
+# GP-Accelerated Approximate Posterior Samples
 ```{r}
-# Focus on single paramter. 
-par_name <- "tauV"
-
-for(i in random_idx) {
-  for(em_name in names(llik_em_list)) {
-    plts <- llik_em_list[[em_name]]$plot_1d_projection(input_list_proj=input_list_proj[par_name],
-                                                       input_names_proj=par_name,
-                                                       plot_type="lik_approx", 
-                                                       approx_types=approx_types,
-                                                       input_fixed=test_info$input[i,,drop=FALSE],
-                                                       include_design=FALSE, plot_title=em_name,
-                                                       interval_method=interval_method, 
-                                                       N_std_dev=N_std_dev, 
-                                                       llik_func_true=llik_func_true)
-    plot(plts[[par_name]])
-  }
-}
-
-```
-
-# GP-Induced Approximate Posterior Samples
-
-```{r}
-#
-# MCMC Trace Plots: approximate. 
-#
-
 test_labels_approx <- setdiff(unique(samp_dt$test_label), "exact")
-trace_plots_approx <- get_trace_plots(samp_dt[itr <= 2000],
-                                      test_label=test_labels_approx,
+trace_plots_approx <- get_trace_plots(samp_dt,
+                                      test_labels=test_labels_approx,
                                       param_types="par",
-                                      burn_in_start=burn_in_start)
+                                      itr_start=burn_in_start)
 
 for(plt in trace_plots_approx) plot(plt) 
 ```

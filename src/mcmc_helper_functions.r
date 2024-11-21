@@ -71,6 +71,17 @@ get_empty_samp_dt <- function() {
 }
 
 
+combine_samp_dt <- function(...) {
+  # TODO: for now, just stacks `samp_dt` objects, but should generalize this 
+  # by requiring that `samp_dt` objects have unique keys set and use this to 
+  # ensure this stacking operation does not produce duplicates.
+  
+  l <- list(...)
+  for(dt in l) assert_is_samp_dt(dt)
+  data.table::rbindlist(l, use.names=TRUE)
+}
+
+
 format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
   # Converts a matrix of samples from a single parameter type into the 
   # `samp_dt` format. For the case where there is a list of matrices of 
@@ -92,12 +103,13 @@ format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
   #               samples in `samp_mat`.
   #
   # Returns:
-  # data.table satisfying the `samp_dt` requirements containin the samples in 
-  # `samp_mat`.
-  
+  # data.table satisfying the `samp_dt` requirements containing the samples in 
+  # `samp_mat`. If `samp_mat` is NULL or is a matrix with zero rows, then 
+  # returns the empty data.table given by `get_empty_samp_dt()`.
+
   # If there are no samples, return empty `samp_dt` object.
-  if(nrow(samp_mat) == 0) return(get_empty_samp_dt())
-  
+  if(is.null(samp_mat) || (nrow(samp_mat)==0L)) return(get_empty_samp_dt())
+
   # Convert samples to long format required by `samp_dt`.
   samp_dt <- as.data.table(samp_mat)
   samp_dt[, param_type := param_type]
@@ -429,7 +441,7 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
   assert_that(length(test_label)==1L)
   assert_that(length(param_type)==1L)
   assert_is_samp_dt(samp_dt)
-  
+
   # Select specified subset of `samp_dt`. 
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_label, 
                                      param_types=param_type, 
@@ -491,11 +503,13 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   #    specified iteration ranges.
   
   assert_is_samp_dt(samp_dt)
-  
+  if(nrow(samp_dt)==0L) return(samp_dt)
+
   # Argument checking.
   if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
+  itr_start <- as.integer(itr_start)
+  itr_stop <- as.integer(itr_stop)
   assert_that(all(itr_start >= 1L))
-  assert_that(is.integer(itr_start) && is.integer(itr_stop))
   
   # If no row subsetting is required just return the data.table.
   if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
@@ -551,8 +565,11 @@ convert_samp_to_mat <- function(samp_dt) {
   # Returns:
   #    matrix, with samples in the rows and columns corresponding to the 
   #    different parameters. The rownames attribute is set to the iterations.
-  samp_wide <- dcast(data=samp_dt[,.(itr, param_name, sample)], 
-                     formula=itr~param_name, value.var="sample")
+  
+  assert_is_samp_dt(samp_dt)
+  
+  samp_wide <- data.table::dcast(data=samp_dt[,.(itr, param_name, sample)], 
+                                 formula=itr~param_name, value.var="sample")
   itrs <- samp_wide$itr
   samp_wide <- as.matrix(samp_wide[, .SD, .SDcols=!"itr"])
   rownames(samp_wide) <- itrs
@@ -895,6 +912,12 @@ get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
                                      param_names=param_names, itr_start=itr_start,
                                      itr_stop=itr_stop, chain_idcs=chain_idcs)
   
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
   # Determine which combination of columns will uniquely identify a plot.
   id_cols <- c("test_label", "param_type", "param_name")
   if(!overlay_chains) id_cols <- id_cols <- c(id_cols, "chain_idx")
@@ -976,6 +999,12 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
                                      param_types=param_types, 
                                      param_names=param_names, itr_start=itr_start,
                                      itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
   
   # Determine which combination of columns will uniquely identify a plot.
   id_cols <- c("param_type", "param_name")
@@ -1059,7 +1088,7 @@ get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL,
   #
   # Returns: 
   #    list, each element being a ggplot object. 
-  
+
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_label_baseline) && !is.null(test_labels) && 
      !(test_label_baseline %in% test_labels)) {
@@ -1071,6 +1100,12 @@ get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL,
                                      param_names=param_names, 
                                      itr_start=itr_start, itr_stop=itr_stop,
                                      chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
   
   # Determine which combination of columns will uniquely identify a plot.
   id_cols <- c("test_label", "param_type", "param_name")
@@ -1089,6 +1124,8 @@ get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL,
 
     # Produce histograms for current test label.
     plts_curr <- get_hist_plots(samp_dt_subset, test_labels=test_lbl_curr,
+                                param_types=plt_id_vars[j,param_type],
+                                param_names=plt_id_vars[j,param_name],
                                 combine_chains=combine_chains, 
                                 plot_type=plot_type, bins=bins)
     plts <- c(plts, plts_curr)
@@ -1151,6 +1188,12 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
                                      param_names=param_names, 
                                      itr_start=itr_start, itr_stop=itr_stop,
                                      chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
   
   # Separate out baseline label. 
   if(!is.null(test_label_baseline)) {
@@ -1249,6 +1292,12 @@ get_2d_density_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
                                      param_types=param_types, 
                                      param_names=param_names, itr_start=itr_start,
                                      itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
   
   # Store unique `test_label`-`param_type`-`param_name` combinations.
   id_cols <- c("test_label", "param_type", "param_name")
@@ -1378,6 +1427,14 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
   }
   samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
                                      param_types=param_types, param_names=param_names)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Variables uniquely defining a plot.
   plt_id_vars <- unique(samp_dt_subset[, .(param_type, param_name)])
   
   # Separate out data to be used as the baseline for comparison in each plot.

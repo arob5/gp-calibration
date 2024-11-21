@@ -45,13 +45,21 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 inv_prob <- get_vsem_test_1()
 
 # Exact likelihood (no emulation).
-llik_exact <- inv_prob$llik_obj
+llik_obj_exact <- inv_prob$llik_obj
+llik_exact <- llik_obj_exact$get_llik_func()
 
 # Priors. 
 par_prior <- inv_prob$par_prior
 
 # Noise variance parameter (assumed fixed here).
 sig2 <- inv_prob$sig2_model
+```
+
+## Summarizing the prior distribution.
+```{r}
+print(inv_prob$par_info)
+prior_plots <- plot_prior_samp(par_prior)
+for(plt in prior_plots) plot(plt)
 ```
 
 ## Exact MCMC
@@ -63,55 +71,30 @@ encapsulate noisy (log) likelihood approximations, but can all encode exact
 whether the likelihood being encapsulated represents an approximation or not.
 ```{r}
 # Confirming this is an "exact" log-likelihood object.
-print(paste0("Exact log-likelihood: ", llik_exact$exact_llik))
+print(paste0("Exact log-likelihood: ", llik_obj_exact$exact_llik))
 ```
 
-The MCMC algorithms in `gp_mcmc_functions.r` are primarily designed to 
-perform inference using a stochastic log-likelihood surrogate. However, these
-algorithms are implemented such that they reduce to standard exact MCMC 
-algorithms when the `llikEmulator` object is of the exact variety. For example, 
-the algorithm implemented in `mcmc_noisy_llik()` reduces to standard adaptive 
-Metropolis-Hastings for exact likelihood objects. We demonstrate running this 
-algorithm below. We run with most settings set to their defaults for 
-simplicity. Some of the arguments to `mcmc_noisy_llik()` (`mode` and `use_joint`)
-are irrelevant when sampling using an exact `llikEmulator` object.
-```{r}
-# Run adaptive Metropolis-Hastings using exact likelihood. 
-n_mcmc <- 10L
-mcmc_output_exact <- mcmc_noisy_llik(llik_exact, par_prior, sig2_init=sig2, n_itr=n_mcmc)
-
-# Print names of the returned list.
-print("Items in returned MCMC list:")
-print(paste(names(mcmc_output_exact), sep=", "))
-
-# Print the first few samples.
-print("Items in `samp`:")
-mcmc_output_exact$samp
-```
-The above code demonstrates running the MCMC function `mcmc_noisy_llik()` by 
-calling it directly. The form of the arguments and return value is standardized, 
-and aligns with that of other MCMC functions. It is typically recommended to 
-instead run MCMC via the wrapper function `run_mcmc_multichain()`, which allows 
-running multiple chains. Parallel execution will be attempted if 
-`try_parallel=TRUE`; otherwise, the chains are run serially. For algorithms 
-that don't take long to run, sometimes the serial execution can be faster as 
-it avoids the overhead required by the parallel execution. The output 
-of this function is a list with two elements: `samp` is a data.table 
-storing the sample from all chains in a standardized format that is compatible 
-with the functions in `mcmc_helper_functions.r`. `output_list` is a list over 
-the chains, containing the other non-sample information from the run 
-(e.g., the final value of the proposal covariance). 
-
+## Running exact MCMC
+We demonstrate running MCMC using the `mcmc_bt_wrapper()` function, which 
+provides access to the MCMC samplers implemented in the BayesianTools package.
+When `llik_em$exact_llik` is `TRUE`, then `mcmc_bt_wrapper()` will 
+run MCMC using the true/exact likelihood, as expected. We access the 
+`mcmc_bt_wrapper()` function through the interface provided by 
+`run_mcmc()`. For more information on running exact MCMC, see the 
+tutorial `scripts/tutorials/inv_prob_exact_mcmc.Rmd`. 
 
 ```{r}
 n_mcmc <- 50000L
-mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
-                                 par_prior=par_prior, n_itr=n_mcmc, try_parallel=FALSE)
 
-# Samples stored in a data.table as before.
-samp_dt <- mcmc_list$samp
-head(samp_dt)
+# Run exact MCMC.
+mcmc_exact_list <- run_mcmc("mcmc_bt_wrapper", llik_obj_exact, defer_ic=TRUE,
+                            sampler="DEzs", n_chain=1L, par_prior=par_prior, 
+                            n_itr=n_mcmc, test_label="exact")
+
+# Table storing MCMC samples.
+samp_dt <- mcmc_exact_list$samp
 ```
+
 
 ## MCMC Plotting and Diagnostics
 We briefly demonstrate some of the plotting and MCMC diagnostic helper functions
@@ -121,21 +104,209 @@ functions are explained in more detail in
 
 ### Trace Plots
 ```{r}
-trace_plots <- get_trace_plots(samp_dt, overlay_chains=TRUE)
+burn_in_start <- c(exact=25000L)
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
 for(plt in trace_plots) plot(plt)
 ```
 
-```{r}
-mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=50000L, sampler="DEzs")
-samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="bt_DEzs")
+# Fitting a Log-Likelihood Emulator
+We now construct an emulator (i.e., surrogate) for the log-likelihood of the 
+Bayesian inverse problem. There are many ways to do this; for example, an 
+approximation of the forward model induces an approximation of the likelihood.
+Here we consider the approach of fitting a Gaussian process (GP) directly to
+the log-likelihood itself.
 
-trace_plots <- get_trace_plots(samp_dt, overlay_chains=FALSE)
+## Generate design for fitting emulator.
+```{r}
+design_method <- "LHS"
+n_design <- 100L
+
+# Construct design.
+design_info <- get_init_design_list(inv_prob, design_method, n_design)
+```
+
+## Fit GP emulator of log-likelihood.
+```{r}
+# Fit GP. 
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         normalize_output=TRUE, scale_input=TRUE)
+gp_obj$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
+           optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
+```
+
+```{r}
+# Create log-likelihood surrogate object.
+llik_em <- llikEmulatorGP("em_llik_const_GaussQuad", gp_obj, 
+                          lik_par=inv_prob$sig2_model, use_fixed_lik_par=TRUE,
+                          default_conditional=FALSE, default_normalize=TRUE)
+```
+
+## Summarize GP fit
+```{r}
+# Validation test points.
+n_test <- 400L
+test_info <- get_init_design_list(inv_prob, design_method, n_test)
+```
+
+```{r}
+# Summarize predictions at test points.
+llik_em$plot_pred_validation(test_info$input, true_llik=test_info$llik, 
+                             plot_type="llik", include_interval=TRUE, 
+                             interval_method="pm_std_dev", N_std_dev=2, 
+                             plot_title="Log-Likelihood Predictions")
+```
+
+```{r}
+# One dimensional projections.
+llik_em$plot_1d_projection(llik_func_true=llik_obj_exact)
+```
+# GP-Accelerated MCMC with Deterministic Likelihood Approximation
+We start by considering approximate MCMC, whereby the true likelihood has been 
+replaced by a deterministic approximation that can be evaluated pointwise.
+This can also be viewed as MCMC with an approximate unnormalized posterior 
+density. Given that the approximate unnormalized posterior density can be 
+evaluated pointwise in this setting, one can consider applying any standard
+MCMC algorithm for inference. An interesting setting is where the 
+log-likelihood surrogate `llik_em` is stochastic. In this case, there is not 
+a single obvious deterministic approximation that can be derived from 
+`llik_em`. The below examples consider a few different such options, which are 
+controlled by the `approx_type` argument. We leverage the `mcmc_bt_wrapper()` 
+function for running these MCMC schemes.
+
+## Plug-In Mean Approximation
+We start by considering the simplest option, `approx_type = "mean"`, which 
+implies that the mean of the log-likelihood surrogate is simply plugged-in in 
+place of the exact log-likelihood. Notice that we emphasize this is a 
+"plug-in mean" since this differs from taking the mean of the likelihood 
+emulator (see "marginal" approximation below).
+
+```{r}
+# Run MCMC with plug-in mean approximation.
+mcmc_mean_approx_list <- run_mcmc("mcmc_bt_wrapper", llik_em, defer_ic=TRUE,
+                                  approx_type="mean", sampler="DEzs", n_chain=1L, 
+                                  par_prior=par_prior, n_itr=n_mcmc, 
+                                  test_label="mean")
+
+# Append to samples table.
+samp_dt <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
+```
+
+### Trace Plots
+```{r}
+burn_in_start <- c(burn_in_start, mean=25000L)
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start, test_labels="mean")
+for(plt in trace_plots) plot(plt)
+```
+### Histogram Comparisons relative to Exact
+```{r}
+hist_plots <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact",
+                                        test_labels="mean", plot_type="freqpoly",
+                                        itr_start=burn_in_start)
+for(plt in hist_plots) plot(plt)
+```
+
+## Quantile Approximation
+We next consider `approx_type = "quantile"`, in which the approximate 
+likelihood is set to a quantile of the likelihood surrogate. This requires 
+choosing a quantile level, which is called `alpha` below. Note that 
+for a GP log-likelihood surrogate, the choice of `alpha = 0.5` is equivalent 
+to the plug-in mean approximation. We choose a larger quantile below, which 
+serves to "inflate" the posterior in regions where the GP is more 
+uncertain.
+
+```{r}
+# Run MCMC with quantile approximation.
+alpha <- 0.9
+mcmc_quantile_approx_list <- run_mcmc("mcmc_bt_wrapper", llik_em, defer_ic=TRUE,
+                                      approx_type="quantile", alpha=0.9,
+                                      sampler="DEzs", n_chain=4L, par_prior=par_prior, 
+                                      n_itr=n_mcmc, test_label="quantile", 
+                                      try_parallel=FALSE)
+
+# Append to samples table.
+samp_dt <- combine_samp_dt(samp_dt, mcmc_quantile_approx_list$samp)
+```
+
+### Trace Plots
+```{r}
+burn_in_start <- c(burn_in_start, quantile=25000L)
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start, test_labels="quantile")
 for(plt in trace_plots) plot(plt)
 ```
 
+### Histogram Comparisons relative to Exact
 ```{r}
-dens2d_plots <- get_2d_density_plots(samp_dt, itr_start=20000L)
-for(plt in unlist(dens2d_plots, recursive=FALSE)) plot(plt)
+
+hist_plots <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact",
+                                        test_labels="quantile", plot_type="freqpoly", 
+                                        itr_start=burn_in_start)
+
+for(plt in hist_plots) plot(plt)
 ```
+
+```{r}
+# TODO: add option to center all of the lines plotted, since its only in a relative 
+# sense that the values matter.
+# TODO: add legend
+llik_em$plot_1d_projection(input_names_proj="KEXT", 
+                           plot_type="lik_approx", 
+                           approx_type=c("mean", "quantile"), 
+                           alpha=0.99, llik_func_true=llik_obj_exact)
+```
+
+
+## Marginal Approximation
+
+
+# Noisy MCMC
+We next consider algorithms that only require the ability to sample from a 
+stochastic log-likelihood surrogate, rather than the requirement of having 
+a closed-form unnormalized posterior density approximation.
+
+## Monte Carlo within Metropolis
+We start with a Monte Carlo within Metropolis (mcwm) algorithm, which is 
+a modification of (adaptive) Metropolis-Hastings where the log-likelihood 
+evaluations are replaced by samples from the log-likelihood emulator, such 
+that the samples are produced independently at each iteration.
+
+```{r}
+# TODO: check that parameter ordering isn't getting messed up. Seems like it 
+#       might be. Maybe not actually, but should check this. 
+
+
+# Run mcwmh-joint.
+samp_exact <- select_mcmc_samp_mat(samp_dt, test_label="exact", param_type="par", 
+                                   itr_start=burn_in_start)
+cov_prop_init <- cov(samp_exact)
+par_init1 <- colMeans(samp_exact)
+par_init2 <- design_info$input[which.max(design_info$llik),]
+
+mcmc_mcwmh_list <- run_mcmc("mcmc_noisy_llik", llik_em, par_prior=par_prior,
+                            n_chain=2L, n_itr=n_mcmc, test_label="mcwmh-joint",
+                            try_parallel=FALSE, use_joint=TRUE, 
+                            cov_prop=cov_prop_init, adapt_cov_prop=FALSE)
+
+# Append to samples table.
+samp_dt_test <- mcmc_mcwmh_list$samp
+samp_dt <- combine_samp_dt(samp_dt, mcmc_mcwmh_list$samp)
+```
+
+### Trace Plots
+```{r}
+burn_in_start <- c(burn_in_start, `mcwmh-joint`=25000L)
+trace_plots <- get_trace_plots(samp_dt_test, itr_start=25000L, 
+                               test_labels="mcwmh-joint", overlay_chains=TRUE)
+for(plt in trace_plots) plot(plt)
+```
+
+
+
+
+
+
+
+
+
+
 
 

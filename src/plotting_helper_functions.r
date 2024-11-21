@@ -124,7 +124,7 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL,
                                   plot_title=NULL, xlab="x", ylab="y", 
                                   ground_truth_col="black", design_color="black", 
                                   design_pt_size=1.5, line_thickness=1.0, 
-                                  legend=FALSE) {
+                                  legend=TRUE, ...) {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
