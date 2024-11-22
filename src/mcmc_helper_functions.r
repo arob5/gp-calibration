@@ -71,13 +71,24 @@ get_empty_samp_dt <- function() {
 }
 
 
-combine_samp_dt <- function(...) {
-  # TODO: for now, just stacks `samp_dt` objects, but should generalize this 
-  # by requiring that `samp_dt` objects have unique keys set and use this to 
-  # ensure this stacking operation does not produce duplicates.
-  
+combine_samp_dt <- function(..., itr_start=1L, itr_stop=NULL) {
+  # Vertically stacks separate `samp_dt` objects into a single `samp_dt`
+  # object. For now, checks that all objects in `...` are valid `samp_dt`
+  # objects, and allows subsetting by iteration range prior to stacking.
+  # TODO: need to ensure that stacking does not produce duplicates. This 
+  #       should be part of an update that requires `samp_dt` objects 
+  #       to have keys set to the variables defining unique rows.
+
   l <- list(...)
+  
+  # Ensure all arguments are valid `samp_dt` data.tables.
   for(dt in l) assert_is_samp_dt(dt)
+  
+  # Restrict output to specified iteration ranges.
+  l <- lapply(dt, function(dt) select_mcmc_itr(dt, itr_start=itr_start, 
+                                               itr_stop=itr_stop))
+  
+  # Stack tables vertically.
   data.table::rbindlist(l, use.names=TRUE)
 }
 

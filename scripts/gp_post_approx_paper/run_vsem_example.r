@@ -7,13 +7,29 @@
 #
 
 # TODO:
+# - Perhaps the best way to do this is to have a `run_vsem_example_setup.r` 
+#   script that is responsible for saving the inverse problem list and 
+#   generating validation data that will be used for testing all emulators 
+#   (one set of validation data based on the prior and one set based on the 
+#   exact MCMC output).
+# - Then a `run_vsem_example_emulator.r` script that reads in the inverse
+#   problem setup, creates an initial design, and then fits an emulator. This 
+#   script can be called in a distributed fashion using different design seeds
+#   to create an ensemble of initial designs and their corresponding emulators.
+# - Then a `run_vsem_example_mcmc.r` script that reads in a specific MCMC alg
+#   and design/emulator and runs MCMC. An MCMC settings object can be saved 
+#   to file beforehand so this file can read settings from that file.
+#   Results can be saved for each alg/design combination.
+
+ 
+# TODO:
 # - save samp_dt for exact mcmc separately 
 # - update the function that runs a bunch of different mcmc algs; wrapper 
 #   function should maybe be called something like "run_mcmc_llik_em()", which 
 #   translates an mcmc tag into the algorithm to be called. Then can write a 
 #   wrapper around this called `run_mcmc_llik_em_approx()` which basically just
 #   loops over `run_mcmc_llik_em()`. Save `samp_dt` separately for each to 
-#   avoid one massive data.table.
+#   avoid one massive data.table. 
 
 
 
@@ -57,6 +73,37 @@ Options:
   --mcmc_tags=<mcmc_tag,mcmc_tag>           GP-approx MCMC algorithms. 
   --N_mcmc=<N_mcmc>                         Number of MCMC iterations. 
 " -> doc
+
+# -----------------------------------------------------------------------------
+# MCMC settings  
+# -----------------------------------------------------------------------------
+
+# Helper function will extract "tag" and "mcmc_func_name"; everything else 
+# will be treated as an argument to `run_mcmc()` or the MCMC function.
+
+# TODO: where to add cov_prop_init?
+# TODO: add marginal acceptance prob.
+
+common_settings <- list(n_itr=100000L, try_parallel=FALSE)
+common_bt_settings <- list(mcmc_func_name="mcmc_bt_wrapper", sampler="DEzs", 
+                           n_chain=4L, defer_ic=TRUE)
+
+mcmc_settings_list <- list(
+  list(mcmc_tag="quantile7", common_settings, common_bt_settings,
+       approx_type="quantile", alpha=0.7),
+  list(mcmc_tag="quantile8", common_settings, common_bt_settings,
+       approx_type="quantile", alpha=0.8),
+  list(mcmc_tag="quantile9", common_settings, common_bt_settings,
+       approx_type="quantile", alpha=0.9),
+  list(mcmc_tag="mean", common_settings, common_bt_settings,
+       approx_type="mean"),
+  list(mcmc_tag="marginal", common_settings, common_bt_settings,
+       approx_type="marginal"),
+  list(mcmc_tag="mcwmh-joint", common_settings, mcmc_func_name="mcmc_noisy_llik",
+       use_joint=TRUE),
+  list(mcmc_tag="mcwmh-ind", common_settings, mcmc_func_name="mcmc_noisy_llik",
+       use_joint=FALSE)
+)
 
 
 # -----------------------------------------------------------------------------
@@ -246,8 +293,12 @@ mcmc_exact_list <- run_mcmc("mcmc_bt_wrapper", llik_obj_exact, defer_ic=TRUE,
                             n_itr=N_mcmc, test_label="exact", try_parallel=FALSE)
 
 # Table storing MCMC samples.
-samp_dt <- mcmc_exact_list$samp
-mcmc_list <- list(exact=mcmc_exact_list$output_list)
+samp_dt_exact <- mcmc_exact_list$samp
+mcmc_list_exact <- list(exact=mcmc_exact_list$output_list)
+
+# Save exact MCMC samples.
+fwrite(samp_dt_exact, file.path(output_dir, "mcmc_samp_exact.csv"))
+save(mcmc_list_exact, file=file.path(output_dir, "mcmc_list_exact.RData"))
 
 # -----------------------------------------------------------------------------
 # Fitting Emulators.   
@@ -316,11 +367,11 @@ mcmc_mcwmh_list <- run_mcmc("mcmc_noisy_llik", llik_em, par_prior=par_prior,
                             try_parallel=FALSE, use_joint=TRUE, 
                             cov_prop=cov_prop_init)
 
-samp_dt <- combine_samp_dt(samp_dt, mcmc_mcwmh_list$samp)
-mcmc_list[["mcwmh-joint"]] <- mcmc_mcwmh_list$output_list
+samp_dt_approx <- combine_samp_dt(samp_dt, mcmc_mcwmh_list$samp)
+mcmc_list_approx <- mcmc_mcwmh_list$output_list
 
-fwrite(samp_dt, file.path(output_dir, "mcmc_samp.csv"))
-save(mcmc_list, file=file.path(output_dir, "mcmc_list.RData"))
+fwrite(samp_dt_approx, file.path(output_dir, "mcmc_samp_approx.csv"))
+save(mcmc_list_approx, file=file.path(output_dir, "mcmc_list_approx.RData"))
 
 # run_approx_mcmc <- TRUE
 # if(run_approx_mcmc) {

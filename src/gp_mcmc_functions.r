@@ -536,7 +536,7 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   # and returned value align with the other MCMC functions in this file.
   # In particular, `mcmc_bt_wrapper()` is set up to run a single chain of 
   # MCMC using a `llik_emulator` object. Parallelization for multichain runs 
-  # should be accomplished using `run_mcmc()`, as for the other 
+  # should be accomplished using `run_mcmc_chains()`, as for the other 
   # MCMC functions implemented here. The MCMC output from BayesianTools is 
   # transformed to have the same format as the other MCMC functions here (e.g.,
   # `mcmc_noisy_llik()`). Note that the `parallel` element of the BayesianTools
@@ -690,13 +690,13 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 #  For running chains in parallel and setting initial conditions.
 # ------------------------------------------------------------------------------
 
-run_mcmc <- function(mcmc_func_name, llik_emulator, n_chain=4L, 
-                     par_init=NULL, par_prior=NULL, defer_ic=FALSE,
-                     lik_par_init=NULL, lik_par_prior=NULL, 
-                     ic_sample_method="LHS", estimate_cov=FALSE, 
-                     n_samp_cov_est=100L, try_parallel=TRUE, n_cores=NULL,  
-                     package_list=NULL, dll_list=NULL, obj_list=NULL, 
-                     test_label="default_lbl", ...) {
+run_mcmc_chains <- function(mcmc_func_name, llik_emulator, n_chain=4L, 
+                            par_init=NULL, par_prior=NULL, defer_ic=FALSE,
+                            lik_par_init=NULL, lik_par_prior=NULL, 
+                            ic_sample_method="LHS", estimate_cov=FALSE, 
+                            n_samp_cov_est=100L, try_parallel=TRUE, n_cores=NULL,  
+                            package_list=NULL, dll_list=NULL, obj_list=NULL, 
+                            test_label="default_lbl", ...) {
   # Provides the main interface/entrypoint for running MCMC with llikEmulator
   # objects. This wrapper function runs multiple MCMC chains in parallel. If 
   # initial conditions are not supplied by the user, then they will be sampled 
@@ -782,7 +782,7 @@ run_mcmc <- function(mcmc_func_name, llik_emulator, n_chain=4L,
       mcmc_chain_list <- lapply(par_init_list, mcmc_func_ic)
     }
   }, error = function(cond) {
-    message("run_mcmc() error:")
+    message("run_mcmc_chains() error:")
     message(conditionMessage(cond))
     err_list <- list(err=cond)
     if(exists("mcmc_chain_list")) err_list$partial_output <- mcmc_chain_list
@@ -806,6 +806,95 @@ run_mcmc <- function(mcmc_func_name, llik_emulator, n_chain=4L,
   }
   
   return(list(samp=samp_dt, output_list=mcmc_outputs_list))
+}
+
+
+# Instead of this tag approach: 
+# Have an MCMC settings list that completely defines a run, which has 
+# arguments: tag, `mcmc_func_name`, llik_em`, `par_prior`, `args` where 
+# `args` is a named sub-list specifying all arguments other than `llik_em` and 
+# `par_prior` that will be passed to the MCMC function.
+#
+
+run_mcmc_tag <- function(settings_list, llik_em, par_prior, ...) {
+  # A higher-level wrapper around `run_mcmc_chains()` that allows a user to 
+  # specify an MCMC algorithm by a "tag". A "tag" is intended to define a specific 
+  # MCMC algorithm/method, which is defined both by an MCMC function as well 
+  # as the function's arguments. For example, "mcmc_bt_wrapper()" has the 
+  # functionality to run many different MCMC algorithms, as well as employ 
+  # different likelihood approximations. An MCMC tag would thus define a 
+  # specific algorithm and algorithm settings to be run by "mcmc_bt_wrapper()".
+  # Each MCMC tag must have an associated function named "mcmc_<tag>".
+  # See `run_mcmc_tag_comparison()` for running multiple tags using the same 
+  # llikEmulator object. Note that the notion of an MCMC tag is a little loose
+  # at this point, and a tag does not imply a specific setting for all 
+  # arguments of an MCMC function. For example, the tag "quantile" implies that 
+  # an MCMC algorithm will be run using an approximation of the likelihood 
+  # given by a quantile of the log-likelihood emulator distribution. However, 
+  # it does not imply a specific quantile, which must be explicitly passed.
+  #
+  # Args:
+  #    character: character, the (single) MCMC tag.
+  #    llik_em: object such that `is_llik_em(llik_em)` is TRUE.
+  #    par_prior: the data.frame defining the prior distribution.
+  #    ...: arguments passed to `mcmc_<tag>()`.
+  #
+  # Returns:
+  #  Returns the output of the call to `mcmc_<tag>()`, which should be of the 
+  #  standard form required by MCMC functions in this file.
+  
+  mcmc_func_name <- paste0("mcmc_", mcmc_tag)
+  get(mcmc_func_name)(llik_em, par_prior, ...)
+}
+
+
+run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list) {
+  n_runs <- length(mcmc_tag)
+  
+  # If provided, ensure that `arg_list` contains one sub-list per tag.
+  if(is.null(arg_list)) {
+    arg_list <- lapply(1:n_tags, function(x) NULL)
+    names(arg_list) <- mcmc_tag
+  } else {
+    assert_that(is.list(arg_list) && (length(arg_list)==n_tags))
+    assert_that(setequal(names(arg_list), mcmc_tag))
+  }
+  
+  # Run MCMC algorithms.
+  mcmc_list <- setNames(vector(mode="list", length=n_tags), mcmc_tag)
+  for(i in seq_along(mcmc_list)) {
+    tag <- mcmc_tag[i]
+    args <- c(mcmc_tag=tag, llik_em=llik_em, par_prior=par_prior, arg_list[[tag]])
+    mcmc_list[[tag]] <- do.call(run_mcmc_tag, args)
+  }
+}
+
+
+run_mcmc_tag_comparison <- function(mcmc_tag, llik_em, par_prior, combine=FALSE, 
+                                    arg_list=NULL) {
+  n_tags <- length(mcmc_tag)
+  
+  # If provided, ensure that `arg_list` contains one sub-list per tag.
+  if(is.null(arg_list)) {
+    arg_list <- lapply(1:n_tags, function(x) NULL)
+    names(arg_list) <- mcmc_tag
+  } else {
+    assert_that(is.list(arg_list) && (length(arg_list)==n_tags))
+    assert_that(setequal(names(arg_list), mcmc_tag))
+  }
+  
+  # Run MCMC algorithms.
+  mcmc_list <- setNames(vector(mode="list", length=n_tags), mcmc_tag)
+  for(i in seq_along(mcmc_list)) {
+    tag <- mcmc_tag[i]
+    args <- c(mcmc_tag=tag, llik_em=llik_em, par_prior=par_prior, arg_list[[tag]])
+    mcmc_list[[tag]] <- do.call(run_mcmc_tag, args)
+  }
+  
+  # Optionally combine output from the various runs.
+  
+  
+  
 }
 
 

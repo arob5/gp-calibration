@@ -80,16 +80,17 @@ provides access to the MCMC samplers implemented in the BayesianTools package.
 When `llik_em$exact_llik` is `TRUE`, then `mcmc_bt_wrapper()` will 
 run MCMC using the true/exact likelihood, as expected. We access the 
 `mcmc_bt_wrapper()` function through the interface provided by 
-`run_mcmc()`. For more information on running exact MCMC, see the 
+`run_mcmc_chains()`. For more information on running exact MCMC, see the 
 tutorial `scripts/tutorials/inv_prob_exact_mcmc.Rmd`. 
 
 ```{r}
 n_mcmc <- 50000L
 
 # Run exact MCMC.
-mcmc_exact_list <- run_mcmc("mcmc_bt_wrapper", llik_obj_exact, defer_ic=TRUE,
-                            sampler="DEzs", n_chain=1L, par_prior=par_prior, 
-                            n_itr=n_mcmc, test_label="exact")
+mcmc_exact_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_obj_exact, 
+                                   defer_ic=TRUE, sampler="DEzs", n_chain=1L, 
+                                   par_prior=par_prior, n_itr=n_mcmc, 
+                                   test_label="exact")
 
 # Table storing MCMC samples.
 samp_dt <- mcmc_exact_list$samp
@@ -182,10 +183,11 @@ emulator (see "marginal" approximation below).
 
 ```{r}
 # Run MCMC with plug-in mean approximation.
-mcmc_mean_approx_list <- run_mcmc("mcmc_bt_wrapper", llik_em, defer_ic=TRUE,
-                                  approx_type="mean", sampler="DEzs", n_chain=1L, 
-                                  par_prior=par_prior, n_itr=n_mcmc, 
-                                  test_label="mean")
+mcmc_mean_approx_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_em, 
+                                         defer_ic=TRUE, approx_type="mean", 
+                                         sampler="DEzs", n_chain=1L, 
+                                         par_prior=par_prior, n_itr=n_mcmc, 
+                                         test_label="mean")
 
 # Append to samples table.
 samp_dt <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
@@ -217,11 +219,12 @@ uncertain.
 ```{r}
 # Run MCMC with quantile approximation.
 alpha <- 0.9
-mcmc_quantile_approx_list <- run_mcmc("mcmc_bt_wrapper", llik_em, defer_ic=TRUE,
-                                      approx_type="quantile", alpha=0.9,
-                                      sampler="DEzs", n_chain=4L, par_prior=par_prior, 
-                                      n_itr=n_mcmc, test_label="quantile", 
-                                      try_parallel=FALSE)
+mcmc_quantile_approx_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_em, 
+                                             defer_ic=TRUE, approx_type="quantile", 
+                                             alpha=0.9, sampler="DEzs", 
+                                             n_chain=4L, par_prior=par_prior, 
+                                             n_itr=n_mcmc, test_label="quantile", 
+                                             try_parallel=FALSE)
 
 # Append to samples table.
 samp_dt <- combine_samp_dt(samp_dt, mcmc_quantile_approx_list$samp)
@@ -281,10 +284,11 @@ cov_prop_init <- cov(samp_exact)
 par_init1 <- colMeans(samp_exact)
 par_init2 <- design_info$input[which.max(design_info$llik),]
 
-mcmc_mcwmh_list <- run_mcmc("mcmc_noisy_llik", llik_em, par_prior=par_prior,
-                            n_chain=2L, n_itr=n_mcmc, test_label="mcwmh-joint",
-                            try_parallel=FALSE, use_joint=TRUE, 
-                            cov_prop=cov_prop_init, adapt_cov_prop=FALSE)
+mcmc_mcwmh_list <- run_mcmc_chains("mcmc_noisy_llik", llik_em, 
+                                   par_prior=par_prior, n_chain=2L, n_itr=n_mcmc, 
+                                   test_label="mcwmh-joint", try_parallel=FALSE, 
+                                   use_joint=TRUE, cov_prop=cov_prop_init, 
+                                   adapt_cov_prop=FALSE)
 
 # Append to samples table.
 samp_dt_test <- mcmc_mcwmh_list$samp
