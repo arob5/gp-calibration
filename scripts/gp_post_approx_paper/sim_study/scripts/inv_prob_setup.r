@@ -49,7 +49,7 @@ design_method_test <- "LHS"
 n_samp_prior <- 100000L
 
 # Specifications for exact MCMC.
-mcmc_settings <- list(tag="exact", mcmc_func_name="mcmc_bt_wrapper", 
+mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
                       sampler="DEzs", n_itr=200000L, try_parallel=FALSE,  
                       n_chain=4L, defer_ic=TRUE)
 
@@ -103,7 +103,6 @@ saveRDS(inv_prob, file=file.path(out_dir, "inv_prob_list.RData"))
 # ------------------------------------------------------------------------------
 
 # MCMC sampling using exact likelihood.
-# TODO: left off here; need to implement `run_mcmc()`
 mcmc_list <- run_mcmc(inv_prob$llik_obj, inv_prob$par_prior, mcmc_settings)
 
 # Table storing MCMC samples.
@@ -115,6 +114,10 @@ prior_samp <- sample_prior(inv_prob$par_prior, n=n_samp_prior)
 samp_dt <- append_samples_mat(samp_dt, prior_samp, param_type="par", 
                               test_label="prior")
 
+# Save to file.
+saveRDS(samp_dt, file=file.path(out_dir, "samp_exact.RData"))
+saveRDS(mcmc_metadata, file=file.path(out_dir, "samp_exact_metadata.RData"))
+
 # ------------------------------------------------------------------------------
 # Construct validation test points.
 # ------------------------------------------------------------------------------
@@ -124,14 +127,10 @@ test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_pri
 saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.RData"))
 
 # Validation inputs sub-sampled from true posterior.
-exact_mcmc_samp <- select_mcmc_samp_mat(samp_dt, test_label="mcwmh-joint",
+exact_mcmc_samp <- select_mcmc_samp_mat(samp_dt, test_label="exact",
                                         param_type="par", itr_start=burn_in_start)
 
 test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
                                        design_candidates=exact_mcmc_samp)
-
-
-
-
-
+saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.RData"))

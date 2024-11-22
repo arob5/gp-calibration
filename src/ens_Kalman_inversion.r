@@ -116,8 +116,6 @@ run_eki <- function(y, fwd, Sig, n_itr=1L, par_prior=NULL, U0=NULL, G0=NULL,
   # Construct default transport map, if not explicitly provided.
   if(transform_pars && is.null(par_map)) {
     par_map <- get_default_par_map(par_prior)
-  } else {
-    par_map <- NULL
   }
   
   # List storing intermediate outputs.

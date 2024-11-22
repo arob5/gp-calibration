@@ -59,13 +59,13 @@ library(parallel)
 # generalized to more general likelihoods in the future.
 # -----------------------------------------------------------------------------
 
-# Need to check that the llik_emulator is correct for this function. 
+# Need to check that the llik_em is correct for this function. 
 # Infer which sig2 need to be learned by the `lik_par_fixed` attribute.
 # How to map `sig2_prior+_params` onto the proper parameters? 
 # TODO: need to have checking in llikSumEmulator to make sure the same input parameters are 
 # used for each term. 
 
-mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=NULL,
+mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
                             sig2_prior=NULL, mode="mcwmh", use_joint=TRUE,  
                             n_itr=50000L, cov_prop=NULL, log_scale_prop=NULL, 
                             adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
@@ -74,12 +74,12 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
                             adapt_factor_exponent=0.8, adapt_factor_numerator=10, 
                             adapt_interval=200, ...) {
   # Args:
-  #    llik_emulator: an object for which `is_llik_em(llik_emulator)` is TRUE.
+  #    llik_em: an object for which `is_llik_em(llik_em)` is TRUE.
   #    par_prior: data.frame defining the prior distribution for `par`. 
   #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
   #              samples from the prior to determine the initial condition.
   #    sig2_init: numeric, the initial condition for the variance parameters. 
-  #               Not used if `llik_emulator$use_fixed_lik_par` is TRUE.
+  #               Not used if `llik_em$use_fixed_lik_par` is TRUE.
   #    sig2_prior: list defining the prior distribution on the variance 
   #                parameters.
   #    mode: character, either "mcwmh" or "pseudo-marg" to run either the Monte
@@ -108,19 +108,19 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
   # And that the names include the names of the outputs where sig2 must be 
   # learned. Ensure `par_init` has names as well. 
 
-  # TODO: for some reason, `inherits(llik_emulator, "llikEmulator")` always 
+  # TODO: for some reason, `inherits(llik_em, "llikEmulator")` always 
   # evaluates to FALSE when this is called from parLapply(). Need to figure 
   # out why. 
-  # assert_that(is_llik_em(llik_emulator))
+  # assert_that(is_llik_em(llik_em))
   
   if(mode != "mcwmh") {
     .NotYetImplemented(msg="Only `mode=mcwmh` currently implemented.")
   }
   
   # Objects to store samples. 
-  d <- llik_emulator$dim_input
+  d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
-  colnames(par_samp) <- llik_emulator$input_names
+  colnames(par_samp) <- llik_em$input_names
   
   # Set initial conditions. 
   if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
@@ -132,13 +132,13 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
   # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
+  learn_sig2 <- !unlist(llik_em$get_llik_term_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
   include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
   
   if(include_sig2_Gibbs_step) {
-    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", 
+    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", 
                                                      labels=term_labels_learn_sig2))
     sig2_samp <- matrix(nrow=n_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
@@ -157,7 +157,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
   # If tracking the proposal standard deviations.
   if(return_prop_sd) {
     prop_sd_comb <- matrix(nrow=n_itr, ncol=d, 
-                           dimnames=list(NULL, llik_emulator$input_names))
+                           dimnames=list(NULL, llik_em$input_names))
     prop_sd_comb[1,] <- exp(log_scale_prop) * sqrt(diag(cov_prop)) 
   } else {
     prop_sd_comb <- NULL
@@ -181,7 +181,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
         lprior_par_prop <- lprior(par_prop)
         
         # Sample SSR. 
-        emulator_samp_list <- llik_emulator$sample_emulator(rbind(par_curr,par_prop), 
+        emulator_samp_list <- llik_em$sample_emulator(rbind(par_curr,par_prop), 
                                                             use_cov=use_joint, 
                                                             include_nugget=TRUE, ...)  
         
@@ -193,7 +193,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
           curr_prop_idx <- 1L
         } else {
           # Sample log-likelihood emulator. 
-          llik_samp <- llik_emulator$assemble_llik(emulator_samp_list, 
+          llik_samp <- llik_em$assemble_llik(emulator_samp_list, 
                                                    lik_par_val=sig2_curr)
           
           # Accept-Reject step.
@@ -265,7 +265,7 @@ mcmc_noisy_llik <- function(llik_emulator, par_prior, par_init=NULL, sig2_init=N
 }
 
 
-mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL, 
+mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL, 
                                          sig2_init=NULL, sig2_prior=NULL, 
                                          approx_type="marginal", n_itr=50000L, 
                                          alpha_quantile=0.9, 
@@ -278,7 +278,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL
                                          adapt_interval=200, ...) {
   # An adaptive Metropolis-Hastings sampler, where the likelihood is given by 
   # a deterministic likelihood approximation defined by a call to 
-  # `llik_emulator$calc_lik_approx()`. Currently this function assumes that 
+  # `llik_em$calc_lik_approx()`. Currently this function assumes that 
   # likelihood parameters are fixed, though this will be generalized in the 
   # future.
   #
@@ -292,9 +292,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL
   #    MCMC functions implemented here.
 
   # Objects to store samples. 
-  d <- llik_emulator$dim_input
+  d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
-  colnames(par_samp) <- llik_emulator$input_names
+  colnames(par_samp) <- llik_em$input_names
   
   # At present, this function assumes that the likelihood parameters are fixed.
   learn_sig2 <- FALSE
@@ -306,8 +306,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   par_curr_mat <- matrix(par_curr, nrow=1, 
-                         dimnames=list(NULL, llik_emulator$input_names))
-  llik_pred_curr <- llik_emulator$calc_lik_approx(par_curr_mat, approx_type, 
+                         dimnames=list(NULL, llik_em$input_names))
+  llik_pred_curr <- llik_em$calc_lik_approx(par_curr_mat, approx_type, 
                                                   lik_par_val=sig2_curr, 
                                                   log_scale=TRUE, 
                                                   alpha=alpha_quantile, ...)
@@ -340,8 +340,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL
         } else {
           # Compute log-posterior approximation. 
           par_prop_mat <- matrix(par_prop, nrow=1,
-                                 dimnames=list(NULL, llik_emulator$input_names))
-          llik_pred_prop <- llik_emulator$calc_lik_approx(par_prop_mat, approx_type, 
+                                 dimnames=list(NULL, llik_em$input_names))
+          llik_pred_prop <- llik_em$calc_lik_approx(par_prop_mat, approx_type, 
                                                           lik_par_val=sig2_curr, 
                                                           log_scale=TRUE, 
                                                           alpha=alpha_quantile, ...) 
@@ -391,7 +391,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_emulator, par_prior, par_init=NULL
 }
 
 
-mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NULL, sig2_init=NULL, 
+mcmc_gp_acc_prob_approx <- function(llik_em, par_prior_params, par_init=NULL, sig2_init=NULL, 
                                     sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
                                     log_scale_prop=NULL, approx_type="marginal",
                                     adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
@@ -415,21 +415,21 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
   # Validation and setup for log-likelihood emulator. 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
   # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
-  # validate_args_mcmc_gp_deterministic_approx(llik_emulator, par_prior_params, par_init, sig2_prior_params, N_itr,
+  # validate_args_mcmc_gp_deterministic_approx(llik_em, par_prior_params, par_init, sig2_prior_params, N_itr,
   #                                           cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
   
   # This should be moved to the argument validation function, once it is written. 
-  if(approx_type=="marginal") assert_that(llik_emulator$llik_pred_dist == "Gaussian")
+  if(approx_type=="marginal") assert_that(llik_em$llik_pred_dist == "Gaussian")
   
   # Objects to store samples. 
-  d <- llik_emulator$dim_input
+  d <- llik_em$dim_input
   par_samp <- matrix(nrow=N_itr, ncol=d)
-  colnames(par_samp) <- llik_emulator$input_names
+  colnames(par_samp) <- llik_em$input_names
   
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
   # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_emulator$get_llik_term_attr("use_fixed_lik_par"))
+  learn_sig2 <- !unlist(llik_em$get_llik_term_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
   include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
@@ -437,7 +437,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
   if(include_sig2_Gibbs_step) {
     .NotYetImplemented()
     
-    N_obs <- unlist(llik_emulator$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
+    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
     sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
@@ -477,7 +477,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
         SSR_idx <- 1
       } else {
         # Compute acceptance probability approximation. 
-        alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_emulator, approx_type, 
+        alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, approx_type, 
                                            lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, 
                                            lprior_vals=c(lprior_par_curr, lprior_par_prop), ...)
         
@@ -527,7 +527,7 @@ mcmc_gp_acc_prob_approx <- function(llik_emulator, par_prior_params, par_init=NU
 }
 
 
-mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL, 
+mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL, 
                             par_init=NULL, n_itr=50000L, sampler="DEzs", 
                             settings_list=list(), ...) {
   # This function provides a wrapper around the BayesianTools package 
@@ -535,7 +535,7 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   # MCMC algorithms. This wrapper is designed so that the argument interface
   # and returned value align with the other MCMC functions in this file.
   # In particular, `mcmc_bt_wrapper()` is set up to run a single chain of 
-  # MCMC using a `llik_emulator` object. Parallelization for multichain runs 
+  # MCMC using a `llik_em` object. Parallelization for multichain runs 
   # should be accomplished using `run_mcmc_chains()`, as for the other 
   # MCMC functions implemented here. The MCMC output from BayesianTools is 
   # transformed to have the same format as the other MCMC functions here (e.g.,
@@ -545,8 +545,8 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   # the running of multiple chains in parallel.
   #
   # This wrapper works by extracting a log-likelihood function from the object
-  # `llik_emulator` via the `get_llik_func()` method. If 
-  # `llik_emulator$exact_llik` is TRUE, then the likelihood will be  
+  # `llik_em` via the `get_llik_func()` method. If 
+  # `llik_em$exact_llik` is TRUE, then the likelihood will be  
   # exact (not approximated). Otherwise, a deterministic likelihood 
   # approximation is constructed according to the `approx_type` argument.
   # Therefore, `mcmc_bt_wrapper()` provides an interface for both exact and 
@@ -561,8 +561,8 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   # population. 
   #
   # Args:
-  #    llik_emulator: an object for which `is_llik_em(llik_emulator)` is TRUE.
-  #                   Also, for the time being `llik_emulator$use_fixed_lik_par`
+  #    llik_em: an object for which `is_llik_em(llik_em)` is TRUE.
+  #                   Also, for the time being `llik_em$use_fixed_lik_par`
   #                   must be TRUE.
   #    par_prior: data.frame defining the prior distribution for `par`. 
   #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
@@ -586,7 +586,7 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   #                  a single MCMC chain. settings_list$startValue` is
   #                  set to `par_init`, which is sampled from the prior if 
   #                  `par_init` is NULL.
-  #   ...: additional arguments passed to `llik_emulator$assemble_llik()`.
+  #   ...: additional arguments passed to `llik_em$assemble_llik()`.
   #
   # Returns: 
   # Returns a list with elements "samp" and "bt_output". "samp" follows the 
@@ -599,12 +599,12 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
   # "bt_output$chain". 
   
   # TODO: why does this check fail when executed in parallel?
-  # assert_that(is_llik_em(llik_emulator))
-  assert_that(llik_emulator$use_fixed_lik_par)
+  # assert_that(is_llik_em(llik_em))
+  assert_that(llik_em$use_fixed_lik_par)
 
   # Log-likelihood function. Set up to accept numeric vector `par` as an 
   # argument.
-  llik <- llik_emulator$get_llik_func(approx_type=approx_type)
+  llik <- llik_em$get_llik_func(approx_type=approx_type)
 
   # Log prior density and sampling function.
   lprior <- get_lprior_dens(par_prior)
@@ -615,7 +615,7 @@ mcmc_bt_wrapper <- function(llik_emulator, par_prior, approx_type=NULL,
                                                       prior=lprior, 
                                                       parallel=FALSE,
                                                       priorSampler=prior_sampler, 
-                                                      names=llik_emulator$input_names)
+                                                      names=llik_em$input_names)
   
   # MCMC settings list. Ensure number of MCMC iterations and number of MCMC 
   # chains are in the list; other BayesianTools MCMC settings can optionally be 
@@ -690,7 +690,7 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 #  For running chains in parallel and setting initial conditions.
 # ------------------------------------------------------------------------------
 
-run_mcmc_chains <- function(mcmc_func_name, llik_emulator, n_chain=4L, 
+run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L, 
                             par_init=NULL, par_prior=NULL, defer_ic=FALSE,
                             lik_par_init=NULL, lik_par_prior=NULL, 
                             ic_sample_method="LHS", estimate_cov=FALSE, 
@@ -707,8 +707,8 @@ run_mcmc_chains <- function(mcmc_func_name, llik_emulator, n_chain=4L,
   #
   # Args:
   #    mcmc_func_name: character, the name of the MCMC function to call.
-  #    llik_emulator: llikEmulator object encoding the exact or approximate 
-  #                   log-likelihood.
+  #    llik_em: llikEmulator object encoding the exact or approximate 
+  #             log-likelihood.
   #    n_chain: integer, number of independent MCMC chains to run.
   #    par_init: matrix of dimension (n_chain,d), each row containing the 
   #              initial condition for one of the MCMC chains.
@@ -757,7 +757,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_emulator, n_chain=4L,
     
     # Set up MCMC function as a function of the initial condition.
     mcmc_func <- get(mcmc_func_name)
-    mcmc_func_ic <- function(ic) mcmc_func(llik_emulator=llik_emulator,
+    mcmc_func_ic <- function(ic) mcmc_func(llik_em=llik_em,
                                            par_prior=par_prior,
                                            par_init=ic, ...)
     
@@ -809,92 +809,38 @@ run_mcmc_chains <- function(mcmc_func_name, llik_emulator, n_chain=4L,
 }
 
 
-# Instead of this tag approach: 
-# Have an MCMC settings list that completely defines a run, which has 
-# arguments: tag, `mcmc_func_name`, llik_em`, `par_prior`, `args` where 
-# `args` is a named sub-list specifying all arguments other than `llik_em` and 
-# `par_prior` that will be passed to the MCMC function.
-#
-
-run_mcmc_tag <- function(settings_list, llik_em, par_prior, ...) {
-  # A higher-level wrapper around `run_mcmc_chains()` that allows a user to 
-  # specify an MCMC algorithm by a "tag". A "tag" is intended to define a specific 
-  # MCMC algorithm/method, which is defined both by an MCMC function as well 
-  # as the function's arguments. For example, "mcmc_bt_wrapper()" has the 
-  # functionality to run many different MCMC algorithms, as well as employ 
-  # different likelihood approximations. An MCMC tag would thus define a 
-  # specific algorithm and algorithm settings to be run by "mcmc_bt_wrapper()".
-  # Each MCMC tag must have an associated function named "mcmc_<tag>".
-  # See `run_mcmc_tag_comparison()` for running multiple tags using the same 
-  # llikEmulator object. Note that the notion of an MCMC tag is a little loose
-  # at this point, and a tag does not imply a specific setting for all 
-  # arguments of an MCMC function. For example, the tag "quantile" implies that 
-  # an MCMC algorithm will be run using an approximation of the likelihood 
-  # given by a quantile of the log-likelihood emulator distribution. However, 
-  # it does not imply a specific quantile, which must be explicitly passed.
+run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
+  # An higher-level interface to running the MCMC functions that wraps around 
+  # `run_mcmc_chains()`. This function requires specifying the log-likelihood 
+  # and prior (which are required by all MCMC functions), with all other 
+  # arguments stored in a list `mcmc_settings`. This function is primarily 
+  # implemented for simulation experiments, where one may want to test many 
+  # different MCMC algorithms on the same inverse problem.
   #
   # Args:
-  #    character: character, the (single) MCMC tag.
-  #    llik_em: object such that `is_llik_em(llik_em)` is TRUE.
-  #    par_prior: the data.frame defining the prior distribution.
-  #    ...: arguments passed to `mcmc_<tag>()`.
+  #    llik_em: the llikEmulator object.
+  #    par_prior: prior distribution object.
+  #    mcmc_settings: list, which must have elements "test_label" and 
+  #                   "mcmc_func_name", the former providing an identifier
+  #                   for the MCMC execution, and the latter giving the name 
+  #                   of the MCMC function to call. All other elements of 
+  #                   `mcmc_settings` are interpreted as arguments that will 
+  #                   be passed to `run_mcmc_chains()`.
   #
   # Returns:
-  #  Returns the output of the call to `mcmc_<tag>()`, which should be of the 
-  #  standard form required by MCMC functions in this file.
+  # The return value of the call to `run_mcmc_chains()`.
   
-  mcmc_func_name <- paste0("mcmc_", mcmc_tag)
-  get(mcmc_func_name)(llik_em, par_prior, ...)
-}
-
-
-run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list) {
-  n_runs <- length(mcmc_tag)
+  # Ensure MCMC tag and MCMC function name are included in settings.
+  required_settings <- c("test_label", "mcmc_func_name")
+  assert_that(all(required_settings %in% names(mcmc_settings)))
+  assert_that(all(!sapply(mcmc_settings[required_settings], is.null)))
   
-  # If provided, ensure that `arg_list` contains one sub-list per tag.
-  if(is.null(arg_list)) {
-    arg_list <- lapply(1:n_tags, function(x) NULL)
-    names(arg_list) <- mcmc_tag
-  } else {
-    assert_that(is.list(arg_list) && (length(arg_list)==n_tags))
-    assert_that(setequal(names(arg_list), mcmc_tag))
-  }
+  # Assemble full list of arguments for `run_mcmc_chains`.
+  mcmc_settings$llik_em <- llik_em
+  mcmc_settings$par_prior <- par_prior
   
-  # Run MCMC algorithms.
-  mcmc_list <- setNames(vector(mode="list", length=n_tags), mcmc_tag)
-  for(i in seq_along(mcmc_list)) {
-    tag <- mcmc_tag[i]
-    args <- c(mcmc_tag=tag, llik_em=llik_em, par_prior=par_prior, arg_list[[tag]])
-    mcmc_list[[tag]] <- do.call(run_mcmc_tag, args)
-  }
-}
-
-
-run_mcmc_tag_comparison <- function(mcmc_tag, llik_em, par_prior, combine=FALSE, 
-                                    arg_list=NULL) {
-  n_tags <- length(mcmc_tag)
-  
-  # If provided, ensure that `arg_list` contains one sub-list per tag.
-  if(is.null(arg_list)) {
-    arg_list <- lapply(1:n_tags, function(x) NULL)
-    names(arg_list) <- mcmc_tag
-  } else {
-    assert_that(is.list(arg_list) && (length(arg_list)==n_tags))
-    assert_that(setequal(names(arg_list), mcmc_tag))
-  }
-  
-  # Run MCMC algorithms.
-  mcmc_list <- setNames(vector(mode="list", length=n_tags), mcmc_tag)
-  for(i in seq_along(mcmc_list)) {
-    tag <- mcmc_tag[i]
-    args <- c(mcmc_tag=tag, llik_em=llik_em, par_prior=par_prior, arg_list[[tag]])
-    mcmc_list[[tag]] <- do.call(run_mcmc_tag, args)
-  }
-  
-  # Optionally combine output from the various runs.
-  
-  
-  
+  # Execute MCMC using `run_mcmc_chains()` wrapper.
+  do.call(run_mcmc_chains, args=mcmc_settings)
 }
 
 
@@ -979,7 +925,7 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
 # log-likelihood emulators. 
 # ------------------------------------------------------------------------------
 
-get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_emulator, approx_type, 
+get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, approx_type, 
                                       lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, 
                                       par_prior_params=NULL, lprior_vals=NULL, llik_pred_list=NULL, ...) {
   # TODO: currently assumes symmetric proposal density, can generalize this when needed. 
@@ -991,7 +937,7 @@ get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_emulator, app
     .NotYetImplemented()
   } else if(approx_type %in% c("marginal", "joint-marginal")) {
     joint <- (approx_type == "joint-marginal")
-    alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_emulator, joint, lik_par_val=lik_par_val, 
+    alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, joint, lik_par_val=lik_par_val, 
                                   conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list, 
                                   lprior_vals=lprior_vals, ...)
   } else {
@@ -1003,13 +949,13 @@ get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_emulator, app
 }
 
 
-gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_emulator, use_joint_dist, lik_par_val=NULL, 
-                                  conditional=llik_emulator$default_conditional, 
-                                  normalize=llik_emulator$default_normalize, llik_pred_list=NULL, 
+gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em, use_joint_dist, lik_par_val=NULL, 
+                                  conditional=llik_em$default_conditional, 
+                                  normalize=llik_em$default_normalize, llik_pred_list=NULL, 
                                   par_prior_params=NULL, lprior_vals=NULL, ...) {
   # For a Metropolis-Hastings acceptance probability of the form min{1, r(input_curr, input_prop)}, 
   # this function returns log E[r(input_curr, input_prop)], where the expectation is with respect to 
-  # the `llik_emulator` distribution. Currently this function only works when the emulator distribution 
+  # the `llik_em` distribution. Currently this function only works when the emulator distribution 
   # implies that r(input_curr, input_prop) ~ LN(m, s^2). 
   
   # Compute log-prior evaluations, if not already provided. 
@@ -1018,8 +964,8 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_emulator, use_joi
   # Compute predictive distribution at inputs.   
   if(is.null(llik_pred_list)) {
     input <- rbind(input_curr, input_prop)
-    rownames(input) <- llik_emulator$input_names
-    llik_pred_list <- llik_emulator$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+    rownames(input) <- llik_em$input_names
+    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
                                             return_cov=use_joint_dist, conditional=conditional, normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
@@ -1038,14 +984,14 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_emulator, use_joi
 }
 
 
-gp_acc_prob_marginal <- function(input_curr, input_prop, llik_emulator, use_joint_dist, lik_par_val=NULL, 
-                                 conditional=llik_emulator$default_conditional, 
-                                 normalize=llik_emulator$default_normalize, llik_pred_list=NULL, 
+gp_acc_prob_marginal <- function(input_curr, input_prop, llik_em, use_joint_dist, lik_par_val=NULL, 
+                                 conditional=llik_em$default_conditional, 
+                                 normalize=llik_em$default_normalize, llik_pred_list=NULL, 
                                  par_prior_params=NULL, lprior_vals=NULL, ...) {
   # For a Metropolis-Hastings acceptance probability of the form 
   # alpha(input_curr, input_prop) min{1, r(input_curr, input_prop)}, 
   # this function returns E[alpha(input_curr, input_prop)], where the expectation is with respect to 
-  # the `llik_emulator` distribution.
+  # the `llik_em` distribution.
   
   # Compute log-prior evaluations, if not already provided. 
   if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(rbind(input_curr, input_prop), par_prior_params)
@@ -1053,8 +999,8 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_emulator, use_join
   # Compute predictive distribution at inputs.   
   if(is.null(llik_pred_list)) {
     input <- rbind(input_curr, input_prop)
-    colnames(input) <- llik_emulator$input_names
-    llik_pred_list <- llik_emulator$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
+    colnames(input) <- llik_em$input_names
+    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
                                             return_cov=use_joint_dist, conditional=conditional, normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
@@ -1089,7 +1035,7 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_emulator, use_join
 # -----------------------------------------------------------------------------
 
 
-sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bounds, 
+sim_sample_based_approx_1d_grid <- function(llik_em, par_prior_params, bounds, 
                                             N_grid, N_samp, lik_par_val=NULL, 
                                             max_rejects=1000L, ...) {
   # This function (approximately) generates samples via: 
@@ -1100,12 +1046,12 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
   # Then u is sampled from the distribution with unnormalized density 
   # prior(u)*exp{L^hat(u)} via rejection sampling. 
   
-  assert_that(llik_emulator$dim_input==1L)
+  assert_that(llik_em$dim_input==1L)
   
   # Construct grid. 
   par_grid <- seq(bounds[1], bounds[2], length.out=N_grid)
   par_grid_mat <- matrix(par_grid,ncol=1)
-  colnames(par_grid_mat) <- llik_emulator$input_names
+  colnames(par_grid_mat) <- llik_em$input_names
   
   # Iterate until desired number of samples is achieved. 
   par_samp <- vector(mode="numeric", length=N_samp)
@@ -1113,7 +1059,7 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
   for(i in 1:N_samp) {
     
     # Sample log-likelihood values over dense grid. 
-    llik_grid <- drop(llik_emulator$sample(par_grid_mat, lik_par_val=lik_par_val, N_samp=1, ...))
+    llik_grid <- drop(llik_em$sample(par_grid_mat, lik_par_val=lik_par_val, N_samp=1, ...))
     lpost_grid <- llik_grid + calc_lprior_theta(par_grid_mat, par_prior_params)
     
     # Linearly interpolate to obtain approximate log-likelihood sample/trajectory. 
@@ -1147,7 +1093,7 @@ sim_sample_based_approx_1d_grid <- function(llik_emulator, par_prior_params, bou
   return(par_samp)
 }
 
-estimate_sample_based_density_1d_grid <- function(llik_emulator, par_prior_params, input_grid, 
+estimate_sample_based_density_1d_grid <- function(llik_em, par_prior_params, input_grid, 
                                                   N_monte_carlo=1000L, lik_par_val=NULL, ...) {
   # This function is similar to `sim_sample_based_approx_1d_grid()` but its goal is not 
   # to draw parameter samples `u`, but instead to estimate the expectation of the random 
@@ -1166,10 +1112,10 @@ estimate_sample_based_density_1d_grid <- function(llik_emulator, par_prior_param
   # used in cases where log-likelihood values might be very small, then this code 
   # should be updated. 
   
-  assert_that(llik_emulator$dim_input==1L)
+  assert_that(llik_em$dim_input==1L)
   
   # Simulate log-likelihood values. Return shape is (N_grid, N_monte_carlo).
-  llik_samp <- llik_emulator$sample(input_grid, lik_par_val=lik_par_val, N_samp=N_monte_carlo, ...)
+  llik_samp <- llik_em$sample(input_grid, lik_par_val=lik_par_val, N_samp=N_monte_carlo, ...)
 
   # Assuming numbers are reasonable for now so exponentiating is fine. 
   lprior_dens <- calc_lprior_theta(input_grid, par_prior_params)
@@ -1214,7 +1160,7 @@ get_linear_interpolation_1d <- function(input_points, output_points) {
 # Helper functions 
 # ---------------------------------------------------------------------
 
-run_llik_emulator_samplers <- function(sampler_settings_list, llik_emulator_default=NULL, 
+run_llik_em_samplers <- function(sampler_settings_list, llik_em_default=NULL, 
                                        par_prior=NULL,  lik_par_prior_default=NULL, N_mcmc_default=NULL) {
   # Need to think about how to implement this. I want the ability to easily specify common settings that 
   # are shared across all algorithms, but also want the ability to have complete control over the 
