@@ -88,7 +88,7 @@ setup_settings <- list(seed=seed, experiment_tag=experiment_tag,
                        design_method_test=design_method_test, 
                        n_samp_prior=n_samp_prior, mcmc_settings=mcmc_settings,
                        burn_in_start=burn_in_start)
-saveRDS(setup_settings, file=file.path(out_dir, "setup_settings.RData"))
+saveRDS(setup_settings, file=file.path(out_dir, "setup_settings.rds"))
 
 # ------------------------------------------------------------------------------
 # Inverse problem setup 
@@ -96,7 +96,7 @@ saveRDS(setup_settings, file=file.path(out_dir, "setup_settings.RData"))
 
 inv_prob <- get_vsem_test_1(default_conditional=FALSE, 
                             default_normalize=TRUE)
-saveRDS(inv_prob, file=file.path(out_dir, "inv_prob_list.RData"))
+saveRDS(inv_prob, file=file.path(out_dir, "inv_prob_list.rds"))
 
 # ------------------------------------------------------------------------------
 # Exact MCMC 
@@ -115,8 +115,8 @@ samp_dt <- append_samples_mat(samp_dt, prior_samp, param_type="par",
                               test_label="prior")
 
 # Save to file.
-saveRDS(samp_dt, file=file.path(out_dir, "samp_exact.RData"))
-saveRDS(mcmc_metadata, file=file.path(out_dir, "samp_exact_metadata.RData"))
+fwrite(samp_dt, file=file.path(out_dir, "samp_exact.csv"))
+saveRDS(mcmc_metadata, file=file.path(out_dir, "samp_exact_metadata.rds"))
 
 # ------------------------------------------------------------------------------
 # Construct validation test points.
@@ -124,7 +124,7 @@ saveRDS(mcmc_metadata, file=file.path(out_dir, "samp_exact_metadata.RData"))
 
 # Validation inputs sampled from prior.
 test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_prior)
-saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.RData"))
+saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.rds"))
 
 # Validation inputs sub-sampled from true posterior.
 exact_mcmc_samp <- select_mcmc_samp_mat(samp_dt, test_label="exact",
@@ -133,4 +133,4 @@ exact_mcmc_samp <- select_mcmc_samp_mat(samp_dt, test_label="exact",
 test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
                                        design_candidates=exact_mcmc_samp)
-saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.RData"))
+saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))

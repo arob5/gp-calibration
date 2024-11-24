@@ -3,32 +3,63 @@ title: "Inverse Problem Setup"
 author: "Andrew Roberts"
 date: '2024-11-22'
 output: html_document
+params:
+    args: 'vsem'
 ---
 
+This document summarizes the outputs of the script `inv_prob_setup.r`, which 
+defines a Bayesian inverse problem and draws samples from its posterior 
+using exact MCMC (no emulation). This document is intended to be run from 
+the command line, as in:
+`Rscript -e "rmarkdown::render('inv_prob_setup.Rmd.Rmd',params=list(args=<experiment_tag>))"`
+where `<experiment_tag>` is replaced with the experiment tag string corresponding
+with the specific outputs of `inv_prob_setup.Rmd`. The Rmarkdown output should 
+be directed to 
+`gp-calibration/output/gp_inv_prob/<experiment_tag>/inv_prob_setup`. See 
+[this](https://stackoverflow.com/questions/49904943/run-rmarkdown-with-arguments-on-the-command-line)
+link for running Rmarkdown scripts from the command line and passing arguments.
+
 ```{r, echo = FALSE, include = FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo=FALSE)
 
-# Settings
-experiment_tag <- "vsem"
+# Settings: read from command line arguments.
+args <-  params$args
+experiment_tag <- args[1]
+print(paste0("Experiment tag: ", experiment_tag))
 
+# Specify burn-in for MCMC plots.
+burn_in_start <- 150000
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-# Setup and filepaths
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+# Setup and filepaths.
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", 
-                        experiment_tag, run_tag)
+experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
+in_dir <- file.path(experiment_dir, "inv_prob_setup")
 
+# Source files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
 ```
-
-
-
 
 # Summary of Inverse Problem 
 ```{r}
-load(file.path(output_dir, "inv_prob_list.RData"))
+inv_prob <- readRDS(file.path(in_dir, "inv_prob_list.rds"))
 par_prior <- inv_prob$par_prior
+llik_obj_exact <- inv_prob$llik_obj
 ```
 
 ## Prior Distribution
@@ -83,6 +114,7 @@ for(output_var in inv_prob$output_names) {
 }
 
 ```
+
 # Inverse Problem Solution via Exact MCMC (no emulation)
 
 ## Exact log-likelihood, varying one parameter at a time. 
@@ -95,7 +127,7 @@ for(plt in plt_proj) plot(plt)
 
 ## Exact MCMC
 ```{r}
-samp_dt_exact <- fread(file.path(output_dir, "mcmc_samp_exact.csv"))
+samp_dt_exact <- fread(file.path(in_dir, "samp_exact.csv"))
 
 # MCMC Plots: exact. 
 trace_plots_exact <- get_trace_plots(samp_dt_exact, test_labels="exact", 
@@ -104,26 +136,26 @@ trace_plots_exact <- get_trace_plots(samp_dt_exact, test_labels="exact",
 hist_plots_exact <- get_hist_plot_comparisons(samp_dt_exact, test_labels="exact", 
                                               param_types="par", 
                                               itr_start=burn_in_start)
-corr_plots_exact <- get_mcmc_2d_density_plots(samp_dt_exact, test_labels="exact", 
-                                              itr_start=burn_in_start)$exact
+corr_plots_exact <- get_2d_density_plots(samp_dt_exact, test_labels="exact", 
+                                         itr_start=burn_in_start)$exact
 
 for(plt in trace_plots_exact) plot(plt) 
 for(plt in hist_plots_exact) plot(plt)
 for(plt in corr_plots_exact) plot(plt)
 ```
 
-# Gaussian process emulators
+# Validation Design
 
 ## Design information
 ```{r}
-load(file.path(output_dir, "design_info.RData"))
-load(file.path(output_dir, "test_info.RData"))
+test_info_prior <- readRDS(file.path(in_dir, "test_info_prior.rds"))
+test_info_post <- readRDS(file.path(in_dir, "test_info_post.rds"))
 
-print("Initial design (training) data:")
-print(paste0("Number design points: ", design_info$N_design))
-print(paste0("Design method: ", design_info$design_method))
+print("Validation data sampled from prior:")
+print(paste0("Number test points: ", test_info_prior$N_design))
+print(paste0("Design method: ", test_info_prior$design_method))
 
-print("Validation data:")
-print(paste0("Number validation points: ", test_info$N_design))
-print(paste0("Validation point sampling method: ", test_info$design_method))
+print("Validation data sampled from posterior:")
+print(paste0("Number test points: ", test_info_post$N_design))
+print(paste0("Validation point sampling method: ", test_info_post$design_method))
 ```
