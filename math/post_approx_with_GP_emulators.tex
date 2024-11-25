@@ -996,41 +996,42 @@ generic forms for $\acq[\Ndesign]$ that give rise to many common acquisition fun
 and form the basis for design criteria specialized to our present setting.
 
 \paragraph{Local Uncertainty.}
-An intuitive design strategy is to simply select inputs where the quantity of 
-interest exhibits high uncertainty. 
+An intuitive design strategy is to simply select inputs where the quantity of interest exhibits high 
+uncertainty. To capture this notion, we introduce a nonnegative map 
+$(\designBatchIn, \funcEm) \mapsto \qoiMap(\designBatchIn, \funcEm)$ that encodes the 
+uncertainty in (some function of) the random vector  $\funcEm(\designBatchIn)$. As shorthand, 
+we define the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$ by 
+$\qoi(\designBatchIn) \Def \qoiMap(\designBatchIn, \funcEm)$, so that 
+$\qoi(\designBatchIn)$ represents the uncertainty associated with the input batch 
+$\designBatchIn$ with respect to the GP $\funcEm$.
+
 \begin{definition}
-Given a map $\phi: \R \to [0,\infty)$, consider the random variable
- $\phi_{\Ndesign}(\Par) \Def \phi(\funcEm(\Par))$.
-We define the \textbf{pointwise uncertainty criterion} with respect to $\phi$ to be the acquisition function
+The \textbf{local uncertainty criterion} with respect to the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$
+is defined as 
 \begin{equation}
-\acq[\Ndesign](\Par) \Def -\E\left[\phi_{\Ndesign}(\Par) \right].
+\acq[\Ndesign](\designBatchIn) \Def -\E\left[\qoi(\designBatchIn) \right].
 \end{equation}
+If $\qoi(\cdot)$ only accepts scalars (i.e., $\Nbatch = 1$), we refer to the resulting acquisition function as
+ a \textbf{pointwise uncertainty criterion}.
 \end{definition}
-The negation is included to align with our convention of minimizing acquisition functions.
-Such a pointwise construction provides a method to define acquisition functions in the 
-$\Nbatch = 1$ setting. For example, setting $\phi(\varphi) \Def [\varphi - \gpMean[\Ndesign](\Par)]^2$
-gives the \textit{maximum variance} ($\maxvarLabel$) criterion
+The negation is included to align with our convention of minimizing acquisition functions, as we are 
+considering larger values of $\qoi(\designBatchIn)$ to indicate higher uncertainty.
+As a simple example in the $\Nbatch = 1$ case, consider setting 
+$\qoiMap(\Par, \funcEm) \Def [\funcEm(\Par) - \gpMean[\Ndesign](\Par)]^2$. This gives the 
+\textit{maximum variance} ($\maxvarLabel$) criterion
 \begin{equation}
 \labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par).
+\label{acq_max_var}
 \end{equation}
-A generalization of this idea to the batch setting requires the definition of a map 
-$\phi: \R^{\Nbatch} \to [0, \infty)$ that encodes the uncertainty in an $\R^{\Nbatch}$-valued
-random vector.
-\begin{definition}
-Given a map $\phi: \R^{\Nbatch} \to [0,\infty)$, consider the random variable
- $\phi_{\Ndesign}(\designBatchIn) \Def \phi(\funcEm(\designBatchIn))$.
-We define the \textbf{local uncertainty criterion} with respect to $\phi$ to be the acquisition function
-\begin{equation}
-\acq[\Ndesign](\designBatchIn) \Def -\E\left[\phi_{\Ndesign}(\designBatchIn) \right].
-\end{equation}
-\end{definition}
 A common example in the batch setting follows by choosing 
-$\phi(\funcVal[\Nbatch]) \Def -\log \Gaussian(\funcVal[\Nbatch] \given \gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$,
+$\qoiMap(\designBatchIn, \funcEm) \Def -\log \Gaussian(\funcEm(\designBatchIn) \given \gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$,
 which yields the \textit{maximum entropy} ($\maxentLabel$) acquisition
 \begin{equation}
-\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)]  =  -\frac{1}{2} \log\det(2\pi e \gpKer(\designBatchIn)),
+\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] + \cst =  -\frac{1}{2} \log\det(\gpKer(\designBatchIn)), 
+\label{acq_max_ent}
 \end{equation}
-where $\Ent[Z]$ denotes the entropy of a random vector $Z$. These examples consider uncertainty in the GP 
+where $\Ent[Z]$ denotes the entropy of a random vector $Z$ and $\cst$ is a constant independent of $\designBatchIn$. 
+These examples consider uncertainty in the GP 
 evaluations $\funcEm(\designBatchIn)$; we will shortly consider 
 design criteria that target uncertainty in functions of the GP evaluations in order to tailor the acquisitions to the 
 goal of posterior approximation. Local uncertainty criteria are attractive in that they are simple and often straightforward
@@ -1043,37 +1044,49 @@ We next consider addressing the deficiencies of the local criteria by taking int
 over the entire input space.
 The intuition here is to target an input batch that results in the greatest uncertainty reduction on average; that is, integrated
 over $\parSpace$. This notion requires a one-step lookahead into the future, given that the function evaluations 
-$\funcVal[\Nbatch] \Def \funcEm(\designBatchIn)$ at a candidate set $\designBatchIn$ have not yet been observed. 
-We therefore consider marginalizing this unknown quantity with respect to the current GP predictive distribution. 
+$\func(\designBatchIn)$ at a candidate set $\designBatchIn$ have not yet been observed. We therefore represent 
+this unknown quantity with the random variable $\funcVal[\Nbatch] \Def \funcEm(\designBatchIn)$; i.e., we consider 
+marginalizing the unobserved function evaluations under the assumption that they follow the current GP predictive distribution. 
 This leads to the consideration of acquisition functions of the following form.
 \begin{definition}
-Let $\phi_N(\Par)$ be defined as above with respect to a map $\phi: \R \to [0,\infty)$. Moreover, let 
-$\weightDens_{\Ndesign}: \Par \to [0,\infty)$ be a density on $\parSpace$. Then the \textbf{integrated conditional uncertainty}
-criterion with respect to $\phi$ and $\weightDens_{\Ndesign}$ is given by
+Let $\qoi: \R \to [0, \infty)$ be defined as above and $\weightDens: \parSpace \to [0,\infty)$ be a density on $\parSpace$. 
+The \textbf{integrated conditional uncertainty} criterion with respect to $\qoi$ and $\weightDens$ is defined as
 \begin{equation}
 \acq[\Ndesign](\designIn[\Nbatch])
-\Def \int_{\parSpace} \E_{\funcVal[\Nbatch]} \left[\phi_N(\Par) \given 
-\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right] \weightDens_{N}(\Par) d\Par.
+\Def \int_{\parSpace} \E_{\funcVal[\Nbatch]} \E \left[\qoi(\Par) \given 
+\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right] \weightDens(\Par) d\Par. \label{acq_int_cond_unc}
 \end{equation}
 \end{definition}
+[\todo: Could alternately define this with integrand $\E_{\funcVal[\Nbatch]} \E[\qoi[\Naugment](\Par|\funcVal[\Nbatch])]$.]
 In addition to considering the global effect of acquiring new points, notice that these criteria provide the means to 
-extend a pointwise uncertainty criterion to the batch setting.
+extend a pointwise uncertainty criterion to the batch setting. For example, choosing $\qoi$ as in \ref{acq_max_var}
+gives rise to the \textit{integrated variance} ($\intvarLabel$) criterion
+\begin{equation}
+\labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
+\Def \int_{\parSpace} \gpKer[\Naugment](\Par) \weightDens(\Par) d\Par. \label{acq_int_var}
+\end{equation}
+In this case, the expectation with respect to $\funcVal[\Nbatch]$ is eliminated owing to the fact that 
+$\gpKer[\Naugment](\Par)$ is not a function of $\funcVal[\Nbatch]$. Integrated variance criteria have 
+been widely studied and applied in various domains 
+\citep{Mercer_kernels_IVAR, Binois_2018, gramacy2020surrogates, parallelSURExcursionSet}. If we instead 
+choose $\qoi$ as in \ref{acq_max_ent} (with $\Nbatch=1$) then we obtain the \textit{integrated entropy} 
+($\intentLabel$) criterion
+\begin{equation}
+\labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
+\Def \int_{\parSpace} \log(\gpKer[\Naugment](\Par)) \weightDens(\Par) d\Par. \label{acq_int_ent}
+\end{equation}
+[\todo: add citations of papers that utilize integrated entropy acquisitions]
+As with $\intvarLabel$, the $\intentLabel$ acquisition does not require evaluation of the $\funcVal[\Nbatch]$ 
+expectation, as the entropy only depends on the GP kernel. 
 
-A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
-in \cite{Mercer_kernels_IVAR}, with an emphasis on one-shot, rather than sequential, design. 
-The closed-form expressions for the integrands in \ref{acq_int_var} and \ref{acq_int_ent} follow directly from the Gaussian conditioning 
-formulas \ref{kriging_eqns} and known expression for Gaussian entropy. 
-However, outside of special choices for $\parSpace$ and 
-$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
-approximations. It is worth noting that 
-these acquisition functions must be computed without observing the function evaluations $\func(\designBatchIn)$, which is 
-not an issue for any of the above acquisitions given that $\gpKer[\Naugment](\Par)$ is independent of $\func(\designBatchIn)$ 
-(see \ref{kriging_eqns}). However, the predictive mean $\gpMean[\Naugment](\Par)$ does depend on $\func(\designBatchIn)$, 
-a fact which will become relevant in the subsequent section. We therefore state a lemma below that summarizes the 
-dependence of the predictive mean on $\func(\designBatchIn)$, under the assumption that the latter is distributed according 
-to the current GP $\funcEm[\Ndesign]$. A similar result is provided in \cite{VehtariParallelGP}, and a proof is given in 
-the appendix.
-\begin{lemma} \label{lemma:pred-mean-dist}
+In the subsequent section we will consider alternate 
+choices of $\qoi$ that are tailored to the goal of posterior approximation. This will produce cases where the 
+inner expectation in \ref{acq_int_cond_unc} depends on $\gpMean[\Naugment](\Par)$, which in turn is a function 
+of $\funcVal[\Nbatch]$. We therefore state a lemma below that summarizes the dependence of the predictive 
+mean on $\funcVal[\Nbatch]$, under the assumption that the unobserved function values are distributed 
+according to the current GP $\funcEm[\Ndesign]$. A similar result is provided in \cite{VehtariParallelGP}, 
+and a proof is given in the appendix.
+ \begin{lemma} \label{lemma:pred-mean-dist}
 Let $\{\designBatchIn, \funcVal[\Nbatch]\}$ be a new batch of $\Nbatch$ design points, with
 $\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
 Let  
@@ -1091,6 +1104,7 @@ distributed as
                                \gpKer[\Ndesign](\Par) - \gpKer[\Naugment](\Par) \right) \label{pred-mean-dist}.
 \end{align}
 \end{lemma}
+
 We see that the expectation (with respect to $\designBatchFunc$) of $\gpMean[\Ndesign](\Par| \designBatchFunc)$ 
 is equal to the current predictive mean $\gpMean[\Ndesign](\Par)$. Since 
 $\gpMean[\Ndesign](\Par) = \gpMean[\Ndesign](\Par | \gpMean[\Ndesign](\designBatchIn))$, this can also be 
@@ -1101,7 +1115,14 @@ $\gpMean[\Ndesign](\Par | \designBatchFunc)$ is equal to the change in GP varian
 of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Ndesign](\Par | \designBatchFunc)$ 
 is large when the design points $\designBatchIn$ are more ``influential.''
 
-\subsection{Acquisition Functions for Posterior Approximation}
+
+However, outside of special choices for $\parSpace$ and 
+$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
+approximations. 
+
+
+
+\subsection{Sequential Design for Posterior Approximation}
 \todo: reorganize this section; my current thoughts:
 \begin{enumerate}
 \item In one of the above sections, introduce the stepwise uncertainty reduction framework. Also in the preceding 

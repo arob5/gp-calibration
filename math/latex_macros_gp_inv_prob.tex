@@ -138,6 +138,8 @@
 \newcommand{\designBatchFwd}{g_{\Nbatch}}
 \newcommand{\fwdEmCond}[2][\Ndesign]{\fwdEm[{#1}]^{#2}}
 \newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
+\newcommand{\qoiMap}{\phi}
+\newcommand{\qoi}[1][\Ndesign]{\qoiMap_{#1}}
 
 % Acquisition functions 
 \newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\textrm{#2}}}
@@ -151,7 +153,7 @@
 \newcommand{\fwdintExpVarLabel}{\fwd \textrm{,}\intExpVarLabel}
 \newcommand{\intExpEntLabel}{\textrm{int-exp-ent}}
 \newcommand{\Ent}{H} % Entropy 
-\newcommand{\weightDens}{\rho}
+\newcommand{\weightDens}[1][\Ndesign]{\rho_{#1}}
 \newcommand{\varInflation}{v}
 
 % Basis function emulation. 
