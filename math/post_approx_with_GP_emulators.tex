@@ -86,7 +86,7 @@ in section \ref{section_lik_par}.}.
 
 The Bayesian approach completes this specification with a prior distribution 
 on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
-by the posterior distribution $\postDensNorm(\Par) \Def p(\Par | \obs)$. The posterior density is computed by Bayes' rule 
+by the posterior distribution $\postDensNorm(\Par) \Def p(\Par \given \obs)$. The posterior density is computed by Bayes' rule 
 \begin{align}
 \postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) \Def \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
 \end{align}
@@ -115,7 +115,7 @@ algorithm. Such algorithms are iterative in nature, often requiring $\BigO(10^6)
 iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par)$. In the inverse problem 
 context, this computational requirement is often prohibitive when the forward model evaluations $\fwd(\Par)$
 incur significant computational cost. This becomes clear upon observing that each log-likelihood evaluation 
-$\llik(\Par)$ (e.g., \ref{llik_Gaussian} in the additive Gaussian case) requires the corresponding forward 
+$\llik(\Par; \fwd)$ (e.g., \ref{llik_Gaussian} in the additive Gaussian case) requires the corresponding forward 
 model evaluation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
 cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
 an approximation of the latter). We refer to such approximations interchangeably 
@@ -166,14 +166,15 @@ model discrepancy terms. While the observation map can assume many forms across 
 common examples include 
 \begin{align}
 \obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
-&\Def \frac{1}{\timeEnd - \timeStart} \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
+&\Def \frac{1}{\NTimeStep} \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
 \obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
-&\Def \left(\state^{(\stateIndex)}_{\timeIndex} \right)_{\timeIndex \in \mathcal{K}}, \mathcal{K} \subset \{1, 2, \dots, \NTimeStep\} \label{obs_op_subset}
+&\Def \left(\state^{(\stateIndex)}_{\timeIndex} \right)_{\timeIndex \in \mathcal{K}}, \ \mathcal{K} \subset \{1, 2, \dots, \NTimeStep\} \label{obs_op_subset}
 \end{align} 
 for some $\stateIndex \in \{1, 2, \dots, \dimState\}$. The map \ref{obs_op_moments} corresponds to the first $\dimObs$ moments of the 
 $\stateIndex^{\text{th}}$ state trajectory, with $\dimObs=1$ implying a standard time average. The second example \ref{obs_op_subset}
 indicates that noisy observations of the $\stateIndex^{\text{th}}$ state are available at a subset of the discrete time set. 
-Of course, we can also generalize so that these observation operators depend on multiple state variables. 
+Of course, we can also generalize so that these observation operators depend on multiple state variables. Such ``multi-objective'' 
+formulations are common in parameter estimation studies for land surface models. (\todo: cite)
 
 % Gaussian Processes
 \subsection{Gaussian Processes}
@@ -200,7 +201,7 @@ are corrupted by noise.
 Now suppose that, at a set of \textit{design points} $\designIn$, we have computed the noiseless function values
 $\func(\designIn)$. Viewing these values as a realization of the random variable $\funcPrior(\designIn)$, we can 
 consider the conditional (i.e., \textit{predictive}) distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
-\cite{gpML} that this conditional distribution is also a GP
+\citep{gpML} that this conditional distribution is also a GP
 \begin{align}
 \funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
 \end{align}
@@ -477,7 +478,7 @@ a single sample].
         \For{$\sampleIndex \gets1,\NSample$} 
         		\State $\indexSample{\ell} \sim \law(\llikEm)$ \Comment{Sample GP trajectory}
 		\State $\indexSample{\postDens}(\Par) \gets \priorDens(\Par)\Exp{\indexSample{\ell}(\Par)}$ \Comment{Induced unnormalized density}
-		\State $\indexSample{\Par} \sim \postDensNorm$ \Comment{Draw from sampled density}
+		\State $\indexSample{\Par} \sim \indexSample{\postDensNorm}$ \Comment{Draw from sampled density}
 	\EndFor
 	\State \Return $(\indexSample[1]{\Par}, \dots, \indexSample[\NSample]{\Par})$
 	\EndFunction
@@ -731,7 +732,7 @@ where
 w_1(\Par, \propPar) &\Def \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
 w_2(\Par, \propPar) &\Def \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right) \\
 \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-&= \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
+&\Def \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
 \llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)
 \end{align*}
 This is derived in \Cref{prop:joint-marg-accept-prob} in the appendix. While the plug-in acceptance probability 
@@ -820,14 +821,14 @@ implies the product measure
 = \delta_{\llikSamp} \otimes  
 \Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)), \label{llik_dist_pseudo_marg}
 \end{align}
-which precisely falls into the pseudo-marginal MCMC framework \cite{pseudoMarginalMCMC}. 
+which precisely falls into the pseudo-marginal MCMC framework \citep{pseudoMarginalMCMC}. 
 We thus term 
 this algorithm \textit{Pseudo-Marginal Metropolis-Hastings} ($\mhPseudoMargLabel$). Given a log-likelihood sample 
 $\llikSamp$, then by definition the unnormalized posterior approximation $\priorDens(\Par) \Exp{\llikSamp}$ is 
 an unbiased estimator of 
 $\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
 This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
-$\llikEmMargDens[\Ndesign]$, which was already defined in \ref{post_dens_marg_llik}.
+$\llikEmMargDens[\Ndesign]$, as defined in \ref{post_dens_marg_llik}.
 
  % The Forward Model Emulation Setting
 \subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
@@ -861,7 +862,7 @@ v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
 \end{align}
 where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
 \ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
-from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \cite{GP_PDE_priors}.
+from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \citep{GP_PDE_priors}.
 The noisy MCMC algorithms defined above only require the ability to sample from the log-likelihood
 approximation, and thus are agnostic to the particular choice of likelihood. 
 [\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
@@ -925,32 +926,31 @@ posterior approximation.
 
 \subsubsection{The Sequential Design Loop}
 Sequential design algorithms for GPs have been studied extensively across several fields. We introduce this topic 
-for a generic GP predictive distribution $\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn) = \func(\designIn)]$, as defined in 
-\ref{generic_gp_conditional}. We now consider the question of identifying a new set of $\Nbatch$
-inputs $\designBatchIn$ to augment the initial design. The augmented design is thus given by 
+for a generic GP predictive distribution $\funcEm[\Ndesign] \Def \funcPrior \given [\funcPrior(\designIn) = \func(\designIn)]$, 
+as defined in \ref{generic_gp_conditional}. The task is to identify a new set of $\Nbatch$ inputs $\designBatchIn$ to 
+augment the initial design. The augmented design is thus given by 
 $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$, where 
 $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$. 
 Conditioning on the augmented design results in the updated GP
 \begin{align}
-\funcEm[\Naugment] \Def \funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
+\funcEm[\Naugment] \Def \funcPrior \given [\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
 \end{align}
 where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ functions are given by \ref{kriging_eqns}
 with $\{\designIn, \func(\designIn)\}$ replaced by $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$. 
 We note that conditioning in stages is equivalent to conditioning on the entire design at once; i.e.,
 $\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \eqDist 
 \funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \func(\designBatchIn)]$, which is justified 
-by \Cref{lemma:gp-condition-order} in the appendix. 
-The update $\funcEm[\Ndesign] \to \funcEm[\Naugment]$ 
-can be computed in $\BigO(\Nbatch^3 + \Nbatch^2 \Ndesign + \Nbatch \Ndesign^2)$ operations, 
-a significant improvement over the naive $\BigO([\Ndesign + \Nbatch]^3)$
-implementation (courtesy of the partitioned matrix inverse identity stated in \Cref{partitioned-matrix-inverse})
-[\todo: probably will want an entire section on algorithm complexity, and will want to better explain where 
-these Big O results come from]. 
+by \Cref{lemma:gp-condition-order} in the appendix. This fact can be leveraged to avoid the 
+naive $\BigO([\Ndesign + \Nbatch]^3)$ update $\funcPrior \mapsto \funcEm[\Naugment]$, and instead 
+compute $\funcEm[\Ndesign] \to \funcEm[\Naugment]$, which may be achieved in 
+$\BigO(\Nbatch^3 + \Nbatch^2 \Ndesign + \Nbatch \Ndesign^2)$ operations courtesy of the 
+partitioned matrix inverse identity in \Cref{partitioned-matrix-inverse}.
+[\todo: probably should have separate section on computational complexity]
 Naturally, the new batch $\designBatchIn$ should be chosen to 
 yield maximal improvement in the GP model with respect to the downstream task that is to be performed. 
 This idea is formalized by an optimization problem of the form 
 \begin{align}
-\designBatchIn = \argmin_{\designBatchIn^\prime \subset \parSpace} \acq[\Ndesign](\designBatchIn^\prime), \label{acq_func_opt}
+\designBatchIn \in \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime), \label{acq_func_opt}
 \end{align}
 where $\acq[\Ndesign]: \parSpace^{\Nbatch} \to \R$ is an \textit{acquisition function} (i.e., \textit{design criterion}) that 
 encodes the quality of a batch of design points in terms of the task at hand. Iterating this procedure $\Nrounds$ times yields the so-called 
@@ -961,10 +961,10 @@ encodes the quality of a batch of design points in terms of the task at hand. It
     \label{alg:seq_des_loop}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
-	\State $\hat{\func} \gets \funcPrior|[\funcPrior(\designIn[\Ndesign]) = \func(\designIn[\Ndesign])] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$
+	\State $\hat{\func} \gets \funcPrior \given [\funcPrior(\designIn[\Ndesign]) = \func(\designIn[\Ndesign])] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$
 	\Comment{Initial Design}
         \For{$\designIndex \gets 1,\Nrounds$} \Comment{Sequential Design Loop}
-        		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \subset \parSpace} \acq[\Ndesign](\designBatchIn^\prime)$ 
+        		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)$ 
 		\State $\hat{f} \gets \hat{f} | [\hat{f}(\designBatchIn) = \func(\designBatchIn)]$
 	\EndFor
 	\EndFunction
@@ -982,49 +982,83 @@ of within-batch interactions between design points,
 it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
 Non-myopic strategies have been considered
 through a dynamic programming lens, though they typically come at the cost of significant 
-computational expense \cite{SURThesis, supermartingaleSUR}.
-
+computational expense \cite{SURThesis, supermartingaleSUR}. 
 
 \subsubsection{Acquisition Functions}
-We now summarize some particular choices of acquisition function $\acq[\Ndesign]$ which are popular in practice. These will form 
-the basis for extensions that target the specific goal of GP-induced posterior approximation. We begin by emphasizing that the 
-choice of acquisition function should reflect how the GP is being used in downstream tasks. Perhaps the most common goal is that 
-of optimization. The field of \textit{Bayesian optimization} is dedicated to this question, which has produced a wide variety
-acquisition functions that are tailored to the task of optimizing expensive black-box functions $\func$; 
-see \cite{reviewBayesOpt, gramacy2020surrogates} for in-depth reviews.  
-The related field of \textit{Bayesian quadrature} \cite{BayesQuadrature, BayesQuadrature, BayesQuadRatios}
-instead focuses on the goal of approximating integrals with expensive integrands. The computer experiments community 
-focuses on various tasks, including contour estimation and reliability analysis \cite{contourEstimation, cole2021entropybased}. 
-Perhaps the most common goal considered in the sequential design of computer experiments is to fit a response surface
-(see \cite{gramacy2020surrogates, SanterCompExp, design_analysis_computer_experiments} for reviews), 
-which typically leads to design procedures 
-that seek to ``evenly'' fill the input space $\parSpace$ in some sense.  
-In such settings, a reasonable approach is to choose points in locations where the GP is most uncertain. 
-Defining ``uncertainty'' in terms 
-of variance or entropy yields the \textit{maximum variance} ($\maxvarLabel$) and \textit{maximum entropy}
-($\maxentLabel$) acquisition functions, respectively, 
-\begin{align}
-&\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par) \\ 
-&\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] = -\frac{1}{2} \log\det(2\pi e \gpKer(\designBatchIn)), \label{acq_max_var_ent}
-\end{align} 
-where $\Ent[Z]$ denotes the entropy of a random variable $Z$. The variance and entropy are negated to align with our convention 
-of minimizing acquisition functions. The $\maxvarLabel$ criterion does not have an obvious generalization to the batch setting, 
-so is defined to only accept a single input $\Par$. A noted weakness of these criteria is their locality; 
-they target the single point (sets) with maximal uncertainty, ignoring the effect of the acquisition on the remainder of the design space. 
-This often favors points at the boundaries of $\parSpace$, behavior that is typically not desirable \cite{gramacy2020surrogates}. 
-To address this weakness, an alternative approach is to minimize the \textit{conditional} uncertainty 
-$\Var[\funcEm[\Ndesign](\Par) | \designBatchIn]$ or $\Ent[\funcEm[\Ndesign](\Par) | \designBatchIn]$), averaged over 
-the input space $\parSpace$. The resulting \textit{integrated uncertainty criteria}
-\begin{align}
-\labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
-&\Def \int_{\parSpace} \Var[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par
-= \int_{\parSpace} \gpKer[\Naugment](\Par) \weightDens(\Par) d\Par, \label{acq_int_var} \\ 
-\labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
-&\Def \int_{\parSpace} \Ent[\funcEm[\Ndesign](\Par) | \funcEm(\designBatchIn)=\func(\designBatchIn)] \weightDens(\Par) d\Par
-= \frac{1}{2} \int_{\parSpace} \log(2\pi e \gpKer[\Naugment](\Par)) \weightDens(\Par) d\Par, \label{acq_int_ent}
-\end{align}
-are naturally defined in the batch setting and account for the global effect of acquiring new design points. Here $\weightDens$ is 
-a probability density on $\parSpace$, which can be chosen to favor certain portions of the design space. 
+A large literature exists on the design of acquisition functions $\acq[\Ndesign]$ targeting various goals, including 
+black-box optimization \citep{reviewBayesOpt, gramacy2020surrogates}, 
+numerical integration \citep{BayesQuadrature, BayesQuadrature, BayesQuadRatios},
+contour estimation \citep{contourEstimation, cole2021entropybased}, and response surface estimation 
+\citep{gramacy2020surrogates, SanterCompExp, design_analysis_computer_experiments}.
+It is often desirable to design $\acq[\Ndesign]$ to target points that the GP predictive mean deems favorable 
+(exploitation) while also exploring regions with high GP uncertainty (exploration). We emphasize two 
+generic forms for $\acq[\Ndesign]$ that give rise to many common acquisition functions used in practice
+and form the basis for design criteria specialized to our present setting.
+
+\paragraph{Local Uncertainty.}
+An intuitive design strategy is to simply select inputs where the quantity of 
+interest exhibits high uncertainty. 
+\begin{definition}
+Given a map $\phi: \R \to [0,\infty)$, consider the random variable
+ $\phi_{\Ndesign}(\Par) \Def \phi(\funcEm(\Par))$.
+We define the \textbf{pointwise uncertainty criterion} with respect to $\phi$ to be the acquisition function
+\begin{equation}
+\acq[\Ndesign](\Par) \Def -\E\left[\phi_{\Ndesign}(\Par) \right].
+\end{equation}
+\end{definition}
+The negation is included to align with our convention of minimizing acquisition functions.
+Such a pointwise construction provides a method to define acquisition functions in the 
+$\Nbatch = 1$ setting. For example, setting $\phi(\varphi) \Def [\varphi - \gpMean[\Ndesign](\Par)]^2$
+gives the \textit{maximum variance} ($\maxvarLabel$) criterion
+\begin{equation}
+\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par).
+\end{equation}
+A generalization of this idea to the batch setting requires the definition of a map 
+$\phi: \R^{\Nbatch} \to [0, \infty)$ that encodes the uncertainty in an $\R^{\Nbatch}$-valued
+random vector.
+\begin{definition}
+Given a map $\phi: \R^{\Nbatch} \to [0,\infty)$, consider the random variable
+ $\phi_{\Ndesign}(\designBatchIn) \Def \phi(\funcEm(\designBatchIn))$.
+We define the \textbf{local uncertainty criterion} with respect to $\phi$ to be the acquisition function
+\begin{equation}
+\acq[\Ndesign](\designBatchIn) \Def -\E\left[\phi_{\Ndesign}(\designBatchIn) \right].
+\end{equation}
+\end{definition}
+A common example in the batch setting follows by choosing 
+$\phi(\funcVal[\Nbatch]) \Def -\log \Gaussian(\funcVal[\Nbatch] \given \gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$,
+which yields the \textit{maximum entropy} ($\maxentLabel$) acquisition
+\begin{equation}
+\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)]  =  -\frac{1}{2} \log\det(2\pi e \gpKer(\designBatchIn)),
+\end{equation}
+where $\Ent[Z]$ denotes the entropy of a random vector $Z$. These examples consider uncertainty in the GP 
+evaluations $\funcEm(\designBatchIn)$; we will shortly consider 
+design criteria that target uncertainty in functions of the GP evaluations in order to tailor the acquisitions to the 
+goal of posterior approximation. Local uncertainty criteria are attractive in that they are simple and often straightforward
+ to compute. However, they neglect the fact that conditioning on new inputs has a global impact on the surrogate
+model over the entire input space. Moreover, it is not always obvious how to generalize a pointwise measure of 
+uncertainty to the batch setting.
+
+\paragraph{Integrated Conditional Uncertainty.} 
+We next consider addressing the deficiencies of the local criteria by taking into consideration the impact of conditioning 
+over the entire input space.
+The intuition here is to target an input batch that results in the greatest uncertainty reduction on average; that is, integrated
+over $\parSpace$. This notion requires a one-step lookahead into the future, given that the function evaluations 
+$\funcVal[\Nbatch] \Def \funcEm(\designBatchIn)$ at a candidate set $\designBatchIn$ have not yet been observed. 
+We therefore consider marginalizing this unknown quantity with respect to the current GP predictive distribution. 
+This leads to the consideration of acquisition functions of the following form.
+\begin{definition}
+Let $\phi_N(\Par)$ be defined as above with respect to a map $\phi: \R \to [0,\infty)$. Moreover, let 
+$\weightDens_{\Ndesign}: \Par \to [0,\infty)$ be a density on $\parSpace$. Then the \textbf{integrated conditional uncertainty}
+criterion with respect to $\phi$ and $\weightDens_{\Ndesign}$ is given by
+\begin{equation}
+\acq[\Ndesign](\designIn[\Nbatch])
+\Def \int_{\parSpace} \E_{\funcVal[\Nbatch]} \left[\phi_N(\Par) \given 
+\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right] \weightDens_{N}(\Par) d\Par.
+\end{equation}
+\end{definition}
+In addition to considering the global effect of acquiring new points, notice that these criteria provide the means to 
+extend a pointwise uncertainty criterion to the batch setting.
+
 A nice summary and analysis of integrated variance criteria of the form \ref{acq_int_var} is given 
 in \cite{Mercer_kernels_IVAR}, with an emphasis on one-shot, rather than sequential, design. 
 The closed-form expressions for the integrands in \ref{acq_int_var} and \ref{acq_int_ent} follow directly from the Gaussian conditioning 
@@ -1045,7 +1079,7 @@ $\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatch
 Let  
 \begin{align}
 \gpMean[\Ndesign](\Par | \designBatchFunc) 
-\Def \E[\funcEm[\Ndesign](\Par) | \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc] \label{conditional-mean-notation}
+\Def \E[\funcEm[\Ndesign](\Par) \given \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc] \label{conditional-mean-notation}
 \end{align}
 denote the predictive mean after conditioning $\funcEm[\Ndesign]$ on 
 $\{\designBatchIn, \funcVal[\Nbatch]\}$. Then, viewed as a function of the random variable 
@@ -1068,6 +1102,22 @@ of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\g
 is large when the design points $\designBatchIn$ are more ``influential.''
 
 \subsection{Acquisition Functions for Posterior Approximation}
+\todo: reorganize this section; my current thoughts:
+\begin{enumerate}
+\item In one of the above sections, introduce the stepwise uncertainty reduction framework. Also in the preceding 
+section, make more clear that we are considering two classes of criteria: SUR criteria and pointwise uncertainty criteria.
+\item Short subsection on pointwise uncertainty criteria targeting the unnormalized posterior density estimator.
+\item Section on integrated SUR-type criteria targeting posterior approximation:
+	\begin{enumerate}
+	\item Introduce generic form of SUR criteria, highlighting the two places we might use to target the goal 
+	of posterior approximation: the integrand and the weights.
+	\item Again, maybe focus first on log-likelihood emulation and then discuss differences with forward model 
+	emulation at the end.
+	\item Discuss targeting the integrand. 
+	\item Discuss targeting the weights.
+	\end{enumerate}
+\end{enumerate}
+
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
 design point batches that cause large reductions of uncertainty in the GP predictive distribution. While such criteria may be appropriate 
 when quality predictions are required across all of $\parSpace$, this may not align well with the goal of constructing a GP emulator 
