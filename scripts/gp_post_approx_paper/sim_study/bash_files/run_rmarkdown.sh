@@ -25,7 +25,7 @@ echo "${SCRIPT_NAME}"
 # For logging.
 LOG_FILENAME="${JOB_NAME}.o${JOB_ID}"
 
-# Directory and filepath to which RMarkdown output will be directed.
+# Directory and filepath to which logging output will be directed.
 OUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_inv_prob/${EXPERIMENT_TAG}/${SCRIPT_NAME}"
 OUT_PATH="${OUT_DIR}/${SCRIPT_NAME}.html"
 

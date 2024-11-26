@@ -20,8 +20,10 @@
 #   and design/emulator and runs MCMC. An MCMC settings object can be saved 
 #   to file beforehand so this file can read settings from that file.
 #   Results can be saved for each alg/design combination.
+# - In addition, I can write a file that runs sequential design for a large 
+#   number of iterations (replicated over each intitial design) using methods 
+#   that do not require running MCMC after each iteration.
 
- 
 # TODO:
 # - save samp_dt for exact mcmc separately 
 # - update the function that runs a bunch of different mcmc algs; wrapper 
