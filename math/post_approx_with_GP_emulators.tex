@@ -1120,9 +1120,22 @@ However, outside of special choices for $\parSpace$ and
 $\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
 approximations. 
 
-
-
 \subsection{Sequential Design for Posterior Approximation}
+The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
+design point batches that cause large reductions of uncertainty in the GP predictive distribution. 
+While such criteria may be appropriate when quality predictions are required across all of $\parSpace$, 
+this may not align well with the goal of constructing a GP emulator that induces an accurate posterior 
+approximation. Given that the true posterior may be highly concentrated relative to the prior, one might 
+intuitively expect that the GP emulator need only achieve a high predictive accuracy in regions with high 
+posterior mass, and avoid wasteful acquisition of design points in negligible regions.
+This intuition is placed on more rigorous ground in \cite{StuartTeck2}, 
+
+in which bounds on the 
+posterior error are given in terms of the likelihood approximation error in a $L^2_{\postDens}(\parSpace)$ sense. The authors 
+stated motivation was to provide rigorous justification for the use of ensemble Kalman methods as a cheap experimental 
+design method for the training of GP emulators \cite{CES, idealizedGCM}. 
+
+
 \todo: reorganize this section; my current thoughts:
 \begin{enumerate}
 \item In one of the above sections, introduce the stepwise uncertainty reduction framework. Also in the preceding 
@@ -1139,16 +1152,7 @@ section, make more clear that we are considering two classes of criteria: SUR cr
 	\end{enumerate}
 \end{enumerate}
 
-The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
-design point batches that cause large reductions of uncertainty in the GP predictive distribution. While such criteria may be appropriate 
-when quality predictions are required across all of $\parSpace$, this may not align well with the goal of constructing a GP emulator 
-that induces an accurate posterior approximation. In the Bayesian inverse problem setting, it has repeatedly been noted that the 
-posterior is often highly concentrated relative to the prior [\todo: citations]. Intuitively, one would therefore expect that the GP emulator need only 
-achieve a high predictive accuracy in the region with high posterior mass, and avoid wasteful acquisition of design points in 
-regions with negligible mass. This intuition is placed on more rigorous ground in \cite{StuartTeck2}, in which bounds on the 
-posterior error are given in terms of the likelihood approximation error in a $L^2_{\postDens}(\parSpace)$ sense. The authors 
-stated motivation was to provide rigorous justification for the use of ensemble Kalman methods as a cheap experimental 
-design method for the training of GP emulators \cite{CES, idealizedGCM}. 
+
 
 We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
 are tailored to the goal of posterior approximation. One such approach is to define acquisition functions based on 
