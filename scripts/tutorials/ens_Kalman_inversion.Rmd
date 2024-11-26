@@ -1,0 +1,185 @@
+---
+title: "Approximate Solution of Bayesian Inverse Problems using Ensemble Kalman Methods"
+author: "Meng Lai and Andrew Roberts"
+date: "2024-11-18"
+output: html_document
+---
+
+This document demonstrates how to apply methods based in Ensemble Kalman 
+methodology to produce samples from an approximate posterior distribution 
+to a Bayesian inverse problem. It is intended as a tutorial for using the 
+functions implemented in `ens_Kalman_inversion.r`. We will refer to these 
+methods as Ensemble Kalman Inversion (EKI) algorithms.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(lhs)
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+source(file.path(src_dir, "ens_Kalman_inversion.r"))
+```
+
+# Example Inverse Problem
+We load a pre-defined Bayesian inverse problem based on the Very Simple 
+Ecosystem Model (VSEM) toy model. Convenience functions that provide access to 
+fully specified Bayesian inverse problems can be found in 
+`inv_prob_test_functions.r`. The inverse problem is defined via the components 
+of the list returned by these functions in a standardized format.
+
+```{r}
+# Example inverse problem based on calibrating parameters of the 
+# VSEM vegetation model.
+inv_prob <- get_vsem_test_1_time_avg()
+
+# Exact likelihood (no emulation).
+llik_exact <- inv_prob$llik_obj
+
+# Prior distribution.
+par_prior <- inv_prob$par_prior
+
+# Noise variance parameter (assumed fixed here).
+sig2 <- inv_prob$sig2_model
+```
+
+
+## Prior distribution
+```{r}
+print(inv_prob$par_info)
+prior_plots <- plot_prior_samp(par_prior)
+for(plt in prior_plots) plot(plt)
+```
+
+## Data and Prior Predictive Distribution
+TODO: Add in your plots showing the observations and some of the forward model runs
+(e.g., the plot with the horizontal lines).
+
+## Exact posterior samples
+We will compare the EKI posterior approximations to the baseline of exact 
+MCMC sampling. The exact MCMC samples are obtained below.
+```{r}
+n_mcmc <- 25000L
+mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=n_mcmc, sampler="DEzs")
+samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="mcmc") 
+```
+
+```{r}
+burn_in_start <- 12500L
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
+for(plt in trace_plots) plot(plt)
+```
+
+# Ensemble Kalman Inversion
+The main entry point for running EKI is the function `run_eki()`. We demonstrate
+the various options supported by this function below. We start by defining 
+various quantities that will be passed to this function, including the data 
+vector and parameter-to-observable map. We synonymously refer to the latter as
+the "forward model" for the sake of brevity. We also generate the initial ensemble  
+and corresponding forward model outputs; this is not strictly necessary since the 
+`run_eki()` function will initialize ensemble if it is not explicitly passed.
+We do so here so we can pass the same initial ensemble to the function when 
+experimenting with different settings.
+
+```{r}
+# Data vector, likelihood covariance, and forward model.
+y <- drop(inv_prob$y)
+p <- inv_prob$dim_obs
+d <- inv_prob$dim_par
+Sig <- diag(inv_prob$sig2_model, nrow=p)
+fwd <- inv_prob$par_to_obs_op
+
+# Initial ensembles (parameters and model outputs).
+n_ens <- 200L
+U <- get_batch_design(method="LHS", N_batch=n_ens, prior_params=par_prior)
+G <- fwd(U)
+```
+
+## Single Iteration, Default Parameter Transformations
+We start by running `run_eki()` with its default settings. The default 
+behavior is to run a single iteration of EKI, which implies one round of 
+forward model runs. Since we are passing in the initial runs explicitly, the 
+below call will not require any additional forward model runs. The default 
+settings will also create a default transport map by calling 
+`get_default_par_map()`. The point of the transport map is to transform the 
+parameter ensemble to something that plays more nicely with the Gaussian 
+approximations underlying EKI. The default map transforms each parameter 
+independently to a Gaussian via inverse transform sampling. This default 
+can be overwritten by explicitly passing a map via the `par_map` argument.
+
+```{r}
+# Run single step of EKI.
+eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G) 
+U_new <- eki_output$U
+eki_list <- eki_output$eki_list
+```
+
+```{r}
+# Append EKI approximate posterior samples to samples data.table.
+samp_dt <- append_samples_mat(samp_dt, U_new, param_type="par",  
+                              test_label="eki", chain_idx=1L)
+
+# Also append the prior ensemble for comparison.
+samp_dt <- append_samples_mat(samp_dt, U, param_type="par", test_label="prior")
+```
+
+
+### 1d Marginal Posterior Approximations
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="mcmc")
+for(plt in kde_plts) plot(plt)
+```
+
+### EKI Posterior Predictive Distribution
+TODO: below is an example for the kind of plot that would be useful, but it 
+needs updating. In general, this style of plot nicely shows that the EnKF update 
+tends to make the model runs concentrate around the observed data. 
+The `plot_curves_1d_helper()` needs updating so I would 
+probably write a new function to produce these plots instead of using this 
+helper function (for now). Some thoughts on this kind of plot:
+1. The line colors are currently not telling us anything, so I would either make 
+them all the same neutral color (e.g., gray). Or you could try coloring them by 
+a color gradient which is given by the true posterior density.
+2. 
+```{r}
+obs_idx <- seq_along(y)
+G_new <- fwd(U_new)
+
+prior_pred <- plot_curves_1d_helper(obs_idx, t(G), plot_title="Prior", 
+                                    legend=FALSE, y_new=y, xlab="month")
+eki_post_pred <- plot_curves_1d_helper(obs_idx, t(G_new), plot_title="EKI single step", 
+                                       legend=FALSE, y_new=y, xlab="month")
+
+plot(prior_pred)
+plot(eki_post_pred)
+```
+
+TODO: continue as above by including all of the kind of plots you've been 
+working on, such as the 2d marginal density plots, the pairs plots, etc. For the 
+pairs plots, show the differences between the transformed and untransformed 
+ensembles.
+
+## EKI with Multiple Steps
+We now consider generalizations whereby the EnKF update is applied a finite 
+number of times using a tempered likelihood. 
+
+TODO: demonstrate how to execute `run_eki()` with multiple iterations. Compare 
+the final posterior approximation produced as total number of iterations 
+varies (like the plots you've already showed me). Also demonstrate how the
+ensemble evolves within a single run (over iterations within a single run).
+
+

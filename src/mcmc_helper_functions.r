@@ -3,99 +3,380 @@
 # Primarily functions to post-process, organize, and plot MCMC samples. 
 #
 # Andrew Roberts
-# 
+#
+# Dependencies:
+#    general_helper_functions.r, plotting_helper_functions.r
 
 library(HDInterval)
 library(kde1d)
 
 # ------------------------------------------------------------------------------
-# MCMC Formatting Functions. 
+# Description of required data.table formatting:
+#
+# Bespoke functions for storing and manipulating MCMC output geared towards the  
+# use case of comparing different MCMC algorithms. The primary object that 
+# these functions operate on is a data.table that by convention is named 
+# `samp_dt`. This data.table, storing the MCMC samples, is required to have the 
+# following columns: test_label, chain_idx, param_type, param_name, itr, sample.
+#    test_label: a character uniquely identifying an MCMC "test". This is 
+#                typically used to differentiate different algorithms, but it 
+#                could also allow for other groupings (e.g., the same algorithm
+#                run with different settings).
+#    chain_idx: Integer used to index different MCMC chains/trajectories within 
+#               a single MCMC test. Must be unique within a single `test_label`.
+#    param_type: character, used to define groups of parameters. For example, 
+#                output from an MCMC run might consist of samples from a 
+#                coefficient vector and a variance parameter. Two `param_type`
+#                labels could be defined to group these two types of parameters.
+#                The `param_type` labels must be unique within a unique 
+#                (test_label, chain) combination.
+#    param_name: character, the parameter names. Must be unique within a unique
+#                (test_label, chain, param_type) combination.
+#    itr: integer, the MCMC iteration index. Index starts from 1. Must be unique
+#         within a unique (test_label, chain, param_type, param_name) combination.
+#    sample: numeric, the sample values.
 # ------------------------------------------------------------------------------
 
-format_mcmc_output <- function(samp_list, test_label) {
-  # This function re-formats the output returned by a single MCMC run. This MCMC run is identified with 
-  # the label `test_label`. The function combines matrices containing MCMC samples of different parameter 
-  # types (see `samp_list` description below) into a single data.table. The returned data.table is in a 
-  # long format in that it has columns "test_label", "param_type", "param_name", "itr", and "sample". 
+# ------------------------------------------------------------------------------
+# Functions for creating `samp_dt` objects.
+# ------------------------------------------------------------------------------
+
+assert_is_samp_dt <- function(samp_dt) {
+  # Checks that the argument `samp_dt` satisfies the requirements for the 
+  # data.table storing MCMC output.
+  # TODO: add checks for the uniqueness requirements.
   #
   # Args:
-  #    samp_list: named list, each element must have name set to the relevant parameter type (e.g. "theta" or "sig_eps"). 
-  #               Each element is a matrix where rows contain MCMC samples of that parameter type. The column names of 
-  #               these matrices must be set to the parameter names. Given that the samples are all from the same MCMC run, 
-  #               the matrices will all typically have the same number of rows. However, this is not required. 
-  #    test_label: character, a string providing a label for the MCMC run. 
+  #    samp_dt: object to check.
   #
-  # Returns: 
-  #    data.table with column names "test_label", "param_type", "param_name", "itr", and "sample". The column "test_label" will be 
-  #    constant with value set to `test_label`. The values in column "param_type" are taken from the names of `samp_list`, 
-  #    while the values in column "param_name" are taken from the column names in the matrices within `samp_list`. The 
-  #    column `itr` contains the integer MCMC iteration. The column `sample` contains the MCMC numeric sample values. 
+  # Returns:
+  #  None, will throw exception if `samp_dt` fails any of the tests.
   
-  samp_dt <- data.table(param_type=character(), itr=integer(), param_name=character(), sample=numeric())
+  required_cols <- c("test_label"="character", "chain_idx"="integer", 
+                     "param_type"="character", "param_name"="character", 
+                     "itr"="integer", "sample"="numeric")
   
-  for(j in seq_along(samp_list)) {
-    # Format samples for current variable. 
-    samp_param_dt <- as.data.table(samp_list[[j]])
-    
-    if(nrow(samp_param_dt) > 0) {
-      samp_param_dt[, param_type := names(samp_list)[j]]
-      samp_param_dt[, itr := 1:.N]
-      samp_param_dt <- melt.data.table(data=samp_param_dt, id.vars=c("param_type", "itr"), 
-                                       variable.name="param_name", value.name="sample", na.rm=TRUE, 
-                                       variable.factor=FALSE)
-      
-      # Append to samples for existing variables. 
-      samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names=TRUE)  
-    }
-  }
+  assert_that(is.data.table(samp_dt))
+  assert_that(setequal(colnames(samp_dt), names(required_cols)))
+  assert_that(all(sapply(samp_dt, class)[names(required_cols)] == required_cols))
+}
+
+
+get_empty_samp_dt <- function() {
+  # Returns a data.table with zero rpows with the column names and types 
+  # required by the `samp_dt` conventions.
+
+  data.table(test_label=character(), chain_idx=integer(), param_type=character(),
+             param_name=character(), itr=integer(), sample=numeric())
+}
+
+
+combine_samp_dt <- function(..., itr_start=1L, itr_stop=NULL) {
+  # Vertically stacks separate `samp_dt` objects into a single `samp_dt`
+  # object. For now, checks that all objects in `...` are valid `samp_dt`
+  # objects, and allows subsetting by iteration range prior to stacking.
+  # TODO: need to ensure that stacking does not produce duplicates. This 
+  #       should be part of an update that requires `samp_dt` objects 
+  #       to have keys set to the variables defining unique rows.
+
+  l <- list(...)
   
-  # Add test label. 
+  # Ensure all arguments are valid `samp_dt` data.tables.
+  for(dt in l) assert_is_samp_dt(dt)
+  
+  # Restrict output to specified iteration ranges.
+  l <- lapply(dt, function(dt) select_mcmc_itr(dt, itr_start=itr_start, 
+                                               itr_stop=itr_stop))
+  
+  # Stack tables vertically.
+  data.table::rbindlist(l, use.names=TRUE)
+}
+
+
+format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
+  # Converts a matrix of samples from a single parameter type into the 
+  # `samp_dt` format. For the case where there is a list of matrices of 
+  # different parameter types, see `format_mcmc_output()`. This is essentially
+  # the lowest level function for converting samples to the `samp_dt` format, 
+  # handling the most basic case of single parameter type, single test lable, 
+  # and single chain. Wrapper functions implemented below handle the cases when 
+  # there are multiple of any of these quantities.
+  #
+  # Args:
+  #    samp_mat: matrix, with each row representing a sample and each column 
+  #              a parameter. Column names are used to set the parameter names 
+  #              in the `samp_dt` object.
+  #    param_type: character, the single parameter type that will be assigned to 
+  #                all samples in `samp_mat`.
+  #    test_label: character, the single test label that will be assigned to all 
+  #                samples in `samp_mat`.
+  #    chain_idx: integer, the single chain index that will be assigned to all 
+  #               samples in `samp_mat`.
+  #
+  # Returns:
+  # data.table satisfying the `samp_dt` requirements containing the samples in 
+  # `samp_mat`. If `samp_mat` is NULL or is a matrix with zero rows, then 
+  # returns the empty data.table given by `get_empty_samp_dt()`.
+
+  # If there are no samples, return empty `samp_dt` object.
+  if(is.null(samp_mat) || (nrow(samp_mat)==0L)) return(get_empty_samp_dt())
+
+  # Convert samples to long format required by `samp_dt`.
+  samp_dt <- as.data.table(samp_mat)
+  samp_dt[, param_type := param_type]
+  samp_dt[, itr := 1:.N]
+  samp_dt <- melt.data.table(data=samp_dt, 
+                             id.vars=c("param_type", "itr"), 
+                             variable.name="param_name", 
+                             value.name="sample", na.rm=TRUE, 
+                             variable.factor=FALSE)
+  
+  # Add test label and chain index.
   samp_dt[, test_label := test_label]
-  
+  samp_dt[, chain_idx := as.integer(chain_idx)]
   
   return(samp_dt)
-  
 }
 
 
-append_mcmc_output <- function(mcmc_samp_dt, samp_list, test_label) {
-  # Appends a new `samp_list` to an existing MCMC samp data.table. First 
-  # formats the list via `format_mcmc_output()` then appends it. 
-  # Ensures that the `test_label` is not already present in the data.table, 
-  # but this could be relaxed if needed in the future. 
-  
-  assert_that(is.data.table(mcmc_samp_dt))
-  assert_that(setequal(colnames(mcmc_samp_dt), 
-                       c("param_type", "itr", "param_name", "sample", "test_label")))
-  assert_that(!(test_label %in% mcmc_samp_dt$test_label))
-  
-  mcmc_samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label)
-  mcmc_samp_dt <- rbindlist(list(mcmc_samp_dt, mcmc_samp_dt_new), use.names=TRUE)
-  
-  return(mcmc_samp_dt)
-  
-}
-
-
-select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
-                             return_burnin=FALSE) {
-  # Operates on the long data.table format, as returned by `format_mcmc_output()`. Selects rows corresponding to 
-  # valid combinations of `test_labels`, `param_types`, `param_names`. Also removes iterations specified as "burn-in". 
-  # See `burn_in_start` for details. 
+append_samples_mat <- function(samp_dt, samp_mat, param_type, test_label, 
+                               chain_idx=1) {
+  # Appends a new matrix of samples `samp_mat` to an existing sample table 
+  # `samp_dt`. Assumes that the combination of values 
+  # (`param_type`, `test_label`, `chain_idx`) are not already present in 
+  # `samp_dt`, else an error is thrown. This restriction can be lifted in the 
+  # future to be able to upload samples in batches where only the iteration 
+  # numbers differ. See `append_mcmc_output()` and 
+  # `append_mcmc_output_multi_chain()` for appending samples corresponding to 
+  # multiple parameter types and/or chains.
   #
   # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_mat, param_type, test_label, chain_idx: all passed to 
+  #    `format_samples_mat()`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new samples appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure duplicates are not being added.
+  # TODO: need to clean this up. Annoying that the variable names need to be 
+  # changed here to make this work.
+  test_label_new <- test_label
+  param_type_new <- param_type
+  chain_idx_new <- chain_idx
+  n_rows <- samp_dt[(test_label==test_label_new) & 
+                    (param_type==param_type_new) & 
+                    (chain_idx==chain_idx_new), .N]
+  assert_that(n_rows==0L, 
+              msg="test_label, param_type, chain_idx combination already in `samp_dt`.")
+  
+  # Append new samples
+  samp_dt_new <- format_samples_mat(samp_mat, param_type, test_label, chain_idx)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+
+  return(samp_dt)
+}
+
+
+format_mcmc_output <- function(samp_list, test_label, chain_idx=1L) {
+  # A wrapper around `format_samples_mat()` that allows conversion of a list 
+  # of sample matrices (one per parameter type) into the valid `samp_dt` 
+  # format. This is the typical form of the output returned by the MCMC 
+  # functions in `gp_mcmc_functions.r`. This function assumes the samples are 
+  # all from a single test label and chain index.
+  #
+  # Args:
+  #    samp_list: named list, with one element per parameter type. Each element 
+  #               is a matrix with rows containing MCMC samples of the respective
+  #               parameter type, and columns corresponding to different 
+  #               parameters falling within that type. The names of `samp_list`
+  #               must be set to the parameter type names. Given that the samples 
+  #               are all from the same MCMC run, the matrices will all 
+  #               typically have the same number of rows. However, this is not 
+  #               required.
+  #    test_label: character, the test label uniquely identifying the MCMC run.
+  #    chain_idx: integer, the index used to uniquely identify different MCMC chains
+  #               within a single MCMC run. This function assumes only a single 
+  #               chain has been run; for mutliple chains, see 
+  #               `format_mcmc_output_multi_chain()`.
+  #
+  # Returns:
+  # data.table with column names:
+  # "test_label", "chain_idx", param_type", "param_name", "itr", and "sample". 
+  # The columns "test_label" and "chain_idx" will be constant with values set to 
+  # the `test_label` and `chain` function arguments, respectively. The values 
+  # in column "param_type" are taken from the names of `samp_list`, while the 
+  # values in column "param_name" are taken from the column names in the 
+  # matrices within `samp_list`. The column `itr` contains the integer MCMC 
+  # iteration. The column `sample` contains the MCMC numeric sample values. 
+  
+  samp_dt <- data.table(param_type=character(), itr=integer(), 
+                        param_name=character(), test_label=character(),
+                        chain_idx=integer(), sample=numeric())
+  
+  for(j in seq_along(samp_list)) {
+    # Create sample table for single parameter type.
+    samp_param_dt <- format_samples_mat(samp_list[[j]], 
+                                        param_type=names(samp_list)[j], 
+                                        test_label=test_label, 
+                                        chain_idx=chain_idx)
+    
+    # Append to samples for existing variables. 
+    samp_dt <- rbindlist(list(samp_dt, samp_param_dt), use.names=TRUE)  
+  }
+
+  return(samp_dt)
+}
+
+
+append_mcmc_output <- function(samp_dt, samp_list, test_label, chain_idx=1L) {
+  # Appends a new MCMC test to an existing `samp_dt` object. The new test
+  # label `test_label` must not already be present in `samp_dt`. This is 
+  # a convenience wrapper that essentially calls 
+  # `format_mcmc_output(samp_list, test_label)` and then appends the result
+  # to `samp_dt`. This function only appends a single chain; for multiple
+  # chains see `append_mcmc_output_multi_chain()`.
+  # 
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_list, test_label, chain_idx: all passed to `format_mcmc_output()`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new MCMC test appended.
+  
+  assert_is_samp_dt(samp_dt)
+
+  # Ensure test label is not already in list.
+  assert_that(!(test_label %in% samp_dt$test_label))
+  
+  samp_dt_new <- format_mcmc_output(samp_list, test_label=test_label, 
+                                    chain_idx=chain_idx)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+  
+  return(samp_dt)
+}
+
+
+append_chain <- function(samp_dt, samp_list, test_label, chain_idx=NULL) {
+  # Appends sample output to `samp_dt` corresponding to a new chain of an MCMC 
+  # test that is already present in `samp_dt`.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    samp_list: list satisfying the requirements specified in 
+  #               `format_mcmc_output()`. The sample output from a new chain/
+  #               trajectory of the MCMC test identified by `test_label`.
+  #    test_label: character, a test label already present in `samp_dt`.
+  #    chain_idx: integer, the index for the new chain. If NULL, looks for the 
+  #               current maximum chain index for the specified test label, and 
+  #               increments by 1.
+  #
+  # Returns:
+  #  The data.table `samp_dt` with the output from the new chain appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure the test is already present.
+  assert_that(test_label %in% samp_dt$test_label)
+
+  # If chain index not specified, increment current maximum index by 1.
+  if(is.null(chain_idx)) {
+    chain_idx <- 1L + samp_dt[test_label==test_label, max(chain_idx)]
+  } else {
+    assert_that(is.integer(chain_idx))
+    assert_that(!(chain_idx %in% samp_dt[test_label==test_label, unique(chain_idx)]))
+  }
+  
+  # Format the MCMC output for the new chain.
+  samp_dt_new <- format_mcmc_output(samp_list, test_label, chain_idx=chain_idx)
+  
+  # Append new output to current data.table.
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+  
+  return(samp_dt)
+}
+
+
+format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
+  # A wrapper around `format_mcmc_output()` that allows for appending multiple 
+  # chains. See `format_mcmc_output()` for more details.
+  #
+  # Args:
+  #    chain_samp_list: a list, where each element is a `samp_list`, as 
+  #                     described in `format_mcmc_output()`; i.e., each element
+  #                     of the outer list corresponds to a different chain.
+  #    test_label: character, the unique label identifying the MCMC test.
+  #
+  # Returns:
+  #  A `samp_dt` data.table. The chain indices are set to 1,2,...,n_chains.
+  
+  assert_that(is.list(chain_samp_list))
+  n_chains <- length(chain_samp_list)
+  
+  # First create the data.table for only the first chain.
+  samp_dt <- format_mcmc_output(chain_samp_list[[1]], test_label, chain_idx=1L)
+  if(n_chains==1L) return(samp_dt)
+  
+  # Now loop over remaining chains and append to data.table.
+  for(idx in 2:n_chains) {
+    samp_dt <- append_chain(samp_dt, chain_samp_list[[idx]], test_label, chain_idx=idx)
+  }
+  
+  return(samp_dt)
+}
+
+
+append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label) {
+  # A wrapper around `append_mcmc_output()` that allows for appending a new MCMC
+  # test containing multiple chains. See `format_mcappend_mcmc_output()` for more 
+  # details.
+  # 
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    chain_samp_list: a list, where each element is a `samp_list`, as 
+  #                     described in `format_mcmc_output()`; i.e., each element
+  #                     of the outer list corresponds to a different chain.
+  #    test_label: character, the label uniquely identifying the new MCMC test.
+  #                Must not already be present in `samp_dt`.
+  #
+  # Returns:
+  #    The data.table `samp_dt` with the new MCMC test appended.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  # Ensure test label is not already in list.
+  assert_that(!(test_label %in% samp_dt$test_label))
+  
+  samp_dt_new <- format_mcmc_output_multi_chain(chain_samp_list, test_label)
+  samp_dt <- rbindlist(list(samp_dt, samp_dt_new), use.names=TRUE)
+  
+  return(samp_dt)
+}
+
+
+# ------------------------------------------------------------------------------
+# Functions for manipulating/subsetting `samp_dt` objects.
+# ------------------------------------------------------------------------------
+
+select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
+                             param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                             chain_idcs=NULL) {
+  # Selects rows from `samp_dt` corresponding to valid combinations of 
+  # `test_labels`, `param_types`, and `param_names`. Also restricts the output
+  # to the iteration range specified by `itr_start` and `itr_stop`.
+  #
+  # Args:
+  #    samp_dt: data.table of MCMC samples. 
+  #    itr_start: the minimum iteration number to be included. Named vector 
+  #               allows varying the start iteration by test label. See 
+  #               `select_mcmc_itr()` for details.
+  #    itr_stop: Same as `itr_start` but specifying the upper iteration cutoff.
+  #    The remaining arguments are vectors of values used to subset `samp_dt`
+  #    by selecting values from the columns "test_label", "param_type", 
+  #    "param_name", and "chain_idx". NULL value will include all values found 
+  #    in the respective column in `samp_dt`. 
   #
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
@@ -106,120 +387,204 @@ select_mcmc_samp <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, para
   if(is.null(test_labels)) test_labels <- samp_dt_subset[, unique(test_label)]
   if(is.null(param_types)) param_types <- samp_dt_subset[, unique(param_type)]
   if(is.null(param_names)) param_names <- samp_dt_subset[, unique(param_name)]
+  if(is.null(chain_idcs)) chain_idcs <- samp_dt_subset[, unique(chain_idx)]
   
   # Select rows corresponding to label-type-name combinations. 
   samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
                             (param_type %in% param_types) & 
-                            (param_name %in% param_names)]
+                            (param_name %in% param_names) &
+                            (chain_idx %in% chain_idcs)]
   
-  # Remove (or select) burn-in iterations; burn-in can differ by test label. 
-  samp_dt_subset <- remove_mcmc_samp_burnin(samp_dt_subset, burn_in_start, return_burnin)
-  
+  # Restrict to specified iteration bounds.
+  samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start, itr_stop)
+
   return(samp_dt_subset)
-  
 }
 
 
-select_mcmc_samp_mat <- function(samp_dt, test_label, param_type, param_names=NULL, burn_in_start=NULL, 
-                                 return_burnin=FALSE) {
-  # Converts MCMC samples from long to wide format. Wide format means that a 
-  # matrix is returned where each row is a sample. A `param_type` (e.g. "theta") must be selected so 
-  # that each row of the matrix is a valid parameter vector (e.g. each row is a sampled parameter 
-  # calibration vector). Alternatively, a subset of the parameters for a specific parameter type 
-  # can be returned by passing the `param_names` argument. It is recommended to pass this argument 
-  # even if all parameters of a specific type are to be returned, as passing `param_names` will 
-  # order to the columns according to `param_names`, which ensures that the ordering is correct. 
+select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
+                                 param_names=NULL, itr_start=1L, itr_stop=NULL,
+                                 chain_idcs=NULL, return_chain_list=FALSE) {
+  # A wrapper around `select_mcmc_samp()` that converts the selected samples 
+  # to a matrix format, where each row is a sample. Unlike `select_mcmc_samp()`,
+  # a single value of `test_label` and `param_type` must be specified. However,
+  # `param_names` can be used to return a subset of the parameters for the 
+  # specified parameter type. It is recommended to pass this argument 
+  # even if all parameters of a specific type are to be returned, as passing 
+  # `param_names` will order to the columns according to `param_names`, which 
+  # ensures that the ordering is correct. Also allows subsetting by the chain 
+  # indices. Can either return a list of matrices (one per chain), or a single 
+  # matrix in which all chains have been grouped together.
   #
   # Args:
-  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
-  #    test_label: character(1), the single test label to select. 
-  #    param_type: character(1), the single parameter type to select. Must be a type within the  
-  #                specified `test_label`. 
-  #    param_names: character, if provided then selects the specific parameter names provided, and 
-  #                also orders the columns of the returned matrix in the order they are provided
-  #                in this argument. The parameters specified here must be of the type specified 
-  #                by `param_type` and contained within the test label specified by `test_label`. 
-  #                If NULL, selects all parameters within the param type, and no explicit ordering 
-  #                is performed. 
-  #    burn_in_start: integer(1), the starting iteration to use for the samples from the test label. 
-  #                   If NULL, does not drop any burn-in. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
+  #    samp_dt: data.table of MCMC samples. 
+  #    test_label: character, the single test label to select. 
+  #    param_type: character, the single parameter type to select. Must be a  
+  #                type within the specified `test_label`. 
+  #    itr_start: the minimum iteration number to be included. Named vector 
+  #               allows varying the start iteration by test label. See 
+  #               `select_mcmc_itr()` for details.
+  #    itr_stop: Same as `itr_start` but specifying the upper iteration cutoff.
+  #    param_names: character, if provided then selects the specific parameter 
+  #                 names provided, and also orders the columns of the returned 
+  #                 matrix in the order they are provided in this argument. The 
+  #                 parameters specified here must be of the type specified 
+  #                 by `param_type` and contained within the test label specified 
+  #                 by `test_label`. If NULL, selects all parameters within the 
+  #                 param type, and no explicit ordering is performed. 
+  #    chain_idcs: integer, the chain indices to select.
+  #    return_chain_list: logical, if TRUE returns a list with each element 
+  #                       containing a matrix storing the samples for a specific
+  #                       chain. Otherwise, all samples are put in a single 
+  #                       matrix. See "Returns" for details.
   #
   # Returns:
-  #    matrix, where each row is a sample from the selected parameters, with burn-in dropped or 
-  #    returned if specified. Rownames are set to the iteration numbers. 
+  #    If `return_chain_list` is TRUE, a list with each element containing a 
+  #    matrix storing the samples for a specific chain. The list names are set 
+  #    to the chain indices. The rownames of each matrix is set to the iteration
+  #    numbers. If return_chain_list` is FALSE, all samples are put in a single 
+  #    matrix. In this case, the rownames of the matrix take the form 
+  #    "<chain_idx>_<itr>". In either case, each row of the matrix corresponds 
+  #    to a single sample, and each column to a parameter within the selected 
+  #    parameter type. The columns are ordered according to `param_names`, if 
+  #    this argument is provided. 
   
-  if(length(test_label)>1 || length(param_type)>1) stop("Must select single test label and param type.")
+  assert_that(length(test_label)==1L)
+  assert_that(length(param_type)==1L)
+  assert_is_samp_dt(samp_dt)
+
+  # Select specified subset of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_label, 
+                                     param_types=param_type, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  if(nrow(samp_dt_subset)==0L) {
+    stop("Cant convert zero length data.table to wide matrix format.")
+  }
   
-  samp <- select_mcmc_samp(samp_dt, burn_in_start, test_label, param_type, param_names, return_burnin)
-  if(nrow(samp)==0) stop("Cant convert zero length data.table to wide matrix format.")
+  # Create one matrix per chain.
+  chain_idcs <- samp_dt_subset[,unique(chain_idx)]
+  mat_chain_list <- lapply(chain_idcs, 
+                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i]))
   
-  samp <- dcast(data=samp, formula=itr~param_name, value.var="sample")
-  itrs <- samp$itr
-  samp_mat <- as.matrix(samp[, .SD, .SDcols=!"itr"])
-  rownames(samp_mat) <- itrs
+  # If `param_names` is provided, sort columns based on this order.
+  if(!is.null(param_names)) {
+    for(i in seq_along(mat_chain_list)) {
+      mat_chain_list[[i]] <- mat_chain_list[[i]][,param_names, drop=FALSE]
+    }
+  }
+    
+  # If returning a single matrix, stack all matrices into one.
+  if(!return_chain_list) {
+    for(i in seq_along(chain_idcs)) {
+      rownames(mat_chain_list[[i]]) <- paste(chain_idcs[i], 
+                                           rownames(mat_chain_list[[i]]),
+                                           sep="_")
+    }
+    return(do.call(rbind, mat_chain_list))
+  }
   
-  if(!is.null(param_names)) samp_mat <- samp_mat[,param_names, drop=FALSE]
-  
-  return(samp_mat)
-  
+  names(mat_chain_list) <- chain_idcs
+  return(mat_chain_list)
 }
 
 
-remove_mcmc_samp_burnin <- function(samp_dt, burn_in_start, return_burnin=FALSE) {
-  # Acts on a data.table in long format containing MCMC samples and either drops 
-  # burn-in iterations or returns only the burn-in iterations. Burn-in can either 
-  # differ by test label or a single burn-in cutoff can be applied to all test 
-  # labels. 
+select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
+  # Returns a subset of the rows of `samp_dt` obtained by restricting the 
+  # iteration column `itr` to rows with values falling in the interval 
+  # [itr_start, itr_stop]. Alternatively, such intervals can be specified 
+  # by test label, so that different iteration ranges can be selected for 
+  # different test labels. See `Args` for details.
   #
   # Args:
-  #    samp_dt: data.table, must be of the format described in `format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1 AND unnamed, this is 
-  #                   interpreted as the starting iteration for all parameters - all earlier iterations
-  #                   are dropped. If a named vector, must  be a named vector with names set
-  #                   to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. If only some test labels are 
-  #                   specified by the vector, then the others will not be affected. 
-  #    return_burnin: If TRUE, returns only the burn-in iterations (i.e. all iterations strictly less
-  #                   than the burn_in_start values). Otherwise, the default behavior is to drop 
-  #                   the burn-in, returning all iterations greater than or equal to the 
-  #                   burn_in_start values. 
+  #    samp_dt: data.table of MCMC samples. 
+  #    itr_start: integer vector specifying the lower iteration cutoff. If integer 
+  #               of length 1 AND unnamed, this is interpreted as the starting 
+  #               iteration for all test labels - all earlier iterations
+  #               are dropped. If a named vector, must have names set to 
+  #               valid test label values. This allows application of a different 
+  #               burn-in start iteration for different test labels. If only 
+  #               some test labels are specified by the vector, then the others 
+  #               will not be affected. 
+  #    itr_stop: same as `itr_start` but defining the upper cutoff. A NULL value
+  #              implies that no upper cutoff should be enforced.
   #
   # Returns:
-  #    data.table, a copy of `samp_dt` which is row subsetted to either drop the burn-in or 
-  #    non-burn-in iterations, depending on the value of `return_burnin`. 
+  #    data.table, a copy of `samp_dt` which is row subsetted to select the 
+  #    specified iteration ranges.
   
+  assert_is_samp_dt(samp_dt)
+  if(nrow(samp_dt)==0L) return(samp_dt)
+
+  # Argument checking.
+  if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
+  itr_start <- as.integer(itr_start)
+  itr_stop <- as.integer(itr_stop)
+  assert_that(all(itr_start >= 1L))
+  
+  # If no row subsetting is required just return the data.table.
+  if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
+  
+  # Get set of unique test labels.
+  test_labels <- samp_dt[,unique(test_label)]
+  n_labels <- length(test_labels)
+  
+  # Helper function for processing the arguments `itr_start` and `itr_stop`.
+  get_itr_bound <- function(itr_arg) {
+    # If `itr_start` and/or `itr_stop` are unnamed vectors of length 1, then 
+    # the iteration cutoff will be applied to all test labels.
+    if((length(itr_arg)==1L) && is.null(names(itr_arg))) {
+      return(setNames(rep(itr_arg,n_labels), test_labels))
+    }
+    
+    # If `itr_start` and/or `itr_stop` are named vectors, apply values separately 
+    # for each test label.
+    extra_labels <- setdiff(names(itr_arg), test_labels)
+    missing_labels <- setdiff(test_labels, names(itr_arg))
+    if(length(extra_labels) > 0) message("Extra labels not used: ", 
+                                         paste(extra_labels, collapse=", "))
+    if(length(missing_labels) > 0) message("Labels not affected: ", 
+                                           paste(missing_labels, collapse=", "))
+    return(itr_arg[intersect(test_labels,names(itr_arg))])
+  }
+  
+  itr_start <- get_itr_bound(itr_start)
+  itr_stop <- get_itr_bound(itr_stop)
+
+  # Subset `samp_dt` by selecting iteration ranges by test label.
   samp_dt_subset <- copy(samp_dt)
-  
-  # If `burn_in_start` is NULL, either returns entire data.table or empty data.table. 
-  if(is.null(burn_in_start)) {
-    if(return_burnin) return(samp_dt_subset[0])
-    return(samp_dt_subset)
+  for(lbl in names(itr_start)) {
+    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= itr_start[lbl])]
   }
-  
-  # If `burn_in_start` unnamed vector of length 1, apply to all test labels. 
-  if((length(burn_in_start) == 1) && is.null(names(burn_in_start))) {
-    if(return_burnin) return(samp_dt_subset[itr < burn_in_start]) 
-    else return(samp_dt_subset[itr >= burn_in_start]) 
+  for(lbl in names(itr_stop)) {
+    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr <= itr_stop[lbl])]
   }
-  
-  # If `burn_in_start` is named vector, apply burn-in values separately for each test label. 
-  test_labels <- samp_dt_subset[, unique(test_label)]
-  extra_labels <- setdiff(names(burn_in_start), test_labels)
-  missing_labels <- setdiff(test_labels, names(burn_in_start))
-  if(length(extra_labels) > 0) message("Extra labels not used: ", paste(extra_labels, collapse=", "))
-  if(length(missing_labels) > 0) message("Labels not affected: ", paste(missing_labels, collapse=", "))
-  test_labels <- setdiff(test_labels, missing_labels)
-  
-  for(lbl in test_labels) {
-    if(return_burnin) samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr < burn_in_start[lbl])]
-    else samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= burn_in_start[lbl])]
-  }
-  
+
   return(samp_dt_subset)
+}
+
+
+convert_samp_to_mat <- function(samp_dt) {
+  # A helper function used by `select_mcmc_samp_mat()` to convert sample output
+  # in data.table form for a single test label/parameter type combination to 
+  # a matrix format.
+  #
+  # Args:
+  #    samp_dt: data.table in the typical form. Only columns "itr", "param_name", 
+  #             and "sample" are used here.
+  #
+  # Returns:
+  #    matrix, with samples in the rows and columns corresponding to the 
+  #    different parameters. The rownames attribute is set to the iterations.
+  
+  assert_is_samp_dt(samp_dt)
+  
+  samp_wide <- data.table::dcast(data=samp_dt[,.(itr, param_name, sample)], 
+                                 formula=itr~param_name, value.var="sample")
+  itrs <- samp_wide$itr
+  samp_wide <- as.matrix(samp_wide[, .SD, .SDcols=!"itr"])
+  rownames(samp_wide) <- itrs
+  return(samp_wide)
 }
 
 
@@ -228,11 +593,11 @@ remove_mcmc_samp_burnin <- function(samp_dt, burn_in_start, return_burnin=FALSE)
 # ------------------------------------------------------------------------------
 
 compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL,
-                                      param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
+                                     param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
   # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
   #
   # Args:
-  #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`
+  #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`.
   #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to subset `samp_dt` to determine which
   #                                            parameters and samples will be included in the metric computations.
   #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired form so do not call `select_mcmc_samp()`. 
@@ -531,222 +896,461 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mea
 # MCMC Plotting Functions. 
 # ------------------------------------------------------------------------------
 
-
-get_hist_plot <- function(samples_list, col_sel=1, bins=30, vertical_line=NULL, xlab="samples", ylab="density", 
-                          main_title="Histogram", data_names=NULL) {
-  # Generates a single plot with one or more histograms. The input data `samples_list` must be a list of matrices. 
-  # For example, the first element of the list could be a matrix of samples from a reference distribution, and the 
-  # second element a matrix of samples from an approximate distribution. This function will select one column from 
-  # each matrix based on the index `col_sel`. Each selected column will be turned into a histogram. 
-  # Note that the matrices may have different lengths (numbers of samples).
+get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
+                            param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                            chain_idcs=NULL, save_dir=NULL, overlay_chains=TRUE) {
+  # Extracts the specified subset of `samp_dt` then generates one trace plot per
+  # valid `param_name`-`param_type`-`test_label`-`chain_idx` combination. If 
+  # `overlay_chains` is TRUE, then the chains within each unique
+  # `param_name`-`param_type`-`test_label` combination are all plotted on the 
+  # same plot with different colors.
   #
   # Args:
-  #    samples_list: list of matrices, each of dimension (num samples, num parameters). 
-  #    col_sel: integer(1), the column index to select from each matrix. i.e. this selects a particular parameter, whose
-  #             samples will be transformed into a histogram. 
-  #    bins: integer(1), number of bins to use in histogram. 
-  #    vertical_line: If not NULL, the x-intercept to be used for a plotted vertical line. 
-  #    xlab, ylab, main_title: x and y axis labels and plot title. 
-  #    data_names: character(), vector equal to the length of the list `samples_list`. These are the names used in 
-  #                the legend to identify the different histograms. 
-  #
-  # Returns:
-  #    ggplot2 object. 
-  
-  # Pad with NAs in the case that the number of samples is different across different parameters. 
-  N_samp <- sapply(samples_list, nrow)
-  if(length(unique(N_samp)) > 1) {
-    N_max <- max(N_samp)
-    for(j in seq_along(samples_list)) {
-      if(nrow(samples_list[[j]]) < N_max) {
-        samples_list[[j]] <- rbind(samples_list[[j]], matrix(NA, nrow=N_max - nrow(samples_list[[j]]), ncol=ncol(samples_list[[j]])))
-      }
-    }
-  }
-  
-  dt <- as.data.table(lapply(samples_list, function(mat) mat[,col_sel]))
-  if(!is.null(data_names)) setnames(dt, colnames(dt), data_names)
-  dt <- melt(dt, measure.vars = colnames(dt), na.rm=TRUE)
-  
-  plt <- ggplot(data = dt, aes(x=value, color=variable)) + 
-    geom_histogram(aes(y=..density..), bins=bins, fill="white", alpha=0.2, position="identity") + 
-    xlab(xlab) + 
-    ylab(ylab) + 
-    ggtitle(main_title)
-  
-  if(!is.null(vertical_line)) {
-    plt <- plt + geom_vline(xintercept=vertical_line, color="red")
-  }
-  
-  return(plt)
-  
-}
-
-
-get_trace_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, 
-                            param_names=NULL, save_dir=NULL) {
-  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
-  # MCMC trace plot per valid `param_name`-`param_type`-`test_label` combination. 
-  #
-  # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
+  #    samp_dt: existing data.table object storing samples.
+  #    overlay_chains: If TRUE, chains are overlaid on the same plot, otherwise
+  #                    each chain is plotted on a different plot.
   #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
   #
   # Returns:
-  #    list of ggplot objects, one for each `param_name`-`param_type`-`test_label` combination. 
+  #    list of ggplot objects, the plots as described above. 
+  
+  assert_is_samp_dt(samp_dt)
   
   # Determine which plots to create by subsetting rows of `samp_dt`. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("test_label", "param_type", "param_name")
+  if(!overlay_chains) id_cols <- id_cols <- c(id_cols, "chain_idx")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
   
   # Generate plots. 
   plts <- list()
   for(j in 1:nrow(plt_id_vars)) {
-    test_label_curr <- plt_id_vars[j, test_label]
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste(id_vals$test_label, 
+                       paste0(id_vals$param_type, ": ", id_vals$param_name),
+                       sep=" | ")
+    if(!overlay_chains) plt_title <- paste(plt_title, 
+                                           paste0("Chain ", id_vals$chain_idx), 
+                                           sep=" | ")
     
-    plts[[plt_label]] <- ggplot(data = samp_dt_subset[(test_label == test_label_curr) & 
-                                                        (param_type == param_type_curr) & 
-                                                        (param_name == param_name_curr)], aes(x=itr, y=sample)) + 
-      geom_line() + 
-      ggtitle(paste0("Trace Plot: ", plt_label)) + 
-      xlab("Iteration")
+    # Select data for plot.
+    chain_idx <- NULL
+    if(!overlay_chains) chain_idx <- id_vals$chain_idx
+    samp_dt_plt <- select_mcmc_samp(samp_dt_subset, test_labels=id_vals$test_label,
+                                    param_types=id_vals$param_type, 
+                                    param_names=id_vals$param_name, 
+                                    chain_idcs=chain_idx)
+    
+    # Create trace plot.
+    if(overlay_chains) {
+      plt <- ggplot(samp_dt_plt, aes(x=itr, y=sample, color=as.factor(chain_idx)))
+    } else {
+      plt <- ggplot(samp_dt_plt, aes(x=itr, y=sample))
+    }
+    
+    plt <- plt + geom_line() + ggtitle(plt_title) + xlab("Iteration")
+    if(overlay_chains) plt <- plt + guides(color=guide_legend(title="Chain"))
+    plts[[plt_label]] <- plt
   }
   
+  # Optionally save to file.
   if(!is.null(save_dir)) save_plots(plts, "trace", save_dir)
   
-  return(plts)
-  
+  return(invisible(plts))
 }
 
 
-get_mcmc_2d_density_plots <- function(samp_dt, burn_in_start=NULL, test_labels=NULL,
-                                      param_names=NULL, save_dir=NULL) {
-  # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
-  # variables from samples. Will produce one plot per pair of variables within 
-  # each value of `test_label`.
-  # TODO: for now this is restricted to param_type="par". Need to think about how 
-  #       to handle multiple param_types. 
-
-  # Determine which plots to create by subsetting rows of `samp_dt`. 
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types="par", param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_name)])
-  test_lbls <- unique(plt_id_vars[, test_label])
+get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
+                           param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                           chain_idcs=NULL, save_dir=NULL, combine_chains=TRUE,
+                           plot_type="hist", bins=30) {
+  # Plots one histogram plot per unique `param_type`-`param_name` combination.
+  # All MCMC runs containing output for this parameter are overlaid on the same 
+  # plot (see Args and Returns for specifics on this). These plots can thus get
+  # quite cluttered with more than a few histograms on a single plot. Using
+  # `plot_type = "freqpoly"` can be helpful to reduce clutter in this case. If 
+  # there is a clear baseline against which all other MCMC runs should be 
+  # compared, see `get_hist_plot_comparisons()` instead.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    combine_chains: logical. If TRUE, samples from all chain indices are 
+  #                    pooled together. Otherwise, distinct chains are plotted 
+  #                    separately, overlaid on the same plot.
+  #    plot_type: character, either "hist" or "freqpoly" to produce a histogram
+  #               or frequency polygon.
+  #    bins: integer, passed to either geom_histogram() or geom_freqpoly()
+  #          `bins` argument.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list of ggplot objects, one plot per unique `param_type`-`param_name` 
+  # combination.
   
-  # Create plots between pairs of variables within each test label.
-  plts <- list()
-  for(lbl in test_lbls) {
-    plts[[lbl]] <- list()
-    samp_dt_lbl <- select_mcmc_samp(samp_dt_subset, test_labels=lbl)
-    par_names <- unique(samp_dt_lbl[test_label==lbl, param_name])
-    n_par <- length(par_names)
-    for(i in 1:(n_par-1)) {
-      for(j in (i+1):n_par) {
-        par_i <- par_names[i]
-        par_j <- par_names[j]
-        plot_tag <- paste(par_i, par_j, sep="-")
-        samp_dt_pars <- select_mcmc_samp(samp_dt_lbl, param_names=c(par_i,par_j))[, .(itr,param_name,sample)]
-        samp_dt_pars <- data.table::dcast(samp_dt_pars, "itr~param_name", value.var="sample")
-        setnames(samp_dt_pars, c(par_i,par_j), c("var1","var2"))
-        plts[[lbl]][[plot_tag]] <- ggplot(samp_dt_pars, aes(x=var1, y=var2)) + 
-                                   geom_density_2d() + xlab(par_i) + ylab(par_j)
-      }
-    }
+  assert_is_samp_dt(samp_dt)
+  assert_that(plot_type %in% c("hist","freqpoly"))
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
   }
   
-  if(!is.null(save_dir)) save_plots(unlist(plts,recursive=FALSE), "density2d", save_dir)
-  return(plts)
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+  legend_label <- ifelse(combine_chains, "test lbl", "test lbl + chain")
+  
+  # Plot histogram of frequency polygon.
+  if(plot_type == "hist") {
+    plt_func <- function() geom_histogram(fill="white", alpha=0.2, 
+                                          bins=bins, position="identity")
+  } else if(plot_type == "freqpoly") {
+    plt_func <- function() geom_freqpoly(bins=bins, position="identity")
+  }
+  
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste0(id_vals$param_type, ": ", id_vals$param_name)
+    param_name <- id_vals$param_name
+
+    # Select data for plot.
+    samp_dt_plt <- select_mcmc_samp(samp_dt_subset,
+                                    param_types=id_vals$param_type, 
+                                    param_names=id_vals$param_name)
+
+    # Create histogram plot.
+    if(combine_chains) {
+      plt <- ggplot(samp_dt_plt, aes(x=sample, color=test_label))
+    } else {
+      plt <- ggplot(samp_dt_plt, 
+                    aes(x=sample, color=interaction(test_label, 
+                                                    as.factor(chain_idx), sep=":")))
+    }
+    
+    plt <- plt + plt_func() + 
+                 ggtitle(plt_title) + 
+                 guides(color=guide_legend(title=legend_label)) +
+                 xlab(param_name)
+    plts[[plt_label]] <- plt
+  }
+  
+  # Optionally save to file.
+  if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
+  
+  return(invisible(plts))
 }
 
 
-get_1d_kde_plot_comparisons <- function(samp_dt, N_kde_pts=100, burn_in_start=NULL, test_labels=NULL, 
-                                        param_types=NULL, param_names=NULL, test_label_baseline=NULL,
-                                        xlab="parameter", ylab="kde", min_q=0.001, 
-                                        max_q =.999, save_dir=NULL) {
-  # Produces one plot per unique param type-param name combination. Each plot contains one line
-  # per `test_label` that has samples for that specific parameter. Each line is produced from 
-  # a 1d kernel density estimate (KDE) constructed fromn the MCMC samples. N_kde_pts` is the
-  # `number of points at which the KDE approximation is evaluated for each univariate variable.
-  # `min_q` and `max_q` are used to determine the cutoff x-limits for each plot. These are 
-  # percentiles across all samples that will be used to generate that plot (from all 
-  # test labels). 
+get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL, 
+                                      test_labels=NULL, param_types=NULL,  
+                                      param_names=NULL, itr_start=1L, 
+                                      itr_stop=NULL, chain_idcs=NULL, 
+                                      save_dir=NULL, combine_chains=TRUE,
+                                      plot_type="hist", bins=30) {
+  # A convenience wrapper around `get_hist_plots()` that generates figures with 
+  # two histograms on each plot: one coming from a "baseline" test label, and 
+  # the other from any other test label. This is helpful if comparing algorithms
+  # against some ground truth or baseline samples. If the baseline test label 
+  # has certain parameters that are not in the other test label, then the 
+  # plot will only contain the histogram for the baseline.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a 
+  #                         valid test label with associated samples in 
+  #                         `samp_dt`. In this case, the histograms 
+  #                         corresponding to this baseline test label will be 
+  #                         overlaid on the plots for all other test labels.
+  #    combine_chains: logical. If TRUE, samples from all chain indices are 
+  #                    pooled together. Otherwise, distinct chains are plotted 
+  #                    separately, overlaid on the same plot.
+  #    plot_type: character, either "hist" or "freqpoly" to produce a histogram
+  #               or frequency polygon.
+  #    bins: integer, passed to either geom_histogram() or geom_freqpoly()
+  #          `bins` argument.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`. 
+  #
+  # Returns: 
+  #    list, each element being a ggplot object. 
 
   # Determine which plots to create by subsetting rows of `samp_dt`. 
-  if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
+  if(!is.null(test_label_baseline) && !is.null(test_labels) && 
+     !(test_label_baseline %in% test_labels)) {
     test_labels <- c(test_labels, test_label_baseline)
   }
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
   
-  # One plot is generated for each unique `param_type`-`param_name` combination. 
-  plt_id_vars <- unique(samp_dt_subset[, .(param_type, param_name)])
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
+                                     param_types=param_types, 
+                                     param_names=param_names, 
+                                     itr_start=itr_start, itr_stop=itr_stop,
+                                     chain_idcs=chain_idcs)
   
-  # Separate out data to be used as the baseline for comparison in each plot, if provided. 
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Determine which combination of columns will uniquely identify a plot.
+  id_cols <- c("test_label", "param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+
+  # Separate out baseline label. 
   if(!is.null(test_label_baseline)) {
-    samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
+    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
+  }
+  
+  # Generate plots. 
+  plts <- list()
+  for(j in 1:nrow(plt_id_vars)) {
+    # Current test label.
+    test_lbl_curr <- c(plt_id_vars[j, test_label], test_label_baseline)
+
+    # Produce histograms for current test label.
+    plts_curr <- get_hist_plots(samp_dt_subset, test_labels=test_lbl_curr,
+                                param_types=plt_id_vars[j,param_type],
+                                param_names=plt_id_vars[j,param_name],
+                                combine_chains=combine_chains, 
+                                plot_type=plot_type, bins=bins)
+    plts <- c(plts, plts_curr)
+  }
+  
+  if(!is.null(save_dir)) save_plots(plts, "hist_comparison", save_dir)
+  return(invisible(plts))
+}
+
+
+get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL, 
+                             test_labels=NULL, param_types=NULL,  
+                             param_names=NULL, itr_start=1L, 
+                             itr_stop=NULL, chain_idcs=NULL, 
+                             save_dir=NULL, combine_chains=TRUE,
+                             N_kde_pts=100, min_q=0.001, max_q=.999,
+                             bandwidth_mult=1.0) {
+  # Returns plots with kernel density estimates (KDE) for 1-dimensional marginal
+  # distributions. Produces one plot per unique param type-param name combination.
+  # Each plot contains one line per `test_label` that has samples for that 
+  # specific parameter. Each line is produced from a 1d KDE constructed from the
+  # samples using the kde1d package. If `test_label_baseline` is provided, then 
+  # this test label will be treated as the baseline for comparison and plotted 
+  # as a black dashed line.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a 
+  #                         valid test label with associated samples in 
+  #                         `samp_dt`. Designates a special test label, which 
+  #                         typically indicates a baseline/ground truth.
+  #    combine_chains: logical. Currently only supports TRUE, which groups all
+  #                    chains together.
+  #    N_kde_pts: integer, number of points at which the KDE approximation is 
+  #               evaluated for each univariate parameter.
+  #    min_q, max_q: numeric in (0,1], percentiles used as cutoffs to define the 
+  #                  interval over which the KDE is computed.
+  #    bandwidth_mult: passed to the `mult` arg of `kde1d()`.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list of ggplot objects, one per param type-param name combination.
+
+  assert_is_samp_dt(samp_dt)
+  
+  if(!combine_chains) {
+    stop("Currently `get_1d_kde_plots()` only supports `combine_chains = TRUE`.")
+  }
+  
+  # Determine which plots to create by subsetting rows of `samp_dt`.
+  test_labels_all <- test_labels
+  if(!is.null(test_label_baseline) && !is.null(test_labels) && 
+     !(test_label_baseline %in% test_labels)) {
+    test_labels_all <- c(test_labels, test_label_baseline)
+  }
+  
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels_all, 
+                                     param_types=param_types, 
+                                     param_names=param_names, 
+                                     itr_start=itr_start, itr_stop=itr_stop,
+                                     chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Separate out baseline label. 
+  if(!is.null(test_label_baseline)) {
+    samp_dt_baseline <- samp_dt_subset[test_label == test_label_baseline]
     samp_dt_subset <- samp_dt_subset[test_label != test_label_baseline]
   }
   
+  # One plot is generated for each unique `param_type`-`param_name` combination.
+  id_cols <- c("param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+
   # Generate plots. 
   plts <- list()
   for(j in 1:nrow(plt_id_vars)) {
-    # Define the parameter being plotted. One KDE will be computed for each test label
-    # that has samples for this parameter. 
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(param_type_curr, param_name_curr, sep="_")
-    samp_dt_param <- samp_dt_subset[(param_type == param_type_curr) & 
-                                    (param_name == param_name_curr), .(test_label, sample)] 
-    test_labels_curr <- unique(samp_dt_param$test_label)
+    # Title and label for plot.
+    id_vals <- plt_id_vars[j]
+    plt_label <- paste(as.matrix(id_vals)[1,], collapse="_")
+    plt_title <- paste0(id_vals$param_type, ": ", id_vals$param_name)
+    param_name <- id_vals$param_name
+    
+    # Prepare non-baseline data.
+    samp_dt_param <- samp_dt_subset[(param_type == id_vals$param_type) & 
+                                    (param_name == id_vals$param_name), 
+                                    .(sample, test_label)]
+    test_labels_curr <- samp_dt_param[,unique(test_label)]
     
     # Prepare baseline data. 
-    samp_baseline_param <- NULL
+    samp_dt_baseline_param <- NULL
     if(!is.null(test_label_baseline)) {
-      samp_baseline_param <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                              (param_name == param_name_curr), sample] 
+      samp_dt_baseline_param <- samp_dt_baseline[(param_type == id_vals$param_type) & 
+                                                 (param_name == id_vals$param_name), sample]
+      if(length(samp_dt_baseline_param)==0L) samp_dt_baseline_param <- NULL
     }
     
     # Determine the grid of points at which the KDE will be evaluated. 
-    bound_lower <- quantile(c(samp_dt_param$sample, samp_baseline_param), min_q)
-    bound_upper <- quantile(c(samp_dt_param$sample, samp_baseline_param), max_q)
+    bound_lower <- quantile(c(samp_dt_param$sample, samp_dt_baseline_param), min_q)
+    bound_upper <- quantile(c(samp_dt_param$sample, samp_dt_baseline_param), max_q)
     kde_pts <- seq(bound_lower, bound_upper, length.out=N_kde_pts)
     
     # Loop over test labels, constructing KDE for each label. 
     kde_mat <- matrix(nrow=N_kde_pts, ncol=length(test_labels_curr), 
                       dimnames=list(NULL, test_labels_curr))
     for(lbl in test_labels_curr) {
-      kde_fit <- kde1d(samp_dt_subset[test_label==lbl, sample])
+      kde_fit <- kde1d(samp_dt_param[test_label==lbl, sample], mult=bandwidth_mult)
       kde_mat[,lbl] <- dkde1d(kde_pts, kde_fit)
     }
-
+    
     # Add KDE for baseline label. 
     kde_baseline <- NULL
-    if(!is.null(test_label_baseline)) {
-      kde_fit <- kde1d(samp_baseline_param)
+    if(!is.null(test_label_baseline) && !is.null(samp_dt_baseline_param)) {
+      kde_fit <- kde1d(samp_dt_baseline_param, mult=bandwidth_mult)
       kde_baseline <- dkde1d(kde_pts, kde_fit)
     }
     
     # Construct KDE comparison plot for the current parameter. 
     plt_curr <- plot_curves_1d_helper(kde_pts, kde_mat, y_new=kde_baseline,
-                                      plot_title=plt_label, xlab=plt_label, ylab="kde")
+                                      plot_title=plt_title, xlab=param_name, 
+                                      ylab="kde")
     plts[[plt_label]] <- plt_curr
   }
   
   if(!is.null(save_dir)) save_plots(plts, "kde1d", save_dir)
   
-  return(plts)
+  return(invisible(plts))
+}
+
+
+get_2d_density_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
+                                 param_names=NULL, itr_start=1L, itr_stop=NULL,
+                                 chain_idcs=NULL, save_dir=NULL, 
+                                 combine_chains=TRUE) {
+  # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
+  # parameters from samples. Will produce one plot per pair of parameters within 
+  # each value of `test_label`.
+  #
+  # Args:
+  #    samp_dt: existing data.table object storing samples.
+  #    combine_chains: logical. Currently only supports TRUE, which groups all
+  #                    chains together.
+  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
+  #    Remaining arguments are used to subset `samp_dt`; see `select_mcmc_samp()`.
+  #
+  # Returns:
+  # list, nested so that the elements of the first level correspond to the 
+  # test labels. The sub-lists for each test label then contain the ggplot 
+  # objects falling within that test label.
+
+  assert_is_samp_dt(samp_dt)
   
+  if(!combine_chains) {
+    stop("Currently `get_1d_kde_plots()` only supports `combine_chains = TRUE`.")
+  }
+
+  # Determine which plots to create by subsetting rows of `samp_dt`. 
+  samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
+                                     param_types=param_types, 
+                                     param_names=param_names, itr_start=itr_start,
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Store unique `test_label`-`param_type`-`param_name` combinations.
+  id_cols <- c("test_label", "param_type", "param_name")
+  plt_id_vars <- unique(samp_dt_subset[, ..id_cols])
+  test_lbls <- unique(plt_id_vars$test_label)
+  
+  # Create plots between pairs of parameters within each test label.
+  plts <- list()
+  for(lbl in test_lbls) {
+    # Get parameters for current test label.
+    plt_id_vars_lbl <- plt_id_vars[test_label==lbl]
+    plts[[lbl]] <- list()
+    n_par <- nrow(plt_id_vars_lbl)
+    
+    # Subset to current label.
+    samp_dt_lbl <- select_mcmc_samp(samp_dt_subset, test_labels=lbl)
+    
+    for(i in 1:(n_par-1)) {
+      par_i <- paste(plt_id_vars_lbl[i,param_type], 
+                     plt_id_vars_lbl[i,param_name], sep="-")
+      for(j in (i+1):n_par) {
+        par_j <- paste(plt_id_vars_lbl[j,param_type], 
+                       plt_id_vars_lbl[j,param_name], sep="-")
+        plot_tag <- paste(par_i, par_j, sep="_")
+        samp_dt_i <- select_mcmc_samp(samp_dt_lbl, 
+                                      param_types=plt_id_vars_lbl[i,param_type],
+                                      param_names=plt_id_vars_lbl[i,param_name])
+        samp_dt_j <- select_mcmc_samp(samp_dt_lbl, 
+                                      param_types=plt_id_vars_lbl[j,param_type],
+                                      param_names=plt_id_vars_lbl[j,param_name])
+        samp_dt_pars <- data.table(par1=samp_dt_i$sample, par2=samp_dt_j$sample)
+        plts[[lbl]][[plot_tag]] <- ggplot(samp_dt_pars, aes(x=par1, y=par2)) + 
+                                    geom_density_2d() + xlab(par_i) + ylab(par_j)
+      }
+    }
+  }
+
+  if(!is.null(save_dir)) {
+    save_plots(unlist(plts,recursive=FALSE), "density2d", save_dir)
+  }
+  
+  return(invisible(plts))
 }
 
 
@@ -806,78 +1410,6 @@ get_mcmc_moments_scatter_plot_comparisons <- function(samp_dt, test_label_baseli
 }
 
 
-get_hist_plot_comparisons <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL, param_names=NULL,
-                                      test_label_baseline=NULL, xlab="samples", ylab="density", bins=30, save_dir=NULL) {
-  # Operates on a data.table of MCMC samples in the long format, as returned by `format_mcmc_output()`. Generates one 
-  # MCMC marginal histogram plot per valid `param_name`-`param_type`-`test_label` combination. If `test_label_baseline`
-  # is non-NULL, then each plot will include a second histogram corresponding to the specified test label; this is 
-  # useful if wanting to compare approximate samples against some sort of baseline, for example. 
-  #
-  # Args:
-  #    samp_dt: data.table of MCMC samples, in long format as returned by format_mcmc_output()`. 
-  #    burn_in_start: If NULL, selects all MCMC iterations. If integer of length 1, this is interpreted as the starting 
-  #                   iteration for all parameters - all earlier iterations are dropped. If vector of length > 1, must 
-  #                   be a named vector with names set to valid test label values. This allows application of a different 
-  #                   burn-in start iteration for different test labels. 
-  #    test_labels, param_types, param_names: vectors of values to include in selection corresponding to columns 
-  #                                           "test_label", "param_type", and "param_name" in `samp_dt`. A NULL  
-  #                                            value includes all values found in `samp_dt`. 
-  #    test_label_baseline: character(1) or NULL. If non-NULL, then must be a valid test label with associated 
-  #                         samples in `samp_dt`. In this case, the histograms corresponding to this baseline 
-  #                         test label will be overlaid on the plots for all other test labels. 
-  #    xlab, ylab, bins: ggplot arguments, all passed to `get_hist_plot()`. 
-  #    save_dir: character(1), if not NULL, a file path to save the plots to. 
-  #
-  # Returns: 
-  #    list, each element being a ggplot object. 
-  
-  # Determine which plots to create by subsetting rows of `samp_dt`. 
-  if(!is.null(test_label_baseline) && !is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
-    test_labels <- c(test_labels, test_label_baseline)
-  }
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
-  plt_id_vars <- unique(samp_dt_subset[, .(test_label, param_type, param_name)])
-  
-  # Separate out data to be used as the baseline for comparison in each plot, if provided. 
-  if(!is.null(test_label_baseline)) {
-    samp_dt_baseline <- samp_dt_subset[test_label==test_label_baseline]
-    plt_id_vars <- plt_id_vars[test_label != test_label_baseline]
-  }
-  
-  # Generate plots. 
-  plts <- list()
-  for(j in 1:nrow(plt_id_vars)) {
-    test_label_curr <- plt_id_vars[j, test_label]
-    param_type_curr <- plt_id_vars[j, param_type]
-    param_name_curr <- plt_id_vars[j, param_name]
-    plt_label <- paste(test_label_curr, param_type_curr, param_name_curr, sep="_")
-    samp <- samp_dt_subset[(test_label == test_label_curr) & 
-                             (param_type == param_type_curr) & 
-                             (param_name == param_name_curr), sample]
-    samp_list <- list()
-    samp_list[[1]] <- matrix(samp, ncol=1)
-    data_names <- test_label_curr
-    
-    if(!is.null(test_label_baseline)) {
-      samp_baseline <- samp_dt_baseline[(param_type == param_type_curr) & 
-                                          (param_name == param_name_curr), sample] 
-      
-      samp_list[[2]] <- matrix(samp_baseline, ncol=1)
-      data_names <- c(data_names, test_label_baseline)
-    }
-    
-    plts[[plt_label]] <- get_hist_plot(samp_list, bins=bins, xlab=param_name_curr, ylab="density", 
-                                       main_title=test_label_curr, data_names=data_names) 
-    
-  }
-  
-  if(!is.null(save_dir)) save_plots(plts, "hist", save_dir)
-  return(plts)
-  
-}
-
-
 get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NULL, test_labels=NULL,
                                   param_types=NULL, param_names=NULL, xlab="observed", ylab="predicted", 
                                   save_dir=NULL, probs=seq(0.5, 1.0, .1), color_exact="black") {
@@ -906,6 +1438,14 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
   }
   samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
                                      param_types=param_types, param_names=param_names)
+  
+  # Case that no rows are selected.
+  if(nrow(samp_dt_subset)==0L) {
+    message("Subsetting `samp_dt` resulted in zero rows. No plots returned.")
+    return(list())
+  }
+  
+  # Variables uniquely defining a plot.
   plt_id_vars <- unique(samp_dt_subset[, .(param_type, param_name)])
   
   # Separate out data to be used as the baseline for comparison in each plot.

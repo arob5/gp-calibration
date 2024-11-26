@@ -1,0 +1,114 @@
+---
+title: "Solving Inverse Problems using Exact MCMC"
+author: "Andrew Roberts"
+date: "2024-11-15"
+output: html_document
+---
+
+This document demonstrates how to apply Markov Chain Monte Carlo (MCMC)
+algorithms to solve a Bayesian inverse problem, using a specification of an 
+inverse problem using the conventions from `inv_prob_test_functions.r` and 
+the MCMC functions in `gp_mcmc_functions.r`. Although, this latter file 
+primarily contains algorithms that perform emulator-accelerated MCMC, it also 
+supports standard ("exact") MCMC, which is what we demonstrate here. In 
+addition to acting as a tutorial, this document provides a useful workflow 
+for testing any new inverse problem under consideration.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(lhs)
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+# Inverse Problem Setup
+We consider an example inverse problem that is already conveniently set up, 
+based on a toy vegetation model called the Very Simple Ecosystem Model (VSEM).
+Convenience functions that provide access to fully specified Bayesian inverse 
+problems can be found in `inv_prob_test_functions.r`. The inverse problem 
+is defined via the components of the list returned by these functions in a 
+standardized format.
+```{r}
+# Example inverse problem based on calibrating parameters of the 
+# VSEM vegetation model.
+inv_prob <- get_vsem_test_1()
+
+# Exact likelihood (no emulation).
+llik_exact <- inv_prob$llik_obj
+
+# Prior distribution.
+par_prior <- inv_prob$par_prior
+
+# Noise variance parameter (assumed fixed here).
+sig2 <- inv_prob$sig2_model
+```
+
+## Summarizing the prior distribution
+```{r}
+print(par_prior)
+prior_plots <- plot_prior_samp(par_prior)
+for(plt in prior_plots) plot(plt)
+```
+
+## Summarizing the prior predictive distribution
+TODO
+
+# Sampling from the Posterior
+
+## Adaptive Metropolis-Hastings
+We start by running an adaptive Metropolis-Hastings algorithm to sample from 
+the posterior. We use the wrapper function `run_mcmc_multichain()` from 
+`gp_mcmc_functions.r` to run multiple independent chains, which is useful 
+for validating the MCMC results. Note that when the argument `try_parallel`
+is `TRUE` then the function attempts to run the chains in parallel. If the 
+parallel evaluation is being finicky, then this argument can be set to `FALSE`
+to execute the chains serially.
+```{r}
+# Run adaptive Metropolis-Hastings using exact likelihood. 
+n_mcmc <- 50000L
+mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
+                                 par_prior=par_prior, n_itr=n_mcmc, 
+                                 try_parallel=TRUE)
+samp_dt <- mcmc_list$samp
+```
+
+## Differential Evolution Metropolis-Hastings
+We next utilize the wrapper function `mcmc_bt_wrapper()`, which provides access
+to the MCMC samplers implemented in the `BayesianTools` package. We run 
+a differential evolution MCMC algorithm, which runs multiple chains and uses 
+information across chains to generate better proposals without requiring 
+derivatives.
+```{r}
+bt_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=n_mcmc, sampler="DEzs")
+samp_dt <- format_mcmc_output(bt_list$samp, test_label="DEzs") 
+```
+
+
+## MCMC Diagnostics
+```{r}
+burn_in_start <- c(DEzs=10000L)
+trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
+for(plt in trace_plots) plot(plt)
+```
+
+
+
+

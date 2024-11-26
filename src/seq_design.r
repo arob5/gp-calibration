@@ -51,10 +51,6 @@ is_gp <- function(model) {
   inherits(model, "gpWrapper")
 }
 
-is_llik_em <- function(model) {
-  inherits(model, "llikEmulator")
-}
-
 
 evaluate_acq_func_vectorized <- function(acq_func, input_mat, model=NULL, ...) {
   # Evaluates the objective function `acq_func` at a set of inputs `input_mat` using 
@@ -137,29 +133,64 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
 # by sequential design methods. 
 # -----------------------------------------------------------------------------
 
-get_batch_design <- function(method, N_batch, prior_params=NULL, design_candidates=NULL, 
+get_batch_design <- function(method, N_batch, prior_params=NULL, 
+                             design_candidates=NULL,  
                              design_candidate_weights=NULL, ...) {
   # LHS = Latin Hypercube Sample
   # tensor_product_grid = tensor product of equally-spaced 1d grids in each dimension. 
   # simple = simple iid random sample.
+  # subsample = subsample from `design_candidates` weighted by `design_candidate_weights`.
   
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
   else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else if(method == "tensor_product_grid") return(get_tensor_product_grid(N_batch, prior_dist_info=prior_params, ...))
-  else if(method == "simple") return(get_simple_random_sample(N_batch, prior_dist_info=prior_params))
+  else if(method == "simple") return(sample_prior(prior_params, n=N_batch))
+  else if(method == "subsample") return(subsample_design(design_candidates, n=N_batch, 
+                                                         design_candidate_weights, ...))
   else stop("Design method ", method, " not supported.")
 }
 
 
-get_simple_random_sample <- function(N_batch, prior_dist_info) {
-  d <- nrow(prior_dist_info)
-  samp <- matrix(nrow=N_batch, ncol=d, dimnames=list(NULL,rownames(prior_dist_info)))
-  for(i in 1:N_batch) {
-    samp[i,] <- sample_prior_theta(prior_dist_info)
-  }
+get_init_design_list <- function(inv_prob, design_method, N_design, ...) {
+  # A convenience function that constructs an initial design for an inverse 
+  # problem and returns a list containing the design inputs, as well as 
+  # associated log-likelihood, log-prior, and forward model evaluations.
+  # 
+  # Args:
+  #    inv_prob: list, defining the inverse problem, following the conventions
+  #              described in `inv_prob_test_functions.r`. Must have elements
+  #              "llik_obj" and "par_prior". 
+  #    design_method: character, passed to the "method" argument of 
+  #                   `get_batch_design()`.
+  #    N_design: integer, number of design points.
+  #    ...: additional arguments passed to `get_batch_design()`.
+  #
+  # Returns:
+  # list, with elements:
+  #    "input": matrix with design inputs in the rows.
+  #    "llik": numeric vector of log-likelihood evaluations at design inputs.
+  #    "lprior": numeric vector of log-prior evaluations at design inputs.
+  #    "bounds": matrix storing bounding box for design inputs.
+  #    "fwd": if applicable, matrix of forward model outputs at design points.
   
-  return(samp)
+  # Design inputs, ensuring correct parameter order.
+  design_info <- list(design_method=design_method, N_design=N_design)
+  design_info$input <- get_batch_design(design_method, N_design, 
+                                        prior_params=inv_prob$par_prior, ...)
+  design_info$input <- design_info$input[,inv_prob$par_names,drop=FALSE]
+  
+  # Associated log-likelihood and log prior evaluations.
+  design_info$llik <- inv_prob$llik_obj$assemble_llik(design_info$input)
+  design_info$lprior <- calc_lprior_dens(design_info$input, inv_prob$par_prior)
+  design_info$lpost <- design_info$llik + design_info$lprior
+  design_info$bounds <- get_bounds(design_info$input)
+  
+  # Not all log-likelihood objects have the `run_fwd_model()` method.
+  design_info$fwd <- try(inv_prob$llik_obj$run_fwd_model(design_info$input))
+  
+  return(design_info)
 }
+
 
 get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=FALSE, ...) {
   # Produces a Latin Hypercube Sample (LHS) with `N_batch` points. The LHS is first sampled
@@ -307,6 +338,38 @@ get_tensor_product_grid <- function(N_batch, prior_dist_info=NULL, bounds=NULL,
 }
 
 
+subsample_design <- function(design_candidates, n, 
+                             design_candidate_weights=NULL, ...) {
+  # Randomly samples `n` rows (without replacement) from the rows of 
+  # `design_candidates`. If a vector of weights is provided by 
+  # `design_candidate_weights` then a weighted sample is taken.
+  #
+  # Args:
+  #    design_candidates: matrix, with rows interpreted as points.
+  #    n: integer, number of subsamples to extract.
+  #    design_candidate_weights: numeric, nonnegative, of length equal to the 
+  #                              number of rows of `design_candidates`. The 
+  #                              weights used in sampling.
+  #
+  # Returns:
+  # matrix of min(`n`, nrow(design_candidates)) rows, the row-subsetted 
+  # version of `design_candidates`.
+  
+  assert_that(is.matrix(design_candidates))
+  n_rows <- nrow(design_candidates)
+  
+  if(n >= n_rows) {
+    message("Warning: `n` is >= number of rows in `design_candidates`. Returning 
+            full matrix without subsampling.")
+    return(design_candidates)
+  }
+  
+  # Randomly sample row indices.
+  idcs <- sample(1:n_rows, size=n, replace=FALSE, prob=design_candidate_weights)
+  design_candidates[idcs,,drop=FALSE]
+}
+
+
 gen_extrapolation_test_inputs <- function(d, N_points_per_dim, max_scaler=2.0, scale="linear", 
                                           target_bounds=NULL, return_long=FALSE) {
   # By default, this function implicitly treats data as lying in the hypercube [-1,1]^d.
@@ -365,15 +428,6 @@ gen_extrapolation_test_inputs <- function(d, N_points_per_dim, max_scaler=2.0, s
   return(list(inputs=X_test_long, idx=break_points))
 }
 
-
-run_EKI_finite_time <- function(N_steps=1, init_ensemble=NULL) {
-  .NotYetImplemented()
-}
-
-
-run_EKI_unit_step <- function(total_steps=1) {
-  .NotYetImplemented()
-}
 
 
 

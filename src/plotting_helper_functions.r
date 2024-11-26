@@ -118,16 +118,19 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
 }
 
 
-plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.null(X_design), 
-                                  y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
-                                  xlab="x", ylab="y", ground_truth_col="black", design_color="black", 
-                                  design_pt_size=1.5, line_thickness=1.0) {
+plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, 
+                                  include_design=!is.null(X_design), 
+                                  y_new=NULL, X_design=NULL, y_design=NULL, 
+                                  plot_title=NULL, xlab="x", ylab="y", 
+                                  ground_truth_col="black", design_color="black", 
+                                  design_pt_size=1.5, line_thickness=1.0, 
+                                  legend=TRUE, ...) {
   # Similar to `plot_pred_1d_helper` but does not plot prediction intervals; instead plots 
   # multiple curves. This is useful for comparing multiple approximations to a function. 
   # Can still plot design points, just like `plot_pred_1d_helper`. 
   # `pred` is a matrix of dimension `(nrow(X_new), K)`, where `K` is the number of curves
   # to plot. A baseline curve will also be plotted if `y_new` is provided. 
-  # By default, if `def_by` is NULL then each line (column of `pred`) will be plotted a 
+  # By default, if `df_by` is NULL then each line (column of `pred`) will be plotted a 
   # different color. The names of the lines in the legend will be taken from `colnames(pred)`
   # if is it non-NULL; otherwise default names will be assigned. Passing `df_by` allows 
   # specifying a finer mapping based on both color and linetype. `df_by` should have number
@@ -147,8 +150,6 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
     ids <- colnames(pred)
   }
 
-  # if(is.null(colnames(pred))) colnames(pred) <- paste0("y", 1:ncol(pred))
-  
   df_pred <- cbind(x=drop(X_new), as.data.frame(pred))
   df_pred <- melt(df_pred, id.vars="x", variable.name="id", value.name="y")
   
@@ -162,13 +163,6 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
   }
   
   plt <- ggplot()
-  
-  # True values at prediction locations. 
-  if(!is.null(y_new)) {
-    df_true <- data.frame(x=drop(X_new), y=drop(y_new))
-    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, 
-                           linetype="dashed", linewidth=line_thickness)  
-  }
   
   # Plot lines. 
   by_color <- TRUE
@@ -192,11 +186,21 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL, include_design=!is.nu
     stop("No by cols identified.")
   }
   
+  # True values at prediction locations. 
+  if(!is.null(y_new)) {
+    df_true <- data.frame(x=drop(X_new), y=drop(y_new))
+    plt <- plt + geom_line(aes(x=x, y=y), df_true, color=ground_truth_col, 
+                           linetype="dashed", linewidth=line_thickness)  
+  }
+  
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
     plt <- plt + geom_point(aes(x,y), df_design, color=design_color, size=design_pt_size)
   }
+  
+  # Remove legend, if requested.
+  if(!legend) plt <- plt + theme(legend.position="none")
   
   return(plt)
 }
@@ -339,6 +343,116 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
   }
   
   return(plt)
+}
+
+
+get_input_grid_1d_projection = function(x_names, x_vary=x_names, X_list=NULL, 
+                                        X_fixed=NULL, X_bounds=NULL, 
+                                        n_points_default=100L) {
+  # A helper function for plotting 1d projections of a scalar-valued function
+  # with multiple inputs. In particular, constructs sets of input points to the 
+  # function where only one variable is varied at a time, with the remaining 
+  # variables fixed at some values. This function provides various ways to 
+  # specify the points over which each variable is varied, as well as the 
+  # values of the points at which the fixed (non-varying) variables are fixed 
+  # at. In particular, these sets of points may be passed explicitly via 
+  # `X_list` and `X_fixed`, respectively. If not passed, then default values 
+  # will be chosen based on `X_bounds`.
+  #
+  # Args:
+  #    x_names: the full set of variable names, including all fixed and varied
+  #             parameters. Required to be able to specify the full parameter 
+  #             dimension `d`.
+  #    x_vary: character, the vector of variable names that will be varied. 
+  #             i.e., the axes onto which 1d projections will be considered.
+  #             Defaults to all variables.
+  #    X_list: list, providing an explicit way to specify the values at which 
+  #            the non-fixed variables are varied. The names of this list must 
+  #            be elements of `x_vary`. Each element is a numeric vector or 
+  #            one-column matrix containing the input grid for the respective 
+  #            variable. If a variable in `x_vary` is not present in 
+  #            `names(X_list)`, then a default input grid for this variable will
+  #            be constructed using `X_bounds`.
+  #    X_fixed: matrix, of shape (m,d). Each row is a value at which to fix the 
+  #             non-varying parameters. Column names must correspond to 
+  #             `x_names`.Technically, if a variable is never varied then it 
+  #             need not be in the matrix, but it is typically easiest to 
+  #             include all parameters as columns.
+  #    X_bounds: matrix, of shape (2,d) with the two rows specifying lower and 
+  #              upper bounds for each parameter, respectively. If a varied 
+  #              variable is not provided in `X_list` then it must have bounds
+  #              specified, in which case its input grid is linearly spaced 
+  #              between these bounds with `n_points_default` points. If 
+  #              `X_fixed` is NULL, then the bounds must be provided, in which 
+  #              case the fixed parameters are set to their midpoints between 
+  #              the bounds.
+  #    n_points_default: integer, the number of points to use in default grid 
+  #                      construction, when the grid is not explicitly passed.
+  # 
+  # Returns:
+  # list, with names set to `x_vary`. Each element contains a sublist of
+  # length `nrow(X_fixed)` (length 1 if `X_fixed` is NULL). Specifically, 
+  # for the returned list `l`, the element `l[["x"]][[j]]` is a matrix 
+  # containing the input grid in which the variable "x" is varied, and all
+  # other variables are fixed at the values specified by `X_fixed[,j]` (or 
+  # their midpoints determined by `X_bounds` is `X_fixed` is NULL). This 
+  # matrix will have shape (n,d), where `d = length(x_names)` is the full 
+  # parameter dimension and `n` is the number of points given in 
+  # `X_list[["x"]]`, if provided, and otherwise is equal to `n_points_default`.
+  
+  assert_that(all(x_vary %in% x_names))
+  
+  # Total parameter dimension, and number of parameters that will be varied.
+  d <- length(x_names)
+  n_vary <- length(x_vary)
+  n_fixed <- d - 1L
+
+  # Each variable being varied must either have a grid explicitly defined in 
+  # `X_list` or have bounds provided in `X_bounds`.
+  for(x_name in x_names) {
+    assert_that(isTRUE(x_name %in% names(X_list)) || 
+                isTRUE(x_name %in% colnames(X_bounds)))
+  }
+  
+  # If `X_fixed` is not provided, then `X_bounds` must be given.
+  assert_that(!(is.null(X_fixed) && is.null(X_bounds)))
+  if(!is.null(X_bounds)) assert_that(setequal(x_names, colnames(X_bounds)))
+  
+  # Construct default input grids for varied parameters, if not provided.
+  if(is.null(X_list)) X_list <- list()
+  for(x_name in x_vary) {
+    if(is.null(X_list[[x_name]])) {
+      x_bounds <- X_bounds[,x_name]
+      X_list[[x_name]] <- seq(x_bounds[1], x_bounds[2], 
+                              length.out=n_points_default)
+    }
+  }
+  
+  # If not provided, set values of fixed parameters to midpoints with respect to 
+  # `X_bounds`. At present, all variables need to be fixed in the same way, 
+  # either using `X_fixed` or `X_bounds`.
+  if(is.null(X_fixed)) {
+    X_fixed <- matrix(apply(X_bounds, 2, mean), nrow=1)
+    colnames(X_fixed) <- colnames(X_bounds)
+  }
+  
+  # Create input grids.
+  l <- list()
+  for(x_name in x_vary) {
+    l[[x_name]] <- list()
+    x_names_fixed <- setdiff(x_names, x_name)
+    x_grid <- matrix(X_list[[x_name]], ncol=1, dimnames=list(NULL,x_name))
+    n_grid <- nrow(x_grid)
+    
+    for(j in 1:nrow(X_fixed)) {
+      X_grid <- cbind(x_grid, matrix(X_fixed[j,x_names_fixed,drop=FALSE],  
+                                     nrow=n_grid, ncol=n_fixed, byrow=TRUE, 
+                                     dimnames=list(NULL,x_names_fixed)))
+      l[[x_name]][[j]] <- X_grid[,x_names]
+    }
+  }
+ 
+  return(l)
 }
 
 

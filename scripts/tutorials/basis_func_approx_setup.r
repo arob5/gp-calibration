@@ -7,7 +7,6 @@
 library(lhs)
 library(ggplot2)
 library(data.table)
-library(docopt)
 
 # For reproducibility. 
 set.seed(15643352)
@@ -39,7 +38,7 @@ source(file.path(src_dir, "plotting_helper_functions.r"))
 # values. Here we are starting with the simplest case of a single parameter
 # to make visualization easy. The variable `par_cal_names` is short for 
 # "calibration parameter names", the parameters you will be varying. The 
-# varible `par_names` contains all 11 VSEM parameters.
+# variable `par_names` contains all 11 VSEM parameters.
 par_cal_names <- "KEXT"
 dim_par <- length(par_cal_names)
 par_names <- get_vsem_par_names()
@@ -49,7 +48,7 @@ print(data.frame(par_name=par_names, default_value=par_default))
 
 # Define prior distribution on calibration parameters. I wrote a function that
 # sets up a default uniform prior. 
-par_cal_idx <- which(par_names %in% par_cal_names)
+par_cal_idx <- match(par_cal_names, par_names)
 par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
 rownames(par_prior_params) <- par_prior_params$par_name
 print("Prior on calibration parameter:")
@@ -121,6 +120,10 @@ plot(plt_test)
 n_samples <- 5
 u_test <- get_batch_design("simple", N_batch=n_samples, prior_params=par_prior_params)
 g_test <- G(u_test)
+
+plt_test <- plot_curves_1d_helper(time_points, t(g_test), 
+                                  plot_title="VSEM output: varying parameter values",
+                                  xlab="days", ylab="LAI")
 
 plt_test <- plot_curves_1d_helper(time_points, t(g_test), 
                                   plot_title="VSEM output: varying parameter values",

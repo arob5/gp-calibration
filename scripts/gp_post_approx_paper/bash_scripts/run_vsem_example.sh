@@ -11,20 +11,18 @@
 # being run so that the correct library path is set. 
 
 # Settings to pass to Rscript. 
-RUN_TAG="test"
+RUN_TAG="5d_2"
 EXPERIMENT_TAG="vsem"
-DIM_PAR=3
-DIM_OUTPUT=1
-N_DESIGN=30
+N_DESIGN=250
 N_DESIGN_TEST=600
 DESIGN_METHOD="LHS"
 DESIGN_METHOD_TEST="LHS"
 N_MCMC=200000
-MCMC_TAGS="gp-mean,gp-marg,gp-quantile,mcwmh-joint,mcwmh-ind"
+MCMC_TAGS="gp-mean,gp-marg,mcwmh-joint,mcwmh-ind"
 
 # Create output directory. Creation of this directory is handled (if necessary)
 # within the R script. 
-SIM_RUN_ID="${RUN_TAG}_d${DIM_PAR}_p${DIM_OUTPUT}_N${N_DESIGN}_${DESIGN_METHOD}"
+SIM_RUN_ID="${RUN_TAG}_N${N_DESIGN}_${DESIGN_METHOD}"
 LOG_FILENAME="${JOB_NAME}.o${JOB_ID}"
 OUTPUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_post_approx_paper/${EXPERIMENT_TAG}/${SIM_RUN_ID}"
 
@@ -37,7 +35,6 @@ export PATH="$PATH:/share/pkg.8/r/4.3.1/install/lib64/R"
 
 # Run Rscript. 
 Rscript ../run_vsem_example.r ${SIM_RUN_ID} ${OUTPUT_DIR} \
---dim_par=${DIM_PAR} --dim_output=${DIM_OUTPUT} \
 --N_design=${N_DESIGN} --N_design_test=${N_DESIGN_TEST} \
 --design_method=${DESIGN_METHOD} \
 --design_method_test=${DESIGN_METHOD_TEST} \

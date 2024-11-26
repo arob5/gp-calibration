@@ -1,0 +1,120 @@
+---
+title: "EKI Linear Gaussian Test"
+author: "Andrew Roberts"
+date: "2024-10-09"
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(ggplot2)
+library(data.table)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "ens_Kalman_inversion.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+```
+
+
+# Define Linear Gaussian Inverse Problem
+```{r}
+set.seed(96878)
+
+# Parameter dimension (d) and observation dimension (d).
+d <- 2
+p <- 2
+
+# Mean and covariance of Gaussian prior on parameter.
+m0 <- rep(0,d)
+C0 <- tcrossprod(matrix(rnorm(d*d), nrow=d, ncol=d))
+L0 <- t(chol(C0))
+
+# Covariance of noise term.
+Sigma <- tcrossprod(matrix(rnorm(p*p), nrow=p, ncol=p))
+ 
+# Linear forward model. 
+G <- matrix(rnorm(p*d), nrow=p, ncol=d)
+
+# Define the observed data vector. 
+y <- c(1,2)
+```
+
+```{r}
+# Plot contours of exact (unnormalized) posterior density.
+
+# Draw samples from prior. These will be used to define the plotting grid, 
+# as well as the initial ensemble later on.
+J <- 500
+U <- add_vec_to_mat_rows(m0, t(L0 %*% matrix(rnorm(J*d), nrow=d, ncol=J)))
+par_names <- c("u1", "u2")
+colnames(U) <- par_names
+
+# Define grid for plotting.
+n_grid <- 50^2
+u_bounds <- get_bounds(U) # This function is defined in `gp_helper_functions.r`
+u_grid <- get_batch_design("tensor_product_grid", bounds=u_bounds, N_batch=n_grid)
+colnames(u_grid) <- par_names
+
+# Get mean and covariance of the true posterior density.
+true_post_moments <- calc_lin_Gauss_cond_moments_obs(G, y, m0, C0=C0, Sig=Sigma)
+m_post <- true_post_moments$mean
+L_post <- t(chol(true_post_moments$cov))
+
+# Define function to evaluate unnormalized posterior density.
+lpost_true <- function(u_vals) {
+  -0.5 * colSums(forwardsolve(L_post, add_vec_to_mat_cols(-m_post, t(u_vals)))^2)
+}
+
+# Plot log density contours.
+lpost_true_grid <- lpost_true(u_grid)
+df_true_lpost <- data.frame(u_grid, lpost=lpost_true_grid)
+plt_true_lpost <- ggplot( ) +
+                  geom_contour_filled(aes(x=u1, y=u2, z=lpost), df_true_lpost,
+                                      bins=20) + 
+                  geom_point(aes(x=m_post[1], y=m_post[2]), color="red", shape=8) +
+                  geom_point(aes(x=m0[1], y=m0[2]), color="blue", shape=8) +
+                  theme_minimal() + theme(legend.position="none")
+plot(plt_true_lpost)
+
+# Overlay prior ensemble.
+plt_true_lpost +                   
+  geom_point(aes(x=u1, y=u2), data.frame(U), color="gray", alpha=0.8) + 
+  ggtitle("True Log Posterior Density vs. Prior Samples")
+```
+
+# Apply EnKF update to prior ensemble, producing approximate posterior ensemble.
+```{r}
+# Evaluate forward model at initial ensemble.
+G_ens <- t(G %*% t(U))
+
+# EnKF update.
+eki_results <- run_eki_step(U, y, G_ens, Sigma)
+U_new <- eki_results$ens
+
+# Plot true post vs. updated ensemble.
+plt_true_lpost +                   
+  geom_point(aes(x=u1, y=u2), data.frame(U_new), color="gray", alpha=0.8) + 
+  ggtitle("True Log Posterior Density vs. Updated Samples")
+```
+
+```{r}
+# Compare updated ensemble moments to true posterior moments.
+print("True mean:")
+print(m_post)
+print("Ensemble mean:")
+print(colMeans(U_new))
+
+print("True cov:")
+print(true_post_moments$cov)
+print("Ensemble cov:")
+print(cov(U_new))
+```
+
+
