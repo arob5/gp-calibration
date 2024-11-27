@@ -8,6 +8,7 @@
 # Depends: statistical_helper_functions.r
 #
 
+library(scoringRules)
 library(assertthat)
 library(tmvtnorm)
 library(abind)
@@ -224,7 +225,10 @@ gpWrapper$methods(
     #     effect on the cross cov matrix (nugget variances will NOT be added in either case). 
     #   - If `return_cov==TRUE`, then the variances will always be returned as well, by simply taking 
     #     the diagonal of the covariance matrix. 
-    #   - `return_cross_cov` has no effect on the other settings; can be thought of as an optional add-on. 
+    #   - `return_cross_cov` has no effect on the other settings; can be thought of as an optional add-on.
+    #
+    # Returns:
+    #    
 
     # Scale inputs, if required. 
     if(scale_input) {
@@ -244,7 +248,7 @@ gpWrapper$methods(
                                         include_nugget=include_nugget, return_trend=return_trend, ...)
     }
 
-    names(pred_list) <- Y_names
+    names(pred_list) <- .self$Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     trend_pred <- do.call(cbind, lapply(pred_list, function(l) l$trend))
     var_pred <- do.call(cbind, lapply(pred_list, function(l) l$var))
@@ -348,9 +352,152 @@ gpWrapper$methods(
                 update() method should ultimately call update_package()."
     stop(err_msg)
   },
+
+  calc_pred_func = function(func, type="pw", X_new=NULL, Y_new=NULL,  
+                            pred_list=NULL, include_nugget=TRUE,  
+                            return_mean=TRUE, return_var=TRUE, 
+                            return_cov=FALSE, ...) {
+    # Returns the output of a function applied to `pred_list`. The function 
+    # is applied separately for each output GP. The signature of the function 
+    # should look like `func(pred_list, output_idx, ...)` or 
+    # `func(pred_list, output_idx, y, ...)`, with output index specifying which 
+    # of the output GPs the function should be applied to. The second 
+    # signature is typically used for error measures, where `y` represents 
+    # the true values. Alternatively, `func` may be a character in which 
+    # case this method looks for a method called `calc_pw_<func>()`.
+    # `type` can be "pw" (pointwise) or "agg" (aggregate). The former implies 
+    # that `func` should operate on inputs point-by-point and thus return 
+    # a vector of length `nrow(X_new)`. "agg" doesn't do any checks on the 
+    # output size, but this typically means that `func` returns a single 
+    # value. 
+
+    # This is necessary to make these methods available in the current 
+    # environment, since they are not explicitly included in the function body.
+    usingMethods(calc_pw_entropy, calc_pw_crps, calc_pw_mae, calc_pw_mse, 
+                 calc_pw_log_score, calc_agg_mah, calc_agg_log_score)
+    
+    # Select method to use.
+    assert_that(is.function(func) || is.character(func))
+    if(is.character(func)) {
+      method_name <- paste("calc", type, func, sep="_")
+      assert_that(method_name %in% names(.self), 
+                  msg=paste0("Method not found: ", method_name))
+      func <- .self[[method_name]]
+    }
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      assert_that(return_mean || return_var || return_cov)
+      pred_list <- .self$predict(X_new, return_mean=return_mean, 
+                                 return_var=return_var, 
+                                 include_nugget=include_nugget)
+    }
+    
+    # Identify the number of test points. Only required for pointwise function 
+    # evaluations to check that the output size is correct.
+    n_test <- NULL
+    if(type == "pw") {
+      if(!is.null(pred_list$mean)) n_test <- nrow(pred_list$mean)
+      else if(!is.null(pred_list$var)) n_test <- nrow(pred_list$var)
+      else n_test <- dim(pred_list$cov)[1]
+    }
+
+    # Each independent GP is handled separately.
+    l <- lapply(seq_len(.self$Y_dim), function(i) drop(func(pred_list, i, Y_new[,i], ...)))
+    if(type == "pw") assert_that(all(sapply(l, length) == n_test))
+    func_mat <- do.call(cbind, l)
+    colnames(func_mat) <- .self$Y_names
+
+    return(func_mat)
+  },
   
-  plot_pred_1d = function(X_new, include_nugget=TRUE, include_interval=TRUE, interval_method="pm_std_dev",
-                          N_std_dev=1, CI_prob=0.9, pred_list=NULL, Y_new=NULL, plot_title=NULL, 
+  calc_pred_multi_func = function(func_list, type="pw", X_new=NULL, Y_new=NULL,  
+                                  pred_list=NULL, return_list=FALSE, 
+                                  include_nugget=TRUE, return_mean=TRUE, 
+                                  return_var=TRUE, return_cov=FALSE, ...) {
+    # A wrapper around `calc_pred_func()` that allows `func` to be a list of 
+    # functions (or method names). Note that `type` should not be a list; 
+    # all of the functions should have the same return shape. If `return_list`
+    # is TRUE, then the return type is a list of length `length(func_list)`. 
+    # Otherwise, the list elements are combined into a single data.table with 
+    # column names "<Y_names>", "func", where `<Y_names>` includes one column 
+    # per output variable.
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- .self$predict(X_new, return_mean=return_mean, 
+                                 return_var=return_var, 
+                                 include_nugget=include_nugget)
+    }
+    
+    # Return function evaluations for each function in list.
+    l <- lapply(func_list, function(f) calc_pred_func(f, type=type, X_new=X_new, 
+                                                      Y_new=Y_new, 
+                                                      pred_list=pred_list, ...))
+  
+    # Obtain names identifying each function.
+    if(is.character(func_list)) func_names <- func_list
+    else if(!is.null(names(func_list))) func_names <- names(func_list)
+    else func_names <- paste0("f", seq_along(func_list))
+    
+    # Return as list, if requested.
+    if(return_list) {
+      names(l) <- func_names
+      return(l)
+    }
+
+    # Otherwise stack into a single data.table.
+    for(i in seq_along(l)) {
+      l[[i]] <- as.data.table(l[[i]])
+      l[[i]][, func := func_names[i]]
+    }
+    
+    return(rbindlist(l, use.names=TRUE))
+  },
+  
+  calc_pw_entropy = function(pred_list, output_idx, ...) {
+    0.5 * log(2*pi*exp(1)*pred_list$var[,output_idx])
+  },
+  
+  calc_pw_crps = function(pred_list, output_idx, y, ...) {
+    assert_that(!is.null(y))
+    scoringRules::crps_norm(y, mean=pred_list$mean[,output_idx], 
+                            sd=sqrt(pred_list$var[,output_idx]))
+  },
+  
+  calc_pw_mae = function(pred_list, output_idx, y, ...) {
+    assert_that(!is.null(y))
+    abs(pred_list$mean[,output_idx] - y)
+  },
+  
+  calc_pw_mse = function(pred_list, output_idx, y, ...) {
+    assert_that(!is.null(y))
+    (pred_list$mean[,output_idx] - y)^2
+  },
+  
+  calc_pw_log_score = function(pred_list, output_idx, y, ...) {
+    assert_that(!is.null(y))
+    scoringRules::logs_norm(y, mean=pred_list$mean[,output_idx],
+                            sd=sqrt(pred_list$var[,output_idx]))
+  },
+  
+  calc_agg_mah = function(pred_list, output_idx, y, ...) {
+    assert_that(!is.null(y))
+    stats::mahalanobis(y, center=pred_list$mean[,output_idx],
+                       cov=pred_list$cov[,,output_idx])
+  },
+  
+  calc_agg_log_score = function(pred_list, output_idx, y, ...) {
+    # Note that this function is the multivariate version of 
+    # `calc_pw_log_score()`, which does not consider the covariance.
+    assert_that(!is.null(y))
+    mvtnorm::dmvnorm(y, mean=pred_list$mean[,output_idx], 
+                     sigma=pred_list$cov[,,output_idx], log=TRUE)
+  },
+  
+  plot_pred_1d = function(X_new, include_nugget=TRUE, include_interval=TRUE, 
+                          interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                          pred_list=NULL, Y_new=NULL, plot_title=NULL, 
                           xlab=NULL, ylab=NULL, ...) {
     
     assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
@@ -388,7 +535,8 @@ gpWrapper$methods(
   },
   
   
-  plot_pred = function(X_new, Y_new, include_CI=FALSE, include_nugget=TRUE, CI_prob=0.9, pred_list=NULL) {
+  plot_pred = function(X_new, Y_new, include_CI=FALSE, include_nugget=TRUE, 
+                       CI_prob=0.9, pred_list=NULL) {
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- predict(X_new, return_mean=TRUE, return_var=include_CI, include_nugget=include_nugget)

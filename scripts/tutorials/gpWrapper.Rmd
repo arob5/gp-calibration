@@ -1,0 +1,208 @@
+---
+title: "Emulator MCMC Code"
+author: "Andrew Roberts"
+date: "2024-10-22"
+output: html_document
+---
+
+This file provides an introduction to the `gpWrapper` class and associated 
+classes that inherit from this base class. The code implementing these 
+classes can be found in `gp_mcmc_functions.r`.
+
+# Introduction
+The basic motivation for `gpWrapper` is to define a class that encapsulates 
+a "wrapper" around a Gaussian process (GP) model. This provides a standardized
+interface between GP objects implemented in R's many different GP packages.
+While `gpWrapper` defines the base wrapper class, users work with classes that 
+inherit from `gpWrapper` that are designed to wrap around a specific GP 
+package. For example `gpWrapperHet` provides a wrapper around the 
+`hetGP` package. By nature of enforcing a standarized interface, this will 
+necessarily limit users' ability to leverage specialized features of 
+specific packages. If the application requires very specialized features, it 
+is probably best to use the original package implementing these features. On the 
+other hand, if one primarily needs to use standard GP workflows and wants the 
+ability to try out different models, then `gpWrapper` provides the means to 
+design a workflow that is not tied to any one specific GP package. 
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo=TRUE)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+```
+
+# Fitting a GP
+We start by demonstrating how to to fit a GP, using `gpWrapperHet` as an 
+example. The `gpWrapper` objects are designed to allow to multi-output GPs
+with independent outputs; that is, a collection of independent univariate GPs
+that share the same inputs. 
+
+## Toy Regression Model
+We start by considering a simple regression setting 
+with one input variable and two outputs. Below we generate both training 
+data for the GP, as well as a dense grid of points for plotting the true 
+function.
+
+```{r}
+# Input training (design) data. Must be a matrix of shape (n,d), where n is the 
+# number of training points, and d the dimension of the input space.
+x_min <- -3
+x_max <- 3
+n <- 6
+X <- matrix(seq(x_min, x_max, length.out=n), ncol=1)
+
+# Output (response) values associated with training points. Must be a matrix of 
+# shape (n,p), where p is the number of output variables. We generate the 
+# true underlying signals with deterministic functions `f1`, `f2` and perturb
+# these signals with additive Gaussian noise to obtain the observations.
+func1 <- function(x) drop(2*cos(3*x) + 2*x)
+func2 <- function(x) drop(x^3 - 4*x)
+sd1 <- 1.0
+sd2 <- 1.4
+f1 <- func1(x)
+f2 <- func2(x)
+y1 <- f1 + sd1*rnorm(n)
+y2 <- f2 + sd2*rnorm(n)
+Y <- cbind(y1, y2)
+```
+
+```{r}
+# Test data for plotting
+n_test <- 100
+X_test <- matrix(seq(x_min, x_max, length.out=n_test), ncol=1)
+
+# True signal over grid of test points.
+f1_test <- func1(X_test)
+f2_test <- func2(X_test)
+f_test <- cbind(f1_test, f2_test)
+```
+
+```{r}
+# Plot the simulated data.
+df_train <- data.frame(x=X[,1], y1=Y[,1], y2=Y[,2], f1=f1, f2=f2)
+df_test<- data.frame(x=X_test[,1], f1=f1_test, f2=f2_test)
+
+data_plt1 <- ggplot() + 
+             geom_line(aes(x=x, y=f1), df_test, color="black") + 
+             geom_point(aes(x=x, y=y1), df_train, color="red") + 
+             labs(title="Training data: first output", xlab="x", ylab="y1")
+data_plt2 <- ggplot() + 
+             geom_line(aes(x=x, y=f2), df_test, color="black") + 
+             geom_point(aes(x=x, y=y2), df_train, color="red") + 
+             labs(title="Training data: second output", xlab="x", ylab="y2")
+
+plot(data_plt1)
+plot(data_plt2)
+```
+## Fitting the GP
+Below we instantiate a GP object. We then "fit" the GP, by which we mean 
+that the GP hyperparameters are optimized. For now, the GP mean and covariance 
+functions are specified in the `fit` method, but this will eventually be 
+updated so that they are specified when instatiating the object.
+```{r}
+# Instantiate the GP object.
+gp_obj <- gpWrapperHet(X, Y, normalize_output=TRUE, scale_input=TRUE)
+
+# Optimize the GP hyperparameters.
+gp_obj$fit("Gaussian", "constant", estimate_nugget=TRUE)
+
+# Summarize the GP fit.
+gp_obj$summarize()
+```
+
+## GP Predictions
+The `predict()` method computes GP predictions at a set of test points, 
+which are returned as a list storing various quantities depending on the 
+arguments passed to the function. For example, this list may contain 
+evaluations of the predictive mean, variance, covariance, or cross-covariance.
+The `predict()` function is called under the hood for certain methods, such 
+as the below plotting method. 
+
+```{r}
+# There is a specialized plot method for GPs with 1d input spaces. The `Y_new`
+# argument is optional, and allows plotting the true function values at the 
+# test inputs for comparison.
+gp_obj$plot_pred_1d(X_test, Y_new=f_test)
+```
+
+While convenient, in more computationally demanding settings, it is recommended
+to call the `predict()` method and store the returned list. This list 
+can be passed to many `gpWrapper` methods to avoid re-computing predictions 
+at the same set of inputs.
+
+```{r}
+# Store GP predictions. By default, this will return means/variances but 
+# not covariances. We can request the covariance if it is required.
+# TODO: need to add column names to the variance matrix.
+pred_list <- gp_obj$predict(X_test, return_cov=TRUE)
+
+print("First few GP mean predictions:")
+print(head(pred_list$mean))
+
+print("First few GP variance predictions:")
+print(head(pred_list$var))
+
+# The covariance element is an array of size (n_test,n_test,p). For example, 
+# the predictive covariance for the second output variable is accessed as 
+# `pred_list$cov[,,2]`.
+print("Covariance dimensions:")
+print(dim(pred_list$cov))
+```
+
+```{r}
+# Example of passing `pred_list` to another plotting method.
+gp_obj$plot_pred(pred_list=pred_list, Y_new=f_test)
+```
+## Functions of GP Predictions
+Often one in interested in functions of the GP predictive distribution. The 
+mean and variance are two such examples, but `gpWrapper` offers the 
+functionality to compute a wider variety of common scalar-valued functions, 
+including user-defined functions. The most common application of these 
+methods is to compute error metrics using a set of validation data. The 
+methods make a distinction between "pointwise" (pw) functions, that operate 
+on inputs element-by-element, and "aggregate" (agg) functions, that are a 
+function of a set of inputs. In this context, pointwise context essentially 
+means that GP covariance is ignored across points. 
+A few examples are given below.
+
+```{r}
+# Example of a pre-defined function. Computing pointwise entropy.
+ent <- gp_obj$calc_pred_func("entropy", pred_list=pred_list)
+head(ent)
+```
+
+```{r}
+# Computing some pre-defined pointwise error metrics. The "multi_func" 
+# version of this method is a convenient wrapper for computing multiple 
+# functions/metrics. 
+err_metrics_pw <- gp_obj$calc_pred_multi_func(c("mae", "mse", "crps", "log_score"), 
+                                              type="pw", pred_list=pred_list, 
+                                              Y_new=f_test)
+head(err_metrics_pw)
+```
+
+
+```{r}
+# The above metrics are all pointwise. We now consider some aggregate 
+# metrics. Notice that the same metrics can be interpreted differently 
+# deoending on whether `type` is set to "pw" or "agg". For example, "log_score"
+# evaluates the univariate log GP Gaussian density at each point independently, 
+# when "pw" is set. When "agg" is set it instead evaluates the log 
+# multivariate Gaussian density over the whole set of test inputs.
+err_metrics_agg <- gp_obj$calc_pred_multi_func(c("log_score", "mah"), 
+                                           type="agg", pred_list=pred_list, 
+                                           Y_new=f_test)
+err_metrics_agg
+```
+
+
+
+
+
