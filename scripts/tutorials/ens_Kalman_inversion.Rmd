@@ -15,9 +15,11 @@ methods as Ensemble Kalman Inversion (EKI) algorithms.
 knitr::opts_chunk$set(echo=TRUE)
 
 library(lhs)
+library(dplyr)
 library(ggplot2)
 library(data.table)
 library(assertthat)
+library(gridExtra)
 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
@@ -65,9 +67,62 @@ prior_plots <- plot_prior_samp(par_prior)
 for(plt in prior_plots) plot(plt)
 ```
 
-## Data and Prior Predictive Distribution
+## Data and Prior Predictive Distribution 
 TODO: Add in your plots showing the observations and some of the forward model runs
 (e.g., the plot with the horizontal lines).
+
+```{r}
+# Data vector, likelihood covariance, and forward model.
+y <- drop(inv_prob$y)
+p <- inv_prob$dim_obs
+d <- inv_prob$dim_par
+Sig <- diag(inv_prob$sig2_model, nrow=p)
+fwd <- inv_prob$par_to_obs_op
+
+# Initial ensembles (parameters and model outputs).
+n_ens <- 200L
+U <- get_batch_design(method="LHS", N_batch=n_ens, prior_params=par_prior)
+G <- fwd(U)
+```
+
+
+```{r}
+plot_obs <- function(pred, y_true, xlab = NULL, ylab = NULL) {
+  # the x-axis limit depends on number of time points in y_true
+  
+  incre <- round(length(y_true)/nrow(pred))
+  obs_idx <- seq(1, length(y_true), by=incre)
+  
+  if(is.null(colnames(pred))) {
+    ids <- paste0("y", 1:ncol(pred))
+    colnames(pred) <- ids
+  } else {
+    ids <- colnames(pred)
+  }
+  
+  df_pred <- cbind(obs_idx, as.data.frame(pred))
+  df_pred <- melt(df_pred, id.vars="obs_idx", variable.name="samp_id", value.name="y_val")
+  
+  plt <- ggplot() + theme_minimal()
+  
+  if (incre > 1) {
+    plt <- plt + geom_segment(aes(x=obs_idx, xend = obs_idx+incre, y=y_val, group = factor(samp_id)), 
+                          df_pred, color="grey")
+  } else {
+    plt <- plt + geom_line(aes(x=obs_idx, y=y_val, group = factor(samp_id)), df_pred, color="grey") 
+  }
+  
+  df_true <- data.frame(x=1:length(y_true), y=y_true)
+  plt <- plt + geom_line(aes(x,y), df_true, color = "black") + xlab(xlab) + ylab(ylab)
+  plt
+}
+```
+
+```{r}
+rand_idx <- sample(1:200,20)
+plot_obs(t(G[rand_idx,]),drop(inv_prob$model_output_true[,,5]), xlab = "Days", ylab = "LAI")
+plot_obs(t(G[rand_idx,]),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
+```
 
 ## Exact posterior samples
 We will compare the EKI posterior approximations to the baseline of exact 
@@ -95,20 +150,6 @@ and corresponding forward model outputs; this is not strictly necessary since th
 We do so here so we can pass the same initial ensemble to the function when 
 experimenting with different settings.
 
-```{r}
-# Data vector, likelihood covariance, and forward model.
-y <- drop(inv_prob$y)
-p <- inv_prob$dim_obs
-d <- inv_prob$dim_par
-Sig <- diag(inv_prob$sig2_model, nrow=p)
-fwd <- inv_prob$par_to_obs_op
-
-# Initial ensembles (parameters and model outputs).
-n_ens <- 200L
-U <- get_batch_design(method="LHS", N_batch=n_ens, prior_params=par_prior)
-G <- fwd(U)
-```
-
 ## Single Iteration, Default Parameter Transformations
 We start by running `run_eki()` with its default settings. The default 
 behavior is to run a single iteration of EKI, which implies one round of 
@@ -127,6 +168,7 @@ eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G)
 U_new <- eki_output$U
 eki_list <- eki_output$eki_list
 ```
+
 
 ```{r}
 # Append EKI approximate posterior samples to samples data.table.
@@ -155,6 +197,7 @@ helper function (for now). Some thoughts on this kind of plot:
 them all the same neutral color (e.g., gray). Or you could try coloring them by 
 a color gradient which is given by the true posterior density.
 2. 
+
 ```{r}
 obs_idx <- seq_along(y)
 G_new <- fwd(U_new)
@@ -166,12 +209,80 @@ eki_post_pred <- plot_curves_1d_helper(obs_idx, t(G_new), plot_title="EKI single
 
 plot(prior_pred)
 plot(eki_post_pred)
+
+plot_obs(t(G),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
+plot_obs(t(G_new),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
 ```
+
 
 TODO: continue as above by including all of the kind of plots you've been 
 working on, such as the 2d marginal density plots, the pairs plots, etc. For the 
 pairs plots, show the differences between the transformed and untransformed 
 ensembles.
+```{r}
+plot_density <- function(data, var1, var2, baseline_df = NULL) {
+  df <- data[,c(var1, var2)]
+  labs <- colnames(df)
+  colnames(df) <- c("theta1", "theta2")
+  
+  plt <- ggplot()
+  if (!is.null(baseline_df)) {
+    df2 <- baseline_df[,c(var1, var2)]
+    colnames(df2) <- c("theta1", "theta2")
+    plt <- plt + geom_density_2d_filled(aes(x = theta1, y = theta2), df2, show.legend = FALSE)
+  }
+
+  plt <- plt + #ggplot(df, aes(x = theta1, y = theta2)) +
+          geom_density_2d(aes(x = theta1, y = theta2), df, color = "blue") +
+          geom_point(aes(x = theta1, y = theta2), df, alpha = 0.5, size = 0.8) +
+          xlab(labs[1]) + ylab(labs[2]) +
+          theme_minimal()
+  plt
+}
+
+
+plot_density_pairs <- function(df, num_samp, df2 = NULL, 
+                               baseline_df = NULL, grid_ncol = 2) {
+  if (is.null(df2)) {
+    cols <- colnames(df)
+    pairs <- data.frame(t(combn(cols, 2))) %>% sample_n(num_samp)
+    dat <- df
+  } else {
+    samp1 <- sample(colnames(df), num_samp)
+    samp2 <- sample(colnames(df2), num_samp)
+    pairs <- data.frame(par1 = samp1, par2 = samp2)
+    dat <- cbind(df, df2)
+  }
+  plots <- lapply(1:nrow(pairs), function(i) {
+    pair <- pairs[i, ] %>% unlist() %>% as.character()
+    if (is.null(baseline_df)) {
+      plot_density(dat, pair[1], pair[2])
+    } else {
+      plot_density(dat, pair[1], pair[2], baseline_df)
+    }
+  })
+  
+  grid.arrange(grobs = plots, ncol = grid_ncol)
+}
+```
+
+```{r}
+samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="mcmc") 
+samp_filt <- select_mcmc_samp(samp_dt,param_types="par", itr_start=12500L)
+samp_f2 <- dcast(samp_filt, itr ~ param_name, value.var = "sample")
+samp_mcmc <- samp_f2[,inv_prob$par_names]
+
+# transform U to gaussian space
+U_new_gauss <- eki_output$par_map(U_new)
+plot_density_pairs(U_new_gauss, num_samp = 2)
+
+# constrained space U
+plot_density_pairs(U_new, num_samp = 2, baseline_df = samp_mcmc)
+
+colnames(G) <- paste0("month_",1:ncol(G))
+plot_density_pairs(G, num_samp = 2)
+plot_density_pairs(U_new, num_samp = 2, df2 = G)
+```
 
 ## EKI with Multiple Steps
 We now consider generalizations whereby the EnKF update is applied a finite 
@@ -182,4 +293,52 @@ the final posterior approximation produced as total number of iterations
 varies (like the plots you've already showed me). Also demonstrate how the
 ensemble evolves within a single run (over iterations within a single run).
 
+```{r}
+# Run 3 steps of EKI.
+mul_eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G, n_itr = 3L) 
 
+mul_U_new <- mul_eki_output$U
+mul_eki_list <- mul_eki_output$eki_list
+map_fun <- mul_eki_output$par_map
+```
+
+```{r}
+append_eki_list <- function(list, map, dt) {
+  for (i in seq_along(list)) {
+    li <- list[[i]]
+    ui <- li$U  # unbounded
+    ui_bound <- map(ui, inverse = TRUE)
+    
+    samp_dt <- append_samples_mat(samp_dt, ui_bound, param_type = "par",
+      test_label = paste("step", i, sep = "_"))
+  }
+  return(samp_dt)
+}
+
+samp_dt2 <- append_eki_list(mul_eki_list, map_fun, samp_dt)
+
+```
+
+
+```{r}
+# plot intermediate steps
+samp_dt3 <- append_samples_mat(samp_dt2, U, param_type="par", test_label="prior")
+
+mul_kde_plts <- get_1d_kde_plots(samp_dt3, test_label_baseline="mcmc")
+for(plt in mul_kde_plts) plot(plt)
+
+```
+
+```{r}
+# Run 2:5 steps of EKI.
+
+for (num in 2:5) {
+  mul_eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G, n_itr = num) 
+  mul_U_new <- mul_eki_output$U
+  samp_dt <- append_samples_mat(samp_dt, mul_U_new, param_type = "par",
+             test_label = paste("total_step", num, sep = "_"))
+}
+
+mul_kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="mcmc")
+for(plt in mul_kde_plts) plot(plt)
+```
