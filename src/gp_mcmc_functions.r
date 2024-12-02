@@ -307,10 +307,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL,
   par_curr <- par_samp[1,]
   par_curr_mat <- matrix(par_curr, nrow=1, 
                          dimnames=list(NULL, llik_em$input_names))
-  llik_pred_curr <- llik_em$calc_lik_approx(par_curr_mat, approx_type, 
-                                                  lik_par_val=sig2_curr, 
-                                                  log_scale=TRUE, 
-                                                  alpha=alpha_quantile, ...)
+  llik_pred_curr <- llik_em$calc_lik_approx(approx_type, par_curr_mat,
+                                            lik_par_val=sig2_curr, 
+                                            log_scale=TRUE, 
+                                            alpha=alpha_quantile, ...)
   lpost_pred_curr <- llik_pred_curr + calc_lprior_dens(par_curr_mat, par_prior)
   
   # Proposal covariance.
@@ -341,10 +341,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL,
           # Compute log-posterior approximation. 
           par_prop_mat <- matrix(par_prop, nrow=1,
                                  dimnames=list(NULL, llik_em$input_names))
-          llik_pred_prop <- llik_em$calc_lik_approx(par_prop_mat, approx_type, 
-                                                          lik_par_val=sig2_curr, 
-                                                          log_scale=TRUE, 
-                                                          alpha=alpha_quantile, ...) 
+          llik_pred_prop <- llik_em$calc_lik_approx(approx_type, par_prop_mat, 
+                                                    lik_par_val=sig2_curr, 
+                                                    log_scale=TRUE, 
+                                                    alpha=alpha_quantile, ...) 
           lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior)
           
           # Accept-Reject step.

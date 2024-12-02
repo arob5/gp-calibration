@@ -1,13 +1,13 @@
 ---
-title: "Emulator MCMC Code"
+title: "gpWrapper Class"
 author: "Andrew Roberts"
-date: "2024-10-22"
+date: "2024-11-27"
 output: html_document
 ---
 
 This file provides an introduction to the `gpWrapper` class and associated 
 classes that inherit from this base class. The code implementing these 
-classes can be found in `gp_mcmc_functions.r`.
+classes can be found in `gpWrapper.r`.
 
 # Introduction
 The basic motivation for `gpWrapper` is to define a class that encapsulates 
