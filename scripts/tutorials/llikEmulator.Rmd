@@ -28,6 +28,8 @@ in certain contexts.
 ```{r setup, include=TRUE}
 knitr::opts_chunk$set(echo=TRUE)
 
+library(data.table)
+
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 
@@ -83,14 +85,9 @@ llik_em <- llikEmulatorGP("em_llik", gp_obj,
 ## Deterministic Functions of the Likelihood Surrogate
 The `llikEmulator` class offers a standardized interface for computing 
 deterministic functions of the (potentially stochastic) likelihood surrogate.
-The two major use cases here are:  
-
-1. Computing deterministic approximations of the likelihood; this is handled 
-by the method `calc_lik_approx()`.  
-2. Computing error metrics to validate the adequacy of the log-likelihood 
-surrogate; this is handled by the method `calc_err_metric()`.  
-
-Note that some likelihood approximations and error metrics will only be 
+The major use case is computing deterministic approximations of the likelihood; 
+this is handled by the method `calc_lik_approx()`.  
+Note that some likelihood approximations will only be 
 available for certain specific `llikEmulator` classes, while others are 
 general enough that they can be implemented generally in the base `llikEmulator`
 class.
@@ -121,10 +118,12 @@ approximations on the original scale can be returned by setting the argument
 
 ```{r}
 # Compute plug-in mean approximation.
-approx_mean <- llik_em$calc_lik_approx("mean", em_pred_list=em_pred_list)
+approx_mean <- llik_em$calc_lik_approx("mean", em_pred_list=em_pred_list,
+                                       simplify=TRUE)
 
 # Compute marginal approximation (expectation of likelihood wrt emulator).
-approx_marg <- llik_em$calc_lik_approx("marginal", em_pred_list=em_pred_list)
+approx_marg <- llik_em$calc_lik_approx("marginal", em_pred_list=em_pred_list,
+                                       simplify=TRUE)
 
 head(cbind(mean=approx_mean, marginal=approx_marg))
 ```
@@ -145,7 +144,6 @@ This is useful for interfacing with external code; for example, MCMC
 implementations that require a log-likelihood function as input.
 
 ```{r}
-
 # Store approximate log-likelihood function.
 llik_approx <- llik_em$get_llik_func("mean")
 
@@ -154,13 +152,27 @@ llik_approx_vals <- llik_approx(test_info$input)
 head(llik_approx_vals)
 ```
 
-
-
-
 ### Error Metrics
-The `calc_err_metric()` generically allows the computation of functions of 
-the likelihood surrogate that are functions of both the surrogate distribution 
-and some baseline external data.
+The method `calc_lik_approx_pw_err()` provides a convenient high-level
+interface for computing deterministic likelihood predictions and evaluating 
+their error with respect to some baseline true log-likelihood values. Here, 
+"pw" means "pointwise", as the errors are computed point-by-point. The method 
+allows computing errors for multiple likelihood approximations and multiple 
+error metrics in a single call. 
+
+```{r}
+# Compute pointwise squared errors, absolute errors, and their "weighted" 
+# versions, which are divided by the log-likelihood emulator predictive  
+# standard deviation.
+errs_mean_marg <- llik_em$calc_lik_approx_pw_err(llik_true=test_info$llik, 
+                                                 err_type=c("mse", "wmse", "mae", "wmae"), 
+                                                 llik_pred=approx_mean_marg, 
+                                                 em_pred_list=em_pred_list,
+                                                 return_type="data.table")
+
+head(errs_mean_marg)
+```
+
 
 ### Generic Functions
 Both `calc_lik_approx()` and `calc_err_metric()` are wrappers around the 
@@ -194,13 +206,3 @@ func_tests <- llik_em$calc_multi_func(func_list=func_list,
                                       return_type="matrix")
 head(func_tests)
 ```
-
-
-
-  calc_func = function(func, input=NULL, lik_par_val=NULL, em_pred_list=NULL, 
-                       conditional=default_conditional, 
-                       normalize=default_normalize, log_scale=FALSE, ...)
-
-
-
-

@@ -143,11 +143,56 @@ construct_init_em <- function(seed) {
   saveRDS(em_llik, file=file.path(out_dir, "em_llik.rds"))
   
   print("-----> Emulator predictions at test points")
-  em_pred_list_prior <- em_llik$predict_emulator(test_info_prior$input)
-  em_pred_list_post <- em_llik$predict_emulator(test_info_post$input)
+  em_pred_list_prior <- em_llik$predict_emulator(test_info_prior$input, 
+                                                 return_cov=TRUE)
+  em_pred_list_post <- em_llik$predict_emulator(test_info_post$input,
+                                                return_cov=TRUE)
   
   saveRDS(em_pred_list_prior, file=file.path(out_dir, "em_pred_list_prior.rds"))
   saveRDS(em_pred_list_post, file=file.path(out_dir, "em_pred_list_post.rds"))
+  
+  print("-----> llikEmulator error measures")
+  err_types <- c("mse", "wmse", "mae", "wmae")
+  em_llik_errs_prior <- em_llik$calc_lik_approx_pw_err(llik_true=test_info_prior$llik, 
+                                                       input=test_info_prior$input,
+                                                       err_type=err_types, 
+                                                       em_pred_list=em_pred_list_prior,
+                                                       return_type="data.table")
+  
+  em_llik_errs_post <- em_llik$calc_lik_approx_pw_err(llik_true=test_info_post$llik, 
+                                                      input=test_info_post$input,
+                                                      err_type=err_types, 
+                                                      em_pred_list=em_pred_list_post,
+                                                      return_type="data.table")
+  
+  saveRDS(em_llik_errs_prior, file=file.path(out_dir, "em_llik_errs_prior.rds"))
+  saveRDS(em_llik_errs_post, file=file.path(out_dir, "em_llik_errs_post.rds"))
+  
+  print("-----> GP emulator error measures")
+  gp_pw_err_types <- c("mae", "mse", "crps", "log_score")
+  gp_agg_err_types <- c("mah", "log_score")
+  
+  gp_pw_errs_prior <- em_llik$emulator_model$calc_pred_multi_func(gp_pw_err_types, 
+                                                                  type="pw", 
+                                                                  pred_list=em_pred_list_prior, 
+                                                                  Y_new=matrix(test_info_prior$llik, ncol=1))
+  gp_pw_errs_post <- em_llik$emulator_model$calc_pred_multi_func(gp_pw_err_types, 
+                                                                 type="pw", 
+                                                                 pred_list=em_pred_list_post, 
+                                                                 Y_new=matrix(test_info_post$llik, ncol=1))
+  gp_agg_errs_prior <- em_llik$emulator_model$calc_pred_multi_func(gp_agg_err_types, 
+                                                                   type="agg", 
+                                                                   pred_list=em_pred_list_prior, 
+                                                                   Y_new=matrix(test_info_prior$llik, ncol=1))
+  gp_agg_errs_post <- em_llik$emulator_model$calc_pred_multi_func(gp_agg_err_types, 
+                                                                  type="agg", 
+                                                                  pred_list=em_pred_list_post, 
+                                                                  Y_new=matrix(test_info_post$llik, ncol=1))
+  
+  saveRDS(gp_pw_errs_prior, file=file.path(out_dir, "gp_pw_errs_prior.rds"))
+  saveRDS(gp_pw_errs_post, file=file.path(out_dir, "gp_pw_errs_post.rds"))
+  saveRDS(gp_agg_errs_prior, file=file.path(out_dir, "gp_agg_errs_prior.rds"))
+  saveRDS(gp_agg_errs_post, file=file.path(out_dir, "gp_agg_errs_post.rds"))
 }
 
 # ------------------------------------------------------------------------------

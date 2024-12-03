@@ -391,139 +391,105 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL,
 }
 
 
-mcmc_gp_acc_prob_approx <- function(llik_em, par_prior_params, par_init=NULL, sig2_init=NULL, 
-                                    sig2_prior_params=NULL, N_itr=50000, cov_prop=NULL, 
-                                    log_scale_prop=NULL, approx_type="marginal",
-                                    adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
-                                    adapt=adapt_cov_prop||adapt_scale_prop, accept_rate_target=0.24, 
-                                    adapt_factor_exponent=0.8, adapt_factor_numerator=10, adapt_interval=200, ...) {
-  # TODO: I need to generalize this to allow for forward model emulators as well. 
-  # TODO: I need to think about how to do the sig2 step with this approach. There seems to be no reason why 
-  # there could not be different options for this. 
-  #
-  # GP-accelerated MCMC algorithms that approximate the acceptance probability of a Metropolis-Hastings MCMC
-  # algorithm. Examples of this include the "mean" approximation, in which 
-  # the GP predictive mean is simply plugged into acceptance ratio, the "joint-marginal", in which 
-  # the expectation of the acceptance probability is taken with respect to the GP distribution, and the 
-  # "marginal" approximation, which is like the "joint-marginal" but the GP covariance is ignored (i.e. set to 0). 
-  # TODO: Assuming `par_prior_params` is already truncated. Is this the best approach? 
-  # TODO: need to update the name of this function and the above one to reflect that these functions are valid
-  # only for Gaussian likelihoods with sig2 params assigned independent IG priors, or likelihoods with 
-  # fixed likelihood parameters. 
-  # Supported values for `approx_type`: "mean", "marginal", "joint-marginal"
-  
-  # Validation and setup for log-likelihood emulator. 
-  # TODO: ensure that `sig2_init` is named vector, if non-NULL. And that the names include the 
-  # names of the outputs where sig2 must be learned. Ensure `par_init` has names as well. 
-  # validate_args_mcmc_gp_deterministic_approx(llik_em, par_prior_params, par_init, sig2_prior_params, N_itr,
-  #                                           cov_prop, adapt_cov_prop, adapt_scale, use_gp_cov)
-  
-  # This should be moved to the argument validation function, once it is written. 
-  if(approx_type=="marginal") assert_that(llik_em$llik_pred_dist == "Gaussian")
+mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL, 
+                                    sig2_init=NULL, approx_type="joint-marginal", 
+                                    n_itr=50000L, cov_prop=NULL, 
+                                    log_scale_prop=NULL,adapt_cov_prop=TRUE, 
+                                    adapt_scale_prop=TRUE, 
+                                    adapt=adapt_cov_prop||adapt_scale_prop, 
+                                    accept_rate_target=0.24, 
+                                    adapt_factor_exponent=0.8, 
+                                    adapt_factor_numerator=10, 
+                                    adapt_interval=200L, ...) {
   
   # Objects to store samples. 
   d <- llik_em$dim_input
-  par_samp <- matrix(nrow=N_itr, ncol=d)
+  par_samp <- matrix(nrow=n_itr, ncol=d)
   colnames(par_samp) <- llik_em$input_names
   
-  # Setup for `sig2` (observation variances). Safe to assume that all of the 
-  # non-fixed likelihood parameters are `sig2` since this is verified by 
-  # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_em$get_llik_term_attr("use_fixed_lik_par"))
-  term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
-  include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
-  sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
-  
-  if(include_sig2_Gibbs_step) {
-    .NotYetImplemented()
-    
-    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
-    sig2_samp <- matrix(nrow=N_itr, ncol=length(sig2_curr_learn))
-    sig2_samp[1,] <- sig2_curr
-  } else {
-    sig2_curr <- NULL
-    sig2_samp <- NULL
-  }
+  # At present, this function assumes that the likelihood parameters are fixed.
+  learn_sig2 <- FALSE
+  sig2_curr <- NULL
+  sig2_samp <- NULL
   
   # Set initial conditions. 
-  if(is.null(par_init)) par_init <- sample_prior(par_prior_params, n=1L)[1,]
+  if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
-  lprior_par_curr <- calc_lprior_theta(par_curr, par_prior_params)
+  par_curr_mat <- matrix(par_curr, nrow=1, 
+                         dimnames=list(NULL, llik_em$input_names))
+  lprior_par_curr <- calc_lprior_dens(par_curr, par_prior)
   
   # Proposal covariance.
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
   if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
   L_cov_prop <- t(chol(cov_prop))
-  accept_count <- 0
-  times_adapted <- 0
+  accept_count <- 0L
+  times_adapted <- 0L
   
-  tryCatch({
-    for(itr in 2:N_itr) {
-      #
-      # Metropolis step for calibration parameters.
-      #
-      
-      # Random walk proposal. 
-      par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
-      
-      # Compute prior at proposed location. 
-      lprior_par_prop <- calc_lprior_theta(par_prop, par_prior_params)
-      
-      # Immediately reject if proposal has prior density zero (which will often happen when the 
-      # prior has been truncated to stay within the design bounds). 
-      if(is.infinite(lprior_par_prop)) {
-        par_samp[itr,] <- par_samp[itr-1,]
-        SSR_idx <- 1
-      } else {
-        # Compute acceptance probability approximation. 
-        alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, approx_type, 
-                                           lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, 
-                                           lprior_vals=c(lprior_par_curr, lprior_par_prop), ...)
+  # Variable to store error condition, if it occurs.
+  err <- NULL
+  
+  tryCatch(
+    {
+      for(itr in 2L:n_itr) {
+        # Random walk proposal. 
+        par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
         
-        # Accept-Reject step. 
-        if(runif(1) <= alpha) {
-          par_samp[itr,] <- par_prop
-          par_curr <- par_prop
-          lprior_par_curr <- lprior_par_prop
-          accept_count <- accept_count + 1 
+        # Compute prior. 
+        lprior_par_prop <- calc_lprior_dens(par_prop, par_prior)
+        
+        # Immediately reject if proposal has prior density zero (which will 
+        # often happen when the prior has been truncated to stay within the 
+        # design bounds). 
+        if(is.infinite(lprior_par_prop)) {
+          par_samp[itr,] <- par_samp[itr-1,]
         } else {
-          par_samp[itr,] <- par_curr
-        }
-        
-        # Adapt proposal covariance matrix and scaling term.
-        if(adapt && (((itr-1) %% adapt_interval) == 0)) {
-          times_adapted <- times_adapted + 1
-          adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
-                                              times_adapted=times_adapted, 
-                                              adapt_cov=adapt_cov_prop, adapt_scale=adapt_scale_prop,
-                                              samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
-                                              accept_rate=accept_count/adapt_interval, accept_rate_target, 
-                                              adapt_factor_exponent, adapt_factor_numerator)
-          cov_prop <- adapt_list$cov
-          log_scale_prop <- adapt_list$log_scale
-          if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
-          accept_count <- 0
+          # Compute acceptance probability approximation.
+          alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, 
+                                             approx_type, lik_par_val=sig2_curr, 
+                                             lprior_vals=c(lprior_par_curr, 
+                                                           lprior_par_prop), ...)
+          
+          # Accept-Reject step.
+          if(runif(1) <= alpha) {
+            par_samp[itr,] <- par_prop
+            par_curr <- par_prop
+            lpost_pred_curr <- lpost_pred_prop
+            accept_count <- accept_count + 1L 
+          } else {
+            par_samp[itr,] <- par_curr
+          }
+          
+          # Adapt proposal covariance matrix and scaling term.
+          if(adapt && (((itr-1) %% adapt_interval) == 0)) {
+            times_adapted <- times_adapted + 1L
+            adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
+                                                times_adapted=times_adapted, 
+                                                adapt_cov=adapt_cov_prop, 
+                                                adapt_scale=adapt_scale_prop,
+                                                samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
+                                                accept_rate=accept_count/adapt_interval, accept_rate_target, 
+                                                adapt_factor_exponent, adapt_factor_numerator)
+            cov_prop <- adapt_list$cov
+            log_scale_prop <- adapt_list$log_scale
+            if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
+            accept_count <- 0
+          }
         }
       }
       
-      #
-      # Gibbs step for sig2. 
-      #
-      
-      if(include_sig2_Gibbs_step) {
-        .NotYetImplemented()
-      }
+    }, error = function(cond) {
+      err <<- cond
+      message("mcmc_gp_acc_prob_approx() MCMC error; iteration ", itr)
+      message(conditionMessage(cond))
     }
-  }, error = function(cond) {
-    message("mcmc_gp_acc_prob_approx() MCMC error; iteration ", itr)
-    message(conditionMessage(cond))
-  }, finally = {
-    return(list(samp=list(par=par_samp, sig2=sig2_samp), 
-                log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, par_curr=par_curr,
-                par_prop=par_prop, sig2_curr=sig2_curr))
-  }
   )
+  
+  return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
+              par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
+              itr_curr=itr, condition=err))
 }
 
 
@@ -810,7 +776,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
 
 
 run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
-  # An higher-level interface to running the MCMC functions that wraps around 
+  # A higher-level interface to running the MCMC functions that wraps around 
   # `run_mcmc_chains()`. This function requires specifying the log-likelihood 
   # and prior (which are required by all MCMC functions), with all other 
   # arguments stored in a list `mcmc_settings`. This function is primarily 
@@ -841,6 +807,46 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
   
   # Execute MCMC using `run_mcmc_chains()` wrapper.
   do.call(run_mcmc_chains, args=mcmc_settings)
+}
+
+
+run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list, 
+                                save_dir=NULL, return=FALSE) {
+  # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
+  # the same posterior distribution. Each element of `mcmc_settings_list` is 
+  # passed to the `mcmc_settings` argument of `run_mcmc()`.
+  
+  if(return) {
+    message("run_mcmc_comparison() currently only supports saving data to file.")
+    .NotYetImplemented()
+  }
+  
+  # Store MCMC tags.
+  n_algs <- length(mcmc_settings_list)
+  tags <- names(mcmc_settings_list)
+  if(is.null(tags)) tags <- as.character(1:n_algs)
+
+  for(i in 1:n_algs) {
+    # Tag used to identify the algorithm.
+    tag <- tags[i]
+    print(paste0("Running MCMC alg: ", tag))
+    
+    tryCatch(
+      {
+        # Run MCMC using the ith algorithm.
+        mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_settings_list[[i]])
+      }, error=function(cond) {
+        message("Error with MCMC run: ", tag)
+        message(conditionMessage(cond))
+      }, finally = {
+        # Save output.
+        if(!is.null(out_dir)) {
+          filename <- paste0("mcmc_", tag, ".rds")
+          saveRDS(mcmc_output, file.path(out_dir, filename))
+        }
+      }
+    )
+  }
 }
 
 
@@ -926,53 +932,70 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
 # ------------------------------------------------------------------------------
 
 get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, approx_type, 
-                                      lik_par_val=sig2_curr, conditional=TRUE, normalize=FALSE, 
-                                      par_prior_params=NULL, lprior_vals=NULL, llik_pred_list=NULL, ...) {
-  # TODO: currently assumes symmetric proposal density, can generalize this when needed. 
+                                      lik_par_val=NULL, 
+                                      conditional=llik_em$default_conditional, 
+                                      normalize=llik_em$default_normalize, 
+                                      par_prior=NULL, lprior_vals=NULL, 
+                                      llik_pred_list=NULL, ...) {
+  # TODO: currently assumes symmetric proposal density, can generalize this 
+  #       when needed. 
   
   # Compute log-prior evaluations, if not already provided. 
-  if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(rbind(par_curr, par_prop), par_prior_params)
+  if(is.null(lprior_vals)) {
+    lprior_vals <- calc_lprior_dens(rbind(par_curr, par_prop), par_prior)
+  }
   
   if(approx_type == "mean") {
     .NotYetImplemented()
   } else if(approx_type %in% c("marginal", "joint-marginal")) {
     joint <- (approx_type == "joint-marginal")
-    alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, joint, lik_par_val=lik_par_val, 
-                                  conditional=conditional, normalize=normalize, llik_pred_list=llik_pred_list, 
+    alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, joint, 
+                                  lik_par_val=lik_par_val, 
+                                  conditional=conditional, normalize=normalize, 
+                                  llik_pred_list=llik_pred_list, 
                                   lprior_vals=lprior_vals, ...)
   } else {
     stop("Invalid `approx_type` ", approx_type)
   }
   
   return(alpha)
-  
 }
 
 
-gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em, use_joint_dist, lik_par_val=NULL, 
+gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em, 
+                                  use_joint_dist, lik_par_val=NULL, 
                                   conditional=llik_em$default_conditional, 
-                                  normalize=llik_em$default_normalize, llik_pred_list=NULL, 
-                                  par_prior_params=NULL, lprior_vals=NULL, ...) {
-  # For a Metropolis-Hastings acceptance probability of the form min{1, r(input_curr, input_prop)}, 
-  # this function returns log E[r(input_curr, input_prop)], where the expectation is with respect to 
-  # the `llik_em` distribution. Currently this function only works when the emulator distribution 
-  # implies that r(input_curr, input_prop) ~ LN(m, s^2). 
+                                  normalize=llik_em$default_normalize, 
+                                  llik_pred_list=NULL, par_prior=NULL, 
+                                  lprior_vals=NULL, ...) {
+  # For a Metropolis-Hastings acceptance probability of the form 
+  # min{1, r(input_curr, input_prop)}, this function returns 
+  # log E[r(input_curr, input_prop)], where the expectation is with respect to 
+  # the `llik_em` distribution. Currently this function only works when the 
+  # emulator distribution implies that r(input_curr, input_prop) ~ LN(m, s^2). 
   
   # Compute log-prior evaluations, if not already provided. 
-  if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(rbind(input_curr, input_prop), par_prior_params)
+  if(is.null(lprior_vals)) {
+    lprior_vals <- calc_lprior_dens(rbind(input_curr, input_prop), par_prior)
+  }
   
   # Compute predictive distribution at inputs.   
   if(is.null(llik_pred_list)) {
     input <- rbind(input_curr, input_prop)
     rownames(input) <- llik_em$input_names
-    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                            return_cov=use_joint_dist, conditional=conditional, normalize=normalize, ...)
+    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, 
+                                      return_mean=TRUE, return_var=TRUE, 
+                                      return_cov=use_joint_dist, 
+                                      conditional=conditional, 
+                                      normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
+    if(use_joint_dist) assert_that(!is.null(llik_pred_list$cov))
   }
   
-  # Predictive mean and variance of the log acceptance ratio. This is the m and s^2 in 
-  # r ~ LN(m, s^2). The variance depends on whether or not the joint dist is used. 
+  # Predictive mean and variance of the log acceptance ratio. This is the m and 
+  # s^2 in r ~ LN(m, s^2). The variance depends on whether or not the joint 
+  # dist is used. 
   # TODO: update the cov indexing below once this is changed. 
   m <- lprior_vals[2] - lprior_vals[1] + drop(llik_pred_list$mean)[2] - drop(llik_pred_list$mean)[1]
   s2 <- drop(llik_pred_list$var)[2] + drop(llik_pred_list$var)[1]
@@ -980,47 +1003,55 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em, use_joint_dis
 
   # Marginal acceptance ratio approximation. 
   return(exp(m + 0.5*s2))
-
 }
 
 
-gp_acc_prob_marginal <- function(input_curr, input_prop, llik_em, use_joint_dist, lik_par_val=NULL, 
+gp_acc_prob_marginal <- function(input_curr, input_prop, llik_em, use_joint_dist, 
+                                 lik_par_val=NULL, 
                                  conditional=llik_em$default_conditional, 
-                                 normalize=llik_em$default_normalize, llik_pred_list=NULL, 
-                                 par_prior_params=NULL, lprior_vals=NULL, ...) {
+                                 normalize=llik_em$default_normalize, 
+                                 llik_pred_list=NULL, par_prior=NULL, 
+                                 lprior_vals=NULL, ...) {
   # For a Metropolis-Hastings acceptance probability of the form 
   # alpha(input_curr, input_prop) min{1, r(input_curr, input_prop)}, 
-  # this function returns E[alpha(input_curr, input_prop)], where the expectation is with respect to 
-  # the `llik_em` distribution.
+  # this function returns E[alpha(input_curr, input_prop)], where the 
+  # expectation is with respect to  the `llik_em` distribution.
   
   # Compute log-prior evaluations, if not already provided. 
-  if(is.null(lprior_vals)) lprior_vals <- calc_lprior_theta(rbind(input_curr, input_prop), par_prior_params)
+  if(is.null(lprior_vals)) {
+    lprior_vals <- calc_lprior_dens(rbind(input_curr, input_prop), par_prior)
+  }
   
   # Compute predictive distribution at inputs.   
   if(is.null(llik_pred_list)) {
     input <- rbind(input_curr, input_prop)
     colnames(input) <- llik_em$input_names
-    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, return_mean=TRUE, return_var=TRUE, 
-                                            return_cov=use_joint_dist, conditional=conditional, normalize=normalize, ...)
+    llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, 
+                                      return_mean=TRUE, return_var=TRUE, 
+                                      return_cov=use_joint_dist, 
+                                      conditional=conditional, 
+                                      normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
+    if(use_joint_dist) assert_that(!is.null(llik_pred_list$cov))
   }
   
-  # Predictive mean and variance of the log acceptance ratio. This is the m and s^2 in 
-  # r ~ LN(m, s^2). The variance depends on whether or not the joint dist is used. 
+  # Predictive mean and variance of the log acceptance ratio. This is the  
+  # m and s^2 in r ~ LN(m, s^2). The variance depends on whether or not the 
+  # joint dist is used.
   # TODO: update the cov indexing below once this is changed. 
   m <- lprior_vals[2] - lprior_vals[1] + drop(llik_pred_list$mean)[2] - drop(llik_pred_list$mean)[1]
   s2 <- drop(llik_pred_list$var)[2] + drop(llik_pred_list$var)[1]
   if(use_joint_dist) s2 <- s2 - 2*llik_pred_list$cov[,,1][1,2]
   
-  # Marginal acceptance probability is a linear combination of 1 and the marginal ratio approximation.
+  # Marginal acceptance probability is a linear combination of 1 and the 
+  # marginal ratio approximation.
   log_acc_ratio_marginal <- m + 0.5*s2
   lw1 <- log(pnorm(m/sqrt(s2)))
   lw2 <- log(pnorm(-(m+s2)/sqrt(s2)))
   acc_ratio_marginal <- exp(matrixStats::logSumExp(c(lw1, lw2+log_acc_ratio_marginal)))
   
   return(acc_ratio_marginal)
-  
 }
 
 

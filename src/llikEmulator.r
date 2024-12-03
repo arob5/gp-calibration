@@ -135,7 +135,8 @@ llikEmulator$methods(
   
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
                      return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
-                     conditional=default_conditional, normalize=default_normalize, ...) {
+                     conditional=default_conditional, normalize=default_normalize, 
+                     em_pred_list=NULL, ...) {
     .NotYetImplemented()
   },
   
@@ -146,13 +147,14 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, conditional=default_conditional, 
+  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, 
+                            conditional=default_conditional, 
                             normalize=default_normalize, llik_pred_list=NULL,
                             lower_tail=TRUE, ...) {
     .NotYetImplemented()
   },
   
-  calc_func = function(func, input=NULL, lik_par_val=NULL, em_pred_list=NULL, 
+  calc_func = function(func, input=NULL, em_pred_list=NULL, lik_par_val=NULL,
                        conditional=default_conditional, 
                        normalize=default_normalize, ...) {
     # `func` can either be a function with signature `func(em_pred_list, ...)`
@@ -190,17 +192,24 @@ llikEmulator$methods(
          conditional=conditional, normalize=normalize, ...)
   },
   
-  calc_multi_func = function(func_list, input=NULL, lik_par_val=NULL,  
-                             em_pred_list=NULL, conditional=default_conditional, 
+  calc_multi_func = function(func_list, input=NULL, em_pred_list=NULL,  
+                             lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, log_scale=FALSE, 
-                             return_type="list", ...) {
+                             return_type="list", func_names=NULL, ...) {
     # A wrapper around `calc_func()` that calls the latter method for each 
     # function in `func_list`. `return_type` can either be "list" or "matrix". 
     # "list" implies that each element will be the associated 
     # return from the `calc_func()` call. "matrix" will stack the output for 
-    # each call into the columns of a matrix.
+    # each call into the columns of a matrix. `func_names` is an optional 
+    # character vector of length equal to `length(func_list)` providing names 
+    # to use in the returned list/matrix. Otherwise, default names are 
+    # constructed.
     
     assert_that(return_type %in% c("matrix", "list"))
+    if(!is.null(func_names)) {
+      assert_that(is.character(func_names))
+      assert_that(length(func_names) == length(func_list))
+    }
     
     # Compute emulator predictions, if not provided. 
     if(is.null(em_pred_list)) {
@@ -215,9 +224,11 @@ llikEmulator$methods(
                                                        normalize=normalize, ...))
     
     # Obtain names identifying each function.
-    if(is.character(func_list)) func_names <- func_list
-    else if(!is.null(names(func_list))) func_names <- names(func_list)
-    else func_names <- paste0("f", seq_along(func_list))
+    if(is.null(func_names)) {
+      if(is.character(func_list)) func_names <- func_list
+      else if(!is.null(names(func_list))) func_names <- names(func_list)
+      else func_names <- paste0("f", seq_along(func_list))
+    }
 
     # Return as list, if requested.
     if(return_type == "list") {
@@ -232,10 +243,10 @@ llikEmulator$methods(
     return(mat)
   },
   
-  calc_lik_approx = function(approx_type, input=NULL, lik_par_val=NULL, 
-                             em_pred_list=NULL, conditional=default_conditional, 
+  calc_lik_approx = function(approx_type, input=NULL, em_pred_list=NULL,
+                             lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, log_scale=TRUE, 
-                             return_type="list", ...) {
+                             return_type="list", simplify=FALSE, ...) {
     # A wrapper around `calc_multi_func()` that computes functions of the emulator 
     # predictive distribution that are interpreted as deterministic 
     # approximations of the likelihood function (or the log of such 
@@ -243,12 +254,13 @@ llikEmulator$methods(
     # a method of the form `calc_lik_<approx_type>_approx()`. The argument 
     # `approx_type` may be a vector of multiple approximation types. In this 
     # case `return_type` controls the type of the returned object; see 
-    # `calc_multi_func()` for details. If `length(approx_type)==1` then 
-    # the return value from the single call to `calc_func()` will be returned, 
-    # without constructing a matrix or list.
+    # `calc_multi_func()` for details. If `length(approx_type)==1` and 
+    # `simplify = TRUE` then the return value from the single call to 
+    # `calc_func()` will be returned, without constructing a matrix or list.
 
     assert_that(is.character(approx_type))
-    if(length(approx_type)==1L) return_type <- "list"
+    simplify_output <- (length(approx_type)==1L) && isTRUE(simplify)
+    if(simplify_output) return_type <- "list"
     
     # Select methods to use.
     method_names <- paste0("calc_lik_", approx_type, "_approx")
@@ -260,17 +272,81 @@ llikEmulator$methods(
                                         conditional=conditional, 
                                         normalize=normalize,
                                         log_scale=log_scale, 
-                                        return_type=return_type)
+                                        return_type=return_type,
+                                        func_names=approx_type)
     
-    if(length(approx_type)==1L) return(func_evals[[1]])
+    if(simplify_output) return(func_evals[[1]])
     return(func_evals)
   },
   
-  calc_err_metric = function(func, type="pw", target="llik", input=NULL,  
-                             llik_true=NULL, em_pred_list=NULL,  
-                             conditional=default_conditional, 
-                             normalize=default_normalize, ...) {
-    .NotYetImplemented()
+  calc_lik_approx_pw_err = function(llik_true, approx_type="mean", err_type="mse",  
+                                    em_pred_list=NULL, input=NULL, lik_par_val=NULL, 
+                                    conditional=default_conditional,
+                                    normalize=default_normalize, llik_pred=NULL,
+                                    return_type="list", ...) {
+    # A high-level convenience function to compute pointwise ("pw") errors 
+    # between likelihood approximations and true baseline log-likelihood 
+    # values `llik_true`. The errors are all computed on the log scale. 
+    # Both `approx_type` and `err_type` are allowed to be vectors with 
+    # multiple options. Currently `return_type` is allowed to be either "list"
+    # or "data.table". The former returns a list with one element per value 
+    # in `err_type`, with each element being a matrix storing the errors for 
+    # each `approx_type` value. If "data.table", returns a data.table with 
+    # columns "approx_type", "err_type", and "value". The "weighted" error 
+    # measures "wmse" and "wmae" divide the pointwise absolute errors by 
+    # the log-likelihood predictive standard deviations (for "wmse" the 
+    # result is then squared). `llik_pred` allows passing in previously
+    # computed likelihood approximations, which should be on the log 
+    # scale. If provided, should be a matrix with one column per approximation
+    # type.
+    
+    # Ensure valid error and return types.
+    assert_that(all(err_type %in% c("mse", "mae", "wmse", "wmae")))
+    assert_that(return_type %in% c("list", "data.table"))
+    
+    # If "weighted" error types are requested, then need to compute predictive 
+    # variances of log-likelihood emulator.
+    llik_pred_inv_sd <- NULL
+    if(any(c("wmse", "wmae") %in% err_type)) {
+      llik_pred_list <- .self$predict(input=input, return_mean=FALSE, 
+                                      return_var=TRUE, conditional=conditional,
+                                      normalize=normalize, 
+                                      em_pred_list=em_pred_list)
+      llik_pred_inv_sd <- 1 / drop(sqrt(llik_pred_list$var))
+    }
+    
+    # Compute plug-in mean log-likelihood predictions.
+    if(is.null(llik_pred)) {
+      llik_pred <- .self$calc_lik_approx(approx_type, em_pred_list=em_pred_list,
+                                         input=input, lik_par_val=lik_par_val,
+                                         conditional=conditional, 
+                                         normalize=normalize, return_type="matrix", 
+                                         simplify=FALSE, ...)
+    }
+    assert_that(nrow(llik_pred) == length(drop(llik_true)))
+    
+    # Compute pointwise errors.
+    err_list <- list()
+    diff <- add_vec_to_mat_cols(-drop(llik_true), llik_pred)
+    if("mse" %in% err_type) err_list$mse <- diff^2
+    if("mae" %in% err_type) err_list$mae <- abs(diff)
+    if("wmse" %in% err_type) err_list$wmse <- mult_vec_with_mat_cols(llik_pred_inv_sd, diff)^2
+    if("wmae" %in% err_type) err_list$mae <- abs(mult_vec_with_mat_cols(llik_pred_inv_sd, diff))
+    
+    # If requested, return as list.
+    if(return_type == "list") return(err_list)
+    
+    # Otherwise convert to data.table.
+    for(i in seq_along(err_list)) {
+      err_list[[i]] <- as.data.table(err_list[[i]])
+      err_list[[i]][["err_type"]] <- names(err_list)[i]
+    }
+    
+    dt <- data.table::rbindlist(err_list, use.names=TRUE)
+    dt <- data.table::melt.data.table(dt, id.vars="err_type", 
+                                      variable.name="approx_type", 
+                                      value.name="value")
+    return(dt)
   },
   
   get_llik_func = function(approx_type=NULL, lik_par_val=NULL, 
@@ -297,40 +373,13 @@ llikEmulator$methods(
         if(is.null(dim(input))) input <- matrix(input, nrow=1)
         .self$calc_lik_approx(approx_type=approx_type, input=input, 
                               lik_par_val=lik_par_val, conditional=conditional, 
-                              normalize=normalize, log_scale=TRUE, ...)
+                              normalize=normalize, log_scale=TRUE, 
+                              simplify=TRUE, ...)
       }
     }
     
     return(llik)
   },
-  
-  calc_lik_approx_comparison = function(input, approx_type, lik_par_val=NULL, 
-                                        em_pred_list=NULL,
-                                        conditional=default_conditional,
-                                        normalize=default_normalize,
-                                        include_nugget=TRUE, log_scale=FALSE, ...) {
-    # A wrapper around `calc_lik_approx` that allows multiple likelihood approximation types 
-    # to be computed. Returns a matrix of dimension `(nrow(input), length(approx_type))`, 
-    # each column containing a different likelihood approximation type. 
-    if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
-    }
-    
-    lik_approx_vals <- matrix(nrow=nrow(input), ncol=length(approx_type),
-                              dimnames=list(NULL, approx_type))
-    for(i in seq_along(approx_type)) {
-      lik_approx_vals[,i] <- .self$calc_lik_approx(input=input, 
-                                                   approx_type=approx_type[i], 
-                                                   lik_par_val=lik_par_val, 
-                                                   em_pred_list=em_pred_list, 
-                                                   conditional=conditional, 
-                                                   normalize=normalize, 
-                                                   include_nugget=TRUE, 
-                                                   log_scale=log_scale, ...)
-    }
-    
-    return(lik_approx_vals)
-  },  
   
   calc_lik_marginal_approx = function(em_pred_list=NULL, input=NULL, 
                                       lik_par_val=NULL, 
@@ -2025,8 +2074,8 @@ llikEmulatorGPFwdGaussDiag$methods(
     # Forward model emulator predictions. 
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(get_input(input), return_mean=TRUE, return_var=TRUE,
-                                                   return_cov=return_cov, return_cross_cov=return_cross_cov, 
-                                                   input_cross=input_cross, include_nugget=include_nugget, ...)
+                                             return_cov=return_cov, return_cross_cov=return_cross_cov, 
+                                             input_cross=input_cross, include_nugget=include_nugget, ...)
     } else {
       assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$var), 
                   msg="Log-likelihood predictive quantities require forward model emulator mean and variance.")

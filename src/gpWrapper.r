@@ -431,9 +431,9 @@ gpWrapper$methods(
     }
     
     # Return function evaluations for each function in list.
-    l <- lapply(func_list, function(f) calc_pred_func(f, type=type, X_new=X_new, 
-                                                      Y_new=Y_new, 
-                                                      pred_list=pred_list, ...))
+    l <- lapply(func_list, function(f) .self$calc_pred_func(f, type=type,  
+                                                            X_new=X_new, Y_new=Y_new, 
+                                                            pred_list=pred_list, ...))
   
     # Obtain names identifying each function.
     if(is.character(func_list)) func_names <- func_list
