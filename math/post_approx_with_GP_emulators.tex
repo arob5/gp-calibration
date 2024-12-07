@@ -942,7 +942,7 @@ $\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \eq
 \funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \func(\designBatchIn)]$, which is justified 
 by \Cref{lemma:gp-condition-order} in the appendix. This fact can be leveraged to avoid the 
 naive $\BigO([\Ndesign + \Nbatch]^3)$ update $\funcPrior \mapsto \funcEm[\Naugment]$, and instead 
-compute $\funcEm[\Ndesign] \to \funcEm[\Naugment]$, which may be achieved in 
+compute $\funcEm[\Ndesign] \mapsto \funcEm[\Naugment]$, which may be achieved in 
 $\BigO(\Nbatch^3 + \Nbatch^2 \Ndesign + \Nbatch \Ndesign^2)$ operations courtesy of the 
 partitioned matrix inverse identity in \Cref{partitioned-matrix-inverse}.
 [\todo: probably should have separate section on computational complexity]
@@ -982,7 +982,7 @@ of within-batch interactions between design points,
 it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
 Non-myopic strategies have been considered
 through a dynamic programming lens, though they typically come at the cost of significant 
-computational expense \cite{SURThesis, supermartingaleSUR}. 
+computational expense \citep{SURThesis, supermartingaleSUR}. 
 
 \subsubsection{Acquisition Functions}
 A large literature exists on the design of acquisition functions $\acq[\Ndesign]$ targeting various goals, including 
@@ -993,10 +993,10 @@ contour estimation \citep{contourEstimation, cole2021entropybased}, and response
 It is often desirable to design $\acq[\Ndesign]$ to target points that the GP predictive mean deems favorable 
 (exploitation) while also exploring regions with high GP uncertainty (exploration). We emphasize two 
 generic forms for $\acq[\Ndesign]$ that give rise to many common acquisition functions used in practice
-and form the basis for design criteria specialized to our present setting.
+and form the basis for design criteria specialized to the present setting.
 
 \paragraph{Local Uncertainty.}
-An intuitive design strategy is to simply select inputs where the quantity of interest exhibits high 
+An intuitive design strategy is to simply select inputs where a quantity of interest exhibits high 
 uncertainty. To capture this notion, we introduce a nonnegative map 
 $(\designBatchIn, \funcEm) \mapsto \qoiMap(\designBatchIn, \funcEm)$ that encodes the 
 uncertainty in (some function of) the random vector  $\funcEm(\designBatchIn)$. As shorthand, 
@@ -1009,7 +1009,7 @@ $\designBatchIn$ with respect to the GP $\funcEm$.
 The \textbf{local uncertainty criterion} with respect to the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$
 is defined as 
 \begin{equation}
-\acq[\Ndesign](\designBatchIn) \Def -\E\left[\qoi(\designBatchIn) \right].
+\acq[\Ndesign](\designBatchIn) \Def -\E\left[\qoi(\designBatchIn) \right]. \label{acq_local_unc}
 \end{equation}
 If $\qoi(\cdot)$ only accepts scalars (i.e., $\Nbatch = 1$), we refer to the resulting acquisition function as
  a \textbf{pointwise uncertainty criterion}.
@@ -1105,7 +1105,7 @@ distributed as
 \end{align}
 \end{lemma}
 
-We see that the expectation (with respect to $\designBatchFunc$) of $\gpMean[\Ndesign](\Par| \designBatchFunc)$ 
+We see that the expectation of $\gpMean[\Ndesign](\Par| \designBatchFunc)$ 
 is equal to the current predictive mean $\gpMean[\Ndesign](\Par)$. Since 
 $\gpMean[\Ndesign](\Par) = \gpMean[\Ndesign](\Par | \gpMean[\Ndesign](\designBatchIn))$, this can also be 
 interpreted as the predictive mean resulting from the conditioning of $\funcEm[\Ndesign]$ on the ``pseudo-data''
@@ -1115,7 +1115,7 @@ $\gpMean[\Ndesign](\Par | \designBatchFunc)$ is equal to the change in GP varian
 of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Ndesign](\Par | \designBatchFunc)$ 
 is large when the design points $\designBatchIn$ are more ``influential.''
 
-
+\todo: maybe insert this sentence somewhere above: 
 However, outside of special choices for $\parSpace$ and 
 $\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
 approximations. 
@@ -1128,31 +1128,109 @@ this may not align well with the goal of constructing a GP emulator that induces
 approximation. Given that the true posterior may be highly concentrated relative to the prior, one might 
 intuitively expect that the GP emulator need only achieve a high predictive accuracy in regions with high 
 posterior mass, and avoid wasteful acquisition of design points in negligible regions.
-This intuition is placed on more rigorous ground in \cite{StuartTeck2}, 
+This intuition is placed on more rigorous ground in \cite{StuartTeck2}.
+We discuss analogs of the local and  integrated conditional uncertainty criteria introduced above that aim to 
+achieve such goal-oriented sequential design. We start by focusing on the log-likelihood emulation setting, with 
+the analogous quantities for forward model emulators given in \todo. 
 
-in which bounds on the 
-posterior error are given in terms of the likelihood approximation error in a $L^2_{\postDens}(\parSpace)$ sense. The authors 
-stated motivation was to provide rigorous justification for the use of ensemble Kalman methods as a cheap experimental 
-design method for the training of GP emulators \cite{CES, idealizedGCM}. 
+\subsubsection{Local Uncertainty}
+To apply the local uncertainty criteria \ref{acq_local_unc} to the present setting, we could simply replace 
+$\funcEm$ with $\llikEm$ in the definitions. However, note that the resulting $\maxvarLabel$ and 
+$\maxentLabel$ criteria depend only on $\emKer[\Ndesign]{\llik}$, not $\emMean[\Ndesign]{\llik}$.
+Consequently, these criteria do not leverage the information encoded in the GP mean about 
+regions of high or low posterior mass. A natural remedy is to instead define these local criteria to 
+target $\llikEmRdmDens[\Ndesign](\Par)$ instead of $\llikEm(\Par)$. In the setting of log-likelihood 
+emulation, $\llikEmRdmDens[\Ndesign](\Par)$ is a log-normal random variable 
+(recall \ref{llik_em_lik_emulator_moments}) and thus the below acquisition functions can be viewed 
+as generalizations of $\maxvarLabel$ and $\maxentLabel$ to log-normal processes. The 
+$\maxvarLabel$ generalization follows from setting 
+\begin{equation}
+\qoiMap(\Par, \llikEm) \Def [\llikEmRdmDens[\Ndesign](\Par) - \E[\llikEmRdmDens[\Ndesign](\Par)]]^2, \label{qoi_exp_var}
+\end{equation}
+yielding
+\begin{equation}
+\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)]  
+=  -\priorDens^2(\Par) \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
+\label{acq_max_exp_var}
+\end{equation}
+[\todo: include the $\maxexpentLabel$ criterion here as well; need to consider how to present this; formula is a bit 
+messier in the batch setting due to the multivariate lognormal expressions.] These criteria strike a balance between 
+$\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, rather than only considering 
+$\emKer[\Ndesign]{\llik}(\Par)$. However, they still suffer from the drawbacks associated with local uncertainty criteria, 
+as discussed previously. 
+
+\subsubsection{Integrated Conditional Uncertainty}
+We now consider specific instantiations of the integrated conditional uncertainty criterion \ref{acq_int_cond_unc}
+that are adapted to the goal of posterior approximation. Under \Cref{acq_int_cond_unc}, the selection of 
+$\qoi$ and $\weightDens$ are the two design decisions at our disposal to construct such criteria. In other 
+words, we consider specific choices of either the integrand or the measure defining the integral.
+
+\paragraph{Targeting the integrand.}
+We start by setting $\qoiMap$ as in \ref{qoi_exp_var}, which results in an integrated variance conditional 
+variance criterion targeting uncertainty in the unnormalized posterior density.
+\begin{definition}
+We define the $\intExpVarLabel$ criterion as the specific instance of \ref{acq_int_cond_unc} with 
+$\funcEm$ given by $\llikEm$ and $\qoiMap$ set to \ref{qoi_exp_var}; that is, 
+\begin{equation}
+\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
+\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) \given 
+\llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \weightDens(\Par) d\Par \label{acq_int_cond_unc}
+\end{equation}
+\end{definition}
+
+This $\intExpVarLabel$ acquisition is considered in \cite{VehtariParallelGP}, with the goal of sequentially 
+constructing a log-likelihood emulator to accelerate approximate Bayesian computation. The below result
+provides a closed-form expression for the expected variance expression \ref{acq_int_cond_unc}. See 
+\cite{VehtariParallelGP} for a similar result, and the appendix for the derivation.
+
+\begin{prop} \label{prop:int_exp_var_closed_form}
+The $\intExpVarLabel$ criterion \ref{acq_int_cond_unc} can be written as  
+\begin{equation*}
+\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
+\int_{\parSpace}  \Var\left[\llikEmRdmDens[\Ndesign](\Par) \given
+ \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
+\varInflation(\Par; \designBatchIn) \weightDens(\Par) d\Par,
+\end{equation*}
+where 
+\begin{align}
+\Var\left[\llikEmRdmDens[\Ndesign](\Par) \given \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
+\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right], \nonumber \\
+\varInflation(\Par; \designBatchIn)
+&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}.
+\end{align}
+\end{prop}
+
+This derivation leverages \Cref{lemma:pred-mean-dist}, which characterizes the distribution of 
+$\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)$ as a function of $\designBatchLlik$.
+The interpretation of the closed-form expressions in \ref{prop:int_exp_var_closed_form}
+also closely follows the above discussion of this lemma. In particular, the variance term in the integrand is
+the variance of the log-normal random variable $\llikEmRdmDens[\Ndesign](\Par)$ 
+conditioned on the ``pseudo-data'' $\{\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn)\}$.
+The second term $\varInflation(\Par; \designBatchIn)$, which we refer to as the 
+\textit{variance inflation factor}, accounts for the uncertainty in the unobserved response
+ $\designBatchLlik$. As in \Cref{lemma:evar}, the variance inflation is larger when the 
+ input batch $\designBatchIn$ is more influential.
+
+\paragraph{Targeting the measure.}
 
 
-\todo: reorganize this section; my current thoughts:
-\begin{enumerate}
-\item In one of the above sections, introduce the stepwise uncertainty reduction framework. Also in the preceding 
-section, make more clear that we are considering two classes of criteria: SUR criteria and pointwise uncertainty criteria.
-\item Short subsection on pointwise uncertainty criteria targeting the unnormalized posterior density estimator.
-\item Section on integrated SUR-type criteria targeting posterior approximation:
-	\begin{enumerate}
-	\item Introduce generic form of SUR criteria, highlighting the two places we might use to target the goal 
-	of posterior approximation: the integrand and the weights.
-	\item Again, maybe focus first on log-likelihood emulation and then discuss differences with forward model 
-	emulation at the end.
-	\item Discuss targeting the integrand. 
-	\item Discuss targeting the weights.
-	\end{enumerate}
-\end{enumerate}
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+In adapting local uncertainty criteria \ref{acq_local_unc} to the goal of posterior approximation, 
+$\E\left[\qoi(\designBatchIn) \right]$
 
 We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
 are tailored to the goal of posterior approximation. One such approach is to define acquisition functions based on 
