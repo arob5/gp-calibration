@@ -1,0 +1,140 @@
+---
+title: "GP Accelerated MCMC Results"
+author: "Andrew Roberts"
+date: '2024-12-06'
+output: html_document
+params:
+    args: 'vsem'
+---
+
+This document summarizes the outputs of the script `run_approx_mcmc`.r`, which 
+runs various Gaussian process (GP) accelerated MCMC algorithms and saves the 
+results from file. This script reads in these results, as well as other 
+data previously saved, including: inverse problem object, log-likelihood
+emulators, and exact MCMC samples from the true posterior for validation.
+
+This document is intended to be run from 
+the command line, as in:
+`Rscript -e "rmarkdown::render('inv_prob_setup.Rmd.Rmd',params=list(args=<experiment_tag>))"`
+where `<experiment_tag>` is replaced with the experiment tag string corresponding
+with the specific outputs of `inv_prob_setup.Rmd`. The Rmarkdown output should 
+be directed to 
+`gp-calibration/output/gp_inv_prob/<experiment_tag>/init_emumator`. See 
+[this](https://stackoverflow.com/questions/49904943/run-rmarkdown-with-arguments-on-the-command-line)
+link for running Rmarkdown scripts from the command line and passing arguments.
+
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+
+# TODO: make these comand line arguments.
+design_tag <- file.path("init_emulator", "LHS_250")
+run_id <- "test_run"
+print(paste0("Design tag: ", design_tag))
+print(paste0("MCMC Run ID: ", run_id))
+
+# Settings: read from command line arguments.
+args <-  params$args
+experiment_tag <- args[1]
+print(paste0("Experiment tag: ", experiment_tag))
+
+# Specify burn-in for MCMC plots.
+burn_in_start_exact <- 150000
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+# Setup and filepaths.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
+setup_dir <- file.path(experiment_dir, "inv_prob_setup")
+em_dir <- file.path(experiment_dir, "init_emulator")
+
+# Source files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+
+```{r, include=FALSE}
+# Read inverse problem data. 
+inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
+par_prior <- inv_prob$par_prior
+llik_obj_exact <- inv_prob$llik_obj
+
+# Read exact MCMC samples.
+samp_dt_exact <- fread(file.path(setup_dir, "samp_exact.csv"))
+samp_dt_exact <- select_mcmc_samp(samp_dt_exact, itr_start=burn_in_start_exact)
+
+# Read GP-accelerated MCMC settings.
+mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.rds"))
+```
+
+# Single Design Results
+Here we look at the approximate MCMC results from a single design realization.
+It is infeasible to do this for each design realization individually, so 
+future analysis only considers statistics computed from each MCMC run.
+
+```{r}
+# Identify all MCMC files.
+design_id <- "1018157756"
+mcmc_dir <- file.path(experiment_dir, run_id, design_tag, design_id)
+
+mcmc_files <- list.files(mcmc_dir)
+```
+
+```{r}
+# Set default burn-ins for each algorithm.
+burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
+```
+
+```{r}
+# Summarize MCMC results, and compare to ground truth.
+
+mcmc_file <- mcmc_files[1]
+print(mcmc_file)
+
+# Select samples.
+samp_dt_approx <- readRDS(file.path(mcmc_dir, mcmc_file))$samp
+samp_dt_approx <- select_mcmc_samp(samp_dt_approx, itr_start=burn_in_start)
+print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
+  
+# MCMC diagnostics.
+trace_plots <- get_trace_plots(samp_dt_approx)
+  
+# Comparison to exact MCMC.
+samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx)
+kde1d_plots <- get_1d_kde_plots(samp_dt_approx, test_label_baseline="exact")
+```
+
+```{r}
+for(plt in trace_plots) plot(plt)
+for(plt in kde1d_plots) plot(plt)
+```
+
+
+```{r}
+# TODO: should save following MCMC information from `run_approx_mcmc.r`:
+# estimates means/vars/covs, R hat and ESS, coverage metrics, other posterior 
+# error metrics.
+#
+# Should give a quick way to identify runs that produced weird results. In 
+# particular, should compute means/covs by chain as an additional diagnostic 
+# test for the MCMC sampling.
+```
+
+
+
+

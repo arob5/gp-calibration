@@ -455,7 +455,6 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
           if(runif(1) <= alpha) {
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
-            lpost_pred_curr <- lpost_pred_prop
             accept_count <- accept_count + 1L 
           } else {
             par_samp[itr,] <- par_curr
@@ -797,8 +796,10 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
   # The return value of the call to `run_mcmc_chains()`.
   
   # Ensure MCMC tag and MCMC function name are included in settings.
-  required_settings <- c("test_label", "mcmc_func_name")
-  assert_that(all(required_settings %in% names(mcmc_settings)))
+  required_settings <- "mcmc_func_name"
+  missing_settings <- setdiff(required_settings, names(mcmc_settings))
+  assert_that(length(missing_settings)==0L, 
+              msg=paste0("Missing settings: ", paste0(missing_settings, collapse=", ")))
   assert_that(all(!sapply(mcmc_settings[required_settings], is.null)))
   
   # Assemble full list of arguments for `run_mcmc_chains`.
@@ -811,10 +812,15 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
 
 
 run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list, 
-                                save_dir=NULL, return=FALSE) {
+                                save_dir=NULL, return=FALSE, 
+                                compute_stats=FALSE, ...) {
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
-  # passed to the `mcmc_settings` argument of `run_mcmc()`.
+  # passed to the `mcmc_settings` argument of `run_mcmc()`. If `compute_stats`
+  # is TRUE, then `compute_mcmc_scalar_stats()` will be called for each 
+  # algorithm and the results will be saved or returned along with the raw 
+  # MCMC samples. Additional arguments `...` are passed to 
+  # `compute_mcmc_scalar_stats()`.
   
   if(return) {
     message("run_mcmc_comparison() currently only supports saving data to file.")
@@ -834,18 +840,31 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
     tryCatch(
       {
         # Run MCMC using the ith algorithm.
+        mcmc_settings_list[[i]]$test_label <- tag
         mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_settings_list[[i]])
+        
+        # Optionally compute MCMC stats.
+        if(compute_stats) {
+          mcmc_stats <- compute_mcmc_scalar_stats(mcmc_output$samp, ...)
+        }
+        
       }, error=function(cond) {
         message("Error with MCMC run: ", tag)
         message(conditionMessage(cond))
       }, finally = {
         # Save output.
         if(!is.null(out_dir)) {
-          filename <- paste0("mcmc_", tag, ".rds")
+          filename <- paste0("mcmc_samp_", tag, ".rds")
           saveRDS(mcmc_output, file.path(out_dir, filename))
+          
+          if(compute_stats) {
+            filename_stats <- paste0("mcmc_stats_", tag, ".rds")
+            saveRDS(mcmc_stats, file.path(out_dir, filename_stats))
+          }
         }
       }
     )
+    
   }
 }
 

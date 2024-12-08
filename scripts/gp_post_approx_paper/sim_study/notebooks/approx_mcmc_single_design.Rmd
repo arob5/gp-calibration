@@ -1,0 +1,207 @@
+---
+title: "GP Accelerated MCMC Results"
+author: "Andrew Roberts"
+date: '2024-12-06'
+output: html_document
+---
+
+While `approx_mcmc.Rmd` is intended to provide a high-level summary of the 
+MCMC runs across all of the design replicates, this script is intended to 
+provide an in-depth investigation of the results from individual designs. The 
+emphasis is on gaining some understanding of the emulator fit and resulting 
+approximate posterior geometry to better explain the behavior of the approximate
+MCMC runs.
+
+```{r, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+
+# Settings
+experiment_tag <- "vsem"
+design_tag <- file.path("init_emulator", "LHS_250")
+run_id <- "test_run"
+design_id <- "1018157756"
+
+# Burn-in for exact MCMC samples.
+burn_in_start_exact <- 150000L
+```
+
+
+
+
+```{r}
+print(paste0("Experiment tag: ", experiment_tag))
+print(paste0("Design tag: ", design_tag))
+print(paste0("Design ID: ", design_id))
+print(paste0("MCMC Run ID: ", run_id))
+```
+```{r, echo = FALSE, include = FALSE}
+library(ggplot2)
+library(data.table)
+library(assertthat)
+
+# Setup and filepaths.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
+setup_dir <- file.path(experiment_dir, "inv_prob_setup")
+em_dir <- file.path(experiment_dir, "init_emulator")
+mcmc_dir <- file.path(experiment_dir, run_id, design_tag, design_id)
+
+# Source files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+
+```{r, include=FALSE}
+# Read inverse problem data. 
+inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
+par_prior <- inv_prob$par_prior
+llik_obj_exact <- inv_prob$llik_obj
+llik_exact <- llik_obj_exact$get_llik_func()
+par_names <- inv_prob$par_names
+
+# Read validation data.
+test_info_prior <- readRDS(file.path(setup_dir, "test_info_prior.rds"))
+test_info_post <- readRDS(file.path(setup_dir, "test_info_post.rds"))
+
+# Read approximate llikEmulator object.
+llik_em <- readRDS(file.path(experiment_dir, design_tag, design_id, "em_llik.rds"))
+
+# Read llikEmulator prediction lists.
+em_pred_list_post <- readRDS(file.path(experiment_dir, design_tag, design_id,
+                                       "em_pred_list_post.rds"))
+em_pred_list_prior <- readRDS(file.path(experiment_dir, design_tag, design_id,
+                                       "em_pred_list_prior.rds"))
+
+# Read llikEmulator validation results.
+em_llik_errs_post <- readRDS(file.path(experiment_dir, design_tag, design_id,
+                                       "em_llik_errs_post.rds"))
+em_llik_errs_prior <- readRDS(file.path(experiment_dir, design_tag, design_id,
+                                       "em_llik_errs_prior.rds"))
+
+# Read exact MCMC samples.
+samp_dt_exact <- fread(file.path(setup_dir, "samp_exact.csv"))
+samp_dt_exact <- select_mcmc_samp(samp_dt_exact, itr_start=burn_in_start_exact)
+
+# Read GP-accelerated MCMC settings.
+mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.rds"))
+```
+
+
+```{r}
+# Define default burn-ins for each algorithm.
+burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
+print("----- Burn-ins -----")
+print(paste0("Exact: ", burn_in_start_exact))
+for(i in seq_along(burn_in_start)) {
+  tag <- names(burn_in_start)[i]
+  burn_in <- burn_in_start[i]
+  print(paste(tag, burn_in, sep=": "))
+}
+```
+
+# Plug-In Mean Posterior
+We start by looking at the approximate posterior defined by plugging in the
+GP mean, ignoring the GP variance.
+
+
+```{r}
+# Load and summarize MCMC samples from plug-in mean approximation.
+mcmc_mean_path <- file.path(mcmc_dir, "mcmc_mean.rds")
+
+# Read samples.
+mcmc_mean_list <- readRDS(mcmc_mean_path)
+samp_dt_mean <- mcmc_mean_list$samp
+samp_dt_mean_ic <- samp_dt_mean[itr==1L]
+samp_dt_mean <- select_mcmc_samp(samp_dt_mean, itr_start=burn_in_start)
+print(samp_dt_mean[, .N, by=.(test_label, chain_idx)])
+
+# MCMC diagnostics.
+trace_plots <- get_trace_plots(samp_dt_mean, chain_idcs=c(1,4))
+```
+
+```{r}
+for(plt in trace_plots) plot(plt)
+```
+
+
+```{r}
+# Scatter: true vs approximate log-likelihood.
+llik_em_mean_prior_plt <- llik_em$plot_pred_validation(input=test_info_prior$input,
+                                                       em_pred_list=em_pred_list_prior,
+                                                       true_llik=test_info_prior$llik, 
+                                                       include_interval=FALSE)
+
+# Add initial MCMC conditions.
+ic_mat_mean <- select_mcmc_samp_mat(samp_dt_mean_ic, test_label="mean",
+                                    param_type="par")[,par_names]
+ic_llik_mean <- llik_em$calc_lik_approx("mean", input=ic_mat_mean, simplify=TRUE)
+ic_llik_mean_true <- llik_exact(ic_mat_mean)
+df_ic_mean <- data.frame(obs=ic_llik_mean_true, pred=ic_llik_mean)
+df_ic_mean <- cbind(df_ic_mean, ic_mat_mean)
+llik_em_mean_prior_plt <- llik_em_mean_prior_plt + 
+                          geom_point(aes(x=obs, y=pred), df_ic_mean, color="orange")
+
+plot(llik_em_mean_prior_plt)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+# Set default burn-ins for each algorithm.
+burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
+```
+
+```{r}
+# Summarize MCMC results, and compare to ground truth.
+
+mcmc_file <- mcmc_files[1]
+print(mcmc_file)
+
+# Select samples.
+samp_dt_approx <- readRDS(file.path(mcmc_dir, mcmc_file))$samp
+samp_dt_approx <- select_mcmc_samp(samp_dt_approx, itr_start=burn_in_start)
+print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
+  
+# MCMC diagnostics.
+trace_plots <- get_trace_plots(samp_dt_approx)
+  
+# Comparison to exact MCMC.
+samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx)
+kde1d_plots <- get_1d_kde_plots(samp_dt_approx, test_label_baseline="exact")
+```
+
+```{r}
+for(plt in trace_plots) plot(plt)
+for(plt in kde1d_plots) plot(plt)
+```
+
+
+```{r}
+# TODO: should save following MCMC information from `run_approx_mcmc.r`:
+# estimates means/vars/covs, R hat and ESS, coverage metrics, other posterior 
+# error metrics.
+#
+# Should give a quick way to identify runs that produced weird results. In 
+# particular, should compute means/covs by chain as an additional diagnostic 
+# test for the MCMC sampling.
+```
+
+
+
+

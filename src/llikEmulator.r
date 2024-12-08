@@ -398,7 +398,7 @@ llikEmulator$methods(
   },
   
   calc_lik_quantile_approx = function(em_pred_list=NULL, input=NULL, 
-                                      lik_par_val=NULL, 
+                                      lik_par_val=NULL, alpha=0.9,
                                       conditional=default_conditional,
                                       normalize=default_normalize, 
                                       include_nugget=TRUE, log_scale=TRUE, ...) {
@@ -682,6 +682,105 @@ llikEmulator$methods(
     
     return(plt)
   }, 
+  
+  plot_1d_proj_approx_lik = function(input_names_proj=NULL, n_points=100L, 
+                                     input_list_proj=NULL, input_fixed=NULL, 
+                                     lik_par_val=NULL, llik_func_true=NULL,
+                                     approx_type="mean", log_scale=TRUE, 
+                                     input_bounds=NULL,  
+                                     conditional=default_conditional, 
+                                     normalize=default_normalize, ...) {
+    # This method is very similar to the gpWrapper method of the same name (see that 
+    # method for detailed comments). The major differences here include the fact that 
+    # llikEmulator's are not required to have design points; if this is the case then 
+    # default input bounds for the inputs cannot be defined so either `input_bounds` or 
+    # `input_list_proj` and `input_fixed` must be explicitly passed. A list of length 
+    #`length(input_names_proj)` is returned containing the plots.
+    #
+    # TODO: should include the option to use the log of the likelihood predictions.
+    # Currently, `log_scale` only applies to the `lik_approx` type but it should 
+    # also apply to `lik`.
+    
+    if(length(approx_type) > 1) .NotYetImplemented()
+    
+    # If provided, `llik_func_true` must either be a function (representing the 
+    # true log-likelihood) or a `llikEmulator` class representing an exact 
+    # log-likelihood.
+    if(!is.null(llik_func_true)) {
+      is_llik_em_obj <- is_llik_em(llik_func_true)
+      assert_that(is.function(llik_func_true) || is_llik_em_obj)
+      if(is_llik_em_obj) {
+        assert_that(llik_func_true$exact_llik)
+        llik_func_true <- llik_func_true$get_llik_func()
+      }
+    }
+    
+    # Determine if the y-axis will be on the likelihood or log-likelihood scale. 
+    ylab <- ifelse(log_scale, "log likelihood", "likelihood")
+    
+    # If provided, ensure `input_bounds` has colnames set to the input names. 
+    if(!is.null(input_bounds)) {
+      assert_that(setequal(colnames(input_bounds), .self$input_names))
+      input_bounds <- input_bounds[, .self$input_names]
+    }
+    
+    # Determine the inputs that will be varied. 
+    if(is.null(input_names_proj)) {
+      input_names_proj <- .self$input_names
+    } else {
+      input_names_proj <- unique(input_names_proj)
+      assert_that(all(is.element(input_names_proj, .self$input_names)))
+    }
+    
+    # Constructing input grids for varied parameters.
+    input_grids <- get_input_grid_1d_projection(.self$input_names, 
+                                                x_vary=input_names_proj, 
+                                                X_list=input_list_proj, 
+                                                X_fixed=input_fixed,
+                                                X_bounds=input_bounds, 
+                                                n_points_default=n_points)
+    
+    # Helper function sfor computing response values at the input points given
+    # in `input_grids[[i]]`, which is a list containing one set of input 
+    # points per set of fixed values.
+    f <- function(i,j) {
+      .self$calc_lik_approx(approx_type, input=input_grids[[i]][[j]],
+                            lik_par_val=lik_par_val, conditional=conditional, 
+                            normalize=normalize, log_scale=log_scale, 
+                            return_type="matrix", ...)
+    }
+    
+    compute_response <- function(i) {
+      l <- lapply(seq_along(input_grids[[i]]), f(i,j))
+      do.call(cbind, l)
+    }
+    
+    # Create plots, loop over each input that is varied.
+    plts <- list()
+    n_fixed <- .self$dim_input - 1L
+    for(i in seq_along(input_grids)) {
+      input_name <- names(input_grids[[i]])
+      
+      # Compute response values to be plotted, one per set of fixed values.
+      vals <- compute_response(i)
+
+      # Optionally compute true baseline values.
+      true_response <- NULL
+      if(!is.null(llik_func_true)) {
+        true_response <- llik_func_true(inputs)
+        if(!log_scale) true_response <- exp(true_response)
+      }
+      
+      # Construct plot.
+      input_1d <- drop(input_grids[[input_name]][,input_name])
+      plts[[input_name]] <- plot_curves_1d_helper(input_1d, vals, 
+                                                  y_new=true_response,
+                                                  xlab=input_name, ylab=ylab)
+    }
+    
+    return(plts)
+  }, 
+  
   
   plot_1d_projection = function(input_names_proj=NULL, n_points=100L, input_list_proj=NULL,   
                                 input_fixed=NULL, lik_par_val=NULL, include_design=FALSE, 
@@ -1355,7 +1454,6 @@ llikEmulatorGP$methods(
     # known expression for a log-normal quantile.
     
     assert_that((alpha > 0) && (alpha <=1))
-    input <- .self$get_input(input)
     
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 

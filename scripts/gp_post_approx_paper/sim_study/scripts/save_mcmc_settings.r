@@ -19,7 +19,7 @@ common_settings <- list(n_itr=100000L, try_parallel=FALSE, n_chain=4L)
 # Common settings that will be applied to all algorithms using the BayesianTools
 # wrapper function.
 common_bt_settings <- list(mcmc_func_name="mcmc_bt_wrapper", sampler="DEzs", 
-                           defer_ic=TRUE)
+                           defer_ic=TRUE, settings_list=list(consoleUpdates=25000))
 
 # List of MCMC settings.
 mcmc_settings_list <- list(
