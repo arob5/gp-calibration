@@ -140,6 +140,10 @@ llik_em_mean_prior_plt <- llik_em$plot_pred_validation(input=test_info_prior$inp
                                                        em_pred_list=em_pred_list_prior,
                                                        true_llik=test_info_prior$llik, 
                                                        include_interval=FALSE)
+llik_em_mean_post_plt <- llik_em$plot_pred_validation(input=test_info_post$input,
+                                                      em_pred_list=em_pred_list_post,
+                                                      true_llik=test_info_post$llik, 
+                                                      include_interval=FALSE)
 
 # Add initial MCMC conditions.
 ic_mat_mean <- select_mcmc_samp_mat(samp_dt_mean_ic, test_label="mean",
@@ -151,7 +155,25 @@ df_ic_mean <- cbind(df_ic_mean, ic_mat_mean)
 llik_em_mean_prior_plt <- llik_em_mean_prior_plt + 
                           geom_point(aes(x=obs, y=pred), df_ic_mean, color="orange")
 
+# Add design points.
+llik_design_pred <- llik_em$calc_lik_approx("mean", 
+                                            input=llik_em$get_design_inputs(), 
+                                            simplify=TRUE)
+llik_design_true <- llik_em$get_design_llik()
+df_llik_design <- data.frame(true=drop(llik_design_true), pred=llik_design_pred)
+llik_em_mean_prior_plt <- llik_em_mean_prior_plt + 
+                          geom_point(aes(x=true, y=pred), df_llik_design, 
+                                     color="green")
+
 plot(llik_em_mean_prior_plt)
+plot(llik_em_mean_post_plt)
+
+# Plan:
+#   1.) Get support points working on cluster (check logfiles to ensure support
+#       package is put in a directory to which remote executions will have access.
+#   2.) Run support locally to obtain MCMC ICs and compare to current ICs.
+#   3.) Re-run small-scale test on cluster using better-informed ICs.
+
 ```
 
 
