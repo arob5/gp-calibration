@@ -422,7 +422,7 @@ may outweigh the downsides of log-likelihood emulation in many applications.
 \end{figure}
 
 % Posterior Approximation
-\section{Posterior Approximation}
+\section{Posterior Approximation} \label{sec:post_approx}
 With a fit GP emulator in hand, we now turn to the question of how best to utilize the emulator in approximating the posterior 
 distribution of the Bayesian inverse problem. We systematically review the various methods that have been considered in the 
 literature, and propose a new approach based on noisy approximations of MCMC algorithms. For succinctness, we restrict 
@@ -1115,10 +1115,25 @@ $\gpMean[\Ndesign](\Par | \designBatchFunc)$ is equal to the change in GP varian
 of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Ndesign](\Par | \designBatchFunc)$ 
 is large when the design points $\designBatchIn$ are more ``influential.''
 
-\todo: maybe insert this sentence somewhere above: 
-However, outside of special choices for $\parSpace$ and 
-$\weightDens$ (see, e.g., \cite{Binois_2018}), the integrals (with respect to $\Par$) are typically replaced with Monte Carlo 
-approximations. 
+We conclude this section with a computational note. The integrated conditional uncertainty criteria 
+\ref{acq_int_cond_unc} requires the evaluation of three integrals. In this article, we only consider acquisitions in which 
+the two inner expectations can be evaluated in closed-form. This is the case, for example, in \ref{acq_int_var} and 
+\ref{acq_int_ent}. This leaves the outer integral over the $\dimPar$-dimensional input space with respect to the 
+measure $\weightDens$. Outside of very specific circumstances (see, e.g., \cite{Binois_2018}), this integral 
+cannot be computed analytically. The acquisition \ref{acq_int_var} is thus typically replaced with a Monte Carlo or 
+grid-based discrete approximation. For all of the experiments in this paper, we consider the so-called 
+\textit{sample-sum approximation} \citep{Mercer_kernels_IVAR}, in which the grid points are taken to be a 
+single realization of a Monte Carlo sample (as opposed to viewing them as random during the sequential 
+design optimization, which requires stochastic optimization procedures). Thus, in numerical experiments, we replace
+\ref{acq_int_cond_unc} with 
+\begin{equation}
+\acq[\Ndesign](\designIn[\Nbatch])
+\Def \sum_{m=1}^{M} \E_{\funcVal[\Nbatch]} \E \left[\qoi(\Par_m) \given 
+\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right], \label{acq_int_cond_unc_grid}
+\end{equation}
+where $\Par_m \sim \weightDens$.
+
+\todo: add latex macro for the "m" index above.
 
 \subsection{Sequential Design for Posterior Approximation}
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
@@ -1166,7 +1181,7 @@ $\qoi$ and $\weightDens$ are the two design decisions at our disposal to constru
 words, we consider specific choices of either the integrand or the measure defining the integral.
 
 \paragraph{Targeting the integrand.}
-We start by setting $\qoiMap$ as in \ref{qoi_exp_var}, which results in an integrated variance conditional 
+We start by setting $\qoiMap$ as in \ref{qoi_exp_var}, which results in an integrated conditional 
 variance criterion targeting uncertainty in the unnormalized posterior density.
 \begin{definition}
 We define the $\intExpVarLabel$ criterion as the specific instance of \ref{acq_int_cond_unc} with 
@@ -1204,8 +1219,8 @@ where
 This derivation leverages \Cref{lemma:pred-mean-dist}, which characterizes the distribution of 
 $\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)$ as a function of $\designBatchLlik$.
 The interpretation of the closed-form expressions in \ref{prop:int_exp_var_closed_form}
-also closely follows the above discussion of this lemma. In particular, the variance term in the integrand is
-the variance of the log-normal random variable $\llikEmRdmDens[\Ndesign](\Par)$ 
+also closely follows the discussion following this lemma. In particular, the variance term in the
+integrand is the variance of the log-normal random variable $\llikEmRdmDens[\Ndesign](\Par)$ 
 conditioned on the ``pseudo-data'' $\{\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn)\}$.
 The second term $\varInflation(\Par; \designBatchIn)$, which we refer to as the 
 \textit{variance inflation factor}, accounts for the uncertainty in the unobserved response
@@ -1213,7 +1228,11 @@ The second term $\varInflation(\Par; \designBatchIn)$, which we refer to as the
  input batch $\designBatchIn$ is more influential.
 
 \paragraph{Targeting the measure.}
-
+Alternatively, we might consider designing the measure $\weightDens$ towards the goal of 
+posterior approximation. In this case, $\qoiMap$ can be defined in a typical way
+(e.g., \ref{acq_max_var} or \ref{acq_max_ent}) to target the underlying GP $\llikEm$.  
+Natural choices for $\weightDens$ include any of the approximate posteriors discussed 
+in \Cref{sec:post_approx}. 
 
 
 
