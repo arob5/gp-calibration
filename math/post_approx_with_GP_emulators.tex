@@ -997,7 +997,24 @@ and form the basis for design criteria specialized to the present setting.
 
 \paragraph{Local Uncertainty.}
 An intuitive design strategy is to simply select inputs where a quantity of interest exhibits high 
-uncertainty. To capture this notion, we introduce a nonnegative map 
+uncertainty. A canonical example in the pure sequential ($\Nbatch = 1$) setting is
+the \textit{maximum variance} ($\maxvarLabel$) criterion
+\begin{equation}
+\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par),
+\label{acq_max_var}
+\end{equation}
+which is negated to align with our convention of minimizing acquisition functions. By defining 
+``uncertainty'' in terms of entropy instead of variance, we obtain the \textit{maximum entropy} 
+($\maxentLabel$) acquisition
+\begin{equation}
+\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] + \cst 
+=  -\frac{1}{2} \log\det(\gpKer(\designBatchIn)), 
+\label{acq_max_ent}
+\end{equation}
+where $\Ent[Z]$ denotes the entropy of a random vector $Z$ and $\cst$ is a constant independent 
+of $\designBatchIn$. Note that this criterion is well-defined in the batch ($\Nbatch > 0$) setting.
+We view both \ref{acq_max_var} and \ref{acq_max_ent} as special cases of a broader class 
+of acquisition criteria defined below. To this end, we introduce a nonnegative map 
 $(\designBatchIn, \funcEm) \mapsto \qoiMap(\designBatchIn, \funcEm)$ that encodes the 
 uncertainty in (some function of) the random vector  $\funcEm(\designBatchIn)$. As shorthand, 
 we define the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$ by 
@@ -1006,7 +1023,8 @@ $\qoi(\designBatchIn)$ represents the uncertainty associated with the input batc
 $\designBatchIn$ with respect to the GP $\funcEm$.
 
 \begin{definition}
-The \textbf{local uncertainty criterion} with respect to the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$
+The \textbf{local uncertainty criterion} with respect to the GP $\funcEm$ and the map \
+$\qoi: \parSpace^{\Nbatch} \to [0, \infty)$
 is defined as 
 \begin{equation}
 \acq[\Ndesign](\designBatchIn) \Def -\E\left[\qoi(\designBatchIn) \right]. \label{acq_local_unc}
@@ -1014,23 +1032,18 @@ is defined as
 If $\qoi(\cdot)$ only accepts scalars (i.e., $\Nbatch = 1$), we refer to the resulting acquisition function as
  a \textbf{pointwise uncertainty criterion}.
 \end{definition}
-The negation is included to align with our convention of minimizing acquisition functions, as we are 
-considering larger values of $\qoi(\designBatchIn)$ to indicate higher uncertainty.
-As a simple example in the $\Nbatch = 1$ case, consider setting 
-$\qoiMap(\Par, \funcEm) \Def [\funcEm(\Par) - \gpMean[\Ndesign](\Par)]^2$. This gives the 
-\textit{maximum variance} ($\maxvarLabel$) criterion
+
+The $\maxvarLabel$ and $\maxentLabel$ criteria in \ref{acq_max_var} and \ref{acq_max_ent} follow 
+as special cases by choosing, respectively, 
 \begin{equation}
-\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par).
-\label{acq_max_var}
+\qoiMap(\Par, \funcEm) &\Def [\funcEm(\Par) - \gpMean[\Ndesign](\Par)]^2 \label{qoi_max_var}
 \end{equation}
-A common example in the batch setting follows by choosing 
-$\qoiMap(\designBatchIn, \funcEm) \Def -\log \Gaussian(\funcEm(\designBatchIn) \given \gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$,
-which yields the \textit{maximum entropy} ($\maxentLabel$) acquisition
+and 
 \begin{equation}
-\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] + \cst =  -\frac{1}{2} \log\det(\gpKer(\designBatchIn)), 
-\label{acq_max_ent}
+\qoiMap(\designBatchIn, \funcEm) \Def -\log \Gaussian(\funcEm(\designBatchIn) \given 
+\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn)).  \label{qoi_max_ent}
 \end{equation}
-where $\Ent[Z]$ denotes the entropy of a random vector $Z$ and $\cst$ is a constant independent of $\designBatchIn$. 
+
 These examples consider uncertainty in the GP 
 evaluations $\funcEm(\designBatchIn)$; we will shortly consider 
 design criteria that target uncertainty in functions of the GP evaluations in order to tailor the acquisitions to the 
@@ -1049,17 +1062,20 @@ this unknown quantity with the random variable $\funcVal[\Nbatch] \Def \funcEm(\
 marginalizing the unobserved function evaluations under the assumption that they follow the current GP predictive distribution. 
 This leads to the consideration of acquisition functions of the following form.
 \begin{definition}
-Let $\qoi: \R \to [0, \infty)$ be defined as above and $\weightDens: \parSpace \to [0,\infty)$ be a density on $\parSpace$. 
-The \textbf{integrated conditional uncertainty} criterion with respect to $\qoi$ and $\weightDens$ is defined as
+Let $\qoi: \parSpace \to [0, \infty)$ be a pointwise uncertainty map, defined with respect to $\funcEm$
+and $\qoiMap$. Let $\weightDens: \parSpace \to [0,\infty)$ be a density on $\parSpace$. 
+The \textbf{integrated conditional uncertainty} criterion with respect to $\funcEm$, $\qoiMap$, and $\weightDens$ is 
+defined as
 \begin{equation}
 \acq[\Ndesign](\designIn[\Nbatch])
 \Def \int_{\parSpace} \E_{\funcVal[\Nbatch]} \E \left[\qoi(\Par) \given 
 \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right] \weightDens(\Par) d\Par. \label{acq_int_cond_unc}
 \end{equation}
 \end{definition}
-[\todo: Could alternately define this with integrand $\E_{\funcVal[\Nbatch]} \E[\qoi[\Naugment](\Par|\funcVal[\Nbatch])]$.]
+[\todo: Could alternately define this with integrand $\E_{\funcVal[\Nbatch]} \E[\qoi[\Naugment](\Par|\funcVal[\Nbatch])]$,
+or something like that]
 In addition to considering the global effect of acquiring new points, notice that these criteria provide the means to 
-extend a pointwise uncertainty criterion to the batch setting. For example, choosing $\qoi$ as in \ref{acq_max_var}
+extend a pointwise uncertainty criterion to the batch setting. For example, choosing $\qoiMap$ as in \ref{qoi_max_var}
 gives rise to the \textit{integrated variance} ($\intvarLabel$) criterion
 \begin{equation}
 \labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
@@ -1068,9 +1084,9 @@ gives rise to the \textit{integrated variance} ($\intvarLabel$) criterion
 In this case, the expectation with respect to $\funcVal[\Nbatch]$ is eliminated owing to the fact that 
 $\gpKer[\Naugment](\Par)$ is not a function of $\funcVal[\Nbatch]$. Integrated variance criteria have 
 been widely studied and applied in various domains 
-\citep{Mercer_kernels_IVAR, Binois_2018, gramacy2020surrogates, parallelSURExcursionSet}. If we instead 
-choose $\qoi$ as in \ref{acq_max_ent} (with $\Nbatch=1$) then we obtain the \textit{integrated entropy} 
-($\intentLabel$) criterion
+\citep{Mercer_kernels_IVAR, Binois_2018, gramacy2020surrogates, parallelSURExcursionSet}. 
+If we instead  choose $\qoi$ as in \ref{qoi_max_ent} (with $\Nbatch=1$) then we obtain the 
+\textit{integrated entropy} ($\intentLabel$) criterion
 \begin{equation}
 \labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
 \Def \int_{\parSpace} \log(\gpKer[\Naugment](\Par)) \weightDens(\Par) d\Par. \label{acq_int_ent}
@@ -1080,22 +1096,22 @@ As with $\intvarLabel$, the $\intentLabel$ acquisition does not require evaluati
 expectation, as the entropy only depends on the GP kernel. 
 
 In the subsequent section we will consider alternate 
-choices of $\qoi$ that are tailored to the goal of posterior approximation. This will produce cases where the 
+choices of $\qoiMap$ that are tailored to the goal of posterior approximation. This will produce cases where the 
 inner expectation in \ref{acq_int_cond_unc} depends on $\gpMean[\Naugment](\Par)$, which in turn is a function 
-of $\funcVal[\Nbatch]$. We therefore state a lemma below that summarizes the dependence of the predictive 
+of $\funcVal[\Nbatch]$. We emphasize this dependence by writing
+\begin{equation}
+\gpMean[\Ndesign](\Par | \designBatchFunc) 
+\Def \E[\funcEm[\Ndesign](\Par) \given \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc].
+\label{conditional-mean-notation}
+\end{equation}
+We state a lemma below that summarizes the dependence of the predictive 
 mean on $\funcVal[\Nbatch]$, under the assumption that the unobserved function values are distributed 
 according to the current GP $\funcEm[\Ndesign]$. A similar result is provided in \cite{VehtariParallelGP}, 
 and a proof is given in the appendix.
  \begin{lemma} \label{lemma:pred-mean-dist}
 Let $\{\designBatchIn, \funcVal[\Nbatch]\}$ be a new batch of $\Nbatch$ design points, with
 $\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
-Let  
-\begin{align}
-\gpMean[\Ndesign](\Par | \designBatchFunc) 
-\Def \E[\funcEm[\Ndesign](\Par) \given \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc] \label{conditional-mean-notation}
-\end{align}
-denote the predictive mean after conditioning $\funcEm[\Ndesign]$ on 
-$\{\designBatchIn, \funcVal[\Nbatch]\}$. Then, viewed as a function of the random variable 
+Viewed as a function of the random variable 
 $\designBatchFunc$, the conditional mean $\gpMean[\Ndesign](\Par| \designBatchFunc)$ is 
 distributed as 
 \begin{align}
@@ -1137,7 +1153,7 @@ where $\Par_m \sim \weightDens$.
 
 \subsection{Sequential Design for Posterior Approximation}
 The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
-design point batches that cause large reductions of uncertainty in the GP predictive distribution. 
+design point batches that cause large reductions of uncertainty in the GP predictive distribution.
 While such criteria may be appropriate when quality predictions are required across all of $\parSpace$, 
 this may not align well with the goal of constructing a GP emulator that induces an accurate posterior 
 approximation. Given that the true posterior may be highly concentrated relative to the prior, one might 
@@ -1145,12 +1161,14 @@ intuitively expect that the GP emulator need only achieve a high predictive accu
 posterior mass, and avoid wasteful acquisition of design points in negligible regions.
 This intuition is placed on more rigorous ground in \cite{StuartTeck2}.
 We discuss analogs of the local and  integrated conditional uncertainty criteria introduced above that aim to 
-achieve such goal-oriented sequential design. We start by focusing on the log-likelihood emulation setting, with 
-the analogous quantities for forward model emulators given in \todo. 
+achieve such goal-oriented sequential design. For ease of exposition, we start by focusing on variance-based
+criteria in the log-likelihood emulation setting. The analogous criteria for forward model emulators are introduced 
+in \todo, and criteria based on other notions of uncertainty (e.g., entropy) are given in \todo.
 
 \subsubsection{Local Uncertainty}
 To apply the local uncertainty criteria \ref{acq_local_unc} to the present setting, we could simply replace 
-$\funcEm$ with $\llikEm$ in the definitions. However, note that the resulting $\maxvarLabel$ and 
+$\funcEm$ with $\llikEm$ in the definitions. For example, we could target inputs at which the log-likelihood 
+emulator variance is large. However, note that the resulting $\maxvarLabel$ and 
 $\maxentLabel$ criteria depend only on $\emKer[\Ndesign]{\llik}$, not $\emMean[\Ndesign]{\llik}$.
 Consequently, these criteria do not leverage the information encoded in the GP mean about 
 regions of high or low posterior mass. A natural remedy is to instead define these local criteria to 
@@ -1162,16 +1180,15 @@ $\maxvarLabel$ generalization follows from setting
 \begin{equation}
 \qoiMap(\Par, \llikEm) \Def [\llikEmRdmDens[\Ndesign](\Par) - \E[\llikEmRdmDens[\Ndesign](\Par)]]^2, \label{qoi_exp_var}
 \end{equation}
-yielding
+yielding the $\maxexpvarLabel$ criterion
 \begin{equation}
 \labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)]  
 =  -\priorDens^2(\Par) \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
 \label{acq_max_exp_var}
 \end{equation}
-[\todo: include the $\maxexpentLabel$ criterion here as well; need to consider how to present this; formula is a bit 
-messier in the batch setting due to the multivariate lognormal expressions.] These criteria strike a balance between 
+This objective strikes a balance between 
 $\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, rather than only considering 
-$\emKer[\Ndesign]{\llik}(\Par)$. However, they still suffer from the drawbacks associated with local uncertainty criteria, 
+$\emKer[\Ndesign]{\llik}(\Par)$. However, it still suffers from the drawbacks associated with local uncertainty criteria, 
 as discussed previously. 
 
 \subsubsection{Integrated Conditional Uncertainty}
@@ -1195,7 +1212,8 @@ $\funcEm$ given by $\llikEm$ and $\qoiMap$ set to \ref{qoi_exp_var}; that is,
 
 This $\intExpVarLabel$ acquisition is considered in \cite{VehtariParallelGP}, with the goal of sequentially 
 constructing a log-likelihood emulator to accelerate approximate Bayesian computation. The below result
-provides a closed-form expression for the expected variance expression \ref{acq_int_cond_unc}. See 
+provides a closed-form expression for the expected conditional variance expression in the 
+integrand of \ref{acq_int_cond_unc}. See 
 \cite{VehtariParallelGP} for a similar result, and the appendix for the derivation.
 
 \begin{prop} \label{prop:int_exp_var_closed_form}
@@ -1232,7 +1250,10 @@ Alternatively, we might consider designing the measure $\weightDens$ towards the
 posterior approximation. In this case, $\qoiMap$ can be defined in a typical way
 (e.g., \ref{acq_max_var} or \ref{acq_max_ent}) to target the underlying GP $\llikEm$.  
 Natural choices for $\weightDens$ include any of the approximate posteriors discussed 
-in \Cref{sec:post_approx}. 
+in \Cref{sec:post_approx}, which implies weighting the integral over $\parSpace$ by 
+the current posterior approximation. Alternatively, we might consider weighting by the 
+expected approximate posterior resulting from conditioning on 
+$\{\designBatchIn, \designBatchLlik\}$. 
 
 
 
