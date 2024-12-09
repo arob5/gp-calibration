@@ -24,11 +24,11 @@
 # N_NODE: number of calls to `init_emulator.r` (one per node).
 
 # Settings for this script. 
-N_NODE=2
+N_NODE=10
 
 # Settings passed to `run_init_emulator.sh`.
 EXPERIMENT_TAG="vsem"
-N_REP_PER_NODE=2
+N_REP_PER_NODE=10
 N_DESIGN=250
 DESIGN_METHOD="LHS"
 

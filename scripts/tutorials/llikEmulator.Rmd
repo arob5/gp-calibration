@@ -1,0 +1,208 @@
+---
+title: "llikEmulator Class"
+author: "Andrew Roberts"
+date: "2024-11-27"
+output: html_document
+---
+
+This file provides an introduction to the `llikEmulator` class and associated 
+classes that inherit from this base class. The code implementing these 
+classes can be found in `llikEmulator.r`.
+
+# Introduction
+The `llikEmulator` class encapsulates a surrogate (i.e., emulator) model for 
+a log-likelihood function. It is designed to support both stochastic 
+and deterministic log-likelihood surrogates. Users do not typically work 
+directly with the base `llikEmulator` class, but rather with objects from 
+classes that inherit from `llikEmulator`. For example, the `llikEmulatorGP`
+class is used in the case that a log-likelihood is emulated by a Gaussian 
+process (GP). In this example, `llikEmulatorGP` is agnostic to the specific 
+distributional form of the underlying log-likelihood. Other classes are designed
+for specific likelihood structures; for example, `llikEmulatorGPFwdGauss` 
+handles the specific case of a Gaussian likelihood 
+$\mathcal{N}(\mathcal{G}(u), \Sigma)$ where the forward model 
+$\mathcal{G}(\cdot)$ is replaced by a GP emulator. Having more specific classes 
+to handle common special cases allows one to leverage the additional structure 
+in certain contexts.
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(data.table)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+```
+
+# Basic Functionality 
+We start by instantiating an object of class `llikEmulatorGP`, meaning that 
+we will consider directly emulating the log-likelihood with a GP. This class 
+is designed to work with GP objects from `gpWrapper` classes. We start by 
+setting up a pre-defined example inverse problem, fit a GP approximating the 
+log-likelihood map, and then define a `llikEmulatorGP` object. 
+
+```{r}
+# Example inverse problem, with associated log-likelihood. This inverse problem 
+# is based on calibrating parameters of the VSEM vegetation model.
+inv_prob <- get_vsem_test_1()
+```
+
+```{r}
+# Create a design: input-output log-likelihood pairs, the training data for 
+# the GP model.
+design_info <- get_init_design_list(inv_prob, design_method="LHS", N_design=250L)
+
+# Assemble test/validation points that will be used later on.
+test_info <- get_init_design_list(inv_prob, design_method="LHS", N_design=500L)
+```
+
+```{r}
+# Train a GP model on the design points.
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         normalize_output=TRUE, scale_input=TRUE)
+gp_obj$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
+           optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
+```
+```{r}
+# Create log-likelihood surrogate object.
+llik_em <- llikEmulatorGP("em_llik", gp_obj, 
+                          lik_par=inv_prob$sig2_model, use_fixed_lik_par=TRUE,
+                          default_conditional=FALSE, default_normalize=TRUE)
+```
+
+## Log-likelihood and Likelihood Predictive Distribution
+
+## Deterministic Functions of the Likelihood Surrogate
+The `llikEmulator` class offers a standardized interface for computing 
+deterministic functions of the (potentially stochastic) likelihood surrogate.
+The major use case is computing deterministic approximations of the likelihood; 
+this is handled by the method `calc_lik_approx()`.  
+Note that some likelihood approximations will only be 
+available for certain specific `llikEmulator` classes, while others are 
+general enough that they can be implemented generally in the base `llikEmulator`
+class.
+
+These functions are designed to operate on the `em_pred_list` object returned 
+by the method `predict_emulator()`; i.e., the perspective here is to view 
+quantities of interest to be some function of the underlying emulator 
+predictive distribution. The methods shown below will automatically compute 
+`em_pred_list` under the hood, but if the predictions at a set of inputs are 
+going to be used for a variety of purposes, it is recommended to pre-compute 
+`em_pred_list` and pass them to subsequent calls to avoid re-computing 
+predictions each time.
+
+```{r}
+# Emulator predictions.
+em_pred_list <- llik_em$predict_emulator(input=test_info$input)
+```
+
+### Deterministic likelihood approximations
+`calc_lik_approx()` provides a high-level convenience function for computing 
+deterministic approximations of the likelihood function on an input-by-input 
+basis; i.e., pointwise approximation of the likelihood. The first argument 
+`approx_type` specifies the specific approximation to use. The method will 
+look for other methods with the name `calc_<approx_type>_approx()`. By default, 
+the log of the approximations are returned for numerical stability. The 
+approximations on the original scale can be returned by setting the argument 
+`log_scale = TRUE`.
+
+```{r}
+# Compute plug-in mean approximation.
+approx_mean <- llik_em$calc_lik_approx("mean", em_pred_list=em_pred_list,
+                                       simplify=TRUE)
+
+# Compute marginal approximation (expectation of likelihood wrt emulator).
+approx_marg <- llik_em$calc_lik_approx("marginal", em_pred_list=em_pred_list,
+                                       simplify=TRUE)
+
+head(cbind(mean=approx_mean, marginal=approx_marg))
+```
+The method `calc_lik_approx()` actually allows the first argument `approx_type`
+to be a vector, so that the above two approximations can be computed in a 
+single call.
+
+```{r}
+# Compute both plug-in mean and marginal approximation.
+approx_mean_marg <- llik_em$calc_lik_approx(c("mean", "marginal"), 
+                                            em_pred_list=em_pred_list,
+                                            return_type="matrix")
+
+head(approx_mean_marg)
+```
+The deterministic approximate log-likelihood can also be returned as a function.
+This is useful for interfacing with external code; for example, MCMC 
+implementations that require a log-likelihood function as input.
+
+```{r}
+# Store approximate log-likelihood function.
+llik_approx <- llik_em$get_llik_func("mean")
+
+# Evaluate log-likelihood function at a set of inputs.
+llik_approx_vals <- llik_approx(test_info$input)
+head(llik_approx_vals)
+```
+
+### Error Metrics
+The method `calc_lik_approx_pw_err()` provides a convenient high-level
+interface for computing deterministic likelihood predictions and evaluating 
+their error with respect to some baseline true log-likelihood values. Here, 
+"pw" means "pointwise", as the errors are computed point-by-point. The method 
+allows computing errors for multiple likelihood approximations and multiple 
+error metrics in a single call. 
+
+```{r}
+# Compute pointwise squared errors, absolute errors, and their "weighted" 
+# versions, which are divided by the log-likelihood emulator predictive  
+# standard deviation.
+errs_mean_marg <- llik_em$calc_lik_approx_pw_err(llik_true=test_info$llik, 
+                                                 err_type=c("mse", "wmse", "mae", "wmae"), 
+                                                 llik_pred=approx_mean_marg, 
+                                                 em_pred_list=em_pred_list,
+                                                 return_type="data.table")
+
+head(errs_mean_marg)
+```
+
+
+### Generic Functions
+Both `calc_lik_approx()` and `calc_err_metric()` are wrappers around the 
+lower-level method `calc_func()`, which allows a user to supply a function 
+that operates on `em_pred_list`. We provide an example of this below.
+```{r}
+# User-defined function.
+f <- function(em_pred_list, ...) em_pred_list$mean + 2*sqrt(em_pred_list$var)
+
+# Apply function to `em_pred_list`.
+f_test <- llik_em$calc_func(func=f, em_pred_list=em_pred_list)
+head(f_test)
+```
+
+The method `calc_multi_func()` is a wrapper around `calc_func()` that allows 
+for applying multiple functions to the same `em_pred_list` object. This is 
+actually the lower-level method directly called by `calc_lik_approx()` and 
+`calc_err_metric()`, which allows multiple approximation methods/error metrics
+to be passed. By default, `calc_multi_func()` returns a list, but setting 
+`return_type = "matrix"` causes a matrix to be returned, with one column per 
+function in the list.
+
+```{r}
+# List of two functions to evaluate.
+g <- function(em_pred_list, ...) em_pred_list$mean + 4*sqrt(em_pred_list$var)
+func_list <- list(f=f, g=g)
+
+# Apply each function to `em_pred_list`.
+func_tests <- llik_em$calc_multi_func(func_list=func_list, 
+                                      em_pred_list=em_pred_list, 
+                                      return_type="matrix")
+head(func_tests)
+```

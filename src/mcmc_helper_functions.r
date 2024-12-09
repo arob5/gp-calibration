@@ -80,13 +80,13 @@ combine_samp_dt <- function(..., itr_start=1L, itr_stop=NULL) {
   #       to have keys set to the variables defining unique rows.
 
   l <- list(...)
-  
+
   # Ensure all arguments are valid `samp_dt` data.tables.
   for(dt in l) assert_is_samp_dt(dt)
   
   # Restrict output to specified iteration ranges.
-  l <- lapply(dt, function(dt) select_mcmc_itr(dt, itr_start=itr_start, 
-                                               itr_stop=itr_stop))
+  l <- lapply(l, function(dt) select_mcmc_itr(dt, itr_start=itr_start, 
+                                              itr_stop=itr_stop))
   
   # Stack tables vertically.
   data.table::rbindlist(l, use.names=TRUE)
@@ -381,22 +381,29 @@ select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
   
+  assert_is_samp_dt(samp_dt)
   samp_dt_subset <- copy(samp_dt)
   
-  # If not provided, select all. 
-  if(is.null(test_labels)) test_labels <- samp_dt_subset[, unique(test_label)]
-  if(is.null(param_types)) param_types <- samp_dt_subset[, unique(param_type)]
-  if(is.null(param_names)) param_names <- samp_dt_subset[, unique(param_name)]
-  if(is.null(chain_idcs)) chain_idcs <- samp_dt_subset[, unique(chain_idx)]
-  
-  # Select rows corresponding to label-type-name combinations. 
-  samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
-                            (param_type %in% param_types) & 
-                            (param_name %in% param_names) &
-                            (chain_idx %in% chain_idcs)]
+  # If no subsetting is required, save time by skipping this step.
+  all_null <- all(is.null(test_labels), is.null(param_types), 
+                  is.null(param_names), is.null(chain_idcs))
+  if(!all_null) {
+    # If not provided, select all. 
+    if(is.null(test_labels)) test_labels <- samp_dt_subset[, unique(test_label)]
+    if(is.null(param_types)) param_types <- samp_dt_subset[, unique(param_type)]
+    if(is.null(param_names)) param_names <- samp_dt_subset[, unique(param_name)]
+    if(is.null(chain_idcs)) chain_idcs <- samp_dt_subset[, unique(chain_idx)]
+    
+    # Select rows corresponding to label-type-name combinations. 
+    samp_dt_subset <- samp_dt[(test_label %in% test_labels) & 
+                              (param_type %in% param_types) & 
+                              (param_name %in% param_names) &
+                              (chain_idx %in% chain_idcs)]
+  }
   
   # Restrict to specified iteration bounds.
-  samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start, itr_stop)
+  samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start=itr_start, 
+                                    itr_stop=itr_stop)
 
   return(samp_dt_subset)
 }
@@ -516,15 +523,17 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   assert_is_samp_dt(samp_dt)
   if(nrow(samp_dt)==0L) return(samp_dt)
 
-  # Argument checking.
-  if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
-  itr_start <- as.integer(itr_start)
-  itr_stop <- as.integer(itr_stop)
-  assert_that(all(itr_start >= 1L))
-  
   # If no row subsetting is required just return the data.table.
   if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
   
+  # Argument checking. Ensure iteration numbers are integers. Using 
+  # `storage.mode()` to avoid stripping names attribute from these vectors, 
+  # as would happen with `as.integer()`.
+  if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
+  storage.mode(itr_start) <- "integer"
+  storage.mode(itr_stop) <- "integer"
+  assert_that(all(itr_start >= 1L))
+
   # Get set of unique test labels.
   test_labels <- samp_dt[,unique(test_label)]
   n_labels <- length(test_labels)
@@ -591,6 +600,31 @@ convert_samp_to_mat <- function(samp_dt) {
 # ------------------------------------------------------------------------------
 # Computing statistics and errors from MCMC samples. 
 # ------------------------------------------------------------------------------
+
+compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NULL,
+                                      param_names=NULL, itr_start=1L, 
+                                      itr_stop=NULL, chain_idcs=NULL, 
+                                      by_chain=TRUE) {
+
+  # Select subset of samples.
+  samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
+                              param_types=param_types, itr_start=itr_start,
+                              itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Define functions to compute.
+  funcs <- function(x) list(mean=mean(x), var=var(x))
+  
+  # Specify grouping columns.
+  group_cols <- c("test_label", "param_type", "param_name")
+  if(by_chain) group_cols <- c(group_cols, "chain_idx")
+  
+  # Evaluate functions by group.
+  samp_stats <- samp_dt[, unlist(lapply(.SD, funcs), recursive=FALSE), 
+                        .SDcols="sample", by=group_cols]
+  
+  return(samp_stats)
+}
+
 
 compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL,
                                      param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
@@ -1410,34 +1444,44 @@ get_mcmc_moments_scatter_plot_comparisons <- function(samp_dt, test_label_baseli
 }
 
 
-get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NULL, test_labels=NULL,
-                                  param_types=NULL, param_names=NULL, xlab="observed", ylab="predicted", 
-                                  save_dir=NULL, probs=seq(0.5, 1.0, .1), color_exact="black") {
-  # Produces one plot per unique (param type, param name) combination. Each plot will contain one line 
-  # per test label that has samples associated with the specific parameter being plotted. These lines 
-  # summarize the coverage of the distributions (i.e., the samples for each test label) with respect 
-  # to some "baseline" test label, specified by `test_label_baseline` (this typically represents 
-  # some notion of the "true" distribution). For a specific plot, let us consider how a single 
-  # point is computed: 
-  #    (1) The "nominal coverage" interval of probability `p` is estimated from samples for 
-  #        the distribution associated with each test label. This interval is centered at the 
-  #        empirical median, with the endpoints computed by excluding 100*(1-p)/2 % of the 
-  #        samples from each tail, so that the interval contains 100*p % of the samples. 
-  #    (2) Let [a,b] be the bounds of this estimated nominal interval for a specific test label. Next we 
-  #        estimate the probability of the baseline distribution falling within the interval [a,b]. 
-  #        This is accomplished by counting the number of samples of the baseline distribution 
-  #        falling within [a,b] and dividing by the number of baseline samples. Let's call the 
-  #        computed fraction `q`. 
-  #    (3) The point (p,q) is then plotted. This is repeated for each test label, and also repeated
-  #        for a set of different probabilities p, specified by the arguments `probs`. The points  
-  #        corresponding to the same test label are connected with interpolating lines. 
+get_1d_coverage_plots <- function(samp_dt, test_label_baseline, itr_start=1L,
+                                  itr_stop=NULL, test_labels=NULL, 
+                                  param_types=NULL, param_names=NULL, 
+                                  chain_idcs=NULL, xlab="observed", 
+                                  ylab="predicted", save_dir=NULL, 
+                                  probs=seq(0.5, 1.0, .1), color_exact="black") {
+  # Produces one plot per unique (param type, param name) combination. Each plot 
+  # will contain one line per test label that has samples associated with the 
+  # specific parameter being plotted. These lines summarize the coverage of the 
+  # distributions (i.e., the samples for each test label) with respect 
+  # to some "baseline" test label, specified by `test_label_baseline` (this 
+  # typically represents some notion of the "true" distribution). For a specific 
+  # plot, let us consider how a single point is computed: 
+  #    (1) The "nominal coverage" interval of probability `p` is estimated from 
+  #        samples for the distribution associated with each test label. This 
+  #        interval is centered at the empirical median, with the endpoints 
+  #        computed by excluding 100*(1-p)/2 % of the samples from each tail, so 
+  #        that the interval contains 100*p % of the samples. 
+  #    (2) Let [a,b] be the bounds of this estimated nominal interval for a 
+  #        specific test label. Next we estimate the probability of the baseline 
+  #        distribution falling within the interval [a,b]. This is accomplished 
+  #        by counting the number of samples of the baseline distribution 
+  #        falling within [a,b] and dividing by the number of baseline samples.
+  #        Let's call the computed fraction `q`. 
+  #    (3) The point (p,q) is then plotted. This is repeated for each test label, 
+  #        and also repeated for a set of different probabilities p, specified 
+  #        by the arguments `probs`. The points corresponding to the same test 
+  #        label are connected with interpolating lines. 
                                   
   # Determine which plots to create by subsetting rows of `samp_dt`. 
   if(!is.null(test_labels) && !(test_label_baseline %in% test_labels)) {
     test_labels <- c(test_labels, test_label_baseline)
   }
-  samp_dt_subset <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                     param_types=param_types, param_names=param_names)
+  samp_dt_subset <- select_mcmc_samp(samp_dt, itr_start=itr_start, 
+                                     itr_stop=itr_stop, test_labels=test_labels, 
+                                     param_types=param_types, 
+                                     param_names=param_names, 
+                                     chain_idcs=chain_idcs)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {
@@ -1461,7 +1505,8 @@ get_1d_coverage_plots <- function(samp_dt, test_label_baseline, burn_in_start=NU
   dt_plt <- data.table(param_name=character(), param_type=character(),  
                        test_label=character(), prob=numeric(), 
                        nominal_lower=numeric(), median=numeric(), 
-                       nominal_upper=numeric(), N_sample=integer(), actual_coverage=numeric())
+                       nominal_upper=numeric(), N_sample=integer(), 
+                       actual_coverage=numeric())
   for(i in 1:nrow(plt_id_vars)) {
     # (param_type, param_name) combination for current plot. 
     param_type_curr <- plt_id_vars[i, param_type]
