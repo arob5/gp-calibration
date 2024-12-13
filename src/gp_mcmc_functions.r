@@ -265,9 +265,9 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
 }
 
 
-mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL, 
-                                         sig2_init=NULL, sig2_prior=NULL, 
-                                         approx_type="marginal", n_itr=50000L, 
+mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type, 
+                                         par_init=NULL, sig2_init=NULL, 
+                                         sig2_prior=NULL, n_itr=50000L, 
                                          alpha_quantile=0.9, 
                                          cov_prop=NULL, log_scale_prop=NULL, 
                                          adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
@@ -310,7 +310,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL,
   llik_pred_curr <- llik_em$calc_lik_approx(approx_type, par_curr_mat,
                                             lik_par_val=sig2_curr, 
                                             log_scale=TRUE, 
-                                            alpha=alpha_quantile, ...)
+                                            alpha=alpha_quantile, 
+                                            simplify=TRUE, ...)
   lpost_pred_curr <- llik_pred_curr + calc_lprior_dens(par_curr_mat, par_prior)
   
   # Proposal covariance.
@@ -344,8 +345,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, par_init=NULL,
           llik_pred_prop <- llik_em$calc_lik_approx(approx_type, par_prop_mat, 
                                                     lik_par_val=sig2_curr, 
                                                     log_scale=TRUE, 
-                                                    alpha=alpha_quantile, ...) 
-          lpost_pred_prop <- llik_pred_prop + calc_lprior_theta(par_prop_mat, par_prior)
+                                                    alpha=alpha_quantile, 
+                                                    simplify=TRUE, ...) 
+          lpost_pred_prop <- llik_pred_prop + calc_lprior_dens(par_prop_mat, par_prior)
           
           # Accept-Reject step.
           alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
@@ -711,7 +713,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
       par_init <- get_batch_design(ic_sample_method, N_batch=n_chain, 
                                    prior_params=par_prior)
     } else {
-      assert_that(length(par_init) == n_chain)
+      assert_that(nrow(par_init) == n_chain)
     }
     par_init_list <- lapply(1:n_chain, function(i) par_init[i,])
   } else {
@@ -913,6 +915,11 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
   return_list <- list(packages=package_list, dlls=dll_list, objects=obj_list,
                       load_func=load_package_dll)
   return(return_list)
+}
+
+
+get_mcmc_init_cond <- function(llik_em, par_prior, mcmc_settings) {
+  .NotYetImplemented()
 }
 
 
