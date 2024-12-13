@@ -918,8 +918,90 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
 }
 
 
-get_mcmc_init_cond <- function(llik_em, par_prior, mcmc_settings) {
-  .NotYetImplemented()
+get_mcmc_ic <- function(llik_em, par_prior, n_ic, 
+                        n_ic_by_method=setNames(n_ic,"prior"),
+                        design_method="LHS", design_info=NULL, 
+                        approx_type="mean", test_info=NULL, 
+                        n_test_inputs=200L, ...) {
+  # Generates a matrix of parameter values intended to be used as initial 
+  # conditions for a set of MCMC chains. `n_ic` is the total number of 
+  # initial conditions, but different methods can be used to generate 
+  # different subsets of the total number of initial conditions. For example, 
+  # if `n_ic = 4` then setting 
+  # `n_ic_by_method = c(prior=1, design_max=2, approx_max=1)` will generate 
+  # one initial condition using the "prior" method, 2 using the "design_max"
+  # method and one using the "approx_max" method. These methods are described 
+  # below. The latter two methods are especially tailored to the approximate
+  # MCMC algorithms that tend to be very multimodal, and for which we 
+  # typically hope to initialize the MCMC chains such that they cover the 
+  # dominant modes of the distribution.
+  #
+  # Currently supported methods include:
+  #  "prior": generates the ICs via a call to `get_batch_design()`, which 
+  #           essentially samples from the prior. The `design_method`
+  #           is passed to the "method" argument of `get_batch_design()`. The 
+  #           default produces a Latin Hypercube Sample with respect to the
+  #           prior `par_prior`.
+  #  "design_max": extracts the inputs associated with the largest observed 
+  #                true likelihood values. For this method, a list `design_info`
+  #                must be passed with elements "input" and "llik".
+  #  "approx_max": extracts the inputs associated with the largest predicted 
+  #                likelihood values at a set of test points. If predictions
+  #                have already been made external to this function, then 
+  #                they can be provided in `test_info` analogously to 
+  #                `design_info`. Otherwise, `n_test_inputs` are sampled from 
+  #                the prior using Latin Hypercube Sampling, then `em_llik` is 
+  #                used to predict at these test points using the likelihood
+  #                approximation given by `approx_type`.
+  #
+  # Returns:
+  # matrix, of dimension (n_ic, d), where d is the dimension of the parameter 
+  # space. Column names are set to the corresponding parameter names, as given
+  # by `llik_em$input_names`.
+  
+  assert_that(sum(n_ic_by_method)==n_ic)
+  methods <- names(n_ic_by_method)
+  par_names <- llik_em$input_names
+  ic <- matrix(dimnames=list(NULL, par_names))
+
+  if("prior" %in% methods) {
+    ic_prior <- get_batch_design(design_method, N_batch=n_ic_by_method$prior, 
+                                 prior_params=par_prior, ...)[,par_names]
+    ic <- rbind(ic, ic_prior)
+  }
+  
+  if("design_max" %in% methods) {
+    llik_obs_order <- order(design_info$llik, decreasing=TRUE)
+    input_sel <- llik_obs_order[1:n_ic_by_method$design_max]
+    ic_design_max <- design_info$input[input_sel, par_names]
+    ic <- rbind(ic, ic_design_max)
+  }
+  
+  if("approx_max" %in% methods) {
+    
+    # Extract inputs and associated approximate log-likelihood values, if 
+    # passed in arguments.
+    if(!is.null(test_info)) {
+      assert_that(!is.null(test_info$llik) && !is.null(test_info$input))
+      inputs <- test_info$input
+      llik_approx <- test_info$llik
+    }
+    
+    # Otherwise sample set of test inputs and compute log-likelihood 
+    # predictions.
+    inputs <- get_batch_design("LHS", N_batch=n_ic_by_method$approx_max, 
+                               prior_params=par_prior)
+    llik_approx <- llik_em$calc_lik_approx(approx_type, input=inputs,
+                                           simplify=TRUE, log_scale=TRUE)
+    
+    # Extract inputs corresponding to largest predicted log-likelihood values.
+    llik_approx_order <- order(llik_approx, decreasing=TRUE)
+    input_sel <- llik_approx_order[1:n_ic_by_method$approx_max]
+    ic_approx_max <- inputs[input_sel, par_names]
+    ic <- rbind(ic, ic_approx_max)
+  }
+
+  return(ic)
 }
 
 

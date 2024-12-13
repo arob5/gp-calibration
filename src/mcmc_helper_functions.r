@@ -606,13 +606,47 @@ convert_samp_to_mat <- function(samp_dt) {
 calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL, 
                        param_types=NULL, param_names=NULL, itr_start=1L, 
                        itr_stop=NULL, chain_idcs=NULL) {
-  # If `within_chain` is TRUE, then `split` must be TRUE.
-  # TODO: maybe add option to pass function to compute function of params.
-  # Note that this function by default does not drop burn-in; so either 
-  # `samp_dt` should already have the burn-in dropped or the burn-in can be 
-  # specified by the `itr_start` argument.
+  # Computes the (split) R-hat diagnostic as defined in section 3.1 of 
+  # Vehtari et al (2021), "Rank Normalization, Folding, ...". For now, this 
+  # function only supports computing R-hat on a parameter-by-parameter basis, 
+  # rather than allowing its computation for a scalar-valued function of the 
+  # parameters. It operates on a standard `samp_dt` object and thus computes 
+  # the R-hat values separately for each test label contained therein. See 
+  # "Args" below for R-hat variations that will be computed depending on the 
+  # function arguments. Note that this function by default does not drop 
+  # burn-in; so either `samp_dt` should already have the burn-in dropped or the 
+  # burn-in can be specified by the `itr_start` argument.
+  #
   # TODO: improve numerical stability here by using logsumexp.
-  
+  #
+  # Args:
+  #    samp_dt: data.table in the typical form.
+  #    split: if TRUE, splits each chain in half, which doubles the number of 
+  #           chains used in the R-hat computation. This is recommended to 
+  #           detect poor within-chain mixing, and is required if `within_chain`
+  #           is TRUE.
+  #    within_chain: if TRUE, computes R-hat separately for each chain in 
+  #                  `samp_dt` (and thus uses no between-chain information).
+  #                  In this case, each chain is split in two and the two 
+  #                  sub-chains are used for the R-hat calculation. Otherwise, 
+  #                  one R-hat value is computed per parameter per test label, 
+  #                  such that all chains within that test label contribute to 
+  #                  the calculation.
+  #    Remaining arguments are passed to `select_mcmc_samp()` to extract the 
+  #    subset of samples used in the R-hat calculations. 
+  #    
+  # Returns:
+  # list, with elements "R_hat_vals" and "chain_stats". The former is a 
+  # data.table with columns "test_label", "param_type", "param_name", "B", 
+  # "W", "n_itr", and "R_hat". "chain_idx" is an additional column if 
+  # `within_chain = TRUE`. "B" and "W" are the between and within chain 
+  # variances, as defined in the paper cited above. `n_itr` is the number of 
+  # samples per chain used in the R-hat calculation; it may be a decimal if 
+  # the chain splitting results in sub-chains that with lengths that differ 
+  # by 1 (i.e., if the original chain has an odd number of iterations). 
+  # "R_hat" is the (split) R-hat value, which is on a per-chain basis if 
+  # `within_chain = TRUE`.
+
   if(within_chain) assert_that(split, 
                                msg="`split` must be TRUE if `within_chain=TRUE`")
   
@@ -621,10 +655,12 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
                               param_types=param_types, itr_start=itr_start,
                               itr_stop=itr_stop, chain_idcs=chain_idcs)
   
-  # Split chains in two. 
-  split_list <- split_chains(samp_dt)
-  samp_dt <- split_list$samp_dt
-  chain_map <- split_list$chain_map
+  # Split chains in two.
+  if(split) {
+    split_list <- split_chains(samp_dt)
+    samp_dt <- split_list$samp_dt
+    chain_map <- split_list$chain_map
+  }
   
   # Compute means and variances.
   scalar_stats <- compute_mcmc_scalar_stats(samp_dt, by_chain=TRUE)
@@ -658,10 +694,27 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
 
 
 split_chains <- function(samp_dt, copy=TRUE) {
+  # A helper function to `calc_R_hat()` that splits each existing chain in 
+  # `samp_dt` into two. This is done by simply updating the `chain_idx` 
+  # column, where new chain indices are simply set to 1 plus the maximum 
+  # chain index currently in each test label.
   # Note that the iteration numbers are not changed, so the split chains will 
   # have iteration numbers starting at the midpoint of the iteration numbers 
   # for the current chains.
-  
+  #
+  # Args:
+  #    samp_dt: data.table in the typical form.
+  #    copy: logical, if TRUE deep copy of `samp_dt` is made. Otherwise 
+  #          `samp_dt` is modified in place, which effects the object outside 
+  #          of the scope of this function.
+  #
+  # Returns:
+  #    list with elements "samp_dt" and "chain_map". The former is the sample 
+  #    data.table with updated chain indices reflecting the splitting. The 
+  #    latter is a data.table with columns "test_label", "chain_idx_new", and
+  #    "chain_idx_old", which allows the new chain indices of the split chains 
+  #    to be mapped back to their original chains.
+
   if(copy) samp_dt <- data.table::copy(samp_dt)
   
   # Identify unique MCMC runs.
@@ -697,6 +750,11 @@ split_chains <- function(samp_dt, copy=TRUE) {
 
 
 unsplit_chains <- function(samp_dt, chain_map, copy=TRUE) {
+  # A helper function to `calc_R_hat()` that inverts the action of 
+  # `split_chains()`. i.e., given `samp_dt` and `chain_map` as returned by 
+  # `split_chains()`, this re-combines the split chains and returns the 
+  # resulting data.table. See `split_chains()` for info on `chain_map`.
+  
   if(copy) samp_dt <- data.table::copy(samp_dt)
   
   for(i in 1:nrow(chain_map)) {
