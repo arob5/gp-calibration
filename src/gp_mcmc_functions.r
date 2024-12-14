@@ -62,8 +62,8 @@ library(parallel)
 # Need to check that the llik_em is correct for this function. 
 # Infer which sig2 need to be learned by the `lik_par_fixed` attribute.
 # How to map `sig2_prior+_params` onto the proper parameters? 
-# TODO: need to have checking in llikSumEmulator to make sure the same input parameters are 
-# used for each term. 
+# TODO: need to have checking in llikSumEmulator to make sure the same input 
+# parameters are used for each term. 
 
 mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
                             sig2_prior=NULL, mode="mcwmh", use_joint=TRUE,  
@@ -117,10 +117,12 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
     .NotYetImplemented(msg="Only `mode=mcwmh` currently implemented.")
   }
   
-  # Objects to store samples. 
+  # Objects to store samples and other outputs.
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
+  chain_info <- matrix(nrow=n_itr, ncol=d+2)
   colnames(par_samp) <- llik_em$input_names
+  colnames(chain_info) <- c("llik", "lprior", llik_em$input_names)
   
   # Set initial conditions. 
   if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
@@ -154,14 +156,9 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   accept_count <- 0
   times_adapted <- 0
   
-  # If tracking the proposal standard deviations.
-  if(return_prop_sd) {
-    prop_sd_comb <- matrix(nrow=n_itr, ncol=d, 
-                           dimnames=list(NULL, llik_em$input_names))
-    prop_sd_comb[1,] <- exp(log_scale_prop) * sqrt(diag(cov_prop)) 
-  } else {
-    prop_sd_comb <- NULL
-  }
+  # Store initial chain info. No log-likelihood samples yet at this point.
+  chain_info[1,] <- c(NA, lprior_par_curr, 
+                      exp(log_scale_prop) * sqrt(diag(cov_prop)))
   
   # Variable to store error condition, if it occurs.
   err <- NULL
@@ -194,14 +191,15 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
         } else {
           # Sample log-likelihood emulator. 
           llik_samp <- llik_em$assemble_llik(emulator_samp_list, 
-                                                   lik_par_val=sig2_curr)
+                                             lik_par_val=sig2_curr)
           
           # Accept-Reject step.
           lpost_par_curr <- lprior_par_curr + llik_samp[1]
           lpost_par_prop <- lprior_par_prop + llik_samp[2]
           alpha <- min(1.0, exp(lpost_par_prop - lpost_par_curr))
+          accept_prop <- (runif(1) <= alpha)
           
-          if(runif(1) <= alpha) {
+          if(accept_prop) {
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
             lprior_par_curr <- lprior_par_prop
@@ -231,10 +229,11 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
           accept_count <- 0L
         }
         
-        if(return_prop_sd) {
-          prop_sd_comb[itr,] <- exp(log_scale_prop) * sqrt(diag(crossprod(L_cov_prop)))
-        }
-        
+        # Store chain info for current step.
+        chain_info[itr,] <- c(ifelse(accept_prop, llik_samp[1], llik_samp[2]), 
+                              lprior_par_curr, 
+                              exp(log_scale_prop) * sqrt(diag(cov_prop)))
+
         #
         # Gibbs step for sig2. 
         #
@@ -258,7 +257,9 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   )
 
   return(list(samp=list(par=par_samp, sig2=sig2_samp, 
-                        prop_sd_comb=prop_sd_comb), 
+                        prop_sd_comb=prop_sd_comb),
+              info=list(dens=chain_info[,1:2], 
+                        prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, condition=err))
@@ -294,7 +295,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
   # Objects to store samples. 
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
+  chain_info <- matrix(nrow=n_itr, ncol=d+2)
   colnames(par_samp) <- llik_em$input_names
+  colnames(chain_info) <- c("llik", "lprior", llik_em$input_names)
   
   # At present, this function assumes that the likelihood parameters are fixed.
   learn_sig2 <- FALSE
@@ -312,7 +315,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
                                             log_scale=TRUE, 
                                             alpha=alpha_quantile, 
                                             simplify=TRUE, ...)
-  lpost_pred_curr <- llik_pred_curr + calc_lprior_dens(par_curr_mat, par_prior)
+  lprior_par_curr <- calc_lprior_dens(par_curr_mat, par_prior)
+  lpost_pred_curr <- llik_pred_curr + lprior_par_curr
   
   # Proposal covariance.
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
@@ -320,6 +324,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
   L_cov_prop <- t(chol(cov_prop))
   accept_count <- 0L
   times_adapted <- 0L
+  
+  # Store chain info for initial step.
+  chain_info[1,] <- c(llik_pred_curr, lprior_par_curr, 
+                        exp(log_scale_prop) * sqrt(diag(cov_prop)))
   
   # Variable to store error condition, if it occurs.
   err <- NULL
@@ -347,7 +355,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
                                                     log_scale=TRUE, 
                                                     alpha=alpha_quantile, 
                                                     simplify=TRUE, ...) 
-          lpost_pred_prop <- llik_pred_prop + calc_lprior_dens(par_prop_mat, par_prior)
+          lpost_pred_prop <- llik_pred_prop + lprior_par_prop
           
           # Accept-Reject step.
           alpha <- min(1.0, exp(lpost_pred_prop - lpost_pred_curr))
@@ -355,6 +363,8 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
           if(runif(1) <= alpha) {
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
+            lprior_par_curr <- lprior_par_prop
+            llik_pred_curr <- llik_pred_prop
             lpost_pred_curr <- lpost_pred_prop
             accept_count <- accept_count + 1L 
           } else {
@@ -376,6 +386,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
             if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
             accept_count <- 0
           }
+          
+          # Store chain info for current step.
+          chain_info[itr,] <- c(llik_pred_curr, lprior_par_curr, 
+                                exp(log_scale_prop) * sqrt(diag(cov_prop)))
         }
       }
       
@@ -386,7 +400,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
     }
   )
   
-  return(list(samp=list(par=par_samp, sig2=sig2_samp), 
+  return(list(samp=list(par=par_samp, sig2=sig2_samp),
+              info=list(dens=chain_info[,1:2], 
+                        prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, condition=err))
@@ -601,12 +617,16 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   
   # Convert output into a form that aligns with other MCMC functions. Note that 
   # for certain algorithms (e.g., "DEzs") that return multiple trajectories, 
-  # this function will combine the trajectories in to a single chain.
-  bt_samp <- BayesianTools::getSample(bt_output, parametersOnly=TRUE)
+  # this function will combine the trajectories into a single chain.
+  bt_samp <- BayesianTools::getSample(bt_output, parametersOnly=FALSE)
 
   # Return list with samples stored in matrices as well as the MCMC object 
   # directly returned by BayesianTools.
-  return(list(samp=list(par=bt_samp), bt_output=bt_output))
+  par_names <- llik_em$input_names
+  dens_names <- c("Llikelihood", "Lprior")
+  return(list(samp=list(par=bt_samp[,par_names, drop=FALSE]), 
+              info=list(dens=bt_samp[,dens_names, drop=FALSE]), 
+              bt_output=bt_output))
 }
 
 
@@ -764,15 +784,18 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
                                             function(l) l$samp), 
                                             test_label=test_label)
+  info_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
+                                                   function(l) l$info), 
+                                            test_label=test_label)
   
   # Non-sample output stored in its own list. 
   mcmc_outputs_list <- vector(mode="list", length=length(mcmc_chain_list)) 
   for(i in seq_along(mcmc_outputs_list)) {
-    non_samp_elements <- setdiff(names(mcmc_chain_list[[i]]), "samp")
+    non_samp_elements <- setdiff(names(mcmc_chain_list[[i]]), c("samp","info"))
     mcmc_outputs_list[[i]] <- mcmc_chain_list[[i]][non_samp_elements]
   }
   
-  return(list(samp=samp_dt, output_list=mcmc_outputs_list))
+  return(list(samp=samp_dt, info=info_dt, output_list=mcmc_outputs_list))
 }
 
 
