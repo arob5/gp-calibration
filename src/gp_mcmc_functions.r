@@ -128,7 +128,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
-  lprior <- get_lprior_dens(par_prior, check_bounds=TRUE)
+  lprior <- get_lprior_dens(par_prior)
   lprior_par_curr <- lprior(par_curr)
   
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
@@ -623,9 +623,10 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   # Return list with samples stored in matrices as well as the MCMC object 
   # directly returned by BayesianTools.
   par_names <- llik_em$input_names
-  dens_names <- c("Llikelihood", "Lprior")
+  dens_info <- bt_samp[,c("Llikelihood", "Lprior"), drop=FALSE]
+  colnames(dens_info) <- c("llik", "lprior")
   return(list(samp=list(par=bt_samp[,par_names, drop=FALSE]), 
-              info=list(dens=bt_samp[,dens_names, drop=FALSE]), 
+              info=list(dens=dens_info), 
               bt_output=bt_output))
 }
 
@@ -685,12 +686,23 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
                             package_list=NULL, dll_list=NULL, obj_list=NULL, 
                             test_label="default_lbl", ...) {
   # Provides the main interface/entrypoint for running MCMC with llikEmulator
-  # objects. This wrapper function runs multiple MCMC chains in parallel. If 
-  # initial conditions are not supplied by the user, then they will be sampled 
-  # from their prior distribution. This function collects the output from all 
-  # chains into a single data.table satisfying the `samp_dt` requirements 
-  # outlined in `mcmc_helper_functions.r`. Let d denote the dimension of the 
-  # parameter space.
+  # objects. This wrapper function runs multiple MCMC chains in parallel. There
+  # are three options for specifying initial conditions:
+  # 1.) Supply them explicitly via `par_init`.
+  # 2.) Generate them via a call to `get_mcmc_ic()`, which by default produces 
+  #     a latin hypercube sample with respect to the prior. Supplying additional
+  #     arguments to this function via `...` allows the use of different 
+  #     initial condition construction schemes.
+  # 3.) Set `defer_ic` to TRUE, which simply calls `mcmc_func_name` whether or 
+  #     not `par_init` has been specified. This option is designed with 
+  #     `mcmc_bt_wrapper()` in mind, which has its own methods for generating 
+  #     initial conditions and hence we can "defer" to these methods.
+  #
+  # This function collects the output from all chains into a single data.table 
+  # satisfying the `samp_dt` requirements outlined in `mcmc_helper_functions.r`.
+  # Similarly an `info_dt` table is constructed which stores log likelihood and 
+  # prior evaluations from MCMC runs, as well as proposal standard deviations.
+  # Let d denote the dimension of the parameter space for below.
   #
   # Args:
   #    mcmc_func_name: character, the name of the MCMC function to call.
@@ -730,8 +742,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   # to the underlying MCMC function.
   if(!defer_ic) {
     if(is.null(par_init)) {
-      par_init <- get_batch_design(ic_sample_method, N_batch=n_chain, 
-                                   prior_params=par_prior)
+      par_init <- get_mcmc_ic(llik_em, par_prior, n_ic=n_chain, ...)
     } else {
       assert_that(nrow(par_init) == n_chain)
     }
@@ -983,19 +994,19 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   # by `llik_em$input_names`.
   
   assert_that(sum(n_ic_by_method)==n_ic)
-  methods <- names(n_ic_by_method)
+  methods <- names(n_ic_by_method[n_ic_by_method >= 1])
   par_names <- llik_em$input_names
-  ic <- matrix(dimnames=list(NULL, par_names))
+  ic <- matrix(nrow=0, ncol=length(par_names), dimnames=list(NULL, par_names))
 
   if("prior" %in% methods) {
-    ic_prior <- get_batch_design(design_method, N_batch=n_ic_by_method$prior, 
+    ic_prior <- get_batch_design(design_method, N_batch=n_ic_by_method["prior"], 
                                  prior_params=par_prior, ...)[,par_names]
     ic <- rbind(ic, ic_prior)
   }
   
   if("design_max" %in% methods) {
     llik_obs_order <- order(design_info$llik, decreasing=TRUE)
-    input_sel <- llik_obs_order[1:n_ic_by_method$design_max]
+    input_sel <- llik_obs_order[1:n_ic_by_method["design_max"]]
     ic_design_max <- design_info$input[input_sel, par_names]
     ic <- rbind(ic, ic_design_max)
   }
@@ -1008,18 +1019,18 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
       assert_that(!is.null(test_info$llik) && !is.null(test_info$input))
       inputs <- test_info$input
       llik_approx <- test_info$llik
+    } else {
+      # Otherwise sample set of test inputs and compute log-likelihood 
+      # predictions.
+      inputs <- get_batch_design("LHS", N_batch=n_test_inputs, 
+                                 prior_params=par_prior)
+      llik_approx <- llik_em$calc_lik_approx(approx_type, input=inputs,
+                                             simplify=TRUE, log_scale=TRUE)
     }
-    
-    # Otherwise sample set of test inputs and compute log-likelihood 
-    # predictions.
-    inputs <- get_batch_design("LHS", N_batch=n_ic_by_method$approx_max, 
-                               prior_params=par_prior)
-    llik_approx <- llik_em$calc_lik_approx(approx_type, input=inputs,
-                                           simplify=TRUE, log_scale=TRUE)
-    
+
     # Extract inputs corresponding to largest predicted log-likelihood values.
     llik_approx_order <- order(llik_approx, decreasing=TRUE)
-    input_sel <- llik_approx_order[1:n_ic_by_method$approx_max]
+    input_sel <- llik_approx_order[1:n_ic_by_method["approx_max"]]
     ic_approx_max <- inputs[input_sel, par_names]
     ic <- rbind(ic, ic_approx_max)
   }

@@ -5,19 +5,44 @@
 # Andrew Roberts
 # 
 
-get_lprior_dens <- function(par_prior, check_bounds=FALSE) {
+# ------------------------------------------------------------------------------
+# Prior Distribution object:
+# At present, prior distributions are encoded by data.frames in which each 
+# row is interpreted as a distribution for an independent scalar parameter.
+# This data.frame is required to have column names "par_name", "dist", 
+# "param1", "param2", "bound_lower", and "bound_upper". "param1" and "param2" 
+# store the parameters defining a distributional family (e.g., mean and 
+# standard deviation for Gaussian). In the case that these parameters also 
+# encode the bounds for the parameter (e.g., uniform distribution) then they 
+# must align with the values of "bound_lower" and "bound_upper". For example, 
+# for a uniform prior, it must be true that "param1 == bound_lower" and 
+# "param2 == bound_upper". In some cases, the lower/upper bounds are actually 
+# required to define the distribution. For example, for a truncated normal prior 
+# "param1" is the mean, "param2" is the standard deviation, and "param_lower"/
+# "param_upper" provide the bounds defining the truncation. 
+#
+# Note: 
+# This is clearly not a flexible approach and ought to be changed. When time 
+# allows, this should be updated so that the prior distribution is a list (or 
+# class) with each element corresponding to a parameter or group of parameters 
+# (in the case of non-independent priors). Each element should store parameter
+# bounds, optionally a function representing the log density, optionally a 
+# function that draws samples, and a list of hyperparameter names/values.
+# ------------------------------------------------------------------------------
+
+get_lprior_dens <- function(par_prior) {
   # Returns a function representing the log-prior density. The returned function 
   # is vectorized so that it accepts matrix inputs where each row is a different 
   # parameter vector at which to evaluate the prior. In this case, the log-prior
   # density function returns a vector of length equal to the number of rows in 
   # the input matrix. See `calc_lprior_denssingle_input()` for requirements on 
-  # `par_prior` and `check_bounds`.  
+  # `par_prior`.
   
-  function(par) calc_lprior_dens(par, par_prior, check_bounds)
+  function(par) calc_lprior_dens(par, par_prior)
 }
 
 
-calc_lprior_dens <- function(par, par_prior, check_bounds=FALSE) {
+calc_lprior_dens <- function(par, par_prior) {
   # A wrapper around `calc_lprior_dens_single_input()` that allows computation 
   # of the log prior density at multiple input values. Here, `par` is a matrix
   # with each row being an input parameter vector, and each column representing
@@ -25,19 +50,17 @@ calc_lprior_dens <- function(par, par_prior, check_bounds=FALSE) {
   # of length equal to the number of rows in `par`, with each entry being the 
   # corresponding log-prior density evaluation. `par` can also be a numeric 
   # vector corresponding to a single input vector. See 
-  # `calc_lprior_dens_single_input()` for requirements on `par_prior` and 
-  # `check_bounds`.  
+  # `calc_lprior_dens_single_input()` for requirements on `par_prior`.  
 
   # If single input is passed as a numeric vector. 
   if(is.null(nrow(par))) par <- matrix(par, nrow=1)
   
-  return(apply(par, 1, function(u) calc_lprior_dens_single_input(u, par_prior, check_bounds)))
-  
+  return(apply(par, 1, function(u) calc_lprior_dens_single_input(u, par_prior)))
 }
 
 
-calc_lprior_dens_single_input <- function(par, par_prior, check_bounds=FALSE) {
-  # Evaluates the log prior density at a single input parameter vectir `par`. 
+calc_lprior_dens_single_input <- function(par, par_prior) {
+  # Evaluates the log prior density at a single input parameter vector `par`. 
   # This function currently only works for independent priors on each parameter.
   # The definition of the prior for each input parameter is encoded in the 
   # data.frame `par_prior`. Currently accepted distributions:
@@ -54,29 +77,20 @@ calc_lprior_dens_single_input <- function(par, par_prior, check_bounds=FALSE) {
   #               of `par`. `par_prior` can also optionally include the columns 
   #               "bound_lower" and "bound_upper". Some distributions (e.g., 
   #               truncated Gaussian) require these parameters, but they can 
-  #               be provided for other distributions as well. See `check_bounds`
-  #               for more details.
-  #    check_bounds: logical(1), if TRUE checks if the parameter `par` lies 
-  #                  within the bounds defined in the columns of `par_prior`
-  #                  called "bound_lower" and "bound_upper". If these columns do 
-  #                  not exist or contain NA values then there is not effect.
-  #                  Otherwise, if `par` does not lie within the bounds, then 
-  #                  the function returns -Inf. If `check_bounds` is FALSE, no 
-  #                  check is performed.
+  #               be provided for other distributions as well.
   #
   # Returns:
   #    The prior density evaluation log p(par). Note that in certain cases the 
   #    log prior can be negative infinity; e.g. for a uniform prior where `par` 
-  #    is not contained within the upper and lower bound, or if `check_bounds`
-  #    is enforced.
+  #    is not contained within the upper and lower bound, or if `par` falls 
+  #    outside of the parameter bounds.
   
-  if(check_bounds) {
-    if(any(par < par_prior[["bound_lower"]], na.rm=TRUE) ||
-       any(par > par_prior[["bound_upper"]], na.rm=TRUE)) {
+  # Return -infinity if parameter falls outside parameter bounds.
+  if(any(par < par_prior[["bound_lower"]], na.rm=TRUE) ||
+     any(par > par_prior[["bound_upper"]], na.rm=TRUE)) {
       return(-Inf)
-    }
   }
-  
+
   lprior <- 0
   par_prior[, "val"] <- par
   Gaussian_priors <- par_prior[par_prior$dist == "Gaussian",]
@@ -178,52 +192,55 @@ plot_prior_samp <- function(par_prior, n=10000L) {
 
 
 truncate_prior <- function(par_prior, input_bounds) {
-  # Converts the prior parameters on the calibration parameters (par) so that they are truncated
-  # in that they assign 0 probability mass beyond the bounds specified in `input_bounds`. 
-  # `input_bounds` is typically determined by the extent of the design points, so this
-  # function modifies the prior so that posterior evaluations are 0 outside of the 
-  # extent of the design points (where the GP would have to interpolate). This is an 
-  # alternative to allowing an unbounded prior and instead truncating the MCMC 
-  # proposals. The truncation applied to uniform priors simply sets the bounds on the 
-  # uniform prior to the bounds provided in `input_bounds`. Applied to Gaussian priors, 
-  # the Gaussian distributions are converted to truncated Gaussian distributions, with 
-  # the truncation bounds again determined by `input_bounds`. For compactly supported priors 
-  # (e.g. uniform or truncated Gaussian), the bounds are only updated if they fall outside of 
-  # the bounds in `input_bounds` (e.g. an existing lower bound will not be made any lower). 
+  # Converts the prior parameters on the calibration parameters (par) so that 
+  # they are truncated in that they assign 0 probability mass beyond the bounds 
+  # specified in `input_bounds`. Note that this function does more than simply 
+  # setting lower/upper bounds on an existing prior object; it actually modifies
+  # the parameter values of the prior distributions so that they become 
+  # well-defined truncated versions of the distributions.
+  # The truncation applied to uniform priors simply sets the bounds on the 
+  # uniform prior to the bounds provided in `input_bounds`. Applied to Gaussian
+  # priors, the Gaussian distributions are converted to truncated Gaussian 
+  # distributions, with the truncation bounds again determined by 
+  # `input_bounds`. For compactly supported priors (e.g. uniform or truncated 
+  # Gaussian), the bounds are only updated if they fall outside of the bounds in 
+  # `input_bounds` (e.g. an existing lower bound will not be made any lower). 
   #
   # Args:
-  #    par_prior: data.frame, with columns "dist", "param1", and "param2". The ith row of the data.frame
-  #                        should correspond to the ith entry of 'par'. Currently, accepted values of "dist" are 
-  #                        "Gaussian" (param1 = mean, param2 = std dev) and "Uniform" (param1 = lower, param2 = upper).
-  #    input_bounds: matrix of dimension 2 x d, where d is the number of parameters. The first row contains lower bounds 
-  #                  on the parameters and the second row contains upper bounds (these are often determined by the 
-  #                  extent of the design points). If provided, the prior sample will be required to satisfy the lower 
-  #                  and upper bounds, so sampled parameters that do not satisfy the constraints will be rejected until 
-  #                  the constraint is satisfied. Note that this implies that the resulting samples are from a truncated 
-  #                  version of the prior distribution, rather than the prior itself. The columns of `input_bounds` must be 
-  #                  sorted in the same order as the rows of `par_prior.` Default is NULL, which imposes 
-  #                  no constraints. 
+  #    par_prior: prior distribution data.frame object.
+  #    input_bounds: matrix of dimension 2 x d, where d is the number of 
+  #                  parameters. The first row contains lower bounds on the 
+  #                  parameters and the second row contains upper bounds.
+  #                  Column names must be set to the parameter names.
   #
   # Returns:
   #    data.frame, the updated version of `par_prior`. 
   
-  for(i in seq(1, nrow(par_prior))) {
+  # Ensure the parameters in `input_bounds` are ordered as in `par_prior`.
+  par_names <- par_prior[,par_name, drop=FALSE]
+  input_bounds <- input_bounds[,par_names, drop=FALSE]
+  
+  for(i in seq_along(par_names)) {
     l <- input_bounds[1, i]
     u <- input_bounds[2, i]
+    update_l <- isTRUE(par_prior[i, "bound_lower"] < l)
+    update_u <- isTRUE(par_prior[i, "bound_upper"] > u)
     
+    # Update distributions and distribution parameters.
     if(par_prior[i, "dist"] == "Gaussian") {
       par_prior[i, "dist"] <- "Truncated_Gaussian"
-      par_prior[i, "bound_lower"] <- l
-      par_prior[i, "bound_upper"] <- u
     } else if(par_prior[i, "dist"] == "Uniform") {
-      if(par_prior[i, "param1"] < l) par_prior[i, "param1"] <- l
-      if(par_prior[i, "param2"] > u) par_prior[i, "param2"] <- u
+      if(update_l) par_prior[i, "param1"] <- l
+      if(update_u) par_prior[i, "param2"] <- u
     } else if(par_prior[i, "dist"] == "Truncated_Gaussian") { 
-      if(par_prior[i, "bound_lower"] < l) par_prior[i, "bound_lower"] <- l
-      if(par_prior[i, "bound_upper"] > u) par_prior[i, "bound_upper"] <- u
+      # No parameters to update, only the bounds.
     } else {
       stop("Prior distribution ", par_prior[i, "dist"], " not supported.")
     }
+    
+    # Update distribution bounds.
+    if(update_l) par_prior[i, "bound_lower"] <- l
+    if(update_u) par_prior[i, "bound_upper"] <- u
   }
   
   return(par_prior)
