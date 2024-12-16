@@ -84,9 +84,9 @@ to execute the chains serially.
 ```{r}
 # Run adaptive Metropolis-Hastings using exact likelihood. 
 n_mcmc <- 50000L
-mcmc_list <- run_mcmc_multichain("mcmc_noisy_llik", llik_exact, n_chain=4L,  
-                                 par_prior=par_prior, n_itr=n_mcmc, 
-                                 try_parallel=TRUE)
+mcmc_list <- run_mcmc_chains("mcmc_noisy_llik", llik_exact, n_chain=4L,  
+                             par_prior=par_prior, n_itr=n_mcmc, 
+                             try_parallel=FALSE, test_label="rwmh")
 samp_dt <- mcmc_list$samp
 ```
 
@@ -97,17 +97,67 @@ a differential evolution MCMC algorithm, which runs multiple chains and uses
 information across chains to generate better proposals without requiring 
 derivatives.
 ```{r}
-bt_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=n_mcmc, sampler="DEzs")
-samp_dt <- format_mcmc_output(bt_list$samp, test_label="DEzs") 
+mcmc_list_bt <- run_mcmc_chains("mcmc_bt_wrapper", llik_exact, n_chain=4L,  
+                                par_prior=par_prior, n_itr=n_mcmc, 
+                                sampler="DEzs", try_parallel=FALSE, 
+                                test_label="dezs", defer_ic=TRUE)
+```
+
+```{r}
+# Combine with the samples from the adaptive random walk Metropolis-Hastings 
+# algorithm.
+samp_dt <- combine_samp_dt(samp_dt, mcmc_list_bt$samp)
+
+samp_dt[, .N, by=test_label]
 ```
 
 
 ## MCMC Diagnostics
+
 ```{r}
-burn_in_start <- c(DEzs=10000L)
-trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
+# Specify burn-in that will be applied to both algorithms (could alternatively
+# be a named vector to specify different burn-ins for the different test labels).
+burn_in_start <- ceiling(n_mcmc/2)
+```
+
+### Trace Plots
+
+#### Random Walk Metropolis-Hastings
+```{r}
+trace_plots <- get_trace_plots(samp_dt, test_labels="rwmh", itr_start=burn_in_start)
 for(plt in trace_plots) plot(plt)
 ```
+
+#### Differential Evolution
+```{r}
+trace_plots <- get_trace_plots(samp_dt, test_labels="dezs", itr_start=burn_in_start)
+for(plt in trace_plots) plot(plt)
+```
+
+
+### R-Hat
+We start by computing split R-hat, using all of the chains. This statistic 
+tries to detect mixing issues both within and across chains. 
+```{r}
+rhat_list <- calc_R_hat(samp_dt, split=TRUE, itr_start=burn_in_start)
+print(rhat_list$R_hat_vals)
+```
+
+In some settings, posteriors are expected to be very multimodal, and acheiving 
+cross chain mixing may be very difficult. One might instead be content with 
+exploring the dominant modes of the posterior. In this case, we accept that the 
+chains may not be mixed, but still want each chain to be well-mixed with respect
+to a local region of the posterior. The below R-hat calculation treats each 
+chain as its own run, and thus computes R-hat per chain. Each chain is still 
+split in two to facilitate this computation.
+
+```{r}
+rhat_chain_list <- calc_R_hat(samp_dt, split=TRUE, within_chain=TRUE,
+                              itr_start=burn_in_start)
+print(rhat_chain_list$R_hat_vals)
+```
+
+
 
 
 

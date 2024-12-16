@@ -84,16 +84,21 @@ run MCMC using the true/exact likelihood, as expected. We access the
 tutorial `scripts/tutorials/inv_prob_exact_mcmc.Rmd`. 
 
 ```{r}
+# Number of MCMC iterations.
 n_mcmc <- 50000L
 
 # Run exact MCMC.
 mcmc_exact_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_obj_exact, 
-                                   defer_ic=TRUE, sampler="DEzs", n_chain=1L, 
+                                   defer_ic=TRUE, sampler="DEzs", n_chain=4L, 
                                    par_prior=par_prior, n_itr=n_mcmc, 
-                                   test_label="exact")
+                                   test_label="exact", try_parallel=FALSE)
 
 # Table storing MCMC samples.
 samp_dt <- mcmc_exact_list$samp
+
+# Table storing auxiliary info (log-likelihood and log-prior evaluations, 
+# proposal covariance standard deviations).
+info_dt <- mcmc_exact_list$info 
 ```
 
 
@@ -103,11 +108,30 @@ that are designed to be compatible with the `samp_dt` `data.table`. These
 functions are explained in more detail in 
 `gp-calibration/scripts/tutorials/mcmc_helper_functions.Rmd`.
 
-### Trace Plots
+### R-hat 
 ```{r}
-burn_in_start <- c(exact=25000L)
+# Burn-in cutoff.
+burn_in_start <- ceiling(n_mcmc/2)
+
+# Compute R-hat for each parameter.
+rhat_list <- calc_R_hat(samp_dt, itr_start=burn_in_start)
+rhat_list$R_hat_vals
+```
+
+### Trace Plots
+
+First we plot trace plots for each parameter. 
+```{r}
 trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
 for(plt in trace_plots) plot(plt)
+```
+
+We can similarly produce trace plots for the associated log-likelihood 
+evaluations. 
+```{r}
+trace_plots_llik <- get_trace_plots(info_dt, param_names="llik", 
+                                    itr_start=burn_in_start)
+plot(trace_plots_llik[[1]])
 ```
 
 # Fitting a Log-Likelihood Emulator
@@ -171,8 +195,50 @@ MCMC algorithm for inference. An interesting setting is where the
 log-likelihood surrogate `llik_em` is stochastic. In this case, there is not 
 a single obvious deterministic approximation that can be derived from 
 `llik_em`. The below examples consider a few different such options, which are 
-controlled by the `approx_type` argument. We leverage the `mcmc_bt_wrapper()` 
-function for running these MCMC schemes.
+controlled by the `approx_type` argument. There are a couple different 
+functions capable of running MCMC schemes with deterministic log-likelihood 
+approximations. The first is `mcmc_gp_unn_post_dens_approx()`, which simply 
+implemented an adaptive random walk Metropolis-Hastings algorithm. The 
+function `mcmc_bt_wrapper()` is a wrapper that provides access to the 
+samplers implemented in the `BayesianTools` package. We demonstrate the use 
+of both of these options below. Given that the GP-approximated posteriors 
+tend to be quite multimodal, we also emphasize different ways to initialize and 
+post-process MCMC runs to deal with the multimodality. 
+
+## Truncating the Prior
+Before proceeding with MCMC, we mention an additional practical consideration. 
+In general, extrapolation with GPs is challenging. Sometimes undesirable 
+behavior can occur when MCMC chains wander outside of the design point bounds, 
+and thus into regions that rely on GP extrapolations. One heuristic approach to 
+deal with this is to simply define the prior support based on the design 
+point bounds; i.e., to approximate the original prior with a truncated version.
+This can be accomplished via the `truncate_prior()` function.
+```{r}
+par_prior_trunc <- truncate_prior(par_prior, design_info$bounds)
+par_prior_trunc
+```
+
+We can simulate from the truncated and original priors to visually inspect 
+the effect of the truncation.
+```{r}
+n_prior_samp <- 10000L
+prior_samp <- as.data.table(sample_prior(par_prior, n=n_prior_samp))
+prior_trunc_samp <- as.data.table(sample_prior(par_prior_trunc, n=n_prior_samp))
+prior_samp[, test_label := "original"]
+prior_trunc_samp[, test_label := "trunc"]
+prior_compare_dt <- data.table::rbindlist(list(prior_samp, prior_trunc_samp), use.names=TRUE)
+prior_compare_dt <- data.table::melt.data.table(prior_compare_dt, 
+                                                id.vars="test_label", 
+                                                variable.name="param_name", 
+                                                value.name="sample")
+prior_compare_dt[, `:=`(param_type=NA_character_, chain_idx=NA_integer_, 
+                        itr=NA_integer_, param_name=as.character(param_name))]
+
+prior_compare_plots <- get_hist_plot_comparisons(prior_compare_dt, 
+                                                 test_label_baseline="original")
+
+for(plt in prior_compare_plots) plot(plt)
+```
 
 ## Plug-In Mean Approximation
 We start by considering the simplest option, `approx_type = "mean"`, which 
@@ -181,28 +247,98 @@ place of the exact log-likelihood. Notice that we emphasize this is a
 "plug-in mean" since this differs from taking the mean of the likelihood 
 emulator (see "marginal" approximation below).
 
+We start by defining an initial proposal covariance to be used by adaptive 
+Metropolis schemes.
+```{r}
+cov_prop_init <- cov(design_info$input)
+```
+
+We next define initial conditions for the MCMC chains. The `run_mcmc_chains()`
+method can also accomplish this behind the scenes (see function comments), 
+but we define them explicitly here to show how this is done. The below code 
+attempts to place the initial conditions in "important" regions of parameter 
+space. The first two initial conditions are set to the design inputs with 
+the largest observed log-likelihood values. The second two are set by sampling 
+a set of inputs from the prior, computing the plug-in mean likelihood 
+approximation for each input, then extracting the two inputs with the largest 
+likelihood predictions.
+
+```{r}
+n_chain <- 4L
+par_init_mean <- get_mcmc_ic(llik_em, par_prior_trunc, n_ic=n_chain, 
+                             n_ic_by_method=c(design_max=2, approx_max=2),
+                             design_info=design_info, approx_type="mean", 
+                             n_test_inputs=500L)
+
+print("Initial conditional for MCMC chains for plug-in mean approximation:")
+print(par_init_mean)
+
+print("Associated approximate log-likelihood values:")
+llik_em$calc_lik_approx("mean", input=par_init_mean)
+```
+
 ```{r}
 # Run MCMC with plug-in mean approximation.
-mcmc_mean_approx_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_em, 
-                                         defer_ic=TRUE, approx_type="mean", 
-                                         sampler="DEzs", n_chain=1L, 
+mcmc_mean_approx_list <- run_mcmc_chains("mcmc_gp_unn_post_dens_approx", llik_em, 
+                                         approx_type="mean", par_init=par_init_mean,
+                                         sampler="DEzs", n_chain=4L, try_parallel=FALSE,
                                          par_prior=par_prior, n_itr=n_mcmc, 
-                                         test_label="mean")
+                                         test_label="mean", cov_prop=cov_prop_init)
 
 # Append to samples table.
+samp_dt_new <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
 samp_dt <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
+```
+
+### Compute R-hat for each parameter.
+Given the multimodality of the posterior, it is not surprising that running 
+random walk Metropolis-Hastings for the plug-in mean approximation results in 
+the chains getting stuck in local modes of the distribution. The R-hat 
+values (which by default use between-chain information) can look really bad 
+here. 
+
+```{r}
+rhat_list <- calc_R_hat(samp_dt, test_labels="mean", itr_start=burn_in_start)
+rhat_list$R_hat_vals
+```
+
+An alterantive perspective is to accept the fact that getting the different 
+chains to mix is very difficult, and instead focus on "exploring" the dominant 
+modes of the posterior with different chains. In this case, we might instead 
+focus on verifying that each chain individually is well-mixed with respect 
+to a local region of the posterior. To do so, we can compute "within chain" 
+R-hat statistics.
+
+```{r}
+rhat_list_within_chain <- calc_R_hat(samp_dt, test_labels="mean", 
+                                     within_chain=TRUE, itr_start=burn_in_start)
+rhat_list_within_chain$R_hat_vals
+```
+
+### Log-likelihood Evaluations
+To compare the modes, it is also useful to investigate the log-likelihood 
+evaluations associated with the MCMC chains.
+
+```{r}
+trace_plots_llik_mean <- get_trace_plots(mcmc_mean_approx_list$info, 
+                                         itr_start=burn_in_start,
+                                         param_names="llik",
+                                         test_labels="mean")
+
+for(plt in trace_plots_llik_mean) plot(plt)
 ```
 
 ### Trace Plots
 ```{r}
-burn_in_start <- c(burn_in_start, mean=25000L)
-trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start, test_labels="mean")
-for(plt in trace_plots) plot(plt)
+trace_plots_mean <- get_trace_plots(samp_dt, itr_start=burn_in_start, 
+                                    test_labels="mean")
+for(plt in trace_plots_mean) plot(plt)
 ```
+
 ### Histogram Comparisons relative to Exact
 ```{r}
-hist_plots <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact",
-                                        test_labels="mean", plot_type="freqpoly",
+hist_plots <- get_hist_plot_comparisons(samp_dt_test, test_label_baseline="exact",
+                                        test_labels="mean",
                                         itr_start=burn_in_start)
 for(plt in hist_plots) plot(plt)
 ```

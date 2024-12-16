@@ -44,7 +44,10 @@ library(kde1d)
 assert_is_samp_dt <- function(samp_dt) {
   # Checks that the argument `samp_dt` satisfies the requirements for the 
   # data.table storing MCMC output.
-  # TODO: add checks for the uniqueness requirements.
+  # TODO: add checks for the uniqueness requirements. Unique by test_label, 
+  # param_type, param_name, chain_idx, itr. The same set of iteration indices 
+  # should exist for every parameter within a given (test_label, chain_idx)
+  # combination.
   #
   # Args:
   #    samp_dt: object to check.
@@ -596,6 +599,175 @@ convert_samp_to_mat <- function(samp_dt) {
   return(samp_wide)
 }
 
+# ------------------------------------------------------------------------------
+# MCMC Diagnostics 
+# ------------------------------------------------------------------------------
+
+calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL, 
+                       param_types=NULL, param_names=NULL, itr_start=1L, 
+                       itr_stop=NULL, chain_idcs=NULL) {
+  # Computes the (split) R-hat diagnostic as defined in section 3.1 of 
+  # Vehtari et al (2021), "Rank Normalization, Folding, ...". For now, this 
+  # function only supports computing R-hat on a parameter-by-parameter basis, 
+  # rather than allowing its computation for a scalar-valued function of the 
+  # parameters. It operates on a standard `samp_dt` object and thus computes 
+  # the R-hat values separately for each test label contained therein. See 
+  # "Args" below for R-hat variations that will be computed depending on the 
+  # function arguments. Note that this function by default does not drop 
+  # burn-in; so either `samp_dt` should already have the burn-in dropped or the 
+  # burn-in can be specified by the `itr_start` argument.
+  #
+  # TODO: improve numerical stability here by using logsumexp.
+  #
+  # Args:
+  #    samp_dt: data.table in the typical form.
+  #    split: if TRUE, splits each chain in half, which doubles the number of 
+  #           chains used in the R-hat computation. This is recommended to 
+  #           detect poor within-chain mixing, and is required if `within_chain`
+  #           is TRUE.
+  #    within_chain: if TRUE, computes R-hat separately for each chain in 
+  #                  `samp_dt` (and thus uses no between-chain information).
+  #                  In this case, each chain is split in two and the two 
+  #                  sub-chains are used for the R-hat calculation. Otherwise, 
+  #                  one R-hat value is computed per parameter per test label, 
+  #                  such that all chains within that test label contribute to 
+  #                  the calculation.
+  #    Remaining arguments are passed to `select_mcmc_samp()` to extract the 
+  #    subset of samples used in the R-hat calculations. 
+  #    
+  # Returns:
+  # list, with elements "R_hat_vals" and "chain_stats". The former is a 
+  # data.table with columns "test_label", "param_type", "param_name", "B", 
+  # "W", "n_itr", and "R_hat". "chain_idx" is an additional column if 
+  # `within_chain = TRUE`. "B" and "W" are the between and within chain 
+  # variances, as defined in the paper cited above. `n_itr` is the number of 
+  # samples per chain used in the R-hat calculation; it may be a decimal if 
+  # the chain splitting results in sub-chains that with lengths that differ 
+  # by 1 (i.e., if the original chain has an odd number of iterations). 
+  # "R_hat" is the (split) R-hat value, which is on a per-chain basis if 
+  # `within_chain = TRUE`.
+
+  if(within_chain) assert_that(split, 
+                               msg="`split` must be TRUE if `within_chain=TRUE`")
+  
+  # Select subset of samples.
+  samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
+                              param_types=param_types, itr_start=itr_start,
+                              itr_stop=itr_stop, chain_idcs=chain_idcs)
+  
+  # Split chains in two.
+  if(split) {
+    split_list <- split_chains(samp_dt)
+    samp_dt <- split_list$samp_dt
+    chain_map <- split_list$chain_map
+  }
+  
+  # Compute means and variances.
+  scalar_stats <- compute_mcmc_scalar_stats(samp_dt, by_chain=TRUE)
+  
+  # For standard R hat, average across all chains for each parameter in each run.
+  # Otherwise compute on a per-chain basis. 
+  if(within_chain) {
+    unsplit_chains(scalar_stats, chain_map, copy=FALSE)
+    scalar_stats[, mean_comb := mean(mean), 
+                 by=.(test_label, chain_idx, param_type, param_name)]
+    scalar_stats[, n_chain := 2]
+    by_cols <- c("test_label", "chain_idx", "param_type", "param_name")
+  } else {
+    scalar_stats[, mean_comb := mean(mean), 
+                 by=.(test_label, param_type, param_name)]
+    
+    # Number of chains used to compute R-hat in each run.
+    scalar_stats[, n_chain := length(unique(chain_idx)), by=test_label]
+    by_cols <- c("test_label", "param_type", "param_name")
+  }
+
+  # Compute between-chain variance B. i.e., the variability in the chain means.
+  scalar_stats[, B_summands := n_itr * (mean-mean_comb)^2 / (n_chain-1)]
+  scalar_stats[, W_summands := var / n_chain]
+  R_hat_vals <- scalar_stats[, .(B=sum(B_summands), W=sum(W_summands),  
+                             n_itr=mean(n_itr)), by=by_cols]
+  R_hat_vals[, R_hat := sqrt((n_itr-1)/n_itr + exp(log(B)-log(W))/n_itr)]
+  
+  return(list(R_hat_vals=R_hat_vals, chain_stats=scalar_stats))
+}
+
+
+split_chains <- function(samp_dt, copy=TRUE) {
+  # A helper function to `calc_R_hat()` that splits each existing chain in 
+  # `samp_dt` into two. This is done by simply updating the `chain_idx` 
+  # column, where new chain indices are simply set to 1 plus the maximum 
+  # chain index currently in each test label.
+  # Note that the iteration numbers are not changed, so the split chains will 
+  # have iteration numbers starting at the midpoint of the iteration numbers 
+  # for the current chains.
+  #
+  # Args:
+  #    samp_dt: data.table in the typical form.
+  #    copy: logical, if TRUE deep copy of `samp_dt` is made. Otherwise 
+  #          `samp_dt` is modified in place, which effects the object outside 
+  #          of the scope of this function.
+  #
+  # Returns:
+  #    list with elements "samp_dt" and "chain_map". The former is the sample 
+  #    data.table with updated chain indices reflecting the splitting. The 
+  #    latter is a data.table with columns "test_label", "chain_idx_new", and
+  #    "chain_idx_old", which allows the new chain indices of the split chains 
+  #    to be mapped back to their original chains.
+
+  if(copy) samp_dt <- data.table::copy(samp_dt)
+  
+  # Identify unique MCMC runs.
+  test_labels <- unique(samp_dt$test_label)
+  
+  # Dictionary for mapping new chain indices back to their original values.
+  chain_map <- data.table(test_label=character(), chain_idx_new=integer(),
+                          chain_idx_old=integer())
+
+  for(lbl in test_labels) {
+    # Identify existing chains within MCMC run.
+    samp_dt_lbl <- samp_dt[test_label==lbl]
+    chains <- unique(samp_dt_lbl$chain_idx)
+    start_idx_new <- max(chains) + 1L
+    chain_map_lbl <- data.table(test_label=lbl, chain_idx_old=chains,
+                                chain_idx_new=seq(start_idx_new, 
+                                                  start_idx_new+length(chains)-1))
+    chain_map <- rbindlist(list(chain_map, chain_map_lbl), use.names=TRUE)
+    
+    for(i in seq_along(chains)) {
+      # Iteration indices for the current chain.
+      itrs <- samp_dt_lbl[chain_idx==chains[i], unique(itr)]
+      
+      # Second half of iterations get assigned to new chain.
+      split_itr <- itrs[ceiling(length(itrs)/2)]
+      samp_dt[(test_label==lbl) & (chain_idx==chains[i]) & (itr >= split_itr),
+              chain_idx := chain_map_lbl[i,chain_idx_new]]
+    }
+  }
+  
+  return(list(samp_dt=samp_dt, chain_map=chain_map))
+}
+
+
+unsplit_chains <- function(samp_dt, chain_map, copy=TRUE) {
+  # A helper function to `calc_R_hat()` that inverts the action of 
+  # `split_chains()`. i.e., given `samp_dt` and `chain_map` as returned by 
+  # `split_chains()`, this re-combines the split chains and returns the 
+  # resulting data.table. See `split_chains()` for info on `chain_map`.
+  
+  if(copy) samp_dt <- data.table::copy(samp_dt)
+  
+  for(i in 1:nrow(chain_map)) {
+    lbl <- chain_map[i,test_label]
+    chain_old <- chain_map[i,chain_idx_old]
+    chain_new <- chain_map[i,chain_idx_new]
+    samp_dt[(test_label==lbl) & (chain_idx==chain_new),
+             chain_idx := chain_old]
+  }
+  
+  return(invisible(samp_dt))
+}
+
 
 # ------------------------------------------------------------------------------
 # Computing statistics and errors from MCMC samples. 
@@ -612,15 +784,18 @@ compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NUL
                               itr_stop=itr_stop, chain_idcs=chain_idcs)
   
   # Define functions to compute.
-  funcs <- function(x) list(mean=mean(x), var=var(x))
+  func_names <- c("mean", "var", "n_itr")
+  funcs <- function(x) setNames(list(mean(x), var(x), length(x)), func_names)
   
   # Specify grouping columns.
   group_cols <- c("test_label", "param_type", "param_name")
   if(by_chain) group_cols <- c(group_cols, "chain_idx")
   
   # Evaluate functions by group.
+  sample_col <- "sample"
   samp_stats <- samp_dt[, unlist(lapply(.SD, funcs), recursive=FALSE), 
-                        .SDcols="sample", by=group_cols]
+                        .SDcols=sample_col, by=group_cols]
+  setnames(samp_stats, paste(sample_col, func_names, sep="."), func_names)
   
   return(samp_stats)
 }
@@ -1080,14 +1255,15 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
 
     # Create histogram plot.
     if(combine_chains) {
-      plt <- ggplot(samp_dt_plt, aes(x=sample, color=test_label))
+      plt <- ggplot(samp_dt_plt, aes(x=sample, y=after_stat(density), 
+                                     color=test_label))
     } else {
       plt <- ggplot(samp_dt_plt, 
-                    aes(x=sample, color=interaction(test_label, 
-                                                    as.factor(chain_idx), sep=":")))
+                    aes(x=sample, y=after_stat(density), 
+                        color=interaction(test_label, as.factor(chain_idx), sep=":")))
     }
     
-    plt <- plt + plt_func() + 
+    plt <- plt + plt_func() +
                  ggtitle(plt_title) + 
                  guides(color=guide_legend(title=legend_label)) +
                  xlab(param_name)

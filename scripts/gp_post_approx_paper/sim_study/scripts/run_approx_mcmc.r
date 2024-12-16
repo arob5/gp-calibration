@@ -128,7 +128,11 @@ design_info <- readRDS(design_path)
 
 print("-------------------- Running MCMC --------------------")
 
-print("Setting initial proposal covariance:")
+print("-----> Truncating prior based on design point bounds:")
+par_prior_trunc <- truncate_prior(inv_prob$par_prior, design_info$bounds)
+print(par_prior_trunc)
+
+print("-----> Setting initial proposal covariance:")
 cov_prop_init <- cov(design_info$input)
 print("Initial proposal covariance:")
 print(cov_prop_init)
@@ -142,19 +146,13 @@ for(i in seq_along(mcmc_settings_list)) {
 }
 
 print("Calling `run_mcmc_comparison()`:")
-run_mcmc_comparison(llik_em, inv_prob$par_prior, mcmc_settings_list, 
-                    save_dir=out_dir, return=FALSE)
+run_mcmc_comparison(llik_em, par_prior_trunc, mcmc_settings_list, 
+                    save_dir=out_dir, return=FALSE, itr_start=burn_in_start,
+                    compute_stats=TRUE)
 
-print("-------------------- Computing MCMC Statistics --------------------")
 
-# Set default burn-ins for each algorithm.
-burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
-print("Burn-in used to compute statistics:")
-for(i in seq_along(burn_in_start)) {
-  tag <- names(burn_in_start)[i]
-  burn_in <- burn_in_start[i]
-  print(paste(tag, burn_in, sep=": "))
-}
+
+
 
 
 

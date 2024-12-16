@@ -76,6 +76,10 @@ test_info_post <- readRDS(file.path(setup_dir, "test_info_post.rds"))
 # Read approximate llikEmulator object.
 llik_em <- readRDS(file.path(experiment_dir, design_tag, design_id, "em_llik.rds"))
 
+# Read llikEmulator design information.
+design_info <- readRDS(file.path(experiment_dir, design_tag, 
+                                 design_id, "design_info.rds"))
+
 # Read llikEmulator prediction lists.
 em_pred_list_post <- readRDS(file.path(experiment_dir, design_tag, design_id,
                                        "em_pred_list_post.rds"))
@@ -170,17 +174,159 @@ plot(llik_em_mean_post_plt)
 
 # Plan:
 #   1.) Get support points working on cluster (check logfiles to ensure support
-#       package is put in a directory to which remote executions will have access.
+#       package is put in a directory to which remote executions will have access).
 #   2.) Run support locally to obtain MCMC ICs and compare to current ICs.
 #   3.) Re-run small-scale test on cluster using better-informed ICs.
+#   4.) Another option to help get a sense of this is to look at the distribution
+#       of pairwise distances between the prior validation points, then do the 
+#       same for the posterior validation points. Then see where the latter 
+#       distances fall within the prior pairwise distance distribution. e.g., 
+#       if they all fall on the lower end, this indicates that the posterior 
+#       samples are all from a single mode.
+```
 
+```{r}
+# Distribution of observed mean approx unnormalized density, log scale.
+hist(llik_design_pred, 50)
+```
+```{r}
+# True observed llik values.
+dt_true <- data.table(llik=design_info$llik, type="obs")
+
+# Predict at validation points, and look at set of observed llik values 
+# vs approximate values to help determine MCMC initialization.
+llik_mean_approx <- llik_em$calc_lik_approx("mean", 
+                                            input=test_info_prior$input, 
+                                            simplify=TRUE)
+dt <- data.table(llik=llik_mean_approx, type="mean_approx")
+
+# Combine and summarize the distributions of likelihood values.
+dt_comb <- rbindlist(list(dt_true, dt), use.names=TRUE)
+setorder(dt_comb, -llik)
+print(head(dt_comb, 15))
+
+ggplot(dt_comb, aes(llik, group=type)) + 
+  geom_histogram(aes(y=after_stat(density))) +
+  facet_wrap(~type)
+```
+
+```{r}
+# Set initial conditions by taking input with top observed value and input 
+# with top approximate value. 
+llik_mean_approx_order <- order(llik_mean_approx, decreasing=TRUE)
+llik_obs_order <- order(design_info$llik, decreasing=TRUE)
+
+par_init <- rbind(test_info_prior$input[llik_mean_approx_order[1:2],],
+                  design_info$input[llik_obs_order[1:2],])
+colnames(par_init) <- par_names
+```
+
+```{r}
+cov_prop_init <- cov(design_info$input)
+
+# Test MCMC.
+test <- run_mcmc_chains("mcmc_gp_unn_post_dens_approx", llik_em, 
+                        n_chain=nrow(par_init), par_init=par_init, 
+                        par_prior=inv_prob$par_prior, try_parallel=FALSE, 
+                        test_label="mean", approx_type="mean",
+                        cov_prop=cov_prop_init)
+samp_dt_test <- test$samp
+```
+
+```{r}
+trace_plots <- get_trace_plots(samp_dt_test, itr_start=25000)
+for(plt in trace_plots) plot(plt)
+```
+```{r}
+test2 <- run_mcmc_chains("mcmc_bt_wrapper", llik_em, n_chain=4L,
+                         par_prior=inv_prob$par_prior, defer_ic=TRUE, 
+                         try_parallel=FALSE, test_label="dezs", 
+                         settings_list=list(consoleUpdates=25000),
+                         approx_type="mean")
+samp_dt2 <- test2$samp
+```
+
+```{r}
+trace_plots <- get_trace_plots(samp_dt2, itr_start=25000)
+for(plt in trace_plots) plot(plt)
+```
+```{r}
+test3 <- run_mcmc_chains("mcmc_noisy_llik", llik_em, 
+                         n_chain=nrow(par_init), par_init=par_init, 
+                         par_prior=inv_prob$par_prior, try_parallel=FALSE, 
+                         test_label="mcwmh-joint", use_joint=TRUE,
+                         cov_prop=cov_prop_init)
+samp_dt3 <- test3$samp
+```
+
+```{r}
+trace_plots <- get_trace_plots(samp_dt3, itr_start=25000)
+for(plt in trace_plots) plot(plt)
+```
+
+
+```{r}
+M <- max(llik_mean_approx) 
+wts <- exp(llik_mean_approx - M)
+pos_wt_sel <- (wts > 0)
+print(paste0("Number of positive weights: ", sum(pos_wt_sel)))
+print("Weights:")
+print(wts[pos_wt_sel])
 ```
 
 
 
+```{r}
+# Subsample design points, with weights given by mean approx unnormalized 
+# density.
+
+n_support <- 50L
+
+# Extract the design points with highest-observed approximate posterior 
+# density values to initialize the support points optimization.
+mean_approx_order <- order(llik_design_true, decreasing=TRUE)
+sp_init <- design_info$input[head(mean_approx_order,n_support),,drop=FALSE]
+
+# Unfortunately, support::sp doesn't seem to accept log weights, so have to 
+# convert from log scale here, which will zero out many of the weights. Make 
+# the largest weight 1.
+M <- max(llik_design_true) 
+wts <- exp(llik_design_true - M)
+pos_wt_sel <- (wts > 0)
+print(paste0("Number of positive weights: ", sum(pos_wt_sel)))
+inputs_pos_wt <- design_info$input[pos_wt_sel,,drop=FALSE]
+print("Weights:")
+print(wts[pos_wt_sel])
 
 
+support_mean_approx_info <- support::sp(n=n_support, p=inv_prob$dim_par, 
+                                        dist.samp=design_info$input, 
+                                        wts=llik_design_true)
+                                        
+                                        # ini=sp_init, wts=llik_design_true,
+                                        # bd=t(design_info$bounds))
 
+support_mean_approx <- support_mean_approx_info$sp
+colnames(support_mean_approx) <- par_names
+
+test <- llik_em$calc_lik_approx("mean", input=support_mean_approx, simplify=TRUE)
+
+
+```
+
+```{r}
+par_bounds <- as.matrix(par_prior[,c("param1", "param2")])
+
+test <- support::sp(n=10, p=inv_prob$dim_par, 
+                    dist.samp=test_info_post$input, 
+                    num.subsamp=4L)
+
+                    #bd=par_bounds)
+test_sp <- test$sp
+colnames(test_sp) <- par_names
+
+test <- llik_em$calc_lik_approx("mean", input=test_sp, simplify=TRUE)
+```
 
 
 

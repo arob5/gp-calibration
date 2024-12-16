@@ -15,11 +15,27 @@ out_path <- file.path(out_dir, "mcmc_approx_settings.rds")
 
 # Common settings that will be applied to all MCMC algorithms.
 common_settings <- list(n_itr=100000L, try_parallel=FALSE, n_chain=4L)
+common_settings$itr_start <- ceiling(common_settings$n_itr / 2)
 
 # Common settings that will be applied to all algorithms using the BayesianTools
 # wrapper function.
 common_bt_settings <- list(mcmc_func_name="mcmc_bt_wrapper", sampler="DEzs", 
                            defer_ic=TRUE, settings_list=list(consoleUpdates=25000))
+
+# Common settings that will be applied to all algorithms using the 
+# `mcmc_noisy_llik()`. Note that the four last settings here are fed to 
+# `get_mcmc_ic()` for setting the MCMC initial conditions.
+common_noisy_settings <- list(mcmc_func_name="mcmc_noisy_llik", 
+                           n_ic_by_method=c(design_max=2, approx_max=2),
+                           approx_type="quantile", alpha=0.8, n_test_inputs=500L)
+
+# Common settings that will be applied to all algorithms using the 
+# `mcmc_gp_acc_prob_approx()`. Note that the four last settings here are fed to 
+# `get_mcmc_ic()` for setting the MCMC initial conditions.
+common_acc_prob_settings <- list(mcmc_func_name="mcmc_gp_acc_prob_approx", 
+                                 n_ic_by_method=c(design_max=2, approx_max=2),
+                                 approx_type="quantile", alpha=0.8, 
+                                 n_test_inputs=500L)
 
 # List of MCMC settings.
 mcmc_settings_list <- list(
@@ -33,14 +49,14 @@ mcmc_settings_list <- list(
     common_settings, common_bt_settings),
   c(list(mcmc_tag="marginal", approx_type="marginal"),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="mcwmh-joint", mcmc_func_name="mcmc_noisy_llik", use_joint=TRUE),
-    common_settings),
-  c(list(mcmc_tag="mcwmh-ind", mcmc_func_name="mcmc_noisy_llik", use_joint=FALSE),
-    common_settings),
-  c(list(mcmc_tag="marg-acc-prob-joint", mcmc_func_name="mcmc_gp_acc_prob_approx", 
-       approx_type="joint-marginal"), common_settings),
-  c(list(mcmc_tag="marg-acc-prob-ind", mcmc_func_name="mcmc_gp_acc_prob_approx", 
-       approx_type="marginal"), common_settings)
+  c(list(mcmc_tag="mcwmh-joint", use_joint=TRUE),
+    common_settings, common_noisy_settings),
+  c(list(mcmc_tag="mcwmh-ind", use_joint=FALSE),
+    common_settings, common_noisy_settings),
+  c(list(mcmc_tag="marg-acc-prob-joint", approx_type="joint-marginal"), 
+    common_settings, common_acc_prob_settings),
+  c(list(mcmc_tag="marg-acc-prob-ind", approx_type="marginal"), 
+    common_settings, common_acc_prob_settings)
 )
 
 # Set names of list to the MCMC tags.
