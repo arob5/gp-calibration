@@ -262,7 +262,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
                         prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
-              itr_curr=itr, condition=err))
+              itr_curr=itr, par_init=par_init, condition=err))
 }
 
 
@@ -405,7 +405,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
                         prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
-              itr_curr=itr, condition=err))
+              itr_curr=itr, par_init=par_init, condition=err))
 }
 
 
@@ -506,7 +506,7 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
   return(list(samp=list(par=par_samp, sig2=sig2_samp), 
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
-              itr_curr=itr, condition=err))
+              itr_curr=itr, par_init=par_init, condition=err))
 }
 
 
@@ -627,7 +627,7 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   colnames(dens_info) <- c("llik", "lprior")
   return(list(samp=list(par=bt_samp[,par_names, drop=FALSE]), 
               info=list(dens=dens_info), 
-              bt_output=bt_output))
+              bt_output=bt_output, par_init=par_init))
 }
 
 
@@ -684,7 +684,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
                             ic_sample_method="LHS", estimate_cov=FALSE, 
                             n_samp_cov_est=100L, try_parallel=TRUE, n_cores=NULL,  
                             package_list=NULL, dll_list=NULL, obj_list=NULL, 
-                            test_label="default_lbl", ...) {
+                            test_label="default_lbl", itr_start=1L, ...) {
   # Provides the main interface/entrypoint for running MCMC with llikEmulator
   # objects. This wrapper function runs multiple MCMC chains in parallel. There
   # are three options for specifying initial conditions:
@@ -729,6 +729,8 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   #                  and computing an importance sampling estimate. Other methods
   #                  may be implemented in the future; e.g., using estimate
   #                  resulting from ensemble Kalman inversion.
+  #   itr_start: integer, passed to `select_mcmc_itr()` to subset the MCMC 
+  #              samples. By default returns all samples.
   #   ...: should contain all arguments to be passed to the MCMC function, other 
   #        than the initial conditions and priors.
   #
@@ -752,7 +754,6 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   }
   
   mcmc_chain_list <- tryCatch({
-    
     # Set up MCMC function as a function of the initial condition.
     mcmc_func <- get(mcmc_func_name)
     mcmc_func_ic <- function(ic) mcmc_func(llik_em=llik_em,
@@ -794,10 +795,12 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   # Convert to `samp_dt` data.table format
   samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
                                             function(l) l$samp), 
-                                            test_label=test_label)
+                                            test_label=test_label,
+                                            itr_start=itr_start)
   info_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
                                                    function(l) l$info), 
-                                            test_label=test_label)
+                                            test_label=test_label,
+                                            itr_start=itr_start)
   
   # Non-sample output stored in its own list. 
   mcmc_outputs_list <- vector(mode="list", length=length(mcmc_chain_list)) 
@@ -848,15 +851,10 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
 
 
 run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list, 
-                                save_dir=NULL, return=FALSE, 
-                                compute_stats=FALSE, ...) {
+                                save_dir=NULL, return=FALSE, ...) {
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
-  # passed to the `mcmc_settings` argument of `run_mcmc()`. If `compute_stats`
-  # is TRUE, then `compute_mcmc_scalar_stats()` will be called for each 
-  # algorithm and the results will be saved or returned along with the raw 
-  # MCMC samples. Additional arguments `...` are passed to 
-  # `compute_mcmc_scalar_stats()`.
+  # passed to the `mcmc_settings` argument of `run_mcmc()`.
   
   if(return) {
     message("run_mcmc_comparison() currently only supports saving data to file.")
@@ -879,11 +877,6 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
         mcmc_settings_list[[i]]$test_label <- tag
         mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_settings_list[[i]])
         
-        # Optionally compute MCMC stats.
-        if(compute_stats) {
-          mcmc_stats <- compute_mcmc_scalar_stats(mcmc_output$samp, ...)
-        }
-        
       }, error=function(cond) {
         message("Error with MCMC run: ", tag)
         message(conditionMessage(cond))
@@ -892,11 +885,6 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
         if(!is.null(out_dir)) {
           filename <- paste0("mcmc_samp_", tag, ".rds")
           saveRDS(mcmc_output, file.path(out_dir, filename))
-          
-          if(compute_stats) {
-            filename_stats <- paste0("mcmc_stats_", tag, ".rds")
-            saveRDS(mcmc_stats, file.path(out_dir, filename_stats))
-          }
         }
       }
     )
@@ -1025,7 +1013,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
       inputs <- get_batch_design("LHS", N_batch=n_test_inputs, 
                                  prior_params=par_prior)
       llik_approx <- llik_em$calc_lik_approx(approx_type, input=inputs,
-                                             simplify=TRUE, log_scale=TRUE)
+                                             simplify=TRUE, log_scale=TRUE, ...)
     }
 
     # Extract inputs corresponding to largest predicted log-likelihood values.

@@ -4,7 +4,7 @@
 #
 # Andrew Roberts
 # 
-
+# 
 # ------------------------------------------------------------------------------
 # Prior Distribution object:
 # At present, prior distributions are encoded by data.frames in which each 
@@ -217,7 +217,7 @@ truncate_prior <- function(par_prior, input_bounds) {
   #    data.frame, the updated version of `par_prior`. 
   
   # Ensure the parameters in `input_bounds` are ordered as in `par_prior`.
-  par_names <- par_prior[,par_name, drop=FALSE]
+  par_names <- par_prior[,"par_name"]
   input_bounds <- input_bounds[,par_names, drop=FALSE]
   
   for(i in seq_along(par_names)) {

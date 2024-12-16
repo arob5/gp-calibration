@@ -205,6 +205,41 @@ of both of these options below. Given that the GP-approximated posteriors
 tend to be quite multimodal, we also emphasize different ways to initialize and 
 post-process MCMC runs to deal with the multimodality. 
 
+## Truncating the Prior
+Before proceeding with MCMC, we mention an additional practical consideration. 
+In general, extrapolation with GPs is challenging. Sometimes undesirable 
+behavior can occur when MCMC chains wander outside of the design point bounds, 
+and thus into regions that rely on GP extrapolations. One heuristic approach to 
+deal with this is to simply define the prior support based on the design 
+point bounds; i.e., to approximate the original prior with a truncated version.
+This can be accomplished via the `truncate_prior()` function.
+```{r}
+par_prior_trunc <- truncate_prior(par_prior, design_info$bounds)
+par_prior_trunc
+```
+
+We can simulate from the truncated and original priors to visually inspect 
+the effect of the truncation.
+```{r}
+n_prior_samp <- 10000L
+prior_samp <- as.data.table(sample_prior(par_prior, n=n_prior_samp))
+prior_trunc_samp <- as.data.table(sample_prior(par_prior_trunc, n=n_prior_samp))
+prior_samp[, test_label := "original"]
+prior_trunc_samp[, test_label := "trunc"]
+prior_compare_dt <- data.table::rbindlist(list(prior_samp, prior_trunc_samp), use.names=TRUE)
+prior_compare_dt <- data.table::melt.data.table(prior_compare_dt, 
+                                                id.vars="test_label", 
+                                                variable.name="param_name", 
+                                                value.name="sample")
+prior_compare_dt[, `:=`(param_type=NA_character_, chain_idx=NA_integer_, 
+                        itr=NA_integer_, param_name=as.character(param_name))]
+
+prior_compare_plots <- get_hist_plot_comparisons(prior_compare_dt, 
+                                                 test_label_baseline="original")
+
+for(plt in prior_compare_plots) plot(plt)
+```
+
 ## Plug-In Mean Approximation
 We start by considering the simplest option, `approx_type = "mean"`, which 
 implies that the mean of the log-likelihood surrogate is simply plugged-in in 
@@ -230,7 +265,7 @@ likelihood predictions.
 
 ```{r}
 n_chain <- 4L
-par_init_mean <- get_mcmc_ic(llik_em, par_prior, n_ic=n_chain, 
+par_init_mean <- get_mcmc_ic(llik_em, par_prior_trunc, n_ic=n_chain, 
                              n_ic_by_method=c(design_max=2, approx_max=2),
                              design_info=design_info, approx_type="mean", 
                              n_test_inputs=500L)
@@ -251,6 +286,7 @@ mcmc_mean_approx_list <- run_mcmc_chains("mcmc_gp_unn_post_dens_approx", llik_em
                                          test_label="mean", cov_prop=cov_prop_init)
 
 # Append to samples table.
+samp_dt_new <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
 samp_dt <- combine_samp_dt(samp_dt, mcmc_mean_approx_list$samp)
 ```
 
@@ -265,6 +301,7 @@ here.
 rhat_list <- calc_R_hat(samp_dt, test_labels="mean", itr_start=burn_in_start)
 rhat_list$R_hat_vals
 ```
+
 An alterantive perspective is to accept the fact that getting the different 
 chains to mix is very difficult, and instead focus on "exploring" the dominant 
 modes of the posterior with different chains. In this case, we might instead 
@@ -286,28 +323,22 @@ evaluations associated with the MCMC chains.
 trace_plots_llik_mean <- get_trace_plots(mcmc_mean_approx_list$info, 
                                          itr_start=burn_in_start,
                                          param_names="llik",
-                                         test_labels="mean", 
-                                         overlay_chains=FALSE)
+                                         test_labels="mean")
 
 for(plt in trace_plots_llik_mean) plot(plt)
 ```
 
-
-
-
-
 ### Trace Plots
 ```{r}
 trace_plots_mean <- get_trace_plots(samp_dt, itr_start=burn_in_start, 
-                                    test_labels="mean", param_names="tauV")
+                                    test_labels="mean")
 for(plt in trace_plots_mean) plot(plt)
 ```
 
-
 ### Histogram Comparisons relative to Exact
 ```{r}
-hist_plots <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact",
-                                        test_labels="mean", plot_type="freqpoly",
+hist_plots <- get_hist_plot_comparisons(samp_dt_test, test_label_baseline="exact",
+                                        test_labels="mean",
                                         itr_start=burn_in_start)
 for(plt in hist_plots) plot(plt)
 ```

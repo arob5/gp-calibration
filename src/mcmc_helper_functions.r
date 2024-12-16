@@ -1255,14 +1255,15 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
 
     # Create histogram plot.
     if(combine_chains) {
-      plt <- ggplot(samp_dt_plt, aes(x=sample, color=test_label))
+      plt <- ggplot(samp_dt_plt, aes(x=sample, y=after_stat(density), 
+                                     color=test_label))
     } else {
       plt <- ggplot(samp_dt_plt, 
-                    aes(x=sample, color=interaction(test_label, 
-                                                    as.factor(chain_idx), sep=":")))
+                    aes(x=sample, y=after_stat(density), 
+                        color=interaction(test_label, as.factor(chain_idx), sep=":")))
     }
     
-    plt <- plt + plt_func() + 
+    plt <- plt + plt_func() +
                  ggtitle(plt_title) + 
                  guides(color=guide_legend(title=legend_label)) +
                  xlab(param_name)

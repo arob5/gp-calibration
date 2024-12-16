@@ -128,6 +128,10 @@ design_info <- readRDS(design_path)
 
 print("-------------------- Running MCMC --------------------")
 
+print("-----> Truncating prior based on design point bounds:")
+par_prior_trunc <- truncate_prior(inv_prob$par_prior, design_info$bounds)
+print(par_prior_trunc)
+
 print("-----> Setting initial proposal covariance:")
 cov_prop_init <- cov(design_info$input)
 print("Initial proposal covariance:")
@@ -141,32 +145,8 @@ for(i in seq_along(mcmc_settings_list)) {
   }
 }
 
-# Set initial conditions: selecting the design inputs associated with the 
-# `n_chain` largest observed unnormalized density values for each approximation. 
-# For the noisy MCMC chains, the unnormalized density is not available, so 
-# we use the mean approximation.
-# TODO: maybe should pick noisy MCMC initial conditions based on the average
-#       marginal acceptance probabilities for each design point (averaged 
-#       over all other design points). 
-print("-----> Setting MCMC initial conditions:")
-
-# TODO: implement this.
-for(i in seq_along(mcmc_approx_settings)) {
-  mcmc_approx_settings[[i]]$par_init <- select_mcmc_init(mcmc_approx_settings[[i]])
-}
-
-# Set default burn-ins for each algorithm, for use in computing statistics.
-print("-----> Setting default burn-ins:")
-burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
-print("Burn-in used to compute statistics:")
-for(i in seq_along(burn_in_start)) {
-  tag <- names(burn_in_start)[i]
-  burn_in <- burn_in_start[i]
-  print(paste(tag, burn_in, sep=": "))
-}
-
 print("Calling `run_mcmc_comparison()`:")
-run_mcmc_comparison(llik_em, inv_prob$par_prior, mcmc_settings_list, 
+run_mcmc_comparison(llik_em, par_prior_trunc, mcmc_settings_list, 
                     save_dir=out_dir, return=FALSE, itr_start=burn_in_start,
                     compute_stats=TRUE)
 
