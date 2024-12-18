@@ -47,7 +47,7 @@ library(data.table)
 
 base_dir <- getwd()
 src_dir <- file.path(base_dir, "src")
-output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_visualization")
+output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_vis2")
 
 source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "gpWrapper.r"))
@@ -91,136 +91,87 @@ burn_in_start <- N_mcmc/2
 N_design <- 3L
 design_method <- "LHS"
 
+# Test/grid point settings (for plotting).
+N_grid <- 201
+
 # Settings for confidence intervals displayed in plots. 
 interval_method <- "pm_std_dev"
 N_std_dev <- 1.64
 ```
 
+# Summary of Inverse Problem 
 
 ```{r}
-#
-# Defining the forward model, parameter space, and priors for the inverse problem: 
-#    Parameter calibration for VSEM model. Calibrating single parameter implying a 1-dim 
-#    input space, and considering an observable in the form of a time average, implying 
-#    a 1-dim output space. 
-#
+# Inverse problem setup. 
+inv_prob <- get_vsem_test_1d_vis()
+par_prior <- inv_prob$par_prior
+llik_obj_exact <- inv_prob$llik_obj
+```
 
-set.seed(seed_inv_prob)
+## Prior Distribution
+```{r}
+print(inv_prob$par_info)
 
-# Parameter to calibrate. 
-par_cal_name <- "KEXT"
+prior_plots <- plot_prior_samp(par_prior)
+for(plt in prior_plots) plot(plt)
+```
 
-# VSEM default parameter values.
-par_names <- get_vsem_par_names()
-par_default <- get_vsem_default_pars()
-print("Parameter defaults:")
-print(data.frame(par_name=par_names, default_value=par_default))
+## Likelihood
+```{r}
+print(llik_obj_exact$lik_description)
+print(paste0("Likelihood variance ground truth: ", inv_prob$sig2_true))
+print(paste0("Likelihood variance model: ", llik_obj_exact$get_lik_par()[1]))
+```
 
-# Define prior on calibration parameter. Setting rownames to "u" so that plot labels 
-# will use this generic symbol for the parameter rather than `par_cal_name`. 
-par_cal_idx <- which(par_cal_name==par_names)
-par_prior_params <- get_vsem_default_priors()[par_cal_idx,,drop=FALSE]
-rownames(par_prior_params) <- "u"
-print("Prior on calibration parameter:")
-print(par_prior_params)
-if(par_prior_params$dist=="Uniform") {
-  prior_support <- c(par_prior_params$param1, par_prior_params$param2)
-} else {
-  prior_support<- c(NaN, NaN)
-  stop("Currently this notebook is designed assuming uniform prior. Would need to update `estimate_sample_based_density_1d_grid()` is generalizing.")
-}
+## Model Driver
+```{r}
+driver_plt <- ggplot(data.frame(t=inv_prob$time_points,PAR=inv_prob$driver)) + 
+                     geom_point(aes(x=t,y=PAR)) + 
+                     ggtitle("Model Driver (PAR)") + 
+                     xlab("Day") + ylab("PAR")
 
-# Number of time points (days) and model driver. 
-n_year <- 3
-n_time <- 365*n_year
-time_points <- 1:n_time
-driver <- BayesianTools::VSEMcreatePAR(days=time_points)
-plot(time_points, driver, main="Model Driver (PAR)", xlab="Day", ylab="PAR")
+plot(driver_plt)
+```
 
-# Map from calibration parameter to VSEM outputs.
+## Ground truth observable vs. observations
+```{r}
 output_names <- get_vsem_output_names()
-lai_idx <- which(output_names=="LAI") 
-param_to_output_map <- get_vsem_fwd_model(driver, 1, par_cal_idx, par_default, simplify=FALSE)
+observed_output <- "LAI"
+lai_idx <- match(observed_output, output_names)
+lai_true <- inv_prob$par_to_output_map(inv_prob$par_true)[1,,lai_idx]
 
-# Observation operator (map from model outputs to observable): time average of LAI. 
-obs_op <- function(model_outputs) {
-  single_run <- (dim(model_outputs)[1]==1L)
-  lai_trajectory <- model_outputs[,,lai_idx]
-  if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
-  rowMeans(lai_trajectory)
-}
+df_inv_prob_data <- data.frame(t=inv_prob$time_points, 
+                               y_true=drop(inv_prob$y_true),
+                               output_true=inv_prob$model_output_true[,,lai_idx],
+                               y_obs=drop(inv_prob$y))
+plt_outputs <- ggplot(data=df_inv_prob_data) +
+                      geom_line(aes(x=t, y=y_true), color="black", linetype="dashed") + 
+                      geom_line(aes(x=t, y=y_obs), color="red", linetype="dashed") + 
+                      geom_line(aes(x=t, y=output_true), color="black") + 
+                      ylab("output") + ggtitle("True and Observed y")
 
-# Forward model: defined here as the calibration parameter-to-observable map. Returns 
-# matrix of dimension (N_run,1) to align with the convention of `fwd_model_vectorized`
-# in the `llikEmulatorExactGaussDiag` class. 
-fwd_model <- function(par_cal) {
-  matrix(obs_op(param_to_output_map(par_cal)),ncol=1L)
-}
+plot(plt_outputs)
 ```
 
 ```{r}
-# Defining the likelihood, ground truth, and observed data for the inverse problem. 
-signal_to_noise_ratio <- 20
-par_true <- par_default
-u_true <- par_true[par_cal_idx]
-model_outputs_true <- param_to_output_map(u_true)
-y_true <- obs_op(model_outputs_true)
-sig_eps <- mean(y_true) / signal_to_noise_ratio
-sig2_eps <- sig_eps^2
-sig2_true <- sig2_eps # Currently obs variance is fixed, 
-                      # so no distinction between exact and estimated variance. 
-y <- y_true + sig_eps*rnorm(n=N_obs)
-
-print(paste0("y true: ", y_true))
-print(paste0("y obs: ", y))
-print(paste0("epsilon std: ", sig_eps))
-
-# Plot ground truth data.  
-for(j in 1:dim(model_outputs_true)[3]) {
-    output_var <- output_names[j]
-    plot(time_points, model_outputs_true[1,,j], xlab="Days", ylab=output_var, main=output_var)
-}
-```
-
-
-```{r}
-# Instantiate the "exact log-likelihood" object. 
-default_conditional <- FALSE
-default_normalize <- TRUE
-llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=fwd_model, 
-                                         y_obs=matrix(y,nrow=N_obs), dim_par=1L, use_fixed_lik_par=TRUE,
-                                         sig2=sig2_eps, par_names=rownames(par_prior_params), 
-                                         default_conditional=default_conditional, 
-                                         default_normalize=default_normalize)
-inv_prob <- list(llik_obj=llik_exact, par_prior=par_prior_params, y=y, 
-                 par_true=u_true, sig2_true=sig2_true)
-```
-
-```{r}
-# Generate design and test points.
-
 set.seed(seed_init_design)
 
-# Generate design. 
-design_info <- list()
-design_info$input <- get_batch_design(design_method, N_design, prior_params=inv_prob$par_prior)
-design_info$fwd <- llik_exact$run_fwd_model(design_info$input)[,1]
-design_info$llik <- llik_exact$assemble_llik(design_info$input)
-design_info$lprior <- calc_lprior_theta(design_info$input, inv_prob$par_prior)
+# Generate design and test points.
+design_info <- get_init_design_list(inv_prob, design_method, N_design)
 
 # Grid of test points for plotting and emulator evaluation. The final set of test 
 # points will be the union of the test grid with the design points (ensuring the 
 # design points are a subset of the test points avoids certain misleading features 
 # in the plots that can occur where only some design points are included in the 
 # test set). 
-N_grid <- 201
-u_grid <- get_tensor_product_grid(N_grid, inv_prob$par_prior)
-u_grid <- sort(union(drop(u_grid), design_info$input))
+grid_method <- "tensor_product_grid"
+u_grid <- get_batch_design(grid_method, N_grid, prior_params=inv_prob$par_prior)
+u_grid <- sort(union(drop(u_grid), drop(design_info$input)))
 N_grid <- length(u_grid)
-test_info <- list(input=matrix(u_grid, ncol=1, dimnames=list(NULL, llik_exact$input_names)))
-test_info$fwd <- llik_exact$run_fwd_model(test_info$input)[,1] 
-test_info$llik <- llik_exact$assemble_llik(test_info$input)
-test_info$lprior <- calc_lprior_theta(test_info$input, inv_prob$par_prior)
+u_grid <- matrix(u_grid, ncol=1, dimnames=list(NULL, inv_prob$par_names))
+test_info <- get_init_design_list(inv_prob, grid_method, N_grid, 
+                                  prior_params=inv_prob$par_prior, 
+                                  inputs=u_grid)
 
 # Plot true unnormalized posterior density. 
 plot(test_info$input, test_info$fwd, type="l", 
@@ -230,7 +181,6 @@ plot(test_info$input, test_info$llik, type="l",
 plot(test_info$input, exp(test_info$llik), type="l", 
      main="True likelihood", xlab="u", ylab="density")
 ```
-
 
 ```{r}
 # 
@@ -242,8 +192,7 @@ em_llik_gp <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1)
                              normalize_output=TRUE, scale_input=TRUE)
 em_llik_gp$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE,
                optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
-# em_llik_gp <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1), normalize_output=TRUE, scale_input=TRUE)
-# em_llik_gp$fit("Gaussian", "constant", estimate_nugget=FALSE)
+
 em_llik <- llikEmulatorGP("em_llik", em_llik_gp, default_conditional=default_conditional, 
                           default_normalize=default_normalize, lik_par=inv_prob$sig2_true, 
                           use_fixed_lik_par=TRUE)
