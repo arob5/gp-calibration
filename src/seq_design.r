@@ -151,7 +151,7 @@ get_batch_design <- function(method, N_batch, prior_params=NULL,
 }
 
 
-get_init_design_list <- function(inv_prob, design_method, N_design, ...) {
+get_init_design_list <- function(inv_prob, design_method, N_design, inputs=NULL, ...) {
   # A convenience function that constructs an initial design for an inverse 
   # problem and returns a list containing the design inputs, as well as 
   # associated log-likelihood, log-prior, and forward model evaluations.
@@ -163,6 +163,9 @@ get_init_design_list <- function(inv_prob, design_method, N_design, ...) {
   #    design_method: character, passed to the "method" argument of 
   #                   `get_batch_design()`.
   #    N_design: integer, number of design points.
+  #    inputs: If design inputs have already been sampled, then they can be provided 
+  #            via this argument. `design_method` and `N_design` are still required 
+  #            so that they can be included in the design info list.
   #    ...: additional arguments passed to `get_batch_design()`.
   #
   # Returns:
@@ -173,10 +176,18 @@ get_init_design_list <- function(inv_prob, design_method, N_design, ...) {
   #    "bounds": matrix storing bounding box for design inputs.
   #    "fwd": if applicable, matrix of forward model outputs at design points.
   
-  # Design inputs, ensuring correct parameter order.
   design_info <- list(design_method=design_method, N_design=N_design)
-  design_info$input <- get_batch_design(design_method, N_design, 
-                                        prior_params=inv_prob$par_prior, ...)
+  
+  # Design inputs, ensuring correct parameter order.
+  if(is.null(inputs)) {
+    design_info$input <- get_batch_design(design_method, N_design, 
+                                          prior_params=inv_prob$par_prior, ...)
+  } else {
+    assert_that(setequal(colnames(inputs), inv_prob$par_names))
+    assert_that(nrow(inputs) == N_design)
+    design_info$input <- inputs
+  }
+  
   design_info$input <- design_info$input[,inv_prob$par_names,drop=FALSE]
   
   # Associated log-likelihood and log prior evaluations.

@@ -67,6 +67,8 @@ get_vsem_default_priors <- function() {
   par_priors$dist <- rep("Uniform", length(par_priors$par_name))
   par_priors$param1 <- c(2e-01,2e-01,5e-04,2e-01,5e+02,4e+03,5e+02,2e-01,0.0,0.0,0.0)
   par_priors$param2 <- c(1.0,3.0,4e-03,6e-01,3e+03,5e+04,3e+03,1.0,10.0,30.0,10.0)
+  par_priors$bound_lower <- par_priors$param1
+  par_priors$bound_upper <- par_priors$param2
   par_priors <- as.data.frame(par_priors)
 
   # Ensure parameter names/order is correct. 
@@ -265,7 +267,7 @@ get_vsem_inv_prob <- function(par_cal_names, obs_op, sig2_true=NULL, n_day=365*3
   if(is.null(par_true)) {
     if(sample_truth_from_prior) {
       if(!is.null(par_true_seed)) set.seed(par_true_seed)
-      par_true <- sample_prior_theta(par_prior)
+      par_true <- sample_prior(par_prior)
     } else {
       par_true <- par_default
       par_fixed_exact <- FALSE
@@ -469,6 +471,70 @@ get_vsem_test_1_time_avg <- function(default_conditional=FALSE, default_normaliz
   
   return(inv_prob)
 }
+
+
+get_vsem_test_1d_vis <- function(default_conditional=FALSE, default_normalize=TRUE) {
+  # A toy example with a single calibration parameter and a single output dimension 
+  # consisting of a time average.
+  
+  # Random seeds. 
+  driver_seed <- 623434
+  par_true_seed <- 7854332
+  obs_seed <- 5632
+  
+  # Observation operator (map from model outputs to observable): time averages
+  # of LAI observations.
+  output_names <- get_vsem_output_names()
+  observed_output <- "LAI"
+  lai_idx <- match(observed_output, output_names)
+  
+  obs_op <- function(model_outputs) {
+    single_run <- (dim(model_outputs)[1] == 1L)
+    lai_trajectory <- model_outputs[,,lai_idx]
+    
+    if(single_run) {
+      lai_avg <- matrix(mean(lai_trajectory), nrow=1L)
+    } else {
+      lai_avg <- matrix(apply(lai_trajectory, 1, mean), ncol=1)
+    }
+    return(lai_avg)
+  }
+  
+  # Ground truth parameters (differ from VSEM defaults). 
+  par_true <- c(KEXT=0.42, LAR=1.6, LUE=0.006, GAMMA=0.2, tauV=1000, tauS=30000,
+                tauR=1000, Av=0.3, Cv=3.4, Cs=14.0, Cr=2.6)
+  
+  # Parameters to calibrate. 
+  par_cal_names <- "Cv"
+  
+  # Priors: using defaults with some modifications.
+  par_prior <- get_vsem_default_priors()
+  
+  # Set up inverse problem. 
+  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, par_prior=par_prior,
+                                sig2_method="fixed", sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
+                                driver_seed=driver_seed, par_true_seed=par_true_seed, 
+                                obs_seed=obs_seed)
+  
+  # Define exact log-likelihood object. 
+  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
+                                           fwd_model_vectorized=inv_prob$par_to_obs_op,
+                                           y_obs=inv_prob$y, dim_par=as.integer(inv_prob$dim_par),
+                                           use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_model,
+                                           par_names=inv_prob$par_names, 
+                                           default_conditional=default_conditional, 
+                                           default_normalize=default_normalize)
+  inv_prob$llik_obj <- llik_exact
+  
+  return(inv_prob)
+}
+
+
+
+
+
+
+
 
 
 

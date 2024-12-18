@@ -1788,7 +1788,6 @@ llikEmulatorExactGauss$methods(
 #    corresponding to the diagonal of this covariance matrix.`lik_par` may 
 #    also be provided as a single value, which is interpreted as a 
 #    homoskedastic variance. Concretely, implements a likelihood of the form, 
-#    likelihood of the form
 #        p(y1,...,yP|u,v1,...,vP) = prod_{p=1}^{P} prod_{n=1}^{N} N(yp_n|G(u)_p, vp),
 #    where:
 #    P = `N_output` and N = `N_obs`
@@ -1798,7 +1797,7 @@ llikEmulatorExactGauss$methods(
 # In words, this likelihood assumes the forward model `G` has P outputs. A set of 
 # observations yp is associated with each output p, and these observations are 
 # assumed to be iid draws from N(G(u)_p, vp). The argument `y_obs` to the class 
-# constructor is a (N,P) matrix storing each set of observations as columns.  
+# constructor is a (N,P) matrix storing each set of observations as columns.
 # 
 # TODO: generalize to allow ragged arrays, where the yp need not be the same length.
 # -----------------------------------------------------------------------------

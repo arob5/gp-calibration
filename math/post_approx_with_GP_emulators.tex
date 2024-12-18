@@ -1186,10 +1186,36 @@ yielding the $\maxexpvarLabel$ criterion
 =  -\priorDens^2(\Par) \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
 \label{acq_max_exp_var}
 \end{equation}
-This objective strikes a balance between 
-$\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, rather than only considering 
-$\emKer[\Ndesign]{\llik}(\Par)$. However, it still suffers from the drawbacks associated with local uncertainty criteria, 
-as discussed previously. 
+The $\maxexpvarLabel$ criterion is numerically studied in \cite{KandasamyActiveLearning2015, Kandasamy_2017}.
+It strikes a balance between $\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, 
+rather than only considering $\emKer[\Ndesign]{\llik}(\Par)$. However, it still suffers from the drawbacks associated with
+ local uncertainty criteria, as discussed previously. 
+ 
+ \begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_fwd.png}}
+         \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
+         \label{fig:y equals x}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_llik.png}}
+         \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
+         \label{fig:three sin x}
+     \end{subfigure}
+     \caption{Pointwise maximum uncertainty acquisition functions evaluated at a grid of input values computed
+        using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
+        The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
+        emulator, respectively. Solid lines correspond to the acquisition functions in \Cref{acq_max_var_ent}; i.e., 
+        those are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions in 
+        \Cref{acq_max_exp_var_ent}; i.e., the analogous criteria tailored to the goal of posterior approximation.
+        Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
+        each acquisition function computed over the input grid.} 
+        \label{fig:pw_max_uncertainty_1d}
+\end{figure}
 
 \subsubsection{Integrated Conditional Uncertainty}
 We now consider specific instantiations of the integrated conditional uncertainty criterion \ref{acq_int_cond_unc}
@@ -1251,87 +1277,14 @@ posterior approximation. In this case, $\qoiMap$ can be defined in a typical way
 (e.g., \ref{acq_max_var} or \ref{acq_max_ent}) to target the underlying GP $\llikEm$.  
 Natural choices for $\weightDens$ include any of the approximate posteriors discussed 
 in \Cref{sec:post_approx}, which implies weighting the integral over $\parSpace$ by 
-the current posterior approximation. Alternatively, we might consider weighting by the 
-expected approximate posterior resulting from conditioning on 
-$\{\designBatchIn, \designBatchLlik\}$. 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-In adapting local uncertainty criteria \ref{acq_local_unc} to the goal of posterior approximation, 
-$\E\left[\qoi(\designBatchIn) \right]$
-
-We instead focus on design methods that fit within the sequential design framework summarized in \Cref{alg:seq_des_loop}, and 
-are tailored to the goal of posterior approximation. One such approach is to define acquisition functions based on 
-the unnormalized posterior density emulator ($\fwdEmRdm[\Ndesign]{\postDens}(\Par)$ or $\llikEmRdmDens[\Ndesign](\Par)$), 
-rather than the underlying GPs themselves. The problem of GP-based sequential design for Bayesian inverse problems  
-has gained recent attention, and is addressed in 
-\cite{SinsbeckNowak, Surer2023sequential, VehtariParallelGP, briol2017sampling, ranjan2016inverse, 
-	landslideCalibration, KandasamyActiveLearning2015, Kandasamy_2017, wang2018adaptive,   
-	weightedIVAR, quantileApprox, hydrologicalModel, briol2017sampling}. 
-[\todo: need to look at the method used in \cite{quantileApprox, hydrologicalModel} more closely.]
-As an initial example, we consider tailoring the $\maxvarLabel$ and $\maxentLabel$ criteria to the task of posterior approximation 
-using a log-likelihood emulator. The natural analogs of these acquisition functions in this setting are 
+the current posterior approximation. This yields acquisitions of the form
 \begin{align}
-&\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)] 
-= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}, \\ 
-&\labelAcq[\Ndesign]{\maxexpentLabel}(\designBatchIn) \Def -\Ent[\llikEmRdmDens[\Ndesign](\designBatchIn)]
-= \todo. \label{acq_max_exp_var_ent}
-\end{align} 
-
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_fwd.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
-         \label{fig:y equals x}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_llik.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
-         \label{fig:three sin x}
-     \end{subfigure}
-     \caption{Pointwise maximum uncertainty acquisition functions evaluated at a grid of input values computed
-        using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
-        The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
-        emulator, respectively. Solid lines correspond to the acquisition functions in \Cref{acq_max_var_ent}; i.e., 
-        those are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions in 
-        \Cref{acq_max_exp_var_ent}; i.e., the analogous criteria tailored to the goal of posterior approximation.
-        Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
-        each acquisition function computed over the input grid.} 
-        \label{fig:pw_max_uncertainty_1d}
-\end{figure}
-
-The closed-form expressions given follow from the Gaussian conditioning identities \ref{kriging_eqns}, the log-normal 
-variance expression in \Cref{llik_em_lik_emulator_moments}, and the known expression for log-normal entropy. 
-The ``exp'' in the naming convention highlights that these criteria are being applied to
-$\llikEmRdmDens[\Ndesign](\Par) = \priorDens(\Par) \Exp{\llikEm(\Par)}$, which is an exponentiated GP. 
-Thus, many of the acquisition functions 
-considered here can be viewed as the analogs of existing GP acquisition functions instead applied to log-normal 
-processes (LNP). The $\maxexpvarLabel$ acquisition is considered in 
-\cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
-while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
-
-% Integrated Expected Variance
-\subsubsection{Integrated Expected Variance}
-We now focus on adapting the integrated variance criterion \ref{acq_int_var} to target the goal of posterior approximation.  
-In the log-likelihood emulation setting, we will be able to derive a closed-form integrand, as was the case in \ref{acq_int_var}. 
-In the special case of a Gaussian likelihood, the analogous criterion in the forward model emulation setting also admits a 
-closed-form integrand.
+&\acq[\Ndesign](\designIn[\Nbatch])
+\Def \sum_{m=1}^{M} \emKer[\Naugment]{\llik}(\Par_m) 
+&&\Par_m \sim \hat{\llikEmRdmDens},
+\end{align}
+where $\hat{\llikEmRdmDens}$ denotes any of the posterior distributions discussed in 
+\Cref{sec:post_approx}. [\todo: need name and/or notation for acquisitions of this form]
 
 \begin{figure}
      \centering
@@ -1359,100 +1312,44 @@ closed-form integrand.
         \todo: need to define the integrated entropy acquisition targeting posterior approximation.} 
         \label{fig:pw_max_uncertainty_1d}
 \end{figure}
-
-\paragraph{Log-Likelihood Emulation}
-We begin with the log-likelihood emulation case. Recall that the 
-$\intvarLabel$ criterion relied on the GP property that the predictive variance $\emKer[\Naugment]{\llik}(\Par)$
-does not depend on the response $\llik(\designBatchIn)$. This is no longer the case for 
-$\Var[\llikEmRdmDens[\Naugment](\Par)]$, given that $\llikEmRdmDens[\Naugment](\Par)$ is a log-normal 
-random variable and hence its variance depends on $\emMean[\Naugment]{\llik}(\Par)$,  
-which in turn depends on $\llik(\designBatchIn)$ (see \ref{kriging_eqns}). 
-We follow the approach of \cite{VehtariParallelGP} and assume that the unobserved response follows the 
-current GP predictive distribution; that is, we consider conditioning on a new design batch 
-$\{\designBatchIn, \designBatchLlik\}$ which is assumed 
-to satisfy 
-\begin{align}
-\designBatchLlik | \designBatchIn &\sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn)).
-\end{align}
-Following the notation in \Cref{conditional-mean-notation}, we will denote 
-\begin{align}
-\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)
-&\Def \E\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik \right]. 
-\end{align}
-The dependence of $\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)$ on $\designBatchLlik$ is given in 
-\Cref{lemma:pred-mean-dist}. This lemma allows us to average over the uncertainty in  
-$\Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]$ stemming from the
- random quantity $\designBatchLlik$. 
  
-\begin{lemma} \label{lemma:evar}
-Let $\{\designBatchIn, \designBatchLlik\}$ be a new batch of $\Nbatch$ design points, with 
-$\designBatchLlik | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
-For any $\Par \in \parSpace$, it then follows that 
-\begin{align}
-\E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik]
-&= \Var\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
-	\varInflation(\Par; \designBatchIn), \label{evar-expression}
-\end{align}
-where 
-\begin{align}
-\Var\left[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
-&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
-\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right], \nonumber \\
-\varInflation(\Par; \designBatchIn)
-&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}. \label{var_inflation_factor}
-\end{align}
-\end{lemma}
-
-A similar result is derived in \cite{VehtariParallelGP}.
-The interpretation of \Cref{lemma:evar} is similar to that of \Cref{lemma:pred-mean-dist}. 
-The first term in \ref{evar-expression} is the variance of the log-normal random variable
- $\llikEmRdmDens[\Ndesign](\Par)$ conditioned on the ``pseudo-data''
- $\{\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn)\}$. The second term 
- $\varInflation(\Par; \designBatchIn)$, which we refer to as the \textit{variance inflation factor}, 
- accounts for the uncertainty due to $\designBatchLlik$. We note that 
-$\varInflation(\Par; \designBatchIn) \geq 1$ and the variance inflation is larger when the 
-input batch $\designBatchIn$ is more influential. If $\designBatchIn$ is a subset of the 
-current design $\designIn[\Ndesign]$, then $\varInflation(\Par; \designBatchIn) = 1$ (no 
-variance inflation is applied). 
-
-With these preliminary results established, we define the $\intExpVarLabel$ criterion
-\begin{align}
-\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) | \llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \weightDens(\Par) d\Par, \label{def:int_exp_var_llik}
-\end{align}
-emphasizing the expectation is still with respect to 
-$\designBatchLlik \sim \Gaussian(\emMean[\Ndesign]{\llik}(\designBatchIn), \emKer[\Ndesign]{\llik}(\designBatchIn))$. 
-Applying \Cref{lemma:evar} immediately gives the closed-form expression for the integrand in \ref{def:int_exp_var_llik}. 
-This criterion is considered in \cite{VehtariParallelGP} in training a log-likelihood emulator to be used for 
-approximate Bayesian computation.
-
-\paragraph{Forward Model Emulation}
-To define a similar criterion in the forward model emulation setting, we first recall that we are considering ``plug-in'' forward model emulators. 
-Thus, the forward model emulator $\fwdEm$ is conditioned on a new batch $\{\designBatchIn, \designBatchFwd\}$ and then 
-the updated emulator is plugged into the density in place of the true forward model. This implies that the analogous expression to 
-the expected variance in \ref{def:int_exp_var_llik}, 
-$\E_{\designBatchFwd} \Var[\fwdEmRdm[\Ndesign]{\postDens}(\Par) | \fwdEm[\Ndesign](\designBatchIn) = \designBatchFwd]$
-does \textit{not} correctly convey how the emulator is updated in this setting. To correctly specify the expected variance in this 
-context, we define $\fwdEmCond{\designBatchFwd} \Def \fwdEm | [\fwdEm(\designBatchIn) = \designBatchFwd]$
+\subsubsection{The Forward Model Emulation Setting}
+While we have introduced the above acquisition functions in the log-likelihood emulation setting, analogous 
+criteria can be defined for forward model emulators. However, the tractability of the resulting criteria will in 
+general depend on the specific likelihood structure. We focus here on the Gaussian likelihood setting 
+\ref{llik_Gaussian}, which is amenable to closed-form computations. We start by noting that a closed-form
+expression for $\Var\left[\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar) \right]$ is given in
+\ref{fwd_em_lik_emulator_moments_Gaussian}, implying a closed-form $\maxexpvarLabel$ 
+in this setting. To define an integrated conditional variance criterion analogous to 
+\ref{acq_int_cond_unc}, we first recall that we are considering ``plug-in'' forward model emulators. 
+Thus, the forward model emulator $\fwdEm$ is conditioned on a new batch 
+$\{\designBatchIn, \designBatchFwd\}$ and then the updated emulator is plugged into the density 
+in place of the true forward model. 
+To denote this, we define 
+$\fwdEmCond{\designBatchFwd} \Def \fwdEm | [\fwdEm(\designBatchIn) = \designBatchFwd]$
 \footnote{Note that $\fwdEmCond{\designBatchFwd}$ is conditioned on $\{\designBatchIn, \designBatchFwd\}$, though the 
-dependence on the inputs $\designBatchIn$ is suppressed in the notation.}, so that 
+dependence on the inputs $\designBatchIn$ is suppressed in the notation.}
+, so that 
 $\postDens(\Par; \fwdEmCond{\designBatchFwd})$ represents the unnormalized posterior density 
-with the updated emulator plugged in. Following the convention from previous sections, we let 
-$\emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd)$ denote the expectation of 
-$\fwdEm(\Par) | [\fwdEm(\designBatchIn) = \designBatchFwd]$.
-We can now define the integrated variance criterion as 
-\begin{align}
+with the updated emulator plugged in.  
+In this setting, the unobserved forward model outputs are modeled 
+as $\designBatchFwd|\designBatchIn \sim \Gaussian(\emMean{\fwd}(\designBatchIn), \emKer{\fwd}(\designBatchIn))$.
+Following the convention from previous sections, we denote 
+$\emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd) \Def \E\left[\fwdEm(\Par) \given \fwdEm(\designBatchIn) = \designBatchFwd\right]$.
+The analogous integrated conditional variance criterion is then defined by 
+\begin{equation}
 \labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd]\weightDens(\Par) d\Par, \label{fwd-int-exp-var}
-\end{align}
-under the assumption $\designBatchFwd|\designBatchIn \sim \Gaussian(\emMean{\fwd}(\designBatchIn), \emKer{\fwd}(\designBatchIn))$.
-To our knowledge, 
-the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the form \ref{fwd-int-exp-var}. 
-While in general the tractability of this criterion depends on the specific likelihood, \cite{Surer2023sequential} 
-demonstrates that the integrand admits a closed-form expression when the likelihood is Gaussian. 
-While their result is tailored to the basis function approach for forward model emulation (see \ref{fwd_model_basis_func}), 
-we state the result generically for multi-output forward models emulated by independent GPs, with the basis 
-function setting following as a corollary [\todo: add the corollary in the appendix].  
+\int_{\parSpace} \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd})]\weightDens(\Par) d\Par. \label{fwd-int-exp-var}
+\end{equation}
+To our knowledge, the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the 
+form \ref{fwd-int-exp-var}. In their presentation, a general perspective is adopted for a generic likelihood and 
+potentially non-Gaussian random field emulator, though the authors briefly note that analytical simplifications 
+are possible when both the emulator and likelihood are Gaussian. A more detailed investigation of this 
+special case is provided in \cite{Surer2023sequential}, in which a closed-form expression is derived for the 
+integrand of a similar criterion. While their result is tailored to the basis function approach for forward model 
+emulation (see \ref{fwd_model_basis_func}), we state the result generically for multi-output forward models 
+emulated by independent GPs, with the basis function setting following as a corollary
+[\todo: add the corollary in the appendix].  
 \begin{prop} \label{prop:evar-fwd-emulation}
 Consider 
 $\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, interpreted as a set of $\dimObs$ independent 
@@ -1461,7 +1358,7 @@ design points, with
 $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$.
 Then for $\Par \in \parSpace$, 
 \begin{align}
-\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd}) | \designBatchFwd] \nonumber \\
+\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd})] \nonumber \\
 &= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \frac{1}{2}\likPar + \emKer{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
 \frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer{\fwd}(\Par)\right] - \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}} \right] \label{fwd_evar1} \\
 &= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
@@ -1469,6 +1366,26 @@ Then for $\Par \in \parSpace$,
 \end{align}
 where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$. 
 \end{prop}
+
+
+\todo: Old, but keeping around for now 
+The problem of GP-based sequential design for Bayesian inverse problems  
+has gained recent attention, and is addressed in 
+\cite{SinsbeckNowak, Surer2023sequential, VehtariParallelGP, briol2017sampling, ranjan2016inverse, 
+	landslideCalibration, KandasamyActiveLearning2015, Kandasamy_2017, wang2018adaptive,   
+	weightedIVAR, quantileApprox, hydrologicalModel, briol2017sampling}. 
+[\todo: need to look at the method used in \cite{quantileApprox, hydrologicalModel} more closely.]
+
+The $\maxexpvarLabel$ acquisition is considered in 
+\cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
+while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
+
+% Integrated Expected Variance
+\subsubsection{Integrated Expected Variance}
+
+\paragraph{Log-Likelihood Emulation}
+
+\paragraph{Forward Model Emulation}
 
 % Learning Likelihood Parameters
 \section{Learning Likelihood Parameters} \label{section_lik_par}
