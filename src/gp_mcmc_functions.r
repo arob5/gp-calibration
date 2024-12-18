@@ -96,13 +96,8 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   #
   # Returns:
   # list, with the main element named "samp". This element is itself a list with
-  # elements "par", "sig2", and "prop_sd_comb". Each of these are matrices with 
-  # rows storing the MCMC samples. The "prop_sd_comb" matrix contains the 
-  # square root of the diagonal of the proposal covariance at each iteration, 
-  # and is only returned if `return_prop_sd = TRUE`. Note that this refers to 
-  # the entire composite proposal covariance, which combines both `cov_prop`
-  # and `log_scale_prop`. The elements of the outer list other than "samp" store 
-  # other information regarding the MCMC run (initial conditions, proposal 
+  # elements "par" and "sig2". The elements of the outer list other than "samp"  
+  # store other information regarding the MCMC run (initial conditions, proposal 
   # adaptation settings, etc.). 
   # TODO: ensure that `sig2_init` is named vector, if non-NULL. 
   # And that the names include the names of the outputs where sig2 must be 
@@ -117,6 +112,8 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
     .NotYetImplemented(msg="Only `mode=mcwmh` currently implemented.")
   }
   
+  if(mode == "pseudo_marginal") use_joint <- FALSE
+  
   # Objects to store samples and other outputs.
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
@@ -129,7 +126,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   par_samp[1,] <- drop(par_init)
   par_curr <- par_samp[1,]
   lprior <- get_lprior_dens(par_prior)
-  lprior_par_curr <- lprior(par_curr)
+  lprior_curr <- lprior(par_curr)
   
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
@@ -140,8 +137,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
   
   if(include_sig2_Gibbs_step) {
-    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", 
-                                                     labels=term_labels_learn_sig2))
+    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
     sig2_samp <- matrix(nrow=n_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
@@ -157,7 +153,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   times_adapted <- 0
   
   # Store initial chain info. No log-likelihood samples yet at this point.
-  chain_info[1,] <- c(NA, lprior_par_curr, 
+  chain_info[1,] <- c(NA, lprior_curr, 
                       exp(log_scale_prop) * sqrt(diag(cov_prop)))
   
   # Variable to store error condition, if it occurs.
@@ -175,34 +171,44 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
         par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
         
         # Compute prior. 
-        lprior_par_prop <- lprior(par_prop)
+        lprior_prop <- lprior(par_prop)
         
-        # Sample SSR. 
-        emulator_samp_list <- llik_em$sample_emulator(rbind(par_curr,par_prop), 
-                                                            use_cov=use_joint, 
-                                                            include_nugget=TRUE, ...)  
+        # Sample SSR.
+        # emulator_samp_list <- llik_em$sample_emulator(rbind(par_curr,par_prop), 
+        #                                                     use_cov=use_joint, 
+        #                                                     include_nugget=TRUE, ...)  
         
         # Immediately reject if proposal has prior density zero (which will 
         # often happen when the prior has been truncated to stay within the 
         # design bounds).
-        if(is.infinite(lprior_par_prop)) {
+        if(is.infinite(lprior_prop)) {
           par_samp[itr,] <- par_samp[itr-1,]
           curr_prop_idx <- 1L
+          accept_prop <- FALSE
+          llik_samp <- c(NA,NA)
         } else {
-          # Sample log-likelihood emulator. 
-          llik_samp <- llik_em$assemble_llik(emulator_samp_list, 
-                                             lik_par_val=sig2_curr)
+          # Sample log-likelihood emulator.
+          llik_samp <- sample_mh_llik(llik_em, par_curr, par_prop, 
+                                      llik_curr=llik_curr, 
+                                      mode=mode, use_cov=use_joint, ...)
+          llik_curr <- llik_samp[1]
+          llik_prop <- llik_samp[2]
           
+          
+          # llik_samp <- llik_em$sample(rbind(par_curr,par_prop), 
+          #                             use_cov=use_joint, 
+          #                             include_nugget=TRUE, ...)
+
           # Accept-Reject step.
-          lpost_par_curr <- lprior_par_curr + llik_samp[1]
-          lpost_par_prop <- lprior_par_prop + llik_samp[2]
-          alpha <- min(1.0, exp(lpost_par_prop - lpost_par_curr))
+          lpost_curr <- lprior_curr + llik_samp[1]
+          lpost_prop <- lprior_prop + llik_samp[2]
+          alpha <- min(1.0, exp(lpost_prop - lpost_curr))
           accept_prop <- (runif(1) <= alpha)
           
           if(accept_prop) {
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
-            lprior_par_curr <- lprior_par_prop
+            lprior_curr <- lprior_prop
             curr_prop_idx <- 2L 
             accept_count <- accept_count + 1L
           } else {
@@ -231,7 +237,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
         
         # Store chain info for current step.
         chain_info[itr,] <- c(ifelse(accept_prop, llik_samp[1], llik_samp[2]), 
-                              lprior_par_curr, 
+                              lprior_curr, 
                               exp(log_scale_prop) * sqrt(diag(cov_prop)))
 
         #
@@ -256,8 +262,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
     }
   )
 
-  return(list(samp=list(par=par_samp, sig2=sig2_samp, 
-                        prop_sd_comb=prop_sd_comb),
+  return(list(samp=list(par=par_samp, sig2=sig2_samp),
               info=list(dens=chain_info[,1:2], 
                         prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
@@ -410,9 +415,10 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
 
 
 mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL, 
-                                    sig2_init=NULL, approx_type="joint-marginal", 
+                                    sig2_init=NULL, 
+                                    alpha_approx_type="joint-marginal", 
                                     n_itr=50000L, cov_prop=NULL, 
-                                    log_scale_prop=NULL,adapt_cov_prop=TRUE, 
+                                    log_scale_prop=NULL, adapt_cov_prop=TRUE, 
                                     adapt_scale_prop=TRUE, 
                                     adapt=adapt_cov_prop||adapt_scale_prop, 
                                     accept_rate_target=0.24, 
@@ -465,7 +471,8 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
         } else {
           # Compute acceptance probability approximation.
           alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, 
-                                             approx_type, lik_par_val=sig2_curr, 
+                                             alpha_approx_type, 
+                                             lik_par_val=sig2_curr, 
                                              lprior_vals=c(lprior_par_curr, 
                                                            lprior_par_prop), ...)
           
@@ -678,13 +685,64 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 #  For running chains in parallel and setting initial conditions.
 # ------------------------------------------------------------------------------
 
+llik_samp <- sample_mh_llik(llik_em, par_curr, par_prop, 
+                            llik_curr=NULL, mode="mcwmh", joint=TRUE, ...) {
+  # A helper function for `mcmc_noisy` to sample the log-likelihood values 
+  # at the current and proposed points for use in computing a 
+  # Metropolis-Hastings acceptance ratio.
+  #
+  # Different possibilities:
+  # mcwmh: sample llik at both current and proposed points. Samples jointly
+  #        from the bivariate distribution if `joint` is TRUE, otherwise samples
+  #        independently.
+  # pseudo-marginal: If `joint = TRUE`, samples the proposed llik value  
+  #                  independently and returns `llik_curr` unchanged for the  
+  #                  current value. This targets the "marginal" posterior  
+  #                  approximation. If FALSE, `joint = TRUE` then samples the 
+  #                  proposed llik value conditional on the current 
+  #                  log-likelihood value. `llik_curr` is returned unchanged 
+  #                  in either case.
+  #
+  # Args:
+  #    llik_em:
+  #    par_curr: numeric, the current parameter value (i.e., current MCMC state).
+  #    par_prop: numeric, the proposed parameter value.
+  #    llik_curr: numeric, the log-likelihood value at the current point. 
+  #               Required for all modes except for "mcwmh".
+  #    mode: either "mcwmh" or "pseudo-marginal". See description above.
+  #    joint: logical, see description above.
+  
+  # The joint pseudo-marginal algorithm requires updating the current GP 
+  # emulator, so make a deep copy here to avoid updating in global scope.
+  llik_em_copy <- llik_em
+  if((mode=="pseudo-marginal") && joint) {
+    assert_that(!is.null(llik_curr))
+    llik_em_copy <- llik_em$copy(shallow=FALSE)
+    llik_em_copy$update(input, par_curr, llik_curr, update_hyperpar=FALSE)
+  }
+  
+  # mcwmh mode samples llik values at both current and proposed points.
+  # pseudo-marg mode samples the llik only at the proposed point, and recycles  
+  # the current llik value.
+  par <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_em$input_names))
+  if(mode=="mcwmh") par <- rbind(par_curr, par)
+  
+  llik_samp <- llik_em_copy$sample(par, use_cov=use_joint,
+                                   include_nugget=TRUE, ...)
+  llik_samp <- drop(llik_samp)
+  if(mode=="pseudo-marginal") llik_samp <- c(llik_curr, llik_samp)
+
+  return(llik_samp)
+}
+
+
 run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L, 
                             par_init=NULL, par_prior=NULL, defer_ic=FALSE,
                             lik_par_init=NULL, lik_par_prior=NULL, 
-                            ic_sample_method="LHS", estimate_cov=FALSE, 
-                            n_samp_cov_est=100L, try_parallel=TRUE, n_cores=NULL,  
-                            package_list=NULL, dll_list=NULL, obj_list=NULL, 
-                            test_label="default_lbl", itr_start=1L, ...) {
+                            estimate_cov=FALSE, n_samp_cov_est=100L, 
+                            try_parallel=TRUE, n_cores=NULL, package_list=NULL, 
+                            dll_list=NULL, obj_list=NULL, test_label="default_lbl", 
+                            ic_settings=list(), n_itr=50000L, itr_start=1L, ...) {
   # Provides the main interface/entrypoint for running MCMC with llikEmulator
   # objects. This wrapper function runs multiple MCMC chains in parallel. There
   # are three options for specifying initial conditions:
@@ -720,15 +778,15 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   #              `mcmc_func_name`. This argument was motivated by the sampler 
   #              "DEzs" in `mcmc_bt_wrapper()`, which tends to through errors 
   #              when trying to manually set initial conditions.
-  #    ic_sample_method: the sampling method used to sample the initial 
-  #                      conditions for the chains. Default is Latin Hypercube 
-  #                      sampling.
   #    estimate_cov: If TRUE, estimates the posterior covariance matrix, and 
   #                  uses the estimate to initialize the proposal covariance.
   #                  Currently estimate is produced by simulating from the prior
   #                  and computing an importance sampling estimate. Other methods
   #                  may be implemented in the future; e.g., using estimate
   #                  resulting from ensemble Kalman inversion.
+  #   ic_settings: list containing named arguments passed to `get_mcmc_ic()`, 
+  #                other than "llik_em", "par_prior", and "n_ic". If `par_init`
+  #                is provided then this is not used.
   #   itr_start: integer, passed to `select_mcmc_itr()` to subset the MCMC 
   #              samples. By default returns all samples.
   #   ...: should contain all arguments to be passed to the MCMC function, other 
@@ -744,7 +802,8 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   # to the underlying MCMC function.
   if(!defer_ic) {
     if(is.null(par_init)) {
-      par_init <- get_mcmc_ic(llik_em, par_prior, n_ic=n_chain, ...)
+      ic_settings[c("llik_em","par_prior","n_ic")] <- list(llik_em, par_prior, n_chain)
+      par_init <- do.call("get_mcmc_ic", ic_settings)
     } else {
       assert_that(nrow(par_init) == n_chain)
     }
@@ -758,7 +817,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
     mcmc_func <- get(mcmc_func_name)
     mcmc_func_ic <- function(ic) mcmc_func(llik_em=llik_em,
                                            par_prior=par_prior,
-                                           par_init=ic, ...)
+                                           par_init=ic, n_itr=n_itr, ...)
     
     if(try_parallel) {
       # Prepare for parallel run. 
@@ -791,14 +850,12 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   })
   
   if(isTRUE("err" %in% names(mcmc_chain_list))) return(mcmc_chain_list)
-  
+
   # Convert to `samp_dt` data.table format
-  samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
-                                            function(l) l$samp), 
+  samp_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, function(l) l$samp), 
                                             test_label=test_label,
                                             itr_start=itr_start)
-  info_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, 
-                                                   function(l) l$info), 
+  info_dt <- format_mcmc_output_multi_chain(lapply(mcmc_chain_list, function(l) l$info), 
                                             test_label=test_label,
                                             itr_start=itr_start)
   
@@ -942,9 +999,8 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
 
 get_mcmc_ic <- function(llik_em, par_prior, n_ic, 
                         n_ic_by_method=setNames(n_ic,"prior"),
-                        design_method="LHS", design_info=NULL, 
-                        approx_type="mean", test_info=NULL, 
-                        n_test_inputs=200L, ...) {
+                        design_method="LHS", approx_type="mean",  
+                        test_info=NULL, n_test_inputs=200L, ...) {
   # Generates a matrix of parameter values intended to be used as initial 
   # conditions for a set of MCMC chains. `n_ic` is the total number of 
   # initial conditions, but different methods can be used to generate 
@@ -965,16 +1021,16 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   #           default produces a Latin Hypercube Sample with respect to the
   #           prior `par_prior`.
   #  "design_max": extracts the inputs associated with the largest observed 
-  #                true likelihood values. For this method, a list `design_info`
-  #                must be passed with elements "input" and "llik".
+  #                true likelihood values. The design inputs and log-likelihood
+  #                values are extracted from `llik_em`.
   #  "approx_max": extracts the inputs associated with the largest predicted 
   #                likelihood values at a set of test points. If predictions
   #                have already been made external to this function, then 
-  #                they can be provided in `test_info` analogously to 
-  #                `design_info`. Otherwise, `n_test_inputs` are sampled from 
-  #                the prior using Latin Hypercube Sampling, then `em_llik` is 
-  #                used to predict at these test points using the likelihood
-  #                approximation given by `approx_type`.
+  #                they can be provided in a list `test_info` with named 
+  #                elements "input" and "llik". Otherwise, `n_test_inputs` are 
+  #                sampled from the prior using Latin Hypercube Sampling, then 
+  #                `em_llik` is used to predict at these test points using the 
+  #                likelihood approximation given by `approx_type`.
   #
   # Returns:
   # matrix, of dimension (n_ic, d), where d is the dimension of the parameter 
@@ -993,9 +1049,11 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   }
   
   if("design_max" %in% methods) {
-    llik_obs_order <- order(design_info$llik, decreasing=TRUE)
+    inputs_design <- llik_em$get_design_inputs()
+    llik_design <- llik_em$get_design_llik()
+    llik_obs_order <- order(drop(llik_design), decreasing=TRUE)
     input_sel <- llik_obs_order[1:n_ic_by_method["design_max"]]
-    ic_design_max <- design_info$input[input_sel, par_names]
+    ic_design_max <- inputs_design[input_sel, par_names]
     ic <- rbind(ic, ic_design_max)
   }
   
@@ -1017,7 +1075,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
     }
 
     # Extract inputs corresponding to largest predicted log-likelihood values.
-    llik_approx_order <- order(llik_approx, decreasing=TRUE)
+    llik_approx_order <- order(drop(llik_approx), decreasing=TRUE)
     input_sel <- llik_approx_order[1:n_ic_by_method["approx_max"]]
     ic_approx_max <- inputs[input_sel, par_names]
     ic <- rbind(ic, ic_approx_max)
@@ -1061,8 +1119,8 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
 # log-likelihood emulators. 
 # ------------------------------------------------------------------------------
 
-get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, approx_type, 
-                                      lik_par_val=NULL, 
+get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, 
+                                      alpha_approx_type, lik_par_val=NULL, 
                                       conditional=llik_em$default_conditional, 
                                       normalize=llik_em$default_normalize, 
                                       par_prior=NULL, lprior_vals=NULL, 
@@ -1075,17 +1133,17 @@ get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, approx_ty
     lprior_vals <- calc_lprior_dens(rbind(par_curr, par_prop), par_prior)
   }
   
-  if(approx_type == "mean") {
+  if(alpha_approx_type == "mean") {
     .NotYetImplemented()
-  } else if(approx_type %in% c("marginal", "joint-marginal")) {
-    joint <- (approx_type == "joint-marginal")
+  } else if(alpha_approx_type %in% c("marginal", "joint-marginal")) {
+    joint <- (alpha_approx_type == "joint-marginal")
     alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, joint, 
                                   lik_par_val=lik_par_val, 
                                   conditional=conditional, normalize=normalize, 
                                   llik_pred_list=llik_pred_list, 
                                   lprior_vals=lprior_vals, ...)
   } else {
-    stop("Invalid `approx_type` ", approx_type)
+    stop("Invalid `approx_type` ", alpha_approx_type)
   }
   
   return(alpha)

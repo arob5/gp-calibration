@@ -108,6 +108,10 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
+  update_emulator = function() {
+    .NotYetImplemented()
+  },
+  
   predict_emulator = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
                               return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL, ...) {
     # This default method assumes the emulator inherits from `gpWrapper`, but different llikEmulator 
@@ -1330,13 +1334,15 @@ llikEmulatorGP$methods(
                         
     assert_that(use_fixed_lik_par, msg="llikEmulatorGP does not yet support emulation as a function of `lik_par`.")
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
-    assert_that(gp_model$Y_dim==1, msg="`llikEmulatorMultGausGP` only supports single-output GP emulator.")
+    assert_that(gp_model$Y_dim==1, msg="`llikEmulatorGP` only supports single-output GP emulator.")
     assert_that(!is.null(gp_model$X_names) && noNA(gp_model$X_names), 
                 msg="`llikEmulatorMultGausGP` requires that `gp_model` has `X_names` field set.")
     
-    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, input_names=gp_model$X_names,
-              dim_input=gp_model$X_dim, default_conditional=default_conditional, 
-              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+    callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, 
+              input_names=gp_model$X_names, dim_input=gp_model$X_dim, 
+              default_conditional=default_conditional, 
+              default_normalize=default_normalize, 
+              use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Generic log likelihood",
               emulator_description="GP directly emulating the log-likelihood.", 
               llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
@@ -1359,7 +1365,9 @@ llikEmulatorGP$methods(
     }
   },
   
-  assemble_llik = function(llik, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+  assemble_llik = function(llik, lik_par_val=NULL, 
+                           conditional=default_conditional, 
+                           normalize=default_normalize, ...) {
     # llik should be N_input x 1. Since the llik is emulated directly, then this function simply returns 
     # the argument `llik` after performing argument validation. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
@@ -1370,15 +1378,23 @@ llikEmulatorGP$methods(
     emulator_model$X
   }, 
   
-  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional,
+                             normalize=default_normalize, ...) {
     # Returns the response values in the design of the GP, since the response is the llik in this case. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     return(emulator_model$Y)
   },
   
-  sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, include_nugget=TRUE, ...) {
+  sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
+                             include_nugget=TRUE, ...) {
+    
     emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
                           N_samp=N_samp, pred_list=em_pred_list, ...)[,,1,drop=FALSE]             
+  },
+  
+  update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
+    .self$emulator_model$update(get_input(input_new), matrix(llik_new, ncol=1), 
+                                update_hyperpar=update_hyperpar, ...)
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
@@ -1399,9 +1415,12 @@ llikEmulatorGP$methods(
     
     if(!is.null(em_pred_list)) return(em_pred_list)
     
-    .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
-                                 return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                 X_cross=input_cross, include_nugget=include_nugget, ...)
+    .self$emulator_model$predict(get_input(input), return_mean=return_mean, 
+                                 return_var=return_var,
+                                 return_cov=return_cov, 
+                                 return_cross_cov=return_cross_cov,
+                                 X_cross=input_cross, 
+                                 include_nugget=include_nugget, ...)
   }, 
   
   predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  

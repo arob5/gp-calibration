@@ -302,7 +302,8 @@ append_chain <- function(samp_dt, samp_list, test_label, chain_idx=NULL) {
 }
 
 
-format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
+format_mcmc_output_multi_chain <- function(chain_samp_list, test_label, 
+                                           itr_start=1L, itr_stop=NULL) {
   # A wrapper around `format_mcmc_output()` that allows for appending multiple 
   # chains. See `format_mcmc_output()` for more details.
   #
@@ -320,12 +321,16 @@ format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
   
   # First create the data.table for only the first chain.
   samp_dt <- format_mcmc_output(chain_samp_list[[1]], test_label, chain_idx=1L)
-  if(n_chains==1L) return(samp_dt)
-  
+
   # Now loop over remaining chains and append to data.table.
-  for(idx in 2:n_chains) {
-    samp_dt <- append_chain(samp_dt, chain_samp_list[[idx]], test_label, chain_idx=idx)
+  if(n_chains > 1) {
+    for(idx in 2:n_chains) {
+      samp_dt <- append_chain(samp_dt, chain_samp_list[[idx]], test_label, chain_idx=idx)
+    }
   }
+
+  # Subset iterations.
+  samp_dt <- select_mcmc_itr(samp_dt, itr_start=itr_start, itr_stop=itr_stop)
   
   return(samp_dt)
 }
@@ -333,7 +338,7 @@ format_mcmc_output_multi_chain <- function(chain_samp_list, test_label) {
 
 append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label) {
   # A wrapper around `append_mcmc_output()` that allows for appending a new MCMC
-  # test containing multiple chains. See `format_mcappend_mcmc_output()` for more 
+  # test containing multiple chains. See `format_mcmc_output()` for more 
   # details.
   # 
   # Args:

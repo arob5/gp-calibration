@@ -230,6 +230,9 @@ gpWrapper$methods(
     # Returns:
     #    
 
+    # If there is only one input, no covariance computation required.
+    if(isTRUE(nrow(X_new)==1)) return_cov <- FALSE
+    
     # Scale inputs, if required. 
     if(scale_input) {
       X_new <- .self$scale(X_new)
