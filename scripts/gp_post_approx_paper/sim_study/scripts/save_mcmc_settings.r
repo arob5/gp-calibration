@@ -23,44 +23,45 @@ common_bt_settings <- list(mcmc_func_name="mcmc_bt_wrapper", sampler="DEzs",
                            defer_ic=TRUE, settings_list=list(consoleUpdates=25000))
 
 # Common settings that will be applied to all algorithms using the 
-# `mcmc_noisy_llik()`. Note that the four last settings here are fed to 
-# `get_mcmc_ic()` for setting the MCMC initial conditions.
+# `mcmc_noisy_llik()`.
 common_noisy_settings <- list(mcmc_func_name="mcmc_noisy_llik", 
-                           n_ic_by_method=c(design_max=2, approx_max=2),
-                           approx_type="quantile", alpha=0.8, n_test_inputs=500L)
+                              ic_settings=list(approx_type="quantile", 
+                                               n_test_inputs=500L,
+                                               alpha=0.8,
+                                               n_ic_by_method=c(design_max=2, approx_max=2)))
 
 # Common settings that will be applied to all algorithms using the 
-# `mcmc_gp_acc_prob_approx()`. Note that the four last settings here are fed to 
-# `get_mcmc_ic()` for setting the MCMC initial conditions.
+# `mcmc_gp_acc_prob_approx()`.
 common_acc_prob_settings <- list(mcmc_func_name="mcmc_gp_acc_prob_approx", 
-                                 n_ic_by_method=c(design_max=2, approx_max=2),
-                                 approx_type="quantile", alpha=0.8, 
-                                 n_test_inputs=500L)
+                                 ic_settings=list(approx_type="quantile", 
+                                                  n_test_inputs=500L,
+                                                  alpha=0.8,
+                                                  n_ic_by_method=c(design_max=2, approx_max=2)))
 
 # List of MCMC settings.
 mcmc_settings_list <- list(
-  c(list(mcmc_tag="quantile7", approx_type="quantile", alpha=0.7),
+  c(list(test_label="quantile7", approx_type="quantile", alpha=0.7),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="quantile8", approx_type="quantile", alpha=0.8),
+  c(list(test_label="quantile8", approx_type="quantile", alpha=0.8),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="quantile9", approx_type="quantile", alpha=0.9),
+  c(list(test_label="quantile9", approx_type="quantile", alpha=0.9),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="mean", approx_type="mean"),
+  c(list(test_label="mean", approx_type="mean"),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="marginal", approx_type="marginal"),
+  c(list(test_label="marginal", approx_type="marginal"),
     common_settings, common_bt_settings),
-  c(list(mcmc_tag="mcwmh-joint", use_joint=TRUE),
+  c(list(test_label="mcwmh-joint", use_joint=TRUE),
     common_settings, common_noisy_settings),
-  c(list(mcmc_tag="mcwmh-ind", use_joint=FALSE),
+  c(list(test_label="mcwmh-ind", use_joint=FALSE),
     common_settings, common_noisy_settings),
-  c(list(mcmc_tag="marg-acc-prob-joint", approx_type="joint-marginal"), 
+  c(list(test_label="marg-acc-prob-joint", alpha_approx_type="joint-marginal"), 
     common_settings, common_acc_prob_settings),
-  c(list(mcmc_tag="marg-acc-prob-ind", approx_type="marginal"), 
+  c(list(test_label="marg-acc-prob-ind", alpha_approx_type="marginal"), 
     common_settings, common_acc_prob_settings)
 )
 
 # Set names of list to the MCMC tags.
-tags <- sapply(mcmc_settings_list, function(x) x$mcmc_tag)
+tags <- sapply(mcmc_settings_list, function(x) x$test_label)
 names(mcmc_settings_list) <- tags
 
 # Save settings to file.

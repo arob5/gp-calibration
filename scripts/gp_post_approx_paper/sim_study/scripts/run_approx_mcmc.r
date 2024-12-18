@@ -129,7 +129,10 @@ design_info <- readRDS(design_path)
 print("-------------------- Running MCMC --------------------")
 
 print("-----> Truncating prior based on design point bounds:")
-par_prior_trunc <- truncate_prior(inv_prob$par_prior, design_info$bounds)
+par_prior <- inv_prob$par_prior
+par_prior$bound_lower <- par_prior$param1
+par_prior$bound_upper <- par_prior$param2
+par_prior_trunc <- truncate_prior(par_prior, design_info$bounds)
 print(par_prior_trunc)
 
 print("-----> Setting initial proposal covariance:")
@@ -147,8 +150,7 @@ for(i in seq_along(mcmc_settings_list)) {
 
 print("Calling `run_mcmc_comparison()`:")
 run_mcmc_comparison(llik_em, par_prior_trunc, mcmc_settings_list, 
-                    save_dir=out_dir, return=FALSE, itr_start=burn_in_start,
-                    compute_stats=TRUE)
+                    save_dir=out_dir, return=FALSE, compute_stats=TRUE)
 
 
 

@@ -18,14 +18,12 @@ knitr::opts_chunk$set(echo=FALSE)
 # Settings
 experiment_tag <- "vsem"
 design_tag <- file.path("init_emulator", "LHS_250")
-run_id <- "test_run"
+run_id <- "test_run3"
 design_id <- "1018157756"
 
 # Burn-in for exact MCMC samples.
-burn_in_start_exact <- 150000L
+itr_start <- c(exact=150000L)
 ```
-
-
 
 
 ```{r}
@@ -94,7 +92,7 @@ em_llik_errs_prior <- readRDS(file.path(experiment_dir, design_tag, design_id,
 
 # Read exact MCMC samples.
 samp_dt_exact <- fread(file.path(setup_dir, "samp_exact.csv"))
-samp_dt_exact <- select_mcmc_samp(samp_dt_exact, itr_start=burn_in_start_exact)
+samp_dt_exact <- select_mcmc_samp(samp_dt_exact, itr_start=itr_start)
 
 # Read GP-accelerated MCMC settings.
 mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.rds"))
@@ -102,273 +100,138 @@ mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.
 
 
 ```{r}
-# Define default burn-ins for each algorithm.
-burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
+itr_start_approx <- sapply(mcmc_approx_settings, function(l) l$itr_start)
+
+# Burn-ins for each algorithm.
 print("----- Burn-ins -----")
-print(paste0("Exact: ", burn_in_start_exact))
-for(i in seq_along(burn_in_start)) {
-  tag <- names(burn_in_start)[i]
-  burn_in <- burn_in_start[i]
-  print(paste(tag, burn_in, sep=": "))
+print(paste0("Exact: ", itr_start))
+print(itr_start_approx)
+```
+
+
+# Exact MCMC
+```{r}
+hist_plots_exact <- get_hist_plot_comparisons(samp_dt_exact, 
+                                              test_label_baseline="prior")
+for(plt in hist_plots_exact) plot(plt)
+```
+
+```{r}
+summarize_approx_mcmc <- function(test_label, itr_start=1L) {
+  
+  # Determine burn-in.
+  itr_start <- setNames(itr_start, test_label)
+
+  # Load and summarize MCMC samples from plug-in mean approximation.
+  mcmc_path <- file.path(mcmc_dir, paste0("mcmc_samp_", test_label, ".rds"))
+
+  # Read samples.
+  mcmc_list <- readRDS(mcmc_path)
+  samp_dt_approx <- mcmc_list$samp
+  mcmc_ic <- mcmc_list$output_list[[1]]$par_init
+  print("-----> Initial conditions:")
+  print(mcmc_ic)
+  print("-----> Number of chains:")
+  print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
+  
+  # MCMC diagnostics.
+  trace_plots <- get_trace_plots(samp_dt_approx, itr_start=itr_start)
+  llik_trace_plot<- get_trace_plots(mcmc_list$info, param_names="llik", 
+                                    itr_start=itr_start)[[1]]
+  rhat_list <- calc_R_hat(samp_dt_approx, within_chain=TRUE, 
+                          itr_start=itr_start)
+  samp_dt_exact <- select_mcmc_samp(samp_dt_exact, test_labels="exact")
+  samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx,
+                                    itr_start=itr_start)
+  hist_plots <- get_hist_plot_comparisons(samp_dt_approx,
+                                          test_label_baseline="exact")
+  hist_plot_llik <- get_hist_plots(mcmc_list$info, param_names="llik",
+                                   combine_chains=FALSE, 
+                                   itr_start=itr_start)[[1]]
+  
+  # Print R-hat statistics.
+  print(rhat_list$R_hat_vals)
+  
+  # Display plots.
+  for(plt in trace_plots) plot(plt)
+  plot(llik_trace_plot)
+  for(plt in hist_plots) plot(plt)
+  plot(hist_plot_llik)
+  
+  # Return data.
+  return_list <- list(samp_dt_approx=samp_dt_approx, rhat_list=rhat_list)
+  return(invisible(return_list))
 }
+
 ```
 
 # Plug-In Mean Posterior
 We start by looking at the approximate posterior defined by plugging in the
 GP mean, ignoring the GP variance.
 
-
 ```{r}
-# Load and summarize MCMC samples from plug-in mean approximation.
-mcmc_mean_path <- file.path(mcmc_dir, "mcmc_mean.rds")
-
-# Read samples.
-mcmc_mean_list <- readRDS(mcmc_mean_path)
-samp_dt_mean <- mcmc_mean_list$samp
-samp_dt_mean_ic <- samp_dt_mean[itr==1L]
-samp_dt_mean <- select_mcmc_samp(samp_dt_mean, itr_start=burn_in_start)
-print(samp_dt_mean[, .N, by=.(test_label, chain_idx)])
-
-# MCMC diagnostics.
-trace_plots <- get_trace_plots(samp_dt_mean, chain_idcs=c(1,4))
+summarize_approx_mcmc("mean", itr_start=80000L)
 ```
 
+# Marginal Posterior
+
 ```{r}
-for(plt in trace_plots) plot(plt)
+summarize_approx_mcmc("marginal", itr_start=80000L)
 ```
 
+# Quantile Posterior
+
+## 70th percentile
+```{r}
+summarize_approx_mcmc("quantile7", itr_start=80000L)
+```
+
+## 80th percentile
+```{r}
+summarize_approx_mcmc("quantile8", itr_start=80000L)
+```
+
+## 90th percentile
+```{r}
+summarize_approx_mcmc("quantile9", itr_start=80000L)
+```
 
 ```{r}
 # Scatter: true vs approximate log-likelihood.
-llik_em_mean_prior_plt <- llik_em$plot_pred_validation(input=test_info_prior$input,
-                                                       em_pred_list=em_pred_list_prior,
-                                                       true_llik=test_info_prior$llik, 
-                                                       include_interval=FALSE)
-llik_em_mean_post_plt <- llik_em$plot_pred_validation(input=test_info_post$input,
-                                                      em_pred_list=em_pred_list_post,
-                                                      true_llik=test_info_post$llik, 
-                                                      include_interval=FALSE)
-
-# Add initial MCMC conditions.
-ic_mat_mean <- select_mcmc_samp_mat(samp_dt_mean_ic, test_label="mean",
-                                    param_type="par")[,par_names]
-ic_llik_mean <- llik_em$calc_lik_approx("mean", input=ic_mat_mean, simplify=TRUE)
-ic_llik_mean_true <- llik_exact(ic_mat_mean)
-df_ic_mean <- data.frame(obs=ic_llik_mean_true, pred=ic_llik_mean)
-df_ic_mean <- cbind(df_ic_mean, ic_mat_mean)
-llik_em_mean_prior_plt <- llik_em_mean_prior_plt + 
-                          geom_point(aes(x=obs, y=pred), df_ic_mean, color="orange")
-
-# Add design points.
-llik_design_pred <- llik_em$calc_lik_approx("mean", 
-                                            input=llik_em$get_design_inputs(), 
-                                            simplify=TRUE)
-llik_design_true <- llik_em$get_design_llik()
-df_llik_design <- data.frame(true=drop(llik_design_true), pred=llik_design_pred)
-llik_em_mean_prior_plt <- llik_em_mean_prior_plt + 
-                          geom_point(aes(x=true, y=pred), df_llik_design, 
-                                     color="green")
-
-plot(llik_em_mean_prior_plt)
-plot(llik_em_mean_post_plt)
-
-# Plan:
-#   1.) Get support points working on cluster (check logfiles to ensure support
-#       package is put in a directory to which remote executions will have access).
-#   2.) Run support locally to obtain MCMC ICs and compare to current ICs.
-#   3.) Re-run small-scale test on cluster using better-informed ICs.
-#   4.) Another option to help get a sense of this is to look at the distribution
-#       of pairwise distances between the prior validation points, then do the 
-#       same for the posterior validation points. Then see where the latter 
-#       distances fall within the prior pairwise distance distribution. e.g., 
-#       if they all fall on the lower end, this indicates that the posterior 
-#       samples are all from a single mode.
+# llik_em_mean_prior_plt <- llik_em$plot_pred_validation(input=test_info_prior$input,
+#                                                        em_pred_list=em_pred_list_prior,
+#                                                        true_llik=test_info_prior$llik, 
+#                                                        include_interval=FALSE)
+# llik_em_mean_post_plt <- llik_em$plot_pred_validation(input=test_info_post$input,
+#                                                       em_pred_list=em_pred_list_post,
+#                                                       true_llik=test_info_post$llik, 
+#                                                       include_interval=FALSE)
 ```
 
+# mcwmh-joint Posterior
 ```{r}
-# Distribution of observed mean approx unnormalized density, log scale.
-hist(llik_design_pred, 50)
+summarize_approx_mcmc("mcwmh-joint", itr_start=80000L)
 ```
+
+# marg-acc-prob-joint Posterior
 ```{r}
-# True observed llik values.
-dt_true <- data.table(llik=design_info$llik, type="obs")
-
-# Predict at validation points, and look at set of observed llik values 
-# vs approximate values to help determine MCMC initialization.
-llik_mean_approx <- llik_em$calc_lik_approx("mean", 
-                                            input=test_info_prior$input, 
-                                            simplify=TRUE)
-dt <- data.table(llik=llik_mean_approx, type="mean_approx")
-
-# Combine and summarize the distributions of likelihood values.
-dt_comb <- rbindlist(list(dt_true, dt), use.names=TRUE)
-setorder(dt_comb, -llik)
-print(head(dt_comb, 15))
-
-ggplot(dt_comb, aes(llik, group=type)) + 
-  geom_histogram(aes(y=after_stat(density))) +
-  facet_wrap(~type)
+# summarize_approx_mcmc("marg-acc-prob-joint", itr_start=80000L)
 ```
 
+# mcwmh-ind Posterior
 ```{r}
-# Set initial conditions by taking input with top observed value and input 
-# with top approximate value. 
-llik_mean_approx_order <- order(llik_mean_approx, decreasing=TRUE)
-llik_obs_order <- order(design_info$llik, decreasing=TRUE)
-
-par_init <- rbind(test_info_prior$input[llik_mean_approx_order[1:2],],
-                  design_info$input[llik_obs_order[1:2],])
-colnames(par_init) <- par_names
+summarize_approx_mcmc("mcwmh-ind", itr_start=80000L)
 ```
 
+# marg-acc-prob-ind Posterior
 ```{r}
-cov_prop_init <- cov(design_info$input)
-
-# Test MCMC.
-test <- run_mcmc_chains("mcmc_gp_unn_post_dens_approx", llik_em, 
-                        n_chain=nrow(par_init), par_init=par_init, 
-                        par_prior=inv_prob$par_prior, try_parallel=FALSE, 
-                        test_label="mean", approx_type="mean",
-                        cov_prop=cov_prop_init)
-samp_dt_test <- test$samp
-```
-
-```{r}
-trace_plots <- get_trace_plots(samp_dt_test, itr_start=25000)
-for(plt in trace_plots) plot(plt)
-```
-```{r}
-test2 <- run_mcmc_chains("mcmc_bt_wrapper", llik_em, n_chain=4L,
-                         par_prior=inv_prob$par_prior, defer_ic=TRUE, 
-                         try_parallel=FALSE, test_label="dezs", 
-                         settings_list=list(consoleUpdates=25000),
-                         approx_type="mean")
-samp_dt2 <- test2$samp
-```
-
-```{r}
-trace_plots <- get_trace_plots(samp_dt2, itr_start=25000)
-for(plt in trace_plots) plot(plt)
-```
-```{r}
-test3 <- run_mcmc_chains("mcmc_noisy_llik", llik_em, 
-                         n_chain=nrow(par_init), par_init=par_init, 
-                         par_prior=inv_prob$par_prior, try_parallel=FALSE, 
-                         test_label="mcwmh-joint", use_joint=TRUE,
-                         cov_prop=cov_prop_init)
-samp_dt3 <- test3$samp
-```
-
-```{r}
-trace_plots <- get_trace_plots(samp_dt3, itr_start=25000)
-for(plt in trace_plots) plot(plt)
-```
-
-
-```{r}
-M <- max(llik_mean_approx) 
-wts <- exp(llik_mean_approx - M)
-pos_wt_sel <- (wts > 0)
-print(paste0("Number of positive weights: ", sum(pos_wt_sel)))
-print("Weights:")
-print(wts[pos_wt_sel])
+# summarize_approx_mcmc("marg-acc-prob-ind", itr_start=80000L)
 ```
 
 
 
-```{r}
-# Subsample design points, with weights given by mean approx unnormalized 
-# density.
-
-n_support <- 50L
-
-# Extract the design points with highest-observed approximate posterior 
-# density values to initialize the support points optimization.
-mean_approx_order <- order(llik_design_true, decreasing=TRUE)
-sp_init <- design_info$input[head(mean_approx_order,n_support),,drop=FALSE]
-
-# Unfortunately, support::sp doesn't seem to accept log weights, so have to 
-# convert from log scale here, which will zero out many of the weights. Make 
-# the largest weight 1.
-M <- max(llik_design_true) 
-wts <- exp(llik_design_true - M)
-pos_wt_sel <- (wts > 0)
-print(paste0("Number of positive weights: ", sum(pos_wt_sel)))
-inputs_pos_wt <- design_info$input[pos_wt_sel,,drop=FALSE]
-print("Weights:")
-print(wts[pos_wt_sel])
 
 
-support_mean_approx_info <- support::sp(n=n_support, p=inv_prob$dim_par, 
-                                        dist.samp=design_info$input, 
-                                        wts=llik_design_true)
-                                        
-                                        # ini=sp_init, wts=llik_design_true,
-                                        # bd=t(design_info$bounds))
-
-support_mean_approx <- support_mean_approx_info$sp
-colnames(support_mean_approx) <- par_names
-
-test <- llik_em$calc_lik_approx("mean", input=support_mean_approx, simplify=TRUE)
-
-
-```
-
-```{r}
-par_bounds <- as.matrix(par_prior[,c("param1", "param2")])
-
-test <- support::sp(n=10, p=inv_prob$dim_par, 
-                    dist.samp=test_info_post$input, 
-                    num.subsamp=4L)
-
-                    #bd=par_bounds)
-test_sp <- test$sp
-colnames(test_sp) <- par_names
-
-test <- llik_em$calc_lik_approx("mean", input=test_sp, simplify=TRUE)
-```
-
-
-
-```{r}
-# Set default burn-ins for each algorithm.
-burn_in_start <- sapply(mcmc_approx_settings, function(x) as.integer(x$n_itr/2))
-```
-
-```{r}
-# Summarize MCMC results, and compare to ground truth.
-
-mcmc_file <- mcmc_files[1]
-print(mcmc_file)
-
-# Select samples.
-samp_dt_approx <- readRDS(file.path(mcmc_dir, mcmc_file))$samp
-samp_dt_approx <- select_mcmc_samp(samp_dt_approx, itr_start=burn_in_start)
-print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
-  
-# MCMC diagnostics.
-trace_plots <- get_trace_plots(samp_dt_approx)
-  
-# Comparison to exact MCMC.
-samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx)
-kde1d_plots <- get_1d_kde_plots(samp_dt_approx, test_label_baseline="exact")
-```
-
-```{r}
-for(plt in trace_plots) plot(plt)
-for(plt in kde1d_plots) plot(plt)
-```
-
-
-```{r}
-# TODO: should save following MCMC information from `run_approx_mcmc.r`:
-# estimates means/vars/covs, R hat and ESS, coverage metrics, other posterior 
-# error metrics.
-#
-# Should give a quick way to identify runs that produced weird results. In 
-# particular, should compute means/covs by chain as an additional diagnostic 
-# test for the MCMC sampling.
-```
 
 
 
