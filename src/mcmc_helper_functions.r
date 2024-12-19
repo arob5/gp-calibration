@@ -101,7 +101,7 @@ format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
   # `samp_dt` format. For the case where there is a list of matrices of 
   # different parameter types, see `format_mcmc_output()`. This is essentially
   # the lowest level function for converting samples to the `samp_dt` format, 
-  # handling the most basic case of single parameter type, single test lable, 
+  # handling the most basic case of single parameter type, single test label, 
   # and single chain. Wrapper functions implemented below handle the cases when 
   # there are multiple of any of these quantities.
   #
@@ -131,7 +131,7 @@ format_samples_mat <- function(samp_mat, param_type, test_label, chain_idx=1L) {
   samp_dt <- melt.data.table(data=samp_dt, 
                              id.vars=c("param_type", "itr"), 
                              variable.name="param_name", 
-                             value.name="sample", na.rm=TRUE, 
+                             value.name="sample", na.rm=FALSE, 
                              variable.factor=FALSE)
   
   # Add test label and chain index.

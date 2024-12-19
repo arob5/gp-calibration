@@ -6,6 +6,10 @@
 # Andrew Roberts
 #
 
+#
+# TODO: Create an "adapt_settings" sublist, similar to "ic_settings".
+#
+
 library(data.table)
 
 # Output directory and path for saving settings file.
@@ -28,41 +32,65 @@ common_noisy_settings <- list(mcmc_func_name="mcmc_noisy_llik",
                               ic_settings=list(approx_type="quantile", 
                                                n_test_inputs=500L,
                                                alpha=0.8,
-                                               n_ic_by_method=c(design_max=2, approx_max=2)))
+                                               n_ic_by_method=c(design_max=2, 
+                                                                approx_max=2)))
 
 # Common settings that will be applied to all algorithms using the 
 # `mcmc_gp_acc_prob_approx()`.
 common_acc_prob_settings <- list(mcmc_func_name="mcmc_gp_acc_prob_approx", 
+                                 mode="marginal",
                                  ic_settings=list(approx_type="quantile", 
                                                   n_test_inputs=500L,
                                                   alpha=0.8,
-                                                  n_ic_by_method=c(design_max=2, approx_max=2)))
+                                                  n_ic_by_method=c(design_max=2, 
+                                                                   approx_max=2)))
+
+# Common settings that will be applied to all algorithms using the 
+# `mcmc_gp_unn_post_dens_approx()`.
+common_dens_settings <- list(mcmc_func_name="mcmc_gp_unn_post_dens_approx", 
+                            ic_settings=list(approx_type="", 
+                                             n_test_inputs=500L,
+                                             alpha=0.8,
+                                             n_ic_by_method=c(design_max=2, 
+                                                              approx_max=2)))
 
 # List of MCMC settings.
 mcmc_settings_list <- list(
   c(list(test_label="quantile7", approx_type="quantile", alpha=0.7),
-    common_settings, common_bt_settings),
+    common_settings, common_dens_settings),
   c(list(test_label="quantile8", approx_type="quantile", alpha=0.8),
-    common_settings, common_bt_settings),
+    common_settings, common_dens_settings),
   c(list(test_label="quantile9", approx_type="quantile", alpha=0.9),
-    common_settings, common_bt_settings),
+    common_settings, common_dens_settings),
   c(list(test_label="mean", approx_type="mean"),
-    common_settings, common_bt_settings),
+    common_settings, common_dens_settings),
   c(list(test_label="marginal", approx_type="marginal"),
-    common_settings, common_bt_settings),
-  c(list(test_label="mcwmh-joint", use_joint=TRUE),
+    common_settings, common_dens_settings),
+  c(list(test_label="mcwmh-joint", mode="mcwmh", use_joint=TRUE),
     common_settings, common_noisy_settings),
-  c(list(test_label="mcwmh-ind", use_joint=FALSE),
+  c(list(test_label="mcwmh-ind", mode="mcwmh", use_joint=FALSE),
     common_settings, common_noisy_settings),
-  c(list(test_label="marg-acc-prob-joint", alpha_approx_type="joint-marginal"), 
+  c(list(test_label="pm-joint", mode="pseudo-marginal", use_joint=TRUE),
+    common_settings, common_noisy_settings),
+  c(list(test_label="pm-ind", mode="pseudo-marginal", use_joint=FALSE),
+    common_settings, common_noisy_settings),
+  c(list(test_label="marg-acc-prob-joint", use_joint=TRUE), 
     common_settings, common_acc_prob_settings),
-  c(list(test_label="marg-acc-prob-ind", alpha_approx_type="marginal"), 
+  c(list(test_label="marg-acc-prob-ind", use_joint=FALSE), 
     common_settings, common_acc_prob_settings)
 )
 
 # Set names of list to the MCMC tags.
 tags <- sapply(mcmc_settings_list, function(x) x$test_label)
 names(mcmc_settings_list) <- tags
+
+# Fine-tune intiial condition generation for specific algorithms
+mcmc_settings_list[["pm-ind"]]$ic_settings$approx_type <- "marginal"
+mcmc_settings_list[["quantile7"]]$ic_settings[c("approx_type","alpha")] <- list("quantile", 0.7)
+mcmc_settings_list[["quantile8"]]$ic_settings[c("approx_type","alpha")] <- list("quantile", 0.8)
+mcmc_settings_list[["quantile9"]]$ic_settings[c("approx_type","alpha")] <- list("quantile", 0.9)
+mcmc_settings_list[["mean"]]$ic_settings$approx_type <- "mean"
+mcmc_settings_list[["marginal"]]$ic_settings$approx_type <- "marginal"
 
 # Save settings to file.
 saveRDS(mcmc_settings_list, out_path)

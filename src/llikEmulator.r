@@ -94,6 +94,11 @@ llikEmulator$methods(
     # TODO: checking input names becomes problematic when this needs to run 
     # using external code; e.g., `mcmc_bt_wrapper()`. Need to think of the best 
     # way to handle this.
+    
+    # If not a matrix, assume that a single input point has been passed as 
+    # a numeric vector.
+    if(is.null(nrow(input))) input <- matrix(input, nrow=1)
+    
     assert_that(is.matrix(input) && (ncol(input)==dim_input), 
                 msg="`input` must be matrix with ncol equal to `dim_input`.")
     # assert_that(!is.null(colnames(input)) && all(is.element(colnames(input), input_names)),
@@ -112,8 +117,10 @@ llikEmulator$methods(
     .NotYetImplemented()
   },
   
-  predict_emulator = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
-                              return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL, ...) {
+  predict_emulator = function(input, lik_par_val=NULL, em_pred_list=NULL, 
+                              return_mean=TRUE, return_var=TRUE, 
+                              return_cov=FALSE, return_cross_cov=FALSE, 
+                              input_cross=NULL, ...) {
     # This default method assumes the emulator inherits from `gpWrapper`, but different llikEmulator 
     # classes may want to override this default method. 
     
@@ -1332,6 +1339,11 @@ llikEmulatorGP$methods(
   initialize = function(llik_lbl, gp_model, default_conditional, default_normalize,
                         use_fixed_lik_par=TRUE, lik_par=NULL, ...) {
                         
+    # There are issues related to the use of `$copy()` method regarding missing 
+    # arguments. The below line is somewhat of a hack that deals with this case.
+    if(any(missing(llik_lbl), missing(gp_model), missing(default_conditional),
+           missing(default_normalize))) return(NULL)
+    
     assert_that(use_fixed_lik_par, msg="llikEmulatorGP does not yet support emulation as a function of `lik_par`.")
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(gp_model$Y_dim==1, msg="`llikEmulatorGP` only supports single-output GP emulator.")
@@ -1388,8 +1400,10 @@ llikEmulatorGP$methods(
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
                              include_nugget=TRUE, ...) {
     
-    emulator_model$sample(get_input(input), use_cov=use_cov, include_nugget=include_nugget, 
-                          N_samp=N_samp, pred_list=em_pred_list, ...)[,,1,drop=FALSE]             
+    .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
+                                include_nugget=include_nugget, 
+                                N_samp=N_samp, 
+                                pred_list=em_pred_list, ...)[,,1,drop=FALSE]             
   },
   
   update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
@@ -1397,11 +1411,13 @@ llikEmulatorGP$methods(
                                 update_hyperpar=update_hyperpar, ...)
   },
   
-  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                    include_nugget=TRUE, conditional=default_conditional, normalize=default_normalize, ...) {
+  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
+                    use_cov=FALSE, include_nugget=TRUE, 
+                    conditional=default_conditional, normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    sample_emulator(input, em_pred_list, N_samp, use_cov, include_nugget, ...)[,,1]
+    .self$sample_emulator(input, em_pred_list, N_samp, use_cov, 
+                          include_nugget, ...)[,,1]
   }, 
   
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 

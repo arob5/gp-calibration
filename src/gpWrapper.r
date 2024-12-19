@@ -300,35 +300,45 @@ gpWrapper$methods(
   },
   
   
-  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, pred_list=NULL, adjustment="none", ...) {
+  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, 
+                    pred_list=NULL, adjustment="none", ...) {
     # If `pred_list` is passed, it should have all the required components. 
     # Returns array of dimension (num input, num samp, Y_dim). 
 
+    n_input <- nrow(X_new)
+    if(n_input < 2) use_cov <- FALSE
+    
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
-      pred_list <- predict(X_new, return_mean=TRUE, return_var=!use_cov, return_cov=use_cov, 
-                           include_nugget=include_nugget)
+      pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
+                                 return_cov=use_cov, include_nugget=include_nugget)
     } else {
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
-    
+
     # Compute lower Cholesky factors of the predictive covariance matrices. 
-    # If not using predictive cov, Cholesky factors are diagonal with standard devs on diag. 
-    # For truncated normal, `tmvnorm` doesn't accept Cholesky factor, so just pass covariance matrix. 
+    # If not using predictive cov, Cholesky factors are diagonal with standard 
+    # devs on diag. For truncated normal, `tmvnorm` doesn't accept Cholesky 
+    # factor, so just pass covariance matrix. 
     if((adjustment=="truncated") && !use_cov) {
-      pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i], nrow=nrow(X_new))), along=3)
+      pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i],
+                                                              nrow=n_input)), along=3)
     } else if((adjustment != "truncated") && use_cov) {
       if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) t(chol(pred_list$cov[,,i]))), along=3)
     } else if(adjustment != "truncated") {
-      pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]))), along=3)
+      pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]), nrow=n_input)), along=3)
     }
     
     samp <- array(dim=c(nrow(X_new), N_samp, Y_dim))
     for(i in 1:Y_dim) {
       if(adjustment=="truncated") { # Zero left-truncated Gaussian. 
-        samp[,,i] <- t(rtmvnorm(N_samp, mean=pred_list$mean[,i], sigma=pred_list$cov[,,i], lower=rep(0, nrow(X_new))))
+        samp[,,i] <- t(rtmvnorm(N_samp, mean=pred_list$mean[,i], 
+                                sigma=pred_list$cov[,,i], 
+                                lower=rep(0, nrow(X_new))))
       } else {
-        samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i], pred_list$chol_cov[,,i], N_samp)
+        samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i],
+                                          as.matrix(pred_list$chol_cov[,,i]), 
+                                          N_samp)
         if(adjustment=="rectified") samp[,,i] <- pmax(samp[,,i], 0)
       }
     }

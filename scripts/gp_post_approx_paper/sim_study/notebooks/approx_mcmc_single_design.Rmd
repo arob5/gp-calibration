@@ -98,6 +98,49 @@ samp_dt_exact <- select_mcmc_samp(samp_dt_exact, itr_start=itr_start)
 mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.rds"))
 ```
 
+```{r}
+par_true <- inv_prob$par_true
+llik_func <- inv_prob$llik_obj$get_llik_func()
+llik_true <- llik_func(par_true)
+llik_em$sample(par_true)
+
+llik_em$sample(rbind(par_true,par_true))
+test <- llik_em$predict(rbind(par_true,par_true), return_cov=TRUE)
+test$mean
+test$var
+test$cov
+
+
+llik_em_copy <- llik_em$copy(shallow=FALSE)
+llik_em_copy$predict(par_true)
+llik_em_copy$update_emulator(par_true, llik_true)
+
+dim(llik_em$get_design_inputs())
+dim(llik_em_copy$get_design_inputs())
+
+dim(llik_em$get_design_llik())
+dim(llik_em_copy$get_design_llik())
+```
+
+```{r}
+mcmc_list <- mcmc_approx_settings$`marg-acc-prob-ind`
+mcmc_list$n_itr <- 100
+mcmc_list$itr_start <- 50
+mcmc_list$n_chain <- 1L
+mcmc_list$ic_settings$n_ic_by_method <- c(approx_max=1)
+
+mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_list)
+
+head(mcmc_output$samp)
+head(mcmc_output$info)
+
+```
+
+
+
+
+
+
 
 ```{r}
 itr_start_approx <- sapply(mcmc_approx_settings, function(l) l$itr_start)
