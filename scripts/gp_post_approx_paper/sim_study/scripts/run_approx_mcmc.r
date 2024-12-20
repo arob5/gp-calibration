@@ -150,7 +150,7 @@ for(i in seq_along(mcmc_settings_list)) {
 
 print("Calling `run_mcmc_comparison()`:")
 run_mcmc_comparison(llik_em, par_prior_trunc, mcmc_settings_list, 
-                    save_dir=out_dir, return=FALSE, compute_stats=TRUE)
+                    save_dir=out_dir, return=FALSE)
 
 
 

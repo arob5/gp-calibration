@@ -679,7 +679,7 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 # ------------------------------------------------------------------------------
 
 sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL, 
-                           mode="mcwmh", joint=TRUE, ...) {
+                           mode="mcwmh", use_joint=TRUE, ...) {
   # A helper function for `mcmc_noisy` to sample the log-likelihood values 
   # at the current and proposed points for use in computing a 
   # Metropolis-Hastings acceptance ratio.
@@ -688,10 +688,10 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   # mcwmh: sample llik at both current and proposed points. Samples jointly
   #        from the bivariate distribution if `joint` is TRUE, otherwise samples
   #        independently.
-  # pseudo-marginal: If `joint = TRUE`, samples the proposed llik value  
+  # pseudo-marginal: If `use_joint = TRUE`, samples the proposed llik value  
   #                  independently and returns `llik_curr` unchanged for the  
   #                  current value. This targets the "marginal" posterior  
-  #                  approximation. If FALSE, `joint = TRUE` then samples the 
+  #                  approximation. If FALSE, `use_joint = TRUE` then samples the 
   #                  proposed llik value conditional on the current 
   #                  log-likelihood value. `llik_curr` is returned unchanged 
   #                  in either case.
@@ -703,15 +703,15 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   #    llik_curr: numeric, the log-likelihood value at the current point. 
   #               Required for all modes except for "mcwmh".
   #    mode: either "mcwmh" or "pseudo-marginal". See description above.
-  #    joint: logical, see description above.
+  #    use_joint: logical, see description above.
   
   # The joint pseudo-marginal algorithm requires updating the current GP 
   # emulator, so make a deep copy here to avoid updating in global scope.
   llik_em_copy <- llik_em
-  if((mode=="pseudo-marginal") && joint) {
+  if((mode=="pseudo-marginal") && use_joint) {
     assert_that(!is.null(llik_curr))
     llik_em_copy <- llik_em$copy(shallow=FALSE)
-    llik_em_copy$update(input, par_curr, llik_curr, update_hyperpar=FALSE)
+    llik_em_copy$update_emulator(input, par_curr, llik_curr, update_hyperpar=FALSE)
   }
   
   # mcwmh mode samples llik values at both current and proposed points.
@@ -1171,7 +1171,7 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em,
                                       normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
-    if(use_joint_dist) assert_that(!is.null(llik_pred_list$cov))
+    if(use_joint) assert_that(!is.null(llik_pred_list$cov))
   }
   
   # Predictive mean and variance of the log acceptance ratio. This is the m and 
@@ -1180,7 +1180,7 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em,
   # TODO: update the cov indexing below once this is changed. 
   m <- lprior_prop - lprior_curr + drop(llik_pred_list$mean)[2] - drop(llik_pred_list$mean)[1]
   s2 <- sum(llik_pred_list$var)
-  if(use_joint_dist) s2 <- s2 - 2*llik_pred_list$cov[1,2,1]
+  if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2,1]
 
   # Marginal acceptance ratio approximation. 
   return(exp(m + 0.5*s2))
@@ -1213,7 +1213,7 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_em,
                                       normalize=normalize, ...)
   } else {
     assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
-    if(use_joint_dist) assert_that(!is.null(llik_pred_list$cov))
+    if(use_joint) assert_that(!is.null(llik_pred_list$cov))
   }
   
   # Predictive mean and variance of the log acceptance ratio. This is the  

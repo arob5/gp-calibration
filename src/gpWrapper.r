@@ -1,11 +1,12 @@
 #
-# gp.r
-# Class definitions for the `gpEmulator` class, and classes which inherit from 
+# gpWrapper.r
+# Class definitions for the `gpWrapper` class, and classes which inherit from 
 # this class. All classes defined using reference classes. 
 #
 # Andrew Roberts
 # 
-# Depends: statistical_helper_functions.r
+# Depends: general_helper_functions.r, statistical_helper_functions.r,
+#          gp_helper_functions.r
 #
 
 library(scoringRules)
