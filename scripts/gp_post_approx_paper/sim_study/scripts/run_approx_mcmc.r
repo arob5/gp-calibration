@@ -82,12 +82,13 @@ inv_prob_path <- file.path(experiment_dir, "inv_prob_setup", "inv_prob_list.rds"
 llik_em_path <- file.path(em_id_dir, "em_llik.rds")
 design_path <- file.path(em_id_dir, "design_info.rds")
 
+print("-----> Checking required files exist:")
 assert_that(file.exists(mcmc_settings_path))
 assert_that(file.exists(llik_em_path))
 assert_that(file.exists(inv_prob_path))
 assert_that(file.exists(design_path))
 
-# Source required files.
+# Source required scripts.
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))

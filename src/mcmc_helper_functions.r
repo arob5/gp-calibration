@@ -774,6 +774,56 @@ unsplit_chains <- function(samp_dt, chain_map, copy=TRUE) {
 }
 
 
+calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL, 
+                               itr_start=1L, itr_stop=NULL) {
+  # Computes log (unnormalized) weights for each MCMC chain via a simple 
+  # heuristic method. This function is intended for use with multimodal 
+  # posteriors where individual chains are not expected to mix. Weights are 
+  # computed for a chain by assuming the log-likelihood evaluations from that 
+  # chain are normally distributed, and setting the weights to the mean of 
+  # the likelihood evaluations which under the Gaussian assumption are 
+  # log-normally distributed. This method is described in this post
+  # under the heading "A Simple Heuristic":
+  # https://arob5.github.io/blog/2024/12/12/combining-mcmc-chains/
+  #
+  # Args:
+  #    info_dt: the info_dt table following the typical format returned by 
+  #             `run_mcmc_chains()`. Must have `param_type` "dens" with 
+  #             `param_name` "llik".
+  #    Remaining arguments are fed to `select_mcmc_samp()`, which subsets 
+  #    `info_dt` prior to computing the weights.
+  #
+  # Returns:
+  # data.table, with columns `test_label`, `chain_idx`, `llik_mean`, `llik_var`, 
+  # `n_itr`, and `log_weight`. `n_itr` is the number of samples that is used 
+  # to compute the sample mean and variance for that chain. NA log-likelihood 
+  # values are dropped and not included in this count.
+  
+  # Restrict to log-likelihood evaluations, and specified labels/chains/itrs.
+  info_dt <- select_mcmc_samp(info_dt, test_labels=test_labels, 
+                              param_types="dens", param_names="llik", 
+                              itr_start=itr_start, itr_stop=itr_stop)
+  
+  # Compute sample mean and variance of llik evaluations for each chain.
+  # Define functions to compute.
+  func_names <- c("llik_mean", "llik_var", "n_itr")
+  funcs <- function(x) setNames(list(mean(x, na.rm=TRUE), 
+                                     var(x, na.rm=TRUE), 
+                                     sum(!is.na(x))), func_names)
+  group_cols <- c("test_label", "param_type", "param_name", "chain_idx")
+  sample_col <- "sample"
+  chain_stats <- info_dt[, unlist(lapply(.SD, funcs), recursive=FALSE),
+                         .SDcols=sample_col, by=group_cols]
+  setnames(chain_stats, paste(sample_col, func_names, sep="."), func_names)
+  
+  # Compute log weights via lognormal mean formula.
+  chain_stats[, log_weight := llik_mean + 0.5*llik_var]
+  
+  return(chain_stats[, .(test_label, chain_idx, llik_mean, llik_var, 
+                         n_itr, log_weight)])
+}
+
+
 # ------------------------------------------------------------------------------
 # Computing statistics and errors from MCMC samples. 
 # ------------------------------------------------------------------------------

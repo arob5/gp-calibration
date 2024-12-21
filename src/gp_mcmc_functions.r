@@ -125,13 +125,13 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
   # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_em$get_llik_term_attr("use_fixed_lik_par"))
+  learn_sig2 <- !unlist(llik_em$get_llik_attr("use_fixed_lik_par"))
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
   include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
   
   if(include_sig2_Gibbs_step) {
-    N_obs <- unlist(llik_em$get_llik_term_attr("N_obs", labels=term_labels_learn_sig2))
+    N_obs <- unlist(llik_em$get_llik_attr("N_obs", labels=term_labels_learn_sig2))
     sig2_samp <- matrix(nrow=n_itr, ncol=length(sig2_curr_learn))
     sig2_samp[1,] <- sig2_curr
   } else {
@@ -177,7 +177,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
           # Sample log-likelihood emulator.
           llik_samp <- sample_mh_llik(llik_em, par_curr, par_prop, 
                                       llik_curr=llik_curr, 
-                                      mode=mode, use_cov=use_joint, ...)
+                                      mode=mode, use_joint=use_joint, ...)
           llik_curr <- llik_samp[1]
           llik_prop <- llik_samp[2]
 
@@ -711,7 +711,7 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   if((mode=="pseudo-marginal") && use_joint) {
     assert_that(!is.null(llik_curr))
     llik_em_copy <- llik_em$copy(shallow=FALSE)
-    llik_em_copy$update_emulator(input, par_curr, llik_curr, update_hyperpar=FALSE)
+    llik_em_copy$update_emulator(par_curr, llik_curr, update_hyperpar=FALSE)
   }
   
   # mcwmh mode samples llik values at both current and proposed points.
