@@ -207,8 +207,9 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
                                               adapt_scale=adapt_scale_prop,
                                               samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
                                               accept_rate=accept_count/adapt_interval, 
-                                              accept_rate_target, adapt_factor_exponent, 
-                                              adapt_factor_numerator)
+                                              accept_rate_target=accept_rate_target, 
+                                              adapt_factor_exponent=adapt_factor_exponent, 
+                                              adapt_factor_numerator=adapt_factor_numerator)
           cov_prop <- adapt_list$cov
           log_scale_prop <- adapt_list$log_scale
           if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov

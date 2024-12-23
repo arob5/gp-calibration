@@ -3,7 +3,6 @@
 #$ -P dietzelab                 # Specify project. 
 #$ -l buyin                     # Request buyin node. 
 #$ -j y                         # Merge the error and output streams into a single file.
-#$ -m beas                      # Email when job begins/ends/aborted/suspended
 
 # This script is intended to run the R script `run_approx_mcmc.r` remotely on  
 # the cluster. It can be executed directly to target a single 

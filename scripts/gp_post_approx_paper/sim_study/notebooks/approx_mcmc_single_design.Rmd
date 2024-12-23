@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo=FALSE)
 # Settings
 experiment_tag <- "vsem"
 design_tag <- file.path("init_emulator", "LHS_250")
-run_id <- "test_run3"
+run_id <- "test_run7"
 design_id <- "1018157756"
 
 # Burn-in for exact MCMC samples.
@@ -117,37 +117,41 @@ for(plt in hist_plots_exact) plot(plt)
 ```
 
 ```{r}
-summarize_approx_mcmc <- function(test_label, itr_start=1L) {
-  
-  # Determine burn-in.
-  itr_start <- setNames(itr_start, test_label)
+summarize_approx_mcmc <- function(test_label, itr_start=1L, chain_idcs=NULL) {
 
   # Load and summarize MCMC samples from plug-in mean approximation.
   mcmc_path <- file.path(mcmc_dir, paste0("mcmc_samp_", test_label, ".rds"))
 
   # Read samples.
   mcmc_list <- readRDS(mcmc_path)
-  samp_dt_approx <- mcmc_list$samp
+  samp_dt_approx <- select_mcmc_samp(mcmc_list$samp, itr_start=itr_start, 
+                                     chain_idcs=chain_idcs)
+  info_dt_approx <- select_mcmc_samp(mcmc_list$info, itr_start=itr_start, 
+                                     chain_idcs=chain_idcs)
   mcmc_ic <- mcmc_list$output_list[[1]]$par_init
   print("-----> Initial conditions:")
   print(mcmc_ic)
   print("-----> Number of chains:")
   print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
   
+  # Most algorithms return llik evaluations (or samples), but marginal 
+  # acceptance prob chains only return acceptance probability evaluations.
+  info_param_name <- "llik"
+  if(test_label %in% c("marg-acc-prob-ind", "marg-acc-prob-joint")) {
+    info_param_name <- "acc_prob"
+  }
+  
   # MCMC diagnostics.
-  trace_plots <- get_trace_plots(samp_dt_approx, itr_start=itr_start)
-  llik_trace_plot<- get_trace_plots(mcmc_list$info, param_names="llik", 
-                                    itr_start=itr_start)[[1]]
-  rhat_list <- calc_R_hat(samp_dt_approx, within_chain=TRUE, 
-                          itr_start=itr_start)
+  trace_plots <- get_trace_plots(samp_dt_approx)
+  llik_trace_plot <- get_trace_plots(info_dt_approx, param_names=info_param_name)[[1]]
+  prop_sd_trace_plots <- try(get_trace_plots(info_dt_approx, param_type="prop"))
+  rhat_list <- calc_R_hat(samp_dt_approx, within_chain=TRUE)
   samp_dt_exact <- select_mcmc_samp(samp_dt_exact, test_labels="exact")
-  samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx,
-                                    itr_start=itr_start)
+  samp_dt_approx <- combine_samp_dt(samp_dt_exact, samp_dt_approx)
   hist_plots <- get_hist_plot_comparisons(samp_dt_approx,
                                           test_label_baseline="exact")
-  hist_plot_llik <- get_hist_plots(mcmc_list$info, param_names="llik",
-                                   combine_chains=FALSE, 
-                                   itr_start=itr_start)[[1]]
+  hist_plot_llik <- get_hist_plots(info_dt_approx, param_names=info_param_name,
+                                   combine_chains=FALSE)[[1]]
   
   # Print R-hat statistics.
   print(rhat_list$R_hat_vals)
@@ -157,6 +161,7 @@ summarize_approx_mcmc <- function(test_label, itr_start=1L) {
   plot(llik_trace_plot)
   for(plt in hist_plots) plot(plt)
   plot(hist_plot_llik)
+  for(plt in prop_sd_trace_plots) try(plot(plt))
   
   # Return data.
   return_list <- list(samp_dt_approx=samp_dt_approx, rhat_list=rhat_list)
@@ -170,30 +175,30 @@ We start by looking at the approximate posterior defined by plugging in the
 GP mean, ignoring the GP variance.
 
 ```{r}
-summarize_approx_mcmc("mean", itr_start=80000L)
+summarize_approx_mcmc("mean", itr_start=itr_start_approx)
 ```
 
 # Marginal Posterior
 
 ```{r}
-summarize_approx_mcmc("marginal", itr_start=80000L)
+summarize_approx_mcmc("marginal", itr_start=itr_start_approx)
 ```
 
 # Quantile Posterior
 
 ## 70th percentile
 ```{r}
-summarize_approx_mcmc("quantile7", itr_start=80000L)
+summarize_approx_mcmc("quantile7", itr_start=itr_start_approx)
 ```
 
 ## 80th percentile
 ```{r}
-summarize_approx_mcmc("quantile8", itr_start=80000L)
+summarize_approx_mcmc("quantile8", itr_start=itr_start_approx)
 ```
 
 ## 90th percentile
 ```{r}
-summarize_approx_mcmc("quantile9", itr_start=80000L)
+summarize_approx_mcmc("quantile9", itr_start=itr_start_approx)
 ```
 
 ```{r}
@@ -210,27 +215,36 @@ summarize_approx_mcmc("quantile9", itr_start=80000L)
 
 # mcwmh-joint Posterior
 ```{r}
-summarize_approx_mcmc("mcwmh-joint", itr_start=80000L)
+summarize_approx_mcmc("mcwmh-joint", itr_start=itr_start_approx)
 ```
 
 # marg-acc-prob-joint Posterior
 ```{r}
-# summarize_approx_mcmc("marg-acc-prob-joint", itr_start=80000L)
+summarize_approx_mcmc("marg-acc-prob-joint", itr_start=itr_start_approx)
 ```
 
 # mcwmh-ind Posterior
 ```{r}
-summarize_approx_mcmc("mcwmh-ind", itr_start=80000L)
+summarize_approx_mcmc("mcwmh-ind", itr_start=itr_start_approx)
 ```
 
 # marg-acc-prob-ind Posterior
 ```{r}
-# summarize_approx_mcmc("marg-acc-prob-ind", itr_start=80000L)
+summarize_approx_mcmc("marg-acc-prob-ind", itr_start=itr_start_approx)
 ```
 
 
+# Pseudo-Marginal-independent Posterior
 
+```{r}
+summarize_approx_mcmc("pm-ind", itr_start=itr_start_approx)
+```
 
+# Pseudo-Marginal-joint Posterior
+
+```{r}
+summarize_approx_mcmc("pm-joint", itr_start=itr_start_approx, chain_idcs=2)
+```
 
 
 

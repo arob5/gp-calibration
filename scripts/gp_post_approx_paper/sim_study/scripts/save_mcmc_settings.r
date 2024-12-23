@@ -18,8 +18,8 @@ out_dir <- file.path(base_dir, "output", "gp_inv_prob", "vsem")
 out_path <- file.path(out_dir, "mcmc_approx_settings.rds")
 
 # Common settings that will be applied to all MCMC algorithms.
-common_settings <- list(n_itr=100000L, try_parallel=FALSE, n_chain=4L)
-common_settings$itr_start <- ceiling(common_settings$n_itr / 2)
+common_settings <- list(n_itr=150000L, try_parallel=FALSE, n_chain=4L)
+common_settings$itr_start <- 100000L
 
 # Common settings that will be applied to all algorithms using the BayesianTools
 # wrapper function.
