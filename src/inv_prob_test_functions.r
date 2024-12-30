@@ -397,10 +397,13 @@ get_vsem_test_1 <- function(default_conditional=FALSE, default_normalize=TRUE) {
                                 par_true_seed=par_true_seed, obs_seed=obs_seed)
   
   # Define exact log-likelihood object. 
-  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
+  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", 
+                                           fwd_model=inv_prob$par_to_obs_op, 
                                            fwd_model_vectorized=inv_prob$par_to_obs_op,
-                                           y_obs=inv_prob$y, dim_par=as.integer(inv_prob$dim_par),
-                                           use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_model,
+                                           y_obs=inv_prob$y, 
+                                           dim_par=as.integer(inv_prob$dim_par),
+                                           use_fixed_lik_par=TRUE, 
+                                           sig2=inv_prob$sig2_model,
                                            par_names=inv_prob$par_names, 
                                            default_conditional=default_conditional, 
                                            default_normalize=default_normalize)

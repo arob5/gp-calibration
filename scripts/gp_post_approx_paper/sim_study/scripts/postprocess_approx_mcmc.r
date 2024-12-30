@@ -27,7 +27,7 @@ src_dir <- file.path(base_dir, "src")
 
 # Set variables controlling filepaths.
 experiment_tag <- "vsem"
-run_id <- "test_run7"
+run_id <- "mcmc_round1"
 em_dir <- "init_emulator/LHS_250"
 
 print(paste0("experiment_tag: ", experiment_tag))
@@ -83,8 +83,8 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
   out_dir <- file.path(base_out_dir, em_id)
   samp_list_path <- file.path(out_dir, paste0("mcmc_samp_", lbl, ".rds"))
   if(!file.exists(samp_list_path)) {
-    mcmc_summary <- data.table(test_label=lbl, n_valid_chains=0L, max_rhat=NA,
-                               n_valid_itr=0L, status="missing")
+    mcmc_summary <- data.table(em_id=em_id, test_label=lbl, n_valid_chains=0L, 
+                               max_rhat=NA, n_valid_itr=0L, status="missing")
     return(list(summary=mcmc_summary, rhat=NULL))
   }
   
@@ -94,8 +94,8 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
   # Check to see if error occurred during run.
   err_occurred <- !is.null(samp_list$output_list[[1]]$condition)
   if(err_occurred) {
-    mcmc_summary <- data.table(test_label=lbl, n_valid_chains=0L, max_rhat=NA,
-                               n_valid_itr=0L, status="err")
+    mcmc_summary <- data.table(em_id=em_id, test_label=lbl, n_valid_chains=0L,
+                               max_rhat=NA, n_valid_itr=0L, status="err")
     return(list(summary=mcmc_summary, rhat=NULL))
   }
 
@@ -120,12 +120,14 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
     n_valid_itr <- 0L
   }
   
-  mcmc_summary <- data.table(test_label = lbl,
+  mcmc_summary <- data.table(em_id = em_id, 
+                             test_label = lbl,
                              n_valid_chains = n_valid_chains,
                              max_rhat = max_rhat, 
                              n_valid_itr = n_valid_itr,
                              status = "valid")
   mcmc_summary[(n_valid_chains < 1) | (n_valid_itr < 1), status := "invalid"]
+  rhat_dt[, em_id := em_id]
   
   return(list(summary=mcmc_summary, rhat=rhat_dt))
 }
@@ -138,12 +140,12 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
 em_id_dirs <- setdiff(list.files(base_out_dir), 
                       c("mcmc_summary.csv", "rhat_chain_summary.csv"))
 lbls <- names(mcmc_settings_list)
-mcmc_summary <- data.table(test_label=character(), n_valid_chains=integer(),
-                           max_rhat=numeric(), n_valid_itr=integer(),
-                           status=character())
-rhat_chain_summary <- data.table(test_label=character(), chain_idx=integer(),
-                                 param_type=character(), param_name=character(),
-                                 R_hat=numeric())
+mcmc_summary <- data.table(em_id=character(), test_label=character(), 
+                           n_valid_chains=integer(), max_rhat=numeric(), 
+                           n_valid_itr=integer(), status=character())
+rhat_chain_summary <- data.table(em_id=character(), test_label=character(), 
+                                 chain_idx=integer(), param_type=character(), 
+                                 param_name=character(), R_hat=numeric())
 
 for(em_id in em_id_dirs) {
   print(paste0("-----> Processing: ", em_id))
