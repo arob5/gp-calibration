@@ -173,7 +173,7 @@ gpWrapper$methods(
   }, 
   
   normalize = function(Ynew, inverse=FALSE) {
-    if(.self$Y_std == 0) {
+    if(any(.self$Y_std == 0)) {
       stop("`Y_std` is 0, so cannot normalize.")
     }
     
@@ -968,7 +968,6 @@ gpWrapperHet$methods(
     # Kernel.
     summary_str <- paste0(summary_str, "\n>>> Kernel:\n")
     summary_str <- paste0(summary_str, "Lengthscales:\n")
-    ls_summary <- .self$get_lengthscale_summary(idx)
     ls <- sqrt(gp_het$theta)
     for(i in seq_along(ls)) {
       summary_str <- paste0(summary_str, "\t", names(ls)[i], ": ", ls[i], "\n")
@@ -982,7 +981,7 @@ gpWrapperHet$methods(
     return(summary_str)
   }, 
   
-  plot_corr_summary = function(idx, types="opt") {
+  plot_corr_summary = function(idx, types="default") {
     # Options for `types` are "default" (using the lengthscale value 
     # is actually used in the correlation function - either the default 
     # or the optimized value), "lower" (use lower bound lengthscale), 
