@@ -224,16 +224,25 @@ gpWrapper$methods(
                      return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
                      return_trend=TRUE, ...) {
     # Logic for all predict() functions:
-    #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers to k(X_new, X_cross).
-    #   - The former is always diagonal, and `include_nugget==TRUE` will cause nugget variances to be 
-    #     added to the diagonal. The latter may or may not be diagonal, and `include_nugget` has no
-    #     effect on the cross cov matrix (nugget variances will NOT be added in either case). 
-    #   - If `return_cov==TRUE`, then the variances will always be returned as well, by simply taking 
-    #     the diagonal of the covariance matrix. 
-    #   - `return_cross_cov` has no effect on the other settings; can be thought of as an optional add-on.
+    #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers 
+    #      to k(X_new, X_cross).
+    #   - The former is always diagonal, and `include_nugget==TRUE` will cause 
+    #     nugget variances to be added to the diagonal. The latter may or may 
+    #     not be diagonal, and `include_nugget` has no effect on the cross cov 
+    #     matrix (nugget variances will NOT be added in either case). 
+    #   - If `return_cov==TRUE`, then the variances will always be returned as 
+    #     well, by simply taking the diagonal of the covariance matrix. 
+    #   - `return_cross_cov` has no effect on the other settings; can be thought 
+    #      of as an optional add-on.
     #
-    # Returns:
-    #    
+    # This default predict method is overwritten in some special cases; e.g., 
+    # `gpWrapperSum.` 
+    #
+    # Output dimensions (let m := nrow(X_new) and q := nrow(X_cross)):
+    # "mean": matrix, (m, Y_dim)
+    # "var": matrix, (m, Y_dim)
+    # "cov": array, (m, m, Y_dim)
+    # "cross_cov": array, (m, q, Y_dim).
 
     # If there is only one input, no covariance computation required.
     if(isTRUE(nrow(X_new)==1)) return_cov <- FALSE
@@ -245,15 +254,21 @@ gpWrapper$methods(
     }
 
     # If covariance is requested, default to computing scov at inputs `X_new`.
-    if(return_cross_cov && is.null(X_cross)) stop("`return_cross_cov` is TRUE but `X_cross` is NULL.") 
+    if(return_cross_cov && is.null(X_cross)) {
+      stop("`return_cross_cov` is TRUE but `X_cross` is NULL.") 
+    }
       
     # Predict for each independent GP. 
     pred_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(pred_list)) {
-      pred_list[[i]] <- predict_package(X_new=X_new, output_idx=i, return_mean=return_mean, 
-                                        return_var=return_var, return_cov=return_cov, 
-                                        return_cross_cov=return_cross_cov, X_cross=X_cross, 
-                                        include_nugget=include_nugget, return_trend=return_trend, ...)
+      pred_list[[i]] <- .self$predict_package(X_new=X_new, output_idx=i, 
+                                        return_mean=return_mean, 
+                                        return_var=return_var, 
+                                        return_cov=return_cov, 
+                                        return_cross_cov=return_cross_cov, 
+                                        X_cross=X_cross, 
+                                        include_nugget=include_nugget, 
+                                        return_trend=return_trend, ...)
     }
 
     names(pred_list) <- .self$Y_names
@@ -798,11 +813,137 @@ gpWrapper$methods(
     if(log_scale) return(log_evar)
     return(exp(log_evar))
   }
-
 )
 
 
+# ------------------------------------------------------------------------------
+# gpWrapperSum
+# 
+# This class defines a multi-output GP constructed via a weighted sum of 
+# non-random basis vectors, where the weights are modeled as independent GPs.
+# i.e., it defines a model of the form G: R^d -> R^p by 
 #
+# G(u) = g + sum_{j=1}^{r} w_j(u)b_j + eps =: g + Bw(u)
+# w_j ~ GP(mu_j, k_j)
+# eps ~ N(0, sig2)
+#
+# where all of the `w_j` and `eps` are pairwise independent, `g` and 
+# `b_1, ..., b_r` are constant vectors in R^p. `eps` is a zero-mean Gaussian 
+# noise term with constant (not dependent on `u`) variance `sig2`. `B` is 
+# the matrix with columns set to the `b_j`, and `w(u)` is the column vector 
+# with entries `w_j(u)`. `w(u)` is a multi-output GP consisting of independent 
+# GPs with `w ~ GP(mu, k)`, with `mu` and `k` constructed from the `mu_j` and 
+# `k_j`, respectively. Note that this model implies that `G(u)` is a 
+# multi-output GP G ~ GP(m, c), where
+# 
+# m(u) = E[G(u)] = g + B*mu(u) = g + sum_{j=1}^{r} mu_j(u) b_j
+# c(u,v) = Cov[G(u),G(v)] = B*k(u,v)*B^T = sum_{j=1}^{r} k_j(u,v) b_j b_j^T
+#
+# This class is implemented by inheriting from `gpWrapper`, but it does not 
+# implement a `fit()` method. Instead, the GP `w(u)` is assumed to have already 
+# been fit via some `gpWrapper` class. The fit GP is then passed to 
+# `gpWrapperSum`. This class essentially acts as a wrapper around a set of 
+# independent GPs, and its `predict()` method leverages the predictions from 
+# the underlying GPs to construct `m(u)` and `c(u,v)`. The class fields
+# `gp_model`, `B`, shift`, and `sig2` corresponds to `w`, `B`, `g`, and `sig2` 
+# respectively, in the above notation. 
+#
+# Note that the primary reason this class inherits from `gpWrapper` is to allow 
+# it to be compatible with downstream algorithms that expect a `gpWrapper` 
+# object.
+#
+# See this blog post for more details on 
+# this basis function GP model:
+# https://arob5.github.io/blog/2024/06/25/basis-func-emulator/
+# ------------------------------------------------------------------------------
+
+gpWrapperSum <- setRefClass(
+  Class = "gpWrapperSum",
+  contains="gpWrapper",
+  fields=list(B="matrix", shift="numeric", sig2="numeric")
+)
+
+gpWrapperSum$methods(
+  
+  initialize = function(gp, B, shift=NULL, sig2=NULL) {
+    # `gp` should only be missing when the generator is being called due to 
+    # a call to `$copy()`. 
+    # TODO: think of better long-term solution. 
+    if(missing(gp) || missing(B)) return(NULL)
+    
+    # Argument checking.
+    assert_that(inherits(gp, "gpWrapper"),
+                msg="`gp` must inherit from `gpWrapper` class.")
+    assert_that(is.matrix(B))
+    
+    if(!is.null(shift)) {
+      shift <- drop(shift)
+      assert_that(ncol(B) == length(shift))
+    }
+    
+    if(!is.null(sig2)) assert_that(sig2 > 0)
+      
+    # Initialize fields not inherited from `gpWrapper`, or not set by 
+    # `gpWrapper` constructor.
+    initFields(gp_model=gp, B=B, shift=shift, sig2=sig2)
+      
+    # Output dimension corresponds to the dimension of `B`, not to be confused 
+    # with `gp$Y_dim`, which is the dimension of `w(u)`. `X_mat` and `Y_mat` 
+    # are defined so that `callSuper()` can be called without errors, but are 
+    # not intended to be used in any way.
+    out_dim <- ncol(B)
+    Y_mat <- matrix(-1, ncol=out_dim)
+    X_mat <- matrix(-1, ncol=gp$X_dim)
+    B_names <- paste0("b", 1:out_dim)
+    
+    # Call `gpWrapper` constructor so that `Y_names` and `Y_dim` will be 
+    # correctly set to the output dimension of the basis vectors.
+    callSuper(X=X_mat, Y=Y_mat, normalize_output=FALSE, scale_input=FALSE,
+              x_names=gp$X_names, y_names=B_names, ...)
+  }, 
+  
+  predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
+                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
+                     return_trend=TRUE, pred_list=NULL, ...) {
+    # `pred_list` is a GP prediction list corresponding to `gp_model`, the 
+    # set of independent GPs.
+    
+    return_list <- list()
+    
+    # Predict using independent GPs, if required.
+    if(is.null(pred_list)) {
+      pred_list <- .self$gp_model$predict(X_new, return_mean=return_mean, 
+                                          return_var=return_var, 
+                                          return_cov=return_cov,
+                                          return_cross_cov=return_cross_cov,
+                                          X_cross=X_cross, 
+                                          include_nugget=include_nugget,
+                                          return_trend=return_trend, ...)
+    }
+    
+    # Compute mean predictions.
+    if(return_mean) {
+      # TODO: check dimensions here.
+      mu <- tcrossprod(pred_list$mean, .self$B)
+      if(!is.null(.self$shift)) mu <- add_vec_to_mat_rows(.self$shift, mu)
+      return_list$mean <- mu
+    }
+    
+    # Compute variance predictions.
+    if(return_var) {
+      .NotYetImplemented()
+    }
+    
+    
+    
+    
+  }
+  
+)
+
+
+
+# ------------------------------------------------------------------------------
 # Package-Specific Classes that Inherit from gpWrapper:
 # Each time a new R GP library is to be added to the framework, a new class 
 # must be defined for the package which inherits from the gpWrapper base 
@@ -836,6 +977,7 @@ gpWrapper$methods(
 #                      GP model. Note that they may differ from X_train, Y_train in 
 #                      that missing values may have been dropped (which is handled 
 #                      by gpWrapper). 
+# ------------------------------------------------------------------------------
 
 # Methods to add: 
 #    get_input_dim()
