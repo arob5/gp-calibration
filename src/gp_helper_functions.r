@@ -37,7 +37,7 @@ get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01,
   # apart. In addition to returning these bounds, this function 
   # can also return quantiles of the pairwise distance distribution 
   # (which can be useful for setting "starting" or "default" values
-  # for the lengthscales).   # Note that the argument defaults are  
+  # for the lengthscales). Note that the argument defaults are  
   # typically reasonable when `dim_by_dim = FALSE`; if setting  
   # `dim_by_dim = TRUE`, the defaults should probably be overwritten; for 
   # example, by raising the default `cor_min` and `cor_max` to the 1/d

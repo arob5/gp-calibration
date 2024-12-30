@@ -76,7 +76,7 @@ log_diff_exp <- function(x, y, threshold=100) {
   #    Approximated value of log{e^x - e^y}, which will be the same class and 
   #    shape as `x` and `y`. 
   
-  assert_that(class(x) == class(y))
+  assert_that(isTRUE(class(x) == class(y)))
   if(is.numeric(x) && is.null(dim(x))) assert_that(length(x) == length(y))
   else if(is.matrix(x)) assert_that(all(dim(x) == dim(y)))
   else stop("Unsupported class for `x` or `y`.")

@@ -1,4 +1,6 @@
+# 
 # llikEmulator.r
+#
 # Class definitions for the `llikEmulator`, `llikSumEmulator`, and classes which 
 # inherit from these classes. All classes defined using reference classes. The 
 # operational classes in this file are:
@@ -581,8 +583,8 @@ llikEmulator$methods(
   
   get_pred_interval = function(input, lik_par_val=NULL, em_pred_list=NULL, 
                                target_pred_list=NULL, target="llik",  
-                               method="pm_std_dev", N_std_dev=2, CI_prob=0.9, 
-                               conditional=default_conditional, 
+                               log_scale=TRUE, method="pm_std_dev", N_std_dev=2, 
+                               CI_prob=0.9, conditional=default_conditional, 
                                normalize=default_normalize, 
                                include_nugget=TRUE, ...) {
     # Options for `target`: "llik" and "lik". 
@@ -593,11 +595,24 @@ llikEmulator$methods(
     # by `predict` or `predict_lik`; which one it is should align with the value 
     # of `target`. 
     
+    if(log_scale && (target=="lik") && (method=="CI")) {
+      stop("Method 'CI' not yet implemented when `log_scale=TRUE` and `target='lik'`.")
+    }
+    
+    if(target=="llik") log_scale <- TRUE
+    
     assert_that(target %in% c("llik", "lik"))
     assert_that(method %in% c("pm_std_dev", "CI"))
     interval_list <- list()
     
     # Log likelihood or likelihood predictions. 
+    mean_sel <- "mean"
+    var_sel <- "var"
+    if((target=="lik") && log_scale) {
+      mean_sel <- "log_mean"
+      var_sel <- "log_var"
+    }
+    
     if(is.null(target_pred_list)) {
       if(target == "llik") {
         target_pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
@@ -610,16 +625,27 @@ llikEmulator$methods(
                                               em_pred_list=em_pred_list, 
                                               return_mean=TRUE, return_var=TRUE, 
                                               conditional=conditional,
-                                              normalize=normalize, ...)
+                                              normalize=normalize, log_scale=log_scale, ...)
       }
     } else {
-      assert_that(!is.null(target_pred_list$mean) && !is.null(target_pred_list$var))
+      assert_that(!is.null(target_pred_list[[mean_sel]]) && 
+                  !is.null(target_pred_list[[var_sel]]))
     }
     
     # Plus/minus standard deviation method 
     if(method == "pm_std_dev") {
-      interval_list$lower <- target_pred_list$mean - N_std_dev * sqrt(target_pred_list$var)
-      interval_list$upper <- target_pred_list$mean + N_std_dev * sqrt(target_pred_list$var)
+      m <- drop(target_pred_list[[mean_sel]])
+      v <- drop(target_pred_list[[var_sel]])
+      
+      if((target=="lik") && log_scale) {
+        log_s <- log(N_std_dev) +  0.5*v
+        interval_list$lower <- log_diff_exp(m, log_s)
+        interval_list$upper <- matrixStats::rowLogSumExps(cbind(m, log_s))
+      } else {
+        interval_list$lower <- m - N_std_dev * sqrt(v)
+        interval_list$upper <- m + N_std_dev * sqrt(v)
+      }
+      
     } else {
       CI_tail_prob <- 0.5 * (1-CI_prob)
       interval_list$lower <- .self$calc_quantiles(p=CI_tail_prob, input=input, 
@@ -714,11 +740,14 @@ llikEmulator$methods(
   },
   
   plot_pred_1d = function(input, lik_par_val=NULL, em_pred_list=NULL, 
-                          plot_type="llik", conditional=default_conditional, 
+                          plot_type="llik", log_scale=TRUE, 
+                          conditional=default_conditional, 
                           normalize=default_normalize, include_interval=TRUE, 
                           interval_method="pm_std_dev", N_std_dev=1, 
                           CI_prob=0.9, true_llik=NULL, include_design=TRUE, 
                           xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
+    
+    if(plot_type=="llik") log_scale <- TRUE
     
     assert_that(dim_input==1, 
                 msg=paste0("plot_llik_pred_1d() requires 1d input space. dim_input = ", dim_input))
@@ -732,6 +761,9 @@ llikEmulator$methods(
     
     # Compute required predictive quantities if not already provided. 
     true_vals <- true_llik
+    mean_sel <- "mean"
+    var_sel <- "var"
+    
     if(plot_type == "llik") {
       pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
                                  em_pred_list=em_pred_list, return_mean=TRUE, 
@@ -744,14 +776,18 @@ llikEmulator$methods(
                                      return_mean=TRUE, 
                                      return_var=include_interval, 
                                      conditional=conditional, 
-                                     normalize=normalize, log_scale=FALSE, ...)
-      if(!is.null(true_vals)) true_vals <- exp(true_vals)
+                                     normalize=normalize, log_scale=log_scale, ...)
+      if(!is.null(true_vals) && !log_scale) true_vals <- exp(true_vals)
+      if(log_scale) {
+        mean_sel <- "log_mean"
+        var_sel <- "log_var"
+      }
     }
     
     # Plot title and labels.
     if(is.null(plot_title)) {
       plot_title <- "Likelihood Emulator Predictions"
-      if(plot_type == "llik") plot_title <- paste0("Log ", plot_title)
+      if(log_scale) plot_title <- paste0("Log ", plot_title)
       if(include_interval && (interval_method=="CI")) {
         plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
       }
@@ -770,6 +806,7 @@ llikEmulator$methods(
       interval_list <- .self$get_pred_interval(input, lik_par_val=lik_par_val, 
                                                target_pred_list=pred_list, 
                                                target=plot_type, 
+                                               log_scale=log_scale,
                                                method=interval_method, 
                                                N_std_dev=N_std_dev,
                                                CI_prob=CI_prob, 
@@ -786,11 +823,11 @@ llikEmulator$methods(
       design_inputs <- drop(.self$get_design_inputs(...))
       design_response_vals <- drop(get_design_llik(lik_par_val, conditional, 
                                                    normalize, ...))
-      if(plot_type == "lik") design_response_vals <- exp(design_response_vals)
+      if(!log_scale) design_response_vals <- exp(design_response_vals)
     } 
     
     # Produce plot. 
-    plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(pred_list$mean), 
+    plt <- plot_pred_1d_helper(X_new=drop(input), pred_mean=drop(pred_list[[mean_sel]]), 
                                include_CI=include_interval, 
                                CI_lower=interval_list$lower,  
                                CI_upper=interval_list$upper, 

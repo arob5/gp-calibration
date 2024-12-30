@@ -358,17 +358,19 @@ inv_logit_mat <- function(df, a, b) {
 
 calc_lin_Gauss_cond_moments <- function(G_fwd, y, m0, C0=NULL, Sig=NULL, 
                                         L0=NULL, L_Sig=NULL) {
-
   # Relative size of parameter and observation dimensions determine which 
   # formulae will be utilized to compute the posterior moments.
   p <- ncol(G_fwd)
   d <- nrow(G_fwd)
   big_param_dim <- (d > p)
   
-  if(big_param_dim) return(calc_lin_Gauss_cond_moments_par(G_fwd, y, m0, C0=NULL, Sig=NULL, 
-                                                           L0=NULL, L_Sig=NUL))
-  calc_lin_Gauss_cond_moments_obs(G_fwd, y, m0, C0=NULL, Sig=NULL, L0=NULL, L_Sig=NULL)
+  if(big_param_dim) {
+    calc_lin_Gauss_cond_moments_par(G_fwd, y, m0, C0, Sig, L0, L_Sig)
+  } else {
+    calc_lin_Gauss_cond_moments_obs(G_fwd, y, m0, C0, Sig, L0, L_Sig)
+  }
 }
+
 
 calc_lin_Gauss_cond_moments_par <- function(G_fwd, y, m0, C0=NULL, Sig=NULL, 
                                             L0=NULL, L_Sig=NULL) {

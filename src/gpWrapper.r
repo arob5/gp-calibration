@@ -173,6 +173,10 @@ gpWrapper$methods(
   }, 
   
   normalize = function(Ynew, inverse=FALSE) {
+    if(.self$Y_std == 0) {
+      stop("`Y_std` is 0, so cannot normalize.")
+    }
+    
     if(inverse) {
       Ynew <- Ynew * matrix(Y_std, nrow=nrow(Ynew), ncol=Y_dim, byrow=TRUE) + 
               matrix(Y_mean, nrow=nrow(Ynew), ncol=Y_dim, byrow=TRUE)
@@ -514,11 +518,13 @@ gpWrapper$methods(
                           pred_list=NULL, Y_new=NULL, plot_title=NULL, 
                           xlab=NULL, ylab=NULL, ...) {
     
-    assert_that(X_dim==1, msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
+    assert_that(X_dim==1, 
+                msg=paste0("plot_pred_1d() requires 1d input space. X_dim = ", X_dim))
     
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
-      pred_list <- predict(X_new, return_mean=TRUE, return_var=TRUE, include_nugget=include_nugget)
+      pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=TRUE, 
+                                 include_nugget=include_nugget)
     }
     
     # Default x-axis label.
@@ -530,16 +536,19 @@ gpWrapper$methods(
       # Default y-axis label. 
       if(is.null(ylab)) ylab <- Y_names[i]
       
-      plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], pred_var=pred_list$var[,i], 
-                                         include_interval=include_interval, interval_method=interval_method, 
-                                         N_std_dev=N_std_dev, CI_prob=CI_prob, y_new=Y_new[,i], X_design=X[,1], 
-                                         y_design=Y[,i], xlab=xlab, ylab=ylab, plot_title=plot_title, ...)
+      plts[[i]] <- plot_Gaussian_pred_1d(X_new=X_new[,1], pred_mean=pred_list$mean[,i], 
+                                         pred_var=pred_list$var[,i], 
+                                         include_interval=include_interval, 
+                                         interval_method=interval_method, 
+                                         N_std_dev=N_std_dev, CI_prob=CI_prob, 
+                                         y_new=Y_new[,i], X_design=X[,1], 
+                                         y_design=Y[,i], xlab=xlab, ylab=ylab, 
+                                         plot_title=plot_title, ...)
     }
     
     return(plts)
     
   },
-  
   
   plot_pred_2d = function(X_new, include_nugget=TRUE, pred_list=NULL, Y_new=NULL) {
     # Returns a list of heatmaps for the predictive mean and standard deviation. 
@@ -553,7 +562,8 @@ gpWrapper$methods(
                        CI_prob=0.9, pred_list=NULL) {
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
-      pred_list <- predict(X_new, return_mean=TRUE, return_var=include_CI, include_nugget=include_nugget)
+      pred_list <- predict(X_new, return_mean=TRUE, return_var=include_CI, 
+                           include_nugget=include_nugget)
     }
     
     CI_tail_prob <- 0.5 * (1-CI_prob)
@@ -564,7 +574,8 @@ gpWrapper$methods(
       if(include_CI) {
         df_pred$y_sd <- sqrt(pred_list$var[,i])
         df_pred$CI_upper <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd)
-        df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, lower.tail=FALSE)
+        df_pred$CI_lower <- qnorm(CI_tail_prob, df_pred$y_mean, df_pred$y_sd, 
+                                  lower.tail=FALSE)
       }
       
       plts[[i]] <- ggplot(df_pred) + 
@@ -576,9 +587,11 @@ gpWrapper$methods(
     return(plts)
   },
   
-  plot_1d_projection = function(x_names=NULL, n_points=100L, X_list=NULL, X_fixed=NULL, include_design=FALSE, 
-                                include_interval=TRUE, interval_method="pm_std_dev",
-                                N_std_dev=1, CI_prob=0.9, include_nugget=TRUE, ...) {
+  
+  plot_1d_projection = function(x_names=NULL, n_points=100L, X_list=NULL, X_fixed=NULL, 
+                                include_design=FALSE, include_interval=TRUE, 
+                                interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
+                                include_nugget=TRUE, ...) {
     # Plots GP predictions as a single input variable varies, with the remaining variables 
     # fixed at a single value. The default behavior of the method allows it to be called 
     # with no arguments; e.g., `plot_1d_projection()`. In this case, projections will be 
@@ -955,6 +968,7 @@ gpWrapperHet$methods(
     # Kernel.
     summary_str <- paste0(summary_str, "\n>>> Kernel:\n")
     summary_str <- paste0(summary_str, "Lengthscales:\n")
+    ls_summary <- .self$get_lengthscale_summary(idx)
     ls <- sqrt(gp_het$theta)
     for(i in seq_along(ls)) {
       summary_str <- paste0(summary_str, "\t", names(ls)[i], ": ", ls[i], "\n")
@@ -966,6 +980,23 @@ gpWrapperHet$methods(
     summary_str <- paste0(summary_str, "Std dev: ", gp_het$g, "\n")
     
     return(summary_str)
+  }, 
+  
+  plot_corr_summary = function(idx, types="opt") {
+    # Options for `types` are "default" (using the lengthscale value 
+    # is actually used in the correlation function - either the default 
+    # or the optimized value), "lower" (use lower bound lengthscale), 
+    # "upper" (use upper bound lengthscale).
+    
+    .NotYetImplemented()
+  },
+  
+  get_lengthscale_summary = function(idx) {
+    # Lengthscale values are returned on the normalized scale [0,1], such that 
+    # 0 corresponds to `X_bounds[0,idx]` and 1 corresponds to 
+    # `X_bounds[1,idx]` (the minimum and maximum design point value in input 
+    # dimension `idx`). Thus, values outside of [0,1] indicate 
+    .NotYetImplemented()
   }
   
 )
@@ -1011,6 +1042,9 @@ gpWrapperKerGP$methods(
       
       if(kernel_name == "Gaussian") {
         kernFun <- function(x1, x2, par) {
+          # `par` consists of: `X_dim` lengthscale parameters (with names set to `X_names`),
+          # and "sigma2", the marginal variance.
+          
           K12 <- kergp:::kNormFun(x1, x2, par, k1FunGauss)
           
           # Hack: add jitter to diagonal if number of rows are equal. 
@@ -1032,6 +1066,10 @@ gpWrapperKerGP$methods(
       } else if(kernel_name == "Gaussian_plus_Quadratic") {
       
         kernFun <- function(x1, x2, par) {
+          # `par` consists of: `X_dim` lengthscale parameters (with names set to `X_names`),
+          # "sigma2" (the marginal variance), and "quad_offset", which is the constant c in 
+          # the expression (<x,z> + c)^2.
+          
           x1 <- as.matrix(x1)
           x2 <- as.matrix(x2)
           
@@ -1045,7 +1083,8 @@ gpWrapperKerGP$methods(
           
           # Add kernels. 
           K12 <- K12_Gauss + K12_quad
-          attr(K12, "gradient") <- abind(attr(K12_Gauss, "gradient"), cst=attr(K12_quad, "gradient")$quad_offset, along=3)
+          attr(K12, "gradient") <- abind(attr(K12_Gauss, "gradient"), 
+                                         cst=attr(K12_quad, "gradient")$quad_offset, along=3)
           
           # Hack: add jitter to diagonal if number of rows are equal. 
           if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_nugget, nrow(x1)))
@@ -1102,7 +1141,7 @@ gpWrapperKerGP$methods(
     # To fix a jitter, we can fit the model using `noise = FALSE`. Then for the returned GP object 
     # we can set `gp_fit$varNoise <- nugget`. Then when predicting want to use 
     # `predict(..., forceInterp=TRUE)` to include the nugget variance in the kernel matrix. 
-    
+
     # kergp supports fixing known mean function coefficients `beta`. 
     if(isTRUE("beta" %in% names(fixed_pars))) {
       beta <- fixed_pars$beta
@@ -1116,8 +1155,10 @@ gpWrapperKerGP$methods(
     }
 
     # Fit GP. 
-    gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), data=data.frame(y=drop(y_fit), X_fit), 
-                        inputs=X_names, cov=map_kernel_name(kernel_name, mean_func_name, X_fit, y_fit), 
+    gp_fit <- kergp::gp(map_mean_func_name(mean_func_name), 
+                        data=data.frame(y=drop(y_fit), X_fit), 
+                        inputs=X_names, 
+                        cov=map_kernel_name(kernel_name, mean_func_name, X_fit, y_fit), 
                         estim=TRUE, beta=beta, noise=FALSE, ...)
     
     # TODO: Commenting this out for now, as we are fixing a jitter within the kernel function. 
