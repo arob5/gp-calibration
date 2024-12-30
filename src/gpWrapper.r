@@ -931,10 +931,14 @@ gpWrapperSum$methods(
     
     # Compute variance predictions.
     if(return_var) {
-      .NotYetImplemented()
+      vars <- tcrossprod(pred_list$var, (.self$B)^2)
+      if(!is.null(.self$sig2)) vars <- vars + sig2
+      return_list$var <- vars
     }
     
-    
+    # TODO: need to figure out how to handle the distinction between covariance 
+    # across different u vs across different g (output dimensions). Maybe have 
+    # an argument `include_output_cov` or something like that.
     
     
   }
