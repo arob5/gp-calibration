@@ -919,17 +919,39 @@ gpWrapperSum$methods(
     # Returns:
     # list, with different potential elements:
     # "mean": included if `return_mean = TRUE`. matrix of shape (M,P), where 
-    #         the (m,p) element is E[G(u_m)_p].
+    #         the (m,p) element is E[G(x_m)_p].
     # "trend": included if `return_trend = TRUE`. Same shape as "mean". The 
     #          GP prior mean predictions.
     #
     # The elements "var", "cov", and "cross_cov" will depend on the value of 
-    # `include_output_cov`.
+    # `include_output_cov`. At present, `include_output_cov = TRUE` is only 
+    # allowed if `M = 1` (i.e., `X_new` consists only of a single input).
+    #
     # If `include_output_cov = FALSE` (the default): 
     # "var": included if `return_var = TRUE`. matrix of shape (M,P), where the 
-    #        (m,p) element is Var[G(u_m)_p].
-    # "cov": included if `return_cov = TRUE`. matrix of shape (M,P)
+    #        (m,p) element is Var[G(x_m)_p].
+    # "cov": included if `return_cov = TRUE`. matrix of shape (M,M,P)
+    # "cross_cov": included if `return_cross_cov = TRUE`. matrix of shape 
+    #              (M,Q,P).
     #
+    # If `include_output_cov = TRUE` (only valid for `M = 1` and `Q = 1`;
+    # let x := X_new and x' := X_cross):
+    # "var": included if `return_var = TRUE`. matrix of shape (1,P), where the 
+    #        pth element is Var[G(x)_p]. The same output that would be returned 
+    #        if `include_output_cov = FALSE`.
+    # "cov": included if `return_cov = TRUE`. matrix of shape (P,P), the 
+    #        covariance matrix Cov[G(x)].
+    # "cross_cov": included if `return_cross_cov = TRUE`. matrix of shape (P,P),
+    #              the cross-covariance matrix Cov[G(x), G(x')].
+    
+    n_input <- nrow(X_new)
+    if(include_output_cov) {
+      assert_that(n_input==1, 
+                  msg="`nrow(X_new)==1` required when `include_output_cov is TRUE`.")
+      assert_that(!(return_cross_cov && (nrow(X_cross)>1)),
+                  msg="`nrow(X_cross)==1` required when `include_output_cov is TRUE`.")
+    }
+    if((n_input==1) && return_cov) return_var <- TRUE
     
     return_list <- list()
     
@@ -958,6 +980,54 @@ gpWrapperSum$methods(
       return_list$trend <- trend
     }
     
+    # Compute variances, covariances, and cross-covariances. Predictive 
+    # covariances will either be with respect to the output space or input 
+    # space.
+    if(any(return_var, return_cov, return_cross_cov)) {
+      if(include_output_cov) {
+        return_list_covs <- .self$predict_output_cov(X_new,  return_var=TRUE, 
+                                                     return_cov=FALSE, 
+                                                     return_cross_cov=FALSE, 
+                                                     X_cross=NULL, 
+                                                     include_nugget=TRUE,
+                                                     pred_list=pred_list)
+      } else {
+        return_list_covs <- .self$predict_input_cov(X_new,  return_var=TRUE, 
+                                                    return_cov=FALSE, 
+                                                    return_cross_cov=FALSE, 
+                                                    X_cross=NULL, 
+                                                    include_nugget=TRUE,
+                                                    pred_list=pred_list)
+      }
+      
+      return_list <- c(return_list, return_list_covs)
+    }
+    
+    return(return_list)
+  }, 
+  
+  predict_input_cov = function(X_new, return_var=TRUE, return_cov=FALSE, 
+                               return_cross_cov=FALSE, X_cross=NULL, 
+                               include_nugget=TRUE, pred_list=NULL, ...) {
+    # Compute predictive variances, covariances, and cross-covariances, where 
+    # these quantities are interpreted as covariances with respect to the 
+    # input ("x") variables. No output covariances are computed here. See 
+    # `predict()` for specifics on the computed quantities.
+
+    n_input <- nrow(X_new)
+    if((n_input==1) && return_cov) return_var <- TRUE
+    return_list <- list()
+    
+    # Predict using independent GPs, if required.
+    if(is.null(pred_list)) {
+      pred_list <- .self$gp_model$predict(X_new, return_mean=FALSE, 
+                                          return_var=return_var, 
+                                          return_cov=return_cov,
+                                          return_cross_cov=return_cross_cov,
+                                          X_cross=X_cross, 
+                                          include_nugget=include_nugget, ...)
+    }
+    
     # Compute variance predictions.
     if(return_var) {
       vars <- tcrossprod(pred_list$var, (.self$B)^2)
@@ -967,12 +1037,63 @@ gpWrapperSum$methods(
     
     # Compute covariance predictions.
     if(return_cov) {
-      .NotYetImplemented()
+      covs <- array(0, dim=c(n_input, n_input, .self$dim_Y))
+      
+      if(n_input==1) {
+        covs[1,1,] <- return_list$var[1,]
+      } else {
+        for(p in seq_len(.self$dim_Y)) {
+          for(j in 1:nrow(.self$B)) {
+            cov[,,p] <- cov[,,p] + (.self$B[p,j])^2 * pred_list$cov[,,j,drop=FALSE]
+          }
+        }
+      }
+      
+      return_list$cov <- covs
     }
     
+    # Compute cross-covariance predictions.
+    if(return_cross_cov) {
+      cross_covs <- array(0, dim=c(n_input, nrow(X_cross), .self$dim_Y))
+      for(p in seq_len(.self$dim_Y)) {
+        for(j in 1:nrow(.self$B)) {
+          cross_covs[,,p] <- cross_covs[,,p] + (.self$B[p,j])^2 * pred_list$cross_cov[,,j,drop=FALSE]
+        }
+      }
+      
+      return_list$cross_cov <- cross_covs
+    }
     
+    return(return_list)
+  },
+  
+  
+  predict_output_cov = function(X_new, return_var=TRUE, return_cov=FALSE, 
+                                return_cross_cov=FALSE, X_cross=NULL, 
+                                include_nugget=TRUE, pred_list=NULL, ...) {
+    # Compute predictive variances, covariances, and cross-covariances, where 
+    # these quantities are interpreted as covariances with respect to the 
+    # output variables. No input covariances are computed here. See 
+    # `predict()` for specifics on the computed quantities.
     
-  }, 
+    assert_that(nrow(X_new)==1,
+                msg="`nrow(X_new)==1` required when `include_output_cov is TRUE`.")
+    assert_that(!(return_cross_cov && (nrow(X_cross)>1)),
+                msg="`nrow(X_cross)==1` required when `include_output_cov is TRUE`.")
+
+    return_list <- list()
+    
+    # Predict using independent GPs, if required.
+    if(is.null(pred_list)) {
+      pred_list <- .self$gp_model$predict(X_new, return_mean=FALSE, 
+                                          return_var=return_var, 
+                                          return_cov=return_cov,
+                                          return_cross_cov=return_cross_cov,
+                                          X_cross=X_cross, 
+                                          include_nugget=include_nugget, ...)
+    }
+  },
+  
   
   sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, 
                     pred_list=NULL, ...) {
