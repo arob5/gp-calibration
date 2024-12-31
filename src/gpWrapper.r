@@ -922,23 +922,20 @@ gpWrapperSum$methods(
     #         the (m,p) element is E[G(x_m)_p].
     # "trend": included if `return_trend = TRUE`. Same shape as "mean". The 
     #          GP prior mean predictions.
-    #
-    # The elements "var", "cov", and "cross_cov" will depend on the value of 
-    # `include_output_cov`. At present, `include_output_cov = TRUE` is only 
-    # allowed if `M = 1` (i.e., `X_new` consists only of a single input).
-    #
-    # If `include_output_cov = FALSE` (the default): 
     # "var": included if `return_var = TRUE`. matrix of shape (M,P), where the 
     #        (m,p) element is Var[G(x_m)_p].
+    #
+    # The elements "cov" and "cross_cov" will depend on the value of 
+    # `include_output_cov`. At present, `include_output_cov = TRUE` is only 
+    # allowed if `nrow(X_new) = 1` and `nrow(X_cross) = 1`.
+    #
+    # If `include_output_cov = FALSE` (the default): 
     # "cov": included if `return_cov = TRUE`. matrix of shape (M,M,P)
     # "cross_cov": included if `return_cross_cov = TRUE`. matrix of shape 
     #              (M,Q,P).
     #
     # If `include_output_cov = TRUE` (only valid for `M = 1` and `Q = 1`;
     # let x := X_new and x' := X_cross):
-    # "var": included if `return_var = TRUE`. matrix of shape (1,P), where the 
-    #        pth element is Var[G(x)_p]. The same output that would be returned 
-    #        if `include_output_cov = FALSE`.
     # "cov": included if `return_cov = TRUE`. matrix of shape (P,P), the 
     #        covariance matrix Cov[G(x)].
     # "cross_cov": included if `return_cross_cov = TRUE`. matrix of shape (P,P),
@@ -980,20 +977,24 @@ gpWrapperSum$methods(
       return_list$trend <- trend
     }
     
-    # Compute variances, covariances, and cross-covariances. Predictive 
-    # covariances will either be with respect to the output space or input 
-    # space.
-    if(any(return_var, return_cov, return_cross_cov)) {
+    # Compute variance predictions.
+    if(return_var) {
+      vars <- tcrossprod(pred_list$var, (.self$B)^2)
+      if(!is.null(.self$sig2)) vars <- vars + sig2
+      return_list$var <- vars
+    }
+    
+    # Compute covariances and cross-covariances. Predictive covariances will 
+    # either be with respect to the output space or input space.
+    if(return_cov || return_cross_cov) {
       if(include_output_cov) {
-        return_list_covs <- .self$predict_output_cov(X_new,  return_var=TRUE, 
-                                                     return_cov=FALSE, 
+        return_list_covs <- .self$predict_output_cov(X_new, return_cov=FALSE, 
                                                      return_cross_cov=FALSE, 
                                                      X_cross=NULL, 
                                                      include_nugget=TRUE,
                                                      pred_list=pred_list)
       } else {
-        return_list_covs <- .self$predict_input_cov(X_new,  return_var=TRUE, 
-                                                    return_cov=FALSE, 
+        return_list_covs <- .self$predict_input_cov(X_new, return_cov=FALSE, 
                                                     return_cross_cov=FALSE, 
                                                     X_cross=NULL, 
                                                     include_nugget=TRUE,
@@ -1006,16 +1007,16 @@ gpWrapperSum$methods(
     return(return_list)
   }, 
   
-  predict_input_cov = function(X_new, return_var=TRUE, return_cov=FALSE, 
-                               return_cross_cov=FALSE, X_cross=NULL, 
-                               include_nugget=TRUE, pred_list=NULL, ...) {
-    # Compute predictive variances, covariances, and cross-covariances, where 
+  predict_input_cov = function(X_new, return_cov=FALSE, return_cross_cov=FALSE, 
+                               X_cross=NULL, include_nugget=TRUE, 
+                               pred_list=NULL, ...) {
+    # Compute predictive covariances and cross-covariances, where 
     # these quantities are interpreted as covariances with respect to the 
     # input ("x") variables. No output covariances are computed here. See 
     # `predict()` for specifics on the computed quantities.
 
     n_input <- nrow(X_new)
-    if((n_input==1) && return_cov) return_var <- TRUE
+    return_var <- ifelse((n_input==1) && return_cov, TRUE, FALSE)
     return_list <- list()
     
     # Predict using independent GPs, if required.
@@ -1026,13 +1027,6 @@ gpWrapperSum$methods(
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
                                           include_nugget=include_nugget, ...)
-    }
-    
-    # Compute variance predictions.
-    if(return_var) {
-      vars <- tcrossprod(pred_list$var, (.self$B)^2)
-      if(!is.null(.self$sig2)) vars <- vars + sig2
-      return_list$var <- vars
     }
     
     # Compute covariance predictions.
@@ -1068,13 +1062,14 @@ gpWrapperSum$methods(
   },
   
   
-  predict_output_cov = function(X_new, return_var=TRUE, return_cov=FALSE, 
-                                return_cross_cov=FALSE, X_cross=NULL, 
-                                include_nugget=TRUE, pred_list=NULL, ...) {
-    # Compute predictive variances, covariances, and cross-covariances, where 
+  predict_output_cov = function(X_new, return_cov=FALSE, return_cross_cov=FALSE, 
+                                X_cross=NULL, include_nugget=TRUE, 
+                                pred_list=NULL, ...) {
+    # Compute predictive covariances and cross-covariances, where 
     # these quantities are interpreted as covariances with respect to the 
     # output variables. No input covariances are computed here. See 
-    # `predict()` for specifics on the computed quantities.
+    # `predict()` for specifics on the computed quantities. At present, this 
+    # method only works for single inputs: `nrow(X_new) = nrow(X_cross) = 1`.
     
     assert_that(nrow(X_new)==1,
                 msg="`nrow(X_new)==1` required when `include_output_cov is TRUE`.")
@@ -1086,12 +1081,27 @@ gpWrapperSum$methods(
     # Predict using independent GPs, if required.
     if(is.null(pred_list)) {
       pred_list <- .self$gp_model$predict(X_new, return_mean=FALSE, 
-                                          return_var=return_var, 
-                                          return_cov=return_cov,
+                                          return_var=return_cov, 
+                                          return_cov=FALSE,
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
                                           include_nugget=include_nugget, ...)
     }
+    
+    # Compute covariance predictions.
+    if(return_cov) {
+      return_list$cov <- tcrossprod(mult_vec_with_mat_rows(drop(pred_list$var), 
+                                                           .self$B), .self$B)
+    }
+    
+    # Compute cross-covariance predictions.
+    if(return_cross_cov) {
+      cross_cov <- tcrossprod(mult_vec_with_mat_rows(drop(pred_list$cross_cov), 
+                                                     .self$B), .self$B)
+      return_list$cross_cov <- cross_cov
+    }
+    
+    return(return_list)
   },
   
   
@@ -1128,6 +1138,72 @@ gpWrapperSum$methods(
     }
     
     return(G_samp)
+  }, 
+  
+  get_summary_str = function(...) {
+    
+    # gpWrapperSum attributes.
+    summary_str <- "----- gpWrapperSum -----\n"
+    summary_str <- paste0(summary_str, "Output dimension: ", .self$Y_dim, "\n")
+    summary_str <- paste0(summary_str, "Number independent GPs: ", ncol(.self$B), "\n")
+    summary_str <- paste0(summary_str, "Include shift: ", !is.null(.self$shift), "\n")
+    summary_str <- paste0(summary_str, "Include noise: ", !is.null(.self$sig2), "\n")
+    
+    # Append attributes for underlying GPs.
+    summary_str <- paste0(summary_str, .self$emulator_model$get_summary_str(...))
+  }, 
+  
+  scale = function(Xnew, inverse=FALSE) {
+    # Call the underlying gpWrapper scale method.
+    
+    .self$emulator_model$scale(Xnew, inverse=inverse)
+  }, 
+  
+  normalize = function(Ynew, inverse=FALSE) {
+    # Call the underlying gpWrapper normalize method.
+    
+    .self$emulator_model$normalize(Ynew, inverse=inverse)
+  }, 
+  
+  fit = function(...) {
+    stop("gpWrapperSum does not implement its own `fit()` method.")
+  },
+  
+  update = function(X_new, Y_new, update_hyperpar=FALSE, ...) {
+    # Call the underlying gpWrapper normalize method.
+    
+    .self$emulator_model$update(X_new, Y_new, update_hyperpar=update_hyperpar)
+  }, 
+  
+  calc_pred_func = function(...) {
+    .NotYetImplemented()
+  }, 
+  
+  plot_pred = function(X_new, Y_new=NULL, include_CI=FALSE, include_nugget=TRUE, 
+                       CI_prob=0.9, pred_list=NULL) {
+    # This method is overloaded to plot the predictive distribution of G(x) as 
+    # a function of the output index; i.e., plot pairs of the form (p, G(x)_p),
+    # where `x` is a fixed input. In particular, plots the mean 
+    # (p, E[G(x)_p]). Optionally also plots the true trajectory (p, G*(x)_p)
+    # for comparison, as well as a credible interval around (p, E[G(x)_p]).
+    
+    .NotYetImplemented()
+  },
+  
+  plot_pred_lin_proj = function() {
+    .NotYetImplemented()
+  },
+  
+  plot_pred_output = function(output_idx) {
+    .NotYetImplemented()
+  },
+  
+  plot_pred_mean = function() {
+    .NotYetImplemented()
+  },
+  
+  plot_samp = function() {
+    .NotYetImplemented()
   }
   
 )
