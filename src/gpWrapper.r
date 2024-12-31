@@ -825,7 +825,7 @@ gpWrapper$methods(
 #
 # G(u) = g + sum_{j=1}^{r} w_j(u)b_j + eps =: g + Bw(u)
 # w_j ~ GP(mu_j, k_j)
-# eps ~ N(0, sig2)
+# eps ~ N(0, sig2 * I)
 #
 # where all of the `w_j` and `eps` are pairwise independent, `g` and 
 # `b_1, ..., b_r` are constant vectors in R^p. `eps` is a zero-mean Gaussian 
@@ -904,9 +904,32 @@ gpWrapperSum$methods(
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
                      return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
-                     return_trend=TRUE, pred_list=NULL, ...) {
+                     return_trend=TRUE, pred_list=NULL, include_output_cov=FALSE, 
+                     ...) {
     # `pred_list` is a GP prediction list corresponding to `gp_model`, the 
-    # set of independent GPs.
+    # set of independent GPs. Given that the gpWrapperSum GP is a multi-output 
+    # GP, there are two notions of covariance here: covariance across input 
+    # values, and covariance across output values. By default, this method 
+    # excludes the latter. This is done for two reasons: (1) to align with the 
+    # behavior of `predict()` for other gpWrapper classes; and (2) to avoid 
+    # computing with very large matrices when not required. The different 
+    # return options are summarized below. Let `M := nrow(X_new)`, 
+    # `Q := norw(X_cross)`, and `P := dim_Y`.
+    #
+    # Returns:
+    # list, with different potential elements:
+    # "mean": included if `return_mean = TRUE`. matrix of shape (M,P), where 
+    #         the (m,p) element is E[G(u_m)_p].
+    # "trend": included if `return_trend = TRUE`. Same shape as "mean". The 
+    #          GP prior mean predictions.
+    #
+    # The elements "var", "cov", and "cross_cov" will depend on the value of 
+    # `include_output_cov`.
+    # If `include_output_cov = FALSE` (the default): 
+    # "var": included if `return_var = TRUE`. matrix of shape (M,P), where the 
+    #        (m,p) element is Var[G(u_m)_p].
+    # "cov": included if `return_cov = TRUE`. matrix of shape (M,P)
+    #
     
     return_list <- list()
     
@@ -923,10 +946,16 @@ gpWrapperSum$methods(
     
     # Compute mean predictions.
     if(return_mean) {
-      # TODO: check dimensions here.
       mu <- tcrossprod(pred_list$mean, .self$B)
       if(!is.null(.self$shift)) mu <- add_vec_to_mat_rows(.self$shift, mu)
       return_list$mean <- mu
+    }
+    
+    # Compute trend (prior mean) predictions.
+    if(return_trend) {
+      trend <- tcrossprod(pred_list$trend, .self$B)
+      if(!is.null(.self$shift)) trend <- add_vec_to_mat_rows(.self$shift, trend)
+      return_list$trend <- trend
     }
     
     # Compute variance predictions.
@@ -936,11 +965,48 @@ gpWrapperSum$methods(
       return_list$var <- vars
     }
     
-    # TODO: need to figure out how to handle the distinction between covariance 
-    # across different u vs across different g (output dimensions). Maybe have 
-    # an argument `include_output_cov` or something like that.
+    # Compute covariance predictions.
+    if(return_cov) {
+      .NotYetImplemented()
+    }
     
     
+    
+  }, 
+  
+  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, 
+                    pred_list=NULL, ...) {
+    # Returns samples from G(x) at different input points x. This simply 
+    # requires sampling the underlying independent GPs w(x) and using these 
+    # weight samples to compute linear combinations of the basis vectors.
+    # Note that `use_cov` here refers to covariance across different inputs `x`;
+    # output covariances are always included.
+    #
+    # Returns array of dimension (nrow(X_new), N_samp, Y_dim). 
+    
+    # Sample weights (independent GPs).
+    w_samp <- .self$gp_model$sample(X_new, use_cov=use_cov, 
+                                    include_nugget=include_nugget,
+                                    N_samp=N_samp, pred_list=pred_list, ...)
+    n_input <- dim(w_samp)[2]
+
+    # Compute linear combination of weight samples to produce samples from G.
+    G_samp <- array(NA, dim=c(n_input, N_samp, .self$Y_dim))
+    for(i in 1:n_input) {
+      W <- w_samp[,i,,drop=FALSE]
+      G <- tcrossprod(W, .self$B)
+      
+      if(!is.null(.self$shift)) G <- add_vec_to_mat_rows(.self$shift, G)
+      if(!is.null(.self$sig2)) {
+        Z <- matrix(rnorm(prod(dim(G)), sd=sqrt(.self$sig2)), 
+                    nrow=nrow(G), ncol=ncol(G))
+        G <- G + Z
+      }
+      
+      G_samp[,i,] <- G
+    }
+    
+    return(G_samp)
   }
   
 )
