@@ -54,14 +54,24 @@ library(abind)
 # numerical stability. We refer to this small value as the "jitter". By default, 
 # this value is provided by the "default_jitter", but the user can manually 
 # override this default as well. If "noise" is TRUE, then "sig2" is by default
-# viewed as another parameter to be estimated.
+# viewed as another parameter to be estimated. In the gpWrapper class the 
+# attribute `noise_var` defines the value of "sig2". "noise_var" is actually 
+# a vector of length equal to the output dimension, storing one noise variance 
+# per output variable.
+#
+# The `predict()` method is used to compute the GP predictive distribution 
+# at a finite set of new input points. The argument `include_noise` controls 
+# whether or not the predictions pertain to `y(x)` or the latent function 
+# `f(x)`. This doesn't affect the means but adds `sig2` to predictive 
+# variances.
 # -----------------------------------------------------------------------------
 
 gpWrapper <- setRefClass(
    Class = "gpWrapper", 
    fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
                  X_dim="integer", Y_dim="integer", mean_func="ANY",
-                 kernel="ANY", noise="logical", default_jitter="numeric", 
+                 kernel="ANY", noise="logical", noise_var="numeric", 
+                 default_jitter="numeric", fixed_pars="list", 
                  scale_input="logical", normalize_output="logical", 
                  X_bounds="matrix", Y_mean="numeric", Y_std="numeric", 
                  X_names="character", Y_names="character", X_train="matrix", 
@@ -120,18 +130,33 @@ gpWrapper$methods(
   },
   
   set_gp_prior = function(kernel_name="Gaussian", mean_func_name="constant", 
-                          kernel_par_bounds=NULL, fixed_pars=list(), 
+                          kernel_par_bounds=NULL, fixed_hyperpars=NULL, 
                           include_noise=TRUE, jitter=NULL, ...) {
     # This method specifies the GP prior distribution by setting the `kernel` 
     # and `mean_func` attributes, with default hyperparameters (this method does
     # not perform hyperparameter optimization). The kernel and mean function 
     # correspond to a single univariate GP. If there are multiple independent 
     # GPs, then the same kernel and mean function is used for each GP, but their 
-    # hyperparameters will of course be optimized separately. The specific 
-    # type of the `kernel` and `mean_func` attributes will depend on the 
-    # specific gpWrapper class. The methods `map_kernel_name()` and 
-    # `map_mean_func_name()` are defined specially for each class that inherits 
-    # from base gpWrapper.
+    # hyperparameters will of course be optimized separately. Also, they 
+    # are each assigned a separate noise variance in the `noise_var`
+    # attribute. The specific type of the `kernel` and `mean_func` attributes 
+    # will depend on the specific gpWrapper class. The methods 
+    # `map_kernel_name()` and `map_mean_func_name()` are defined specially for 
+    # each class that inherits from base gpWrapper.
+    
+    # Set `fixed_pars` attribute.
+    if(is.null(fixed_hyperpars)) {
+      fixed_hyperpars <- list(kernel=list(), mean_func=list(), noise_var=NULL)
+    } else {
+      assert_that(all(c("kernel", "mean_func", 
+                        "noise_var") %in% names(fixed_hyperpars)))
+      if(length(noise_var)==1) {
+        fixed_hyperpars$noise_var <- rep(fixed_hyperpars$noise_var, .self$Y_dim)
+      }
+    }
+    
+    assert_that(length(fixed_hyperpars$noise_var) %in% c(0, .self$Y_dim))
+    fixed_pars <<- fixed_hyperpars
     
     # Whether or not noise is to be included, set a default jitter value.
     if(is.null(jitter)) {
@@ -142,23 +167,41 @@ gpWrapper$methods(
     }
     default_jitter <<- jitter
     
-    # Determines whether noise term will be included or not when fitting GPs.
-    # If not, then noise variance will be fixed at `default_jitter`.
     noise <<- include_noise
-
+    if(!include_noise) {
+      # If not including noise term, then noise variance will be fixed at 
+      # `default_jitter`.
+      noise_var <<- rep(jitter, .self$Y_dim)
+    } else if(include_noise && !is.null(fixed_pars$noise_var)) {
+      # If noise is to be included, but variance parameter is fixed (not 
+      # estimated).
+      noise_var <<- .self$fixed_pars$noise_var
+    } else {
+      # If estimating noise variances.
+      noise_var <<- rep(NA_real_, .self$Y_dim)
+    }
+    
     # Set up mean and covariance functions (no hyperparameter optimization 
     # is performed here). 
-    kernel <<- .self$map_kernel_name(kernel_name, kernel_par_bounds, 
-                                     fixed_pars, ...)
-    mean_func <<- .self$map_mean_func_name(mean_func_name, fixed_pars, ...)
+    kernel <<- .self$map_kernel_name(kernel_name, kernel_par_bounds, ...)
+    mean_func <<- .self$map_mean_func_name(mean_func_name, ...)
   },
   
+  
   map_kernel_name = function(kernel_name, kernel_par_bounds=NULL, ...) {
+    # This function is intended to be called from `set_gp_prior()`, and 
+    # thus assumes that certain attributes (e.g., `fixed_pars`, `noise`)
+    # have already been set.
+
     stop("`map_kernel_name()` is implemented by each class that inherits from ",
          "the base gpWrapper class.")
   },
   
   map_mean_func_name = function(mean_func_name, ...) {
+    # This function is intended to be called from `set_gp_prior()`, and 
+    # thus assumes that certain attributes (e.g., `fixed_pars`, `noise`)
+    # have already been set.
+    
     stop("`map_mean_func_name()` is implemented by each class that inherits ",
          "from the base gpWrapper class.")
   },
@@ -174,10 +217,14 @@ gpWrapper$methods(
   },
   
   prior_is_defined = function() {
-    # TRUE if the attributes `mean_func`, `kernel`, and `noise` are initialized.
+    # TRUE if the attributes `mean_func`, `kernel`, `noise`, and `noise_var` 
+    # are initialized. Note that the `noise_var` vector may contains NAs if the 
+    # noise variances have not been fixed nor estimated yet, but the attribute
+    # is still defined by `set_gp_prior()`.
     !any(c(class(.self$mean_func),
            class(.self$kernel),
-           class(.self$noise)) %in% "uninitializedField")
+           class(.self$noise),
+           class(.self$noise_var)) %in% "uninitializedField")
   },
   
   get_summary_str = function(...) {
@@ -201,9 +248,17 @@ gpWrapper$methods(
     # has not implemented the method `get_summary_str_package()` then the 
     # default is for this method to just return NULL, which will not be printed
     # by `cat()`. 
-    if(gp_obj_exists) {
+    if(.self$gp_is_fit()) {
       for(i in seq_len(.self$Y_dim)) {
-        summary_str <- paste0(summary_str, "\n", .self$get_summary_str_package(i,...))
+        
+        # Package-specific summary.
+        summary_str <- paste0(summary_str, "\n", 
+                              .self$get_summary_str_package(i,...))
+        
+        # Noise variances are standardized across all packages.
+        summary_str <- paste0(summary_str, "\n>>> Noise:\n")
+        summary_str <- paste0(summary_str, "Std dev: ", 
+                              sqrt(.self$noise_var[i]), "\n")
       }
     }
     
@@ -225,14 +280,21 @@ gpWrapper$methods(
     str <- paste0(str, "Include noise: ", .self$noise, "\n")
     str <- paste0(str, "Default jitter: ", .self$default_jitter, "\n")
     
+    if(class(.self$noise_var) == "uninitializedField") {
+      str <- paste0(str, "Noise variance: not initialized")
+    } else {
+      str <- paste0(str, "Noise variance(s): ", 
+                    paste(.self$noise_var, collapse=", "), "\n")
+    }
+    
     if(!.self$noise) {
-      str <- paste0(str, "Note: noise variance fixed at `default_jitter` for ",
-                    "numerical stability.\n")
+      str <- paste0(str, "Note: noise variance(s) fixed at `default_jitter` ",
+                    "for numerical stability.\n")
     }
     
     # Fit/hyperparameters optimized. 
     gp_obj_exists <- .self$gp_is_fit()
-    str <- paste0(str, "GP object defined: ", gp_obj_exists, "\n")
+    str <- paste0(str, "GP package object defined: ", gp_obj_exists, "\n")
     
     return(str)    
   },
@@ -279,38 +341,37 @@ gpWrapper$methods(
     return(Ynew)
   },
   
-  fit_package = function(X_fit, y_fit, kernel_name="Gaussian", 
-                         mean_func_name="constant", fixed_pars=list(), ...) {
-    err_msg <- "A fit_package() method must be implemented for each class inheriting from 
-                gpWrapper. gpWrapper does not implement its own fit_package() method. The
-                fit() method should ultimately call fit_package()."
-    stop(err_msg)
-  },
-  
-  
-  fit = function(estimate_nugget=TRUE, fixed_pars=list(), ...) {
+
+  fit = function(...) {
     assert_that(.self$prior_is_defined(), 
-                msg=paste("GP mean function and/or kernel not defined.",
+                msg=paste("GP prior not defined. ",
                           "Call `set_gp_prior()` method prior to `fit()`.")) 
     
     fits_list <- vector(mode="list", length=.self$Y_dim)
     for(i in seq_along(fits_list)) {
-      fits_list[[i]] <- .self$fit_package(X_fit=X_train, y_fit=Y_train[,i], 
-                                          estimate_nugget=estimate_nugget, 
-                                          fixed_pars=fixed_pars, ...)
+      fits_list[[i]] <- .self$fit_package(X_fit=X_train, y_fit=Y_train[,i],
+                                          output_idx=i, ...)
     }
 
     names(fits_list) <- .self$Y_names
     gp_model <<- fits_list
   }, 
+  
+  fit_package = function(X_fit, y_fit, output_idx, ...) {
+    err_msg <- "A fit_package() method must be implemented for each class inheriting from 
+                gpWrapper. gpWrapper does not implement its own fit_package() method. The
+                fit() method should ultimately call fit_package()."
+    stop(err_msg)
+  },
 
-  fit_parallel = function(estimate_nugget=TRUE, fixed_pars=list(), ...) {
+  fit_parallel = function(...) {
     .NotYetImplemented()
   },
   
-  predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
-                             return_cov=FALSE, return_cross_cov=NULL, 
-                             X_cross=NULL, include_nugget=TRUE) {
+  predict_package = function(X_new, output_idx, return_mean=TRUE, 
+                             return_var=TRUE, return_cov=FALSE, 
+                             return_cross_cov=NULL, X_cross=NULL, 
+                             include_noise=TRUE) {
     err_msg <- "A predict_package() method must be implemented for each class inheriting from 
                 gpWrapper. gpWrapper does not implement its own predict_package() method. The
                 predict() method should ultimately call predict_package()."
@@ -318,15 +379,15 @@ gpWrapper$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
+                     return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
                      return_trend=TRUE, ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers 
     #      to k(X_new, X_cross).
-    #   - The former is always diagonal, and `include_nugget==TRUE` will cause 
-    #     nugget variances to be added to the diagonal. The latter may or may 
-    #     not be diagonal, and `include_nugget` has no effect on the cross cov 
-    #     matrix (nugget variances will NOT be added in either case). 
+    #   - The former is always diagonal, and `include_noise==TRUE` will cause 
+    #     noise variances to be added to the diagonal. The latter may or may 
+    #     not be diagonal, and `include_noise` has no effect on the cross cov 
+    #     matrix (noise variances will NOT be added in either case). 
     #   - If `return_cov==TRUE`, then the variances will always be returned as 
     #     well, by simply taking the diagonal of the covariance matrix. 
     #   - `return_cross_cov` has no effect on the other settings; can be thought 
@@ -364,7 +425,7 @@ gpWrapper$methods(
                                         return_cov=return_cov, 
                                         return_cross_cov=return_cross_cov, 
                                         X_cross=X_cross, 
-                                        include_nugget=include_nugget, 
+                                        include_noise=include_noise, 
                                         return_trend=return_trend, ...)
     }
 
@@ -411,13 +472,13 @@ gpWrapper$methods(
   
   
   predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE,
-                              return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE,
+                              return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE,
                               return_trend=TRUE) {
     .NotYetImplemented()
   },
   
   
-  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, 
+  sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1, 
                     pred_list=NULL, adjustment="none", ...) {
     # If `pred_list` is passed, it should have all the required components. 
     # Returns array of dimension (num input, num samp, Y_dim). 
@@ -428,7 +489,7 @@ gpWrapper$methods(
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
-                                 return_cov=use_cov, include_nugget=include_nugget)
+                                 return_cov=use_cov, include_noise=include_noise)
     } else {
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
@@ -484,7 +545,7 @@ gpWrapper$methods(
   },
 
   calc_pred_func = function(func, type="pw", X_new=NULL, Y_new=NULL,  
-                            pred_list=NULL, include_nugget=TRUE,  
+                            pred_list=NULL, include_noise=TRUE,  
                             return_mean=TRUE, return_var=TRUE, 
                             return_cov=FALSE, ...) {
     # Returns the output of a function applied to `pred_list`. The function 
@@ -520,7 +581,7 @@ gpWrapper$methods(
       assert_that(return_mean || return_var || return_cov)
       pred_list <- .self$predict(X_new, return_mean=return_mean, 
                                  return_var=return_var, 
-                                 include_nugget=include_nugget)
+                                 include_noise=include_noise)
     }
     
     # Identify the number of test points. Only required for pointwise function 
@@ -543,7 +604,7 @@ gpWrapper$methods(
   
   calc_pred_multi_func = function(func_list, type="pw", X_new=NULL, Y_new=NULL,  
                                   pred_list=NULL, return_list=FALSE, 
-                                  include_nugget=TRUE, return_mean=TRUE, 
+                                  include_noise=TRUE, return_mean=TRUE, 
                                   return_var=TRUE, return_cov=FALSE, ...) {
     # A wrapper around `calc_pred_func()` that allows `func` to be a list of 
     # functions (or method names). Note that `type` should not be a list; 
@@ -557,7 +618,7 @@ gpWrapper$methods(
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=return_mean, 
                                  return_var=return_var, 
-                                 include_nugget=include_nugget)
+                                 include_noise=include_noise)
     }
     
     # Return function evaluations for each function in list.
@@ -625,7 +686,7 @@ gpWrapper$methods(
                      sigma=pred_list$cov[,,output_idx], log=TRUE)
   },
   
-  plot_pred_1d = function(X_new, include_nugget=TRUE, include_interval=TRUE, 
+  plot_pred_1d = function(X_new, include_noise=TRUE, include_interval=TRUE, 
                           interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
                           pred_list=NULL, Y_new=NULL, plot_title=NULL, 
                           xlab=NULL, ylab=NULL, ...) {
@@ -636,7 +697,7 @@ gpWrapper$methods(
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=TRUE, 
-                                 include_nugget=include_nugget)
+                                 include_noise=include_noise)
     }
     
     # Default x-axis label.
@@ -662,7 +723,7 @@ gpWrapper$methods(
     
   },
   
-  plot_pred_2d = function(X_new, include_nugget=TRUE, pred_list=NULL, Y_new=NULL) {
+  plot_pred_2d = function(X_new, include_noise=TRUE, pred_list=NULL, Y_new=NULL) {
     # Returns a list of heatmaps for the predictive mean and standard deviation. 
     
     assert_that(X_dim==2, msg=paste0("plot_pred_2d() requires 1d input space. X_dim = ", X_dim))
@@ -670,12 +731,12 @@ gpWrapper$methods(
   },
   
   
-  plot_pred = function(X_new, Y_new, include_CI=FALSE, include_nugget=TRUE, 
+  plot_pred = function(X_new, Y_new, include_CI=FALSE, include_noise=TRUE, 
                        CI_prob=0.9, pred_list=NULL, ...) {
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=include_CI, 
-                                 include_nugget=include_nugget)
+                                 include_noise=include_noise)
     }
     
     CI_tail_prob <- 0.5 * (1-CI_prob)
@@ -708,7 +769,7 @@ gpWrapper$methods(
   plot_1d_projection = function(x_names=NULL, n_points=100L, X_list=NULL, X_fixed=NULL, 
                                 include_design=FALSE, include_interval=TRUE, 
                                 interval_method="pm_std_dev", N_std_dev=1, CI_prob=0.9, 
-                                include_nugget=TRUE, ...) {
+                                include_noise=TRUE, ...) {
     # Plots GP predictions as a single input variable varies, with the remaining variables 
     # fixed at a single value. The default behavior of the method allows it to be called 
     # with no arguments; e.g., `plot_1d_projection()`. In this case, projections will be 
@@ -809,7 +870,7 @@ gpWrapper$methods(
       X_pred <- X_pred[, .self$X_names]
         
       # Compute GP predictions.
-      pred_list <- .self$predict(X_pred, return_var=include_interval, include_nugget=include_nugget, ...)
+      pred_list <- .self$predict(X_pred, return_var=include_interval, include_noise=include_noise, ...)
       
       # Construct plots.
       for(j in seq_len(.self$Y_dim)) {
@@ -851,7 +912,7 @@ gpWrapper$methods(
     else Y_train <<- rbind(Y_train, Y_new)
   }, 
   
-  calc_expected_exp_cond_var = function(X_eval, X_cond, include_nugget=TRUE, log_scale=TRUE, ...) {
+  calc_expected_exp_cond_var = function(X_eval, X_cond, include_noise=TRUE, log_scale=TRUE, ...) {
     # Computes the log of E_l Var[exp(f(X_eval))|f(X_cond)=l], the expected conditional variance 
     # due to conditioning on `X_cond`. The expected conditional variance is evaluated at inputs 
     # `X_eval`. The expectation is with respect to the current GP predictive distribution, 
@@ -982,7 +1043,7 @@ gpWrapperSum$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     return_cross_cov=FALSE, X_cross=NULL, include_nugget=TRUE, 
+                     return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
                      return_trend=TRUE, pred_list=NULL, include_output_cov=FALSE, 
                      ...) {
     # `pred_list` is a GP prediction list corresponding to `gp_model`, the 
@@ -1038,7 +1099,7 @@ gpWrapperSum$methods(
                                           return_cov=return_cov,
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
-                                          include_nugget=include_nugget,
+                                          include_noise=include_noise,
                                           return_trend=return_trend, ...)
     }
     
@@ -1070,13 +1131,13 @@ gpWrapperSum$methods(
         return_list_covs <- .self$predict_output_cov(X_new, return_cov=FALSE, 
                                                      return_cross_cov=FALSE, 
                                                      X_cross=NULL, 
-                                                     include_nugget=TRUE,
+                                                     include_noise=TRUE,
                                                      pred_list=pred_list)
       } else {
         return_list_covs <- .self$predict_input_cov(X_new, return_cov=FALSE, 
                                                     return_cross_cov=FALSE, 
                                                     X_cross=NULL, 
-                                                    include_nugget=TRUE,
+                                                    include_noise=TRUE,
                                                     pred_list=pred_list)
       }
       
@@ -1087,7 +1148,7 @@ gpWrapperSum$methods(
   }, 
   
   predict_input_cov = function(X_new, return_cov=FALSE, return_cross_cov=FALSE, 
-                               X_cross=NULL, include_nugget=TRUE, 
+                               X_cross=NULL, include_noise=TRUE, 
                                pred_list=NULL, ...) {
     # Compute predictive covariances and cross-covariances, where 
     # these quantities are interpreted as covariances with respect to the 
@@ -1105,7 +1166,7 @@ gpWrapperSum$methods(
                                           return_cov=return_cov,
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
-                                          include_nugget=include_nugget, ...)
+                                          include_noise=include_noise, ...)
     }
     
     # Compute covariance predictions.
@@ -1142,7 +1203,7 @@ gpWrapperSum$methods(
   
   
   predict_output_cov = function(X_new, return_cov=FALSE, return_cross_cov=FALSE, 
-                                X_cross=NULL, include_nugget=TRUE, 
+                                X_cross=NULL, include_noise=TRUE, 
                                 pred_list=NULL, ...) {
     # Compute predictive covariances and cross-covariances, where 
     # these quantities are interpreted as covariances with respect to the 
@@ -1164,7 +1225,7 @@ gpWrapperSum$methods(
                                           return_cov=FALSE,
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
-                                          include_nugget=include_nugget, ...)
+                                          include_noise=include_noise, ...)
     }
     
     # Compute covariance predictions.
@@ -1184,7 +1245,7 @@ gpWrapperSum$methods(
   },
   
   
-  sample = function(X_new, use_cov=FALSE, include_nugget=TRUE, N_samp=1, 
+  sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1, 
                     pred_list=NULL, ...) {
     # Returns samples from G(x) at different input points x. This simply 
     # requires sampling the underlying independent GPs w(x) and using these 
@@ -1196,7 +1257,7 @@ gpWrapperSum$methods(
     
     # Sample weights (independent GPs).
     w_samp <- .self$gp_model$sample(X_new, use_cov=use_cov, 
-                                    include_nugget=include_nugget,
+                                    include_noise=include_noise,
                                     N_samp=N_samp, pred_list=pred_list, ...)
     n_input <- dim(w_samp)[2]
 
@@ -1258,7 +1319,7 @@ gpWrapperSum$methods(
     .NotYetImplemented()
   }, 
   
-  plot_pred = function(X_new, Y_new=NULL, include_CI=FALSE, include_nugget=TRUE, 
+  plot_pred = function(X_new, Y_new=NULL, include_CI=FALSE, include_noise=TRUE, 
                        CI_prob=0.9, pred_list=NULL) {
     # This method is overloaded to plot the predictive distribution of G(x) as 
     # a function of the output index; i.e., plot pairs of the form (p, G(x)_p),
@@ -1326,7 +1387,43 @@ gpWrapperSum$methods(
 # ------------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# gpHet: Class providing interface between calibration code and hetGP package.  
+# gpWrapperHet: Class providing interface between calibration code and hetGP 
+#               package.
+#
+# hetGP focuses on GPs with standard stationary kernels (Gaussian and Metérn),
+# and only allows a constant mean function. It offers methods for fast GP 
+# updates (i.e., fast conditioning on new points). hetGP also offers 
+# functionality for GP modeling with a heteroskedastic noise term, though 
+# this functionality is not currently supported by gpWrapperHet.
+# For the purposes of achieving a closed-form estimate of the marginal variance, 
+# hetGP assumes a GP model of the form:
+#
+# y(x) = f(x) + eps
+# f ~ GP(beta0, nu_hat * k(.,.))
+# eps ~ N(0, nu_hat * g)
+#
+# Thus, the noise variance in this case is actually `noise_var := nu_hat * g`.
+# `nu_hat` is the marginal variance, and `beta0` is a mean constant. In the 
+# noiseless setting, this means that we cannot simply fix `noise_var` to 
+# `jitter_default`, as the noise variance is also a function of the unknown 
+# parameter `nu_hat`. The approach taken here is to instead set 
+# `g := jitter_default`, which is reasonable as long as `nu_hat` is not to 
+# big. Then after hyperparameter optimization we set the attribute 
+# `noise_var := nu_hat + g = nu_hat + jitter_default`, using the 
+# optimized marginal variance `nu_hat`.
+#
+# A second difference from the standard gpWrapper assumptions is that, if 
+# `beta0` is estimated, then hetGP sets a "trendtype" parameter to "OK"
+# (ordinary kriging), which inflates the GP predictive variance at prediction 
+# time to account for the uncertainty in the `beta0` estimation. The default
+# behavior of gpWrapper is not to include such variance inflation. Thus, 
+# the `fit()` method of this class has to use a bit of a hack in setting 
+# "trendtype := SK" (simple kriging - no variance inflation) post-hoc after 
+# hyperparameter optimization. It would be better to change this pre-MLE but it 
+# doesn't appear that hetGP provides an easy way to do this. This is not ideal 
+# since it means that hetGP uses "OK" during hyperparameter optimization, and 
+# then "SK" for prediction. If `beta0` is not estimated, then this is not an 
+# issue. 
 # -----------------------------------------------------------------------------
 
 gpWrapperHet <- setRefClass(
@@ -1346,13 +1443,12 @@ gpWrapperHet$methods(
     callSuper(X=X, Y=Y, lib="hetGP", ...)
   }, 
   
-  map_kernel_name = function(kernel_name, kernel_par_bounds=NULL, 
-                             fixed_pars=list(), ...) {
+  map_kernel_name = function(kernel_name, kernel_par_bounds=NULL, ...) {
     # For gpWrapperHet, we define the `kernel` attribute to be a list with 
     # elements "name" (the kernel name, using the hetGP conventions), 
     # "bounds", and "fixed_pars". hetGP has reasonable default bounds, so 
     # users may often want to leave `kernel_par_bounds` as NULL, which reverts 
-    # to the hetGP default bounds. "fixed_pars" is a list with 
+    # to the hetGP default bounds. 
     #
     # TODO: figure out what "bounds" should look like.
     
@@ -1372,54 +1468,57 @@ gpWrapperHet$methods(
            "hyperparameter bounds.")
     }
     
-    l$fixed_pars <- fixed_pars
     kernel <<- l
   },
   
-  map_mean_func_name = function(mean_func_name) {
+  map_mean_func_name = function(mean_func_name, ...) {
     # gpWrapperHet defines the attribute `mean_func` to be a list with 
-    # 
-    #
+    # element "name" set to the name of the mean function. hetGP only allows 
+    # a constant mean, so an error is thrown for any other mean function.
     
-    if(mean_func_name == "constant") return("beta0")
+    l <- list()
+    
+    if(mean_func_name == "constant") l$name <- mean_func_name 
     else stop("gpWrapperHet does not support mean function: ", mean_func_name)
+    
+    mean_func <<- l
   },
   
-  fit_package = function(X_fit, y_fit, kernel_name="Gaussian", 
-                         mean_func_name="constant", estimate_nugget=TRUE, 
-                         fixed_pars=list(), ...) {
-    # TODO: changing the `trendtype` (see below) after fitting the GP is not ideal, since
-    # hetGP will use the "OK" trendtype during the MLE but then we manually override 
-    # this post-hoc to change the behavior during prediction. It would be better to  
-    # change this pre-MLE but it doesn't appear that hetGP provides an easy way 
-    # to do this.
+  fit_package = function(X_fit, y_fit, output_idx, ...) {
     # We opt not to define bounds on the kernel hyperparameters here, as hetGP's 
     # `auto_bounds()` function tends to work pretty well. If desired, explicit 
     # bounds can be passed by specifying "lower" and "upper" arguments in `...`.
     
-    # Deal with noiseless case. 
-    if(estimate_nugget) {
-      assert_that(!("g" %in% names(fixed_pars)), 
-                  msg="`estimate_nugget` is TRUE but the nugget `g` is in `fixed_pars`.")
-    } else {
-      if(!("g" %in% names(fixed_pars))) fixed_pars[["g"]] <- default_jitter
+    # Convert `fixed_pars` to hetGP format.
+    hetgp_fixed_pars <- c(.self$fixed_pars$kernel, .self$fixed_pars$mean_func)
+    
+    # Deal with noiseless case. See class description for why this slightly 
+    # differs from the typical approach.
+    if(!.self$noise) {
+      hetgp_fixed_pars$g <- .self$default_jitter
     }
     
-    if(length(fixed_pars) == 0) fixed_pars <- NULL
+    if(length(hetgp_fixed_pars) == 0) hetgp_fixed_pars <- NULL
     
-    gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=map_kernel_name(kernel_name), known=fixed_pars, ...)
+    gp_fit <- hetGP:::mleHomGP(X_fit, y_fit, covtype=.self$kernel$name, 
+                               known=hetgp_fixed_pars, ...)
     
-    # Change the trendtype from "ordinary kriging" to "simple kriging" to align with the 
-    # default gpWrapper behavior of not inflating the predictive variance due to 
-    # mean function estimation.
+    # Change the trendtype from "ordinary kriging" to "simple kriging" to align 
+    # with the default gpWrapper behavior of not inflating the predictive 
+    # variance due to mean function estimation.
     gp_fit$trendtype <- "SK"
+    
+    # Update the noise variance attribute based on the hyperparameter 
+    # optimization. See class comments for notes on the parameterization used 
+    # here.
+    noise_var[output_idx] <<- gp_fit$nu_hat * gp_fit$g
     
     return(gp_fit)
   },
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
                              return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
-                             include_nugget=TRUE, ...) {
+                             include_noise=TRUE, ...) {
     
     if(return_cov) X_prime <- X_new
     else X_prime <- NULL
@@ -1429,11 +1528,11 @@ gpWrapperHet$methods(
     if(return_mean) return_list$mean <- pred$mean
     if(return_cov) {
       return_list$cov <- pred$cov
-      if(include_nugget) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs
+      if(include_noise) diag(return_list$cov) <- diag(return_list$cov) + pred$nugs
       return_list$var <- diag(return_list$cov)
     } else if(return_var) {
       return_list$var <- pred$sd2
-      if(include_nugget) return_list$var <- return_list$var + pred$nugs
+      if(include_noise) return_list$var <- return_list$var + pred$nugs
     }
     
     # Cross covariance.
@@ -1479,10 +1578,6 @@ gpWrapperHet$methods(
     }
     summary_str <- paste0(summary_str, "Marginal std dev: ", sqrt(gp_het$nu_hat), "\n")
 
-   # Nugget/Noise variance.
-    summary_str <- paste0(summary_str, "\n>>> Nugget/Noise:\n")
-    summary_str <- paste0(summary_str, "Std dev: ", gp_het$g, "\n")
-    
     return(summary_str)
   }, 
   
@@ -1674,12 +1769,12 @@ gpWrapperKerGP$methods(
   
   predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
                              return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
-                             include_nugget=TRUE, return_trend=TRUE, pred_type="SK", ...) {
-    # For kergp, the predictive standard deviation "sd" includes the nugget variance 
+                             include_noise=TRUE, return_trend=TRUE, pred_type="SK", ...) {
+    # For kergp, the predictive standard deviation "sd" includes the noise variance 
     # if `force_interp` is TRUE; otherwise it is excluded. Specifically, `force_interp=FALSE`
     # returns the predictive dist f|f(X), while `force_interp=TRUE` returns the predictive dist 
-    # y|y(X). Thus, `force_interp=TRUE` has two effects: (1) adding the nugget to the diagonal 
-    # of the kernel matrix; and (2) adding the nugget to the predictive variance. 
+    # y|y(X). Thus, `force_interp=TRUE` has two effects: (1) adding the jitter to the diagonal 
+    # of the kernel matrix; and (2) adding the jitter to the predictive variance. 
     # If `return_trend` is TRUE, then the returned list will also contain element "trend" 
     # storing the predictions from the GP trend alone; i.e., the prior mean function 
     # evaluations.
@@ -1702,11 +1797,11 @@ gpWrapperKerGP$methods(
     if(return_cov) return_list$cov <- pred$cov
     if(return_trend) return_list$trend <- pred$trend
     
-    # Using the current nugget hack, the nugget variance will be added whenever the 
-    # two matrices passed to the kernel have the same number of observations. 
+    # Using the current nugget hack, the nugget variance will be added whenever 
+    # the two matrices passed to the kernel have the same number of observations. 
     # TODO: need to check whether varVec includes this nugget or not. For now 
     # assuming it does; thus, the nugget will be added by default. 
-    if(!include_nugget) {
+    if(!include_noise) {
       if(return_var) return_list$var <- return_list$var - default_jitter
       if(return_cov) return_list$cov <- hetGP:::fast_diag(return_list$cov, -rep(default_jitter, nrow(cov)))
     }
