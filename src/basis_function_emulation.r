@@ -44,28 +44,34 @@ eval_basis_weights <- function(U, fwd, B, m=NULL) {
   #  matrix of dimension (n,r). The (i,j) entry contains w_j(u_i), with u_i
   #  being the ith row of `U`.
   
-  if(is.null(m)) m <- rep(0, ncol(B))
-  
-  # Evaluate forward model at inputs and center the outputs.
-  G <- add_vec_to_mat_rows(-m, fwd(U))
-  
   # Compute the weights (magnitude of the projections).
-  project_orthog_scalar(G, B)
+  project_orthog_scalar(fwd(U), B, m=m)
 }
 
 
-project_orthog_scalar <- function(G, B) {
+project_orthog_scalar <- function(G, B, m=NULL) {
   # Compute the magnitude of the projections of vectors onto an orthonormal 
   # basis `B` - i.e., the "scalar projections". 
   #
   # Args:
   #    G: matrix of dimension (n,p), with rows containing the vectors to project.
-  #    B: matrix of dimension (p,r), with columns containing orthonormal vectors
+  #    B: matrix of dimension (p,r), with columns containing orthonormal vectors.
+  #    m: optional numeric vector of length p, which will be subtracted from 
+  #       each row of `G`, if provided.
   #
   # Returns:
-  #    matrix of dimension (n,r). The (i,j) entry contains <g_i,b_j>, the 
-  #    inner product of the ith vector and the jth basis vector.
+  # matrix of dimension (n,r). The (i,j) entry contains <g_i,b_j>, the 
+  # inner product of the ith vector and the jth basis vector. If `m` is
+  # not NULL, then `g_i` is replaced with `g_i - m`.  
   
+  # Center the rows of `G`.
+  if(!is.null(m)) {
+    m <- drop(m)
+    assert_that(length(m) == ncol(G))
+    G <- add_vec_to_mat_rows(-m, G)
+  }
+  
+  # Compute inner products.
   G %*% B
 }
 
@@ -103,8 +109,56 @@ pca <- function(G, r=ncol(G)) {
   return(list(mean=g_mean, vec=eigvecs, sqrt_val=sqrt_eigvals))
 }
 
+get_scree_plot <- function(pca_list, sdev=TRUE, log_scale=FALSE) {
+  # Given a PCA list, as returned by `pca()`, plots a scree (eigenvalue)
+  # plot. Arguments allow toggling between plotting eigenvalues (variances)
+  # or their square roots (standard deviations). An optional log transformation 
+  # can also be applied afterwards. The defaults (plotting square root 
+  # eigenvalues) are typically recommended. Returns a ggplot object.
+  
+  vals <- pca_list$sqrt_val
+  y_lab <- "eigenvalues"
+  
+  if(sdev) {
+    y_lab <- paste("sqrt", y_lab)
+  } else {
+    vals <- vals^2
+  }
+  
+  if(log_scale) {
+    vals <- log(vals)
+    y_lab <- paste("log", y_lab)
+  }
+  
+  plt <- ggplot(data.frame(k=seq_along(vals), eigenval=vals)) + 
+          geom_point(aes(x=k, y=eigenval)) + ylab(y_lab)
+  
+  return(plt)
+}
 
-
+truncate_pca_basis <- function(pca_list, threshold_ratio=0.975) {
+  # Takes the list returned by `pca()` as an argument, and returns a modified 
+  # list that retains only the dominant eigenvectors/values that capture 
+  # at least 100*`threshold_ratio`% of the variation. Concretely, the threshold 
+  # `r` is set to the smallest index in `seq_along(pca_list$sqrt_val^2)`
+  # such that the cumulative sum of eigenvectors up through index `r` is 
+  # at least 100*`threshold_ratio`% of the total sum. 
+  
+  vars <- pca_list$sqrt_val^2
+  ratios <- cumsum(vars) / sum(vars)
+  r <- which(ratios >= threshold_ratio)[1]
+  
+  if(is.na(r)) {
+    message("No cutoff meets the threshold requirement. Returning full PCA basis.")
+    return(pca_list)
+  }
+  
+  # Truncate PCA list. 
+  pca_list$vec <- pca_list$vec[,1:r, drop=FALSE]
+  pca_list$sqrt_val <- pca_list$sqrt_val[1:r]
+  
+  return(pca_list)
+}
 
 
 

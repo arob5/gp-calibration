@@ -8,7 +8,11 @@ output: html_document
 This file provides an introduction to the functions defined in 
 `basis_function_emulation.r`. The functions contained therein are designed 
 to approximate the output space of functions with high-dimensional outputs
-using a basis representation.
+using a basis representation. It also introduces the `gpWrapperSum` class, 
+which encodes a model that is a weighted sum of basis functions, with the 
+weights given by independent Gaussian processes (GPs). See 
+[this](https://arob5.github.io/blog/2024/06/25/basis-func-emulator/) 
+writeup for background on models of this form. 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
@@ -68,21 +72,14 @@ m <- pca_list$mean
 ```
 
 ```{r}
-# Eigenvalue (scree) plot.
-scree_plt <- ggplot(data.frame(k=seq_along(sdev), eigenval=sdev)) + 
-             geom_point(aes(x=k, y=eigenval)) + ylab("Sqrt eigenvalues")
+# Eigenvalue (scree) plot. Different scalings emphasize different features.
+scree_plt <- get_scree_plot(pca_list, sdev=TRUE, log_scale=FALSE)
+scree_plt_log <- get_scree_plot(pca_list, sdev=FALSE, log_scale=TRUE)
 
 plot(scree_plt)
+plot(scree_plt_log)
 ```
 
-```{r}
-# Plot the dominant eigenvectors.
-r <- 1
-plt_eig <- plot_curves_1d_helper(inv_prob$time_points, V[,1:r, drop=FALSE], 
-                                 plot_title="Dominant eigenvectors",
-                                 xlab="days", ylab="LAI")
-plot(plt_eig)
-```
 
 We define a cutoff and only include the dominant principal components. We 
 visually compare true evaluations of $g(u)$ versus evaluations of $g(u)$ that 
@@ -90,11 +87,26 @@ have been approximated by projecting the functions outputs on the subspace
 spanned by the dominant eigenvalues. The plot considers a set of new 
 "out-of-sample" $u$ values. 
 ```{r}
-# Basis vectors.
-B <- V[,1:r, drop=FALSE]
-sdev_r <- sdev[1:r]
+variance_threshold <- 0.975
+pca_list_trunc <- truncate_pca_basis(pca_list, variance_threshold)
+
+# Basis vectors and eigenvalues.
+B <- pca_list_trunc$vec
+sdev <- pca_list_trunc$sqrt_val
+
+r <- length(sdev)
+print(paste0("Number of eigenvectors retained: ", r))
 ```
 
+```{r}
+# Plot the dominant eigenvectors.
+for(j in 1:r) {
+  plt_eig <- plot_curves_1d_helper(inv_prob$time_points, B[,j, drop=FALSE], 
+                                   plot_title=paste0("Eigenvector ", j),
+                                   xlab="days", ylab="LAI")
+  plot(plt_eig)
+}
+```
 
 ```{r}
 # Define the approximate map g(), which evaluates g() and then projects 
@@ -136,8 +148,6 @@ plot(plt_approx)
 
 ```
 
-
-
 Below we plot the basis weight functions $w_j(u)$ over a grid of $u$ values. 
 Since these functions map from $\mathbb{R}^r$ to $\mathbb{R}$ we cannot easily 
 plot them when $r > 1$. We therefore plot 1d projections by varying only one 
@@ -160,9 +170,49 @@ for(par in names(U_proj_list)) {
 
 ```
 
+# Gaussian Process (GP) Emulators
+We now consider approximating the maps $u \mapsto w_j(u)$, $j = 1, \dots, r$
+by independent GP emulators. This induces a multi-output GP emulator for 
+$g(\cdot)$. Again, see [this](https://arob5.github.io/blog/2024/06/25/basis-func-emulator/)
+writeup for more background.
+
+## Fitting the Independent GPs
+We consider fitting independent GPs to each weight function $w_j(u)$. We 
+use zero mean GP priors with squared exponential (i.e., Gaussian) kernels.
+
+```{r}
+# Assemble design (training) data for independent GPs.
+design_info <- list(input=U, W=project_orthog_scalar(G, B, m))
+
+# Fit GPs. Note that the empirical mean of each weight vector `w_j(U)` is 
+# already 0, but we still set `normalize_output=TRUE` to scale these to have 
+# standard deviation 1. 
+gp_w <- gpWrapperKerGP(design_info$input, design_info$W, scale_input=TRUE,
+                       normalize_output=TRUE)
+gp_w$set_gp_prior("Gaussian", "quadratic")
 
 
+gp_w$fit("Gaussian", "quadratic", estimate_nugget=FALSE)
 
+gp_w$summarize()
+```
+
+```{r}
+# Validation points to test GP fit.
+n_test <- 500
+test_info <- list(input=get_batch_design("LHS", N_batch=n_test, 
+                                         prior_params=inv_prob$par_prior))
+test_info$W <- eval_basis_weights(test_info$input, g, B, m) 
+```
+
+```{r}
+# Summarize predictions at validation points.
+gp_w$plot_pred(test_info$input, test_info$W, include_CI=TRUE)
+```
+
+```{r}
+gp_w$plot_1d_projection(include_design=TRUE)
+```
 
 
 
