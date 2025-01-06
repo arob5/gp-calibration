@@ -71,7 +71,7 @@ gpWrapper <- setRefClass(
    fields = list(gp_model="ANY", lib="character", X="matrix", Y="matrix", 
                  X_dim="integer", Y_dim="integer", mean_func="ANY",
                  kernel="ANY", noise="logical", noise_var="numeric", 
-                 default_jitter="numeric", fixed_pars="list", 
+                 default_jitter="numeric", fixed_pars="list", par_bounds="list",
                  scale_input="logical", normalize_output="logical", 
                  X_bounds="matrix", Y_mean="numeric", Y_std="numeric", 
                  X_names="character", Y_names="character", X_train="matrix", 
@@ -130,7 +130,7 @@ gpWrapper$methods(
   },
   
   set_gp_prior = function(kernel_name="Gaussian", mean_func_name="constant", 
-                          kernel_par_bounds=NULL, fixed_hyperpars=NULL, 
+                          hyperpar_bounds=NULL, fixed_hyperpars=NULL, 
                           include_noise=TRUE, jitter=NULL, ...) {
     # This method specifies the GP prior distribution by setting the `kernel` 
     # and `mean_func` attributes, with default hyperparameters (this method does
@@ -142,7 +142,28 @@ gpWrapper$methods(
     # attribute. The specific type of the `kernel` and `mean_func` attributes 
     # will depend on the specific gpWrapper class. The methods 
     # `map_kernel_name()` and `map_mean_func_name()` are defined specially for 
-    # each class that inherits from base gpWrapper.
+    # each class that inherits from base gpWrapper. `fixed_hyperpars` is a 
+    # list with elements "mean_func", "kernel", and "noise_var". The former two 
+    # are themselves lists, with named elements that will depend on the specific 
+    # gpWrapper class. "noise_var" is a numeric value or NULL, which can be 
+    # used to specify a known noise variance. 
+    # `par_bounds`, is a list with the same element names. The "kernel" and 
+    # "mean_func" elements are each lists length `dim_Y` with names set to the 
+    # corresponding output names `Y_names". Each element is a matrix with 
+    # 4 columns with column names "name", "init", "lower", and "upper". "name" 
+    # is the hyperparameter name and the remaining columns are used to specify
+    # initial values, lower bounds, and upper bounds. `par_bounds$noise_var`
+    # is a matrix with columns "y_name", "init", "lower", "upper" used to 
+    # specify the analogous quantities for the noise variance of each output.
+    
+    # Set `par_bounds` attribute.
+    if(is.null(hyperpar_bounds)) {
+      hyperpar_bounds <- list(kernel=list(), mean_func=list(), noise_var=matrix())
+    } else {
+      assert_that(all(c("kernel", "mean_func", 
+                        "noise_var") %in% names(hyperpar_bounds)))
+    }
+    par_bounds <<- hyperpar_bounds
     
     # Set `fixed_pars` attribute.
     if(is.null(fixed_hyperpars)) {
@@ -183,12 +204,12 @@ gpWrapper$methods(
     
     # Set up mean and covariance functions (no hyperparameter optimization 
     # is performed here). 
-    kernel <<- .self$map_kernel_name(kernel_name, kernel_par_bounds, ...)
+    kernel <<- .self$map_kernel_name(kernel_name, ...)
     mean_func <<- .self$map_mean_func_name(mean_func_name, ...)
   },
   
   
-  map_kernel_name = function(kernel_name, kernel_par_bounds=NULL, ...) {
+  map_kernel_name = function(kernel_name, ...) {
     # This function is intended to be called from `set_gp_prior()`, and 
     # thus assumes that certain attributes (e.g., `fixed_pars`, `noise`)
     # have already been set.
@@ -1443,15 +1464,10 @@ gpWrapperHet$methods(
     callSuper(X=X, Y=Y, lib="hetGP", ...)
   }, 
   
-  map_kernel_name = function(kernel_name, kernel_par_bounds=NULL, ...) {
+  map_kernel_name = function(kernel_name, ...) {
     # For gpWrapperHet, we define the `kernel` attribute to be a list with 
-    # elements "name" (the kernel name, using the hetGP conventions), 
-    # "bounds", and "fixed_pars". hetGP has reasonable default bounds, so 
-    # users may often want to leave `kernel_par_bounds` as NULL, which reverts 
-    # to the hetGP default bounds. 
-    #
-    # TODO: figure out what "bounds" should look like.
-    
+    # element "name" (the kernel name, using the hetGP conventions).
+
     l <- list()
     
     # Map to hetGP kernel name.
@@ -1459,15 +1475,7 @@ gpWrapperHet$methods(
     else if(kernel_name == "Materm5_2") l$name <- "Matern5_2"
     else if(kernel_name == "Matern3_2") l$name <- "Matern3_2"
     else stop("gpWrapperHet does not support kernel: ", kernel_name)
-    
-    # Set hyperparameter bounds/defaults.
-    if(is.null(kernel_par_bounds)) {
-      l$bounds <- NULL
-    } else {
-      stop("gpWrapperHet currently does not support user-defined kernel ",
-           "hyperparameter bounds.")
-    }
-    
+
     kernel <<- l
   },
   
@@ -1516,8 +1524,9 @@ gpWrapperHet$methods(
     return(gp_fit)
   },
   
-  predict_package = function(X_new, output_idx, return_mean=TRUE, return_var=TRUE, 
-                             return_cov=FALSE, return_cross_cov=FALSE, X_cross=NULL, 
+  predict_package = function(X_new, output_idx, return_mean=TRUE, 
+                             return_var=TRUE, return_cov=FALSE, 
+                             return_cross_cov=FALSE, X_cross=NULL, 
                              include_noise=TRUE, ...) {
     
     if(return_cov) X_prime <- X_new
@@ -1627,6 +1636,10 @@ gpWrapperHet$methods(
 # this, this class sets lower/upper bounds on the `varNoise` parameter to the 
 # desired fixed value, which seems to work fine. The optimized `varNoise` 
 # parameter is always added to the diagonal of the kernel matrix.
+# Unfortunately, kergp currently provides no way to fix kernel hyperparameters 
+# during the optimization. The documentation lists an argument "parFixed" to 
+# the `mle` method, but notes that it is not yet implemented. The mean function
+# coefficients can be fixed.
 # 
 # Prediction:
 # The behavior fo the predict method is a bit odd to me. The method has an 
@@ -1641,7 +1654,6 @@ gpWrapperHet$methods(
 # be removed in the future). To avoid dealing with this, this class always 
 # sets `forceInterp = FALSE` and optionally adds the noise variance post-hoc 
 # to control whether predictive variances are computed for f(x) or y(x).
-#
 #
 # Gaussian kernel parameterization:
 #    v * exp{(x-y)^2 / ell^2}
@@ -1672,48 +1684,64 @@ gpWrapperKerGP$methods(
     callSuper(X=X, Y=Y, lib="kergp", ...)
   }, 
   
-  # Defining the kernel (covariance function). kergp requires the kernel object 
-  # to have names for each input variable that align with names in the X data 
-  # when fitting and predicting. Currently, I am using a hack that adds a jitter
-  # to the diagonal of the kernel matrix when the kernel matrix is square. 
-  # This is not ideal - ideally `kergp` would make it easier to fix a jitter. 
-  kernel_map = function(kernel_name, mean_func_name, X_fit, y_fit) {
+  map_kernel_name = function(kernel_name, ...) {
+    # The `kernel` attribute is defined to be a list with elements "name" and 
+    # "object", the latter being the kergp kernel object of class "covMan".
+    # Some kernel names have been standardized, so that a string can be passed 
+    # for "kernel_name" and the kernel will be automatically created.
+    # Alternatively, `kernel_name` can be a "covMan" kernel object, 
+    # in which case `kernel$name` will be set to "user-specified kernel".
+    # Note that kergp requires the kernel object to have names for each input 
+    # variable that align with names in the X data when fitting and predicting.
+    # Hyperparameters for a `covMan` object "obj" can be extracted via 
+    # `coef(obj)`. Hyperparameter names can be accessed via 
+    # `attr(obj, "kernParNames")`See `attributes(obj)` for other class 
+    # attributes (parameter bounds, etc.). kergp only enforces the most basic 
+    # bounds for hyperparameters by default (e.g., non-negativity for 
+    # lengthscale parameters), so setting bounds is often quite important.
     
     if(kernel_name == "Gaussian") {
+      # Hyperparameters are the lengthscales (on per input dimension), and 
+      # the marginal variance.
+      ker <- kergp::kGauss(d=.self$X_dim)
+      attr(ker, "kernParNames") <- c(.self$X_names, "marg_var")
+    } else if(kernel_name == "Quadratic") {
+      # Hyperparameters are "quad_center" and "quad_offset", which are the 
+      # constants `c` and `a` in the expression (<x-a,z-a> + c)^2, 
+      # respectively. `c` is a scalar and `a` is a vector of length `X_dim`.
+      
+      #
+      # TODO: below is incomplete; need to finish.
+      #
+      .NotYetImplemented()
+      
+      # No pre-defined kergp kernel of this type, so define our own.
       kernFun <- function(x1, x2, par) {
-        # `par` consists of: `X_dim` lengthscale parameters (with names set to `X_names`),
-        # and "sigma2", the marginal variance.
-        
-        K12 <- kergp:::kNormFun(x1, x2, par, k1FunGauss)
-        
-        # Hack: add jitter to diagonal if number of rows are equal. 
-        if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_jitter, nrow(x1)))
-        return(K12)
+        x1 <- as.matrix(x1)
+        x2 <- as.matrix(x2)
+        a <- par[1:(length(par)-1)]
+
+        affine_comb <- tcrossprod(add_vec_to_mat_rows(-a, x1), 
+                       add_vec_to_mat_rows(-a, x2)) + par[length(par)]
+        K12_quad <- affine_comb^2
+        attr(K12_quad, "gradient") <- list(quad_center=-1, 
+                                           quad_offset=2*affine_comb)
+ 
       }
       
-      ker <- covMan(kernel = kernFun,
-                    hasGrad = TRUE,
-                    acceptMatrix = TRUE,
-                    d = .self$X_dim,
-                    parNames = c(X_names, "sigma2"),
-                    label = "Gaussian kernel with jitter.")
-      
-    } else if(kernel_name == "Matern5_2") {
-      .NotYetImplemented()
-    } else if(kernel_name == "Matern3_2") {
-      .NotYetImplemented()
     } else if(kernel_name == "Gaussian_plus_Quadratic") {
+      # Hyperparameters are the lengthscales (one per input dimension), the 
+      # the marginal variance, and "quad_offset", which is the constant c in 
+      # the expression (<x,z> + c)^2.
       
+      # No pre-defined kergp kernel of this type, so define our own.
       kernFun <- function(x1, x2, par) {
-        # `par` consists of: `X_dim` lengthscale parameters (with names set to `X_names`),
-        # "sigma2" (the marginal variance), and "quad_offset", which is the constant c in 
-        # the expression (<x,z> + c)^2.
-        
         x1 <- as.matrix(x1)
         x2 <- as.matrix(x2)
         
         # Gaussian part. 
-        K12_Gauss <- kergp:::kNormFun(x1, x2, par[1:(length(par)-1)], kergp::k1FunGauss)
+        K12_Gauss <- kergp:::kNormFun(x1, x2, par[1:(length(par)-1)], 
+                                      kergp::k1FunGauss)
         
         # Quadratic part. 
         affine_comb <- tcrossprod(x1, x2) + par[length(par)]
@@ -1723,10 +1751,8 @@ gpWrapperKerGP$methods(
         # Add kernels. 
         K12 <- K12_Gauss + K12_quad
         attr(K12, "gradient") <- abind(attr(K12_Gauss, "gradient"), 
-                                       cst=attr(K12_quad, "gradient")$quad_offset, along=3)
-        
-        # Hack: add jitter to diagonal if number of rows are equal. 
-        if(nrow(x1) == nrow(x2)) K12 <- hetGP:::add_diag(K12, rep(default_jitter, nrow(x1)))
+                                       cst=attr(K12_quad, "gradient")$quad_offset, 
+                                       along=3)
         return(K12)
       }
       
@@ -1734,8 +1760,11 @@ gpWrapperKerGP$methods(
                     acceptMatrix = TRUE, 
                     hasGrad = TRUE,
                     d = .self$X_dim,
-                    parNames = c(X_names, "sigma2", "quad_offset"), 
-                    label = "Gaussian plus quadratic kernel with jitter")
+                    parNames = c(.self$X_names, "marg_var", "quad_offset"), 
+                    label = "Gaussian plus quadratic kernel")
+    } else if(inherits(kernel_name, "covMan")) {
+      ker <- kernel_name
+      kernel_name <- "user-specified kernel"
     } else {
       stop("gpWrapperKerGP does not support kernel ", kernel_name)
     }
@@ -1745,13 +1774,15 @@ gpWrapperKerGP$methods(
     inputNames(ker) <- X_names
     
     # Specify hyperparameter bounds and defaults. 
-    par_info_list <- .self$get_default_hyperpar_bounds(mean_func_name, kernel_name, X_fit, y_fit)
-    attr(ker, "parLower") <- par_info_list$lower
-    attr(ker, "parUpper") <- par_info_list$upper
-    attr(ker, "par") <- par_info_list$default
+    # par_info_list <- .self$get_default_hyperpar_bounds(mean_func_name, kernel_name, X_fit, y_fit)
+    # attr(ker, "parLower") <- par_info_list$lower
+    # attr(ker, "parUpper") <- par_info_list$upper
+    # attr(ker, "par") <- par_info_list$default
     
-    return(ker)
+    # Set `kernel` attribute.
+    .self$kernel <- list(name=kernel_name, object=ker)
   },
+  
   
   map_mean_func_name = function(mean_func_name, ...) {
     # kergp allows specification of a mean function by an R formula (analogous 
@@ -1799,7 +1830,7 @@ gpWrapperKerGP$methods(
     par_bounds_kergp <- .self$par_bounds
     
     # kergp supports fixing known mean function coefficients `beta`. 
-    if(isTRUE("beta" %in% names(.self$fixed_pars$kernel))) {
+    if(isTRUE("beta" %in% names(.self$fixed_pars$mean_func))) {
       beta <- fixed_pars$beta
     } else {
       beta <- NULL
@@ -1837,22 +1868,22 @@ gpWrapperKerGP$methods(
                              return_cross_cov=FALSE, X_cross=NULL, 
                              include_noise=TRUE, return_trend=TRUE, 
                              pred_type="SK", ...) {
-    # For kergp, the predictive standard deviation "sd" includes the noise 
-    # variance if `force_interp` is TRUE; otherwise it is excluded. 
-    # Specifically, `force_interp=FALSE` returns the predictive dist f|f(X), 
-    # while `force_interp=TRUE` returns the predictive dist y|y(X). Thus, 
-    # `force_interp=TRUE` has two effects: (1) adding the jitter to the diagonal 
-    # of the kernel matrix; and (2) adding the jitter to the predictive variance. 
-    # If `return_trend` is TRUE, then the returned list will also contain 
-    # element "trend" storing the predictions from the GP trend alone; 
-    # i.e., the prior mean function evaluations. `pred_type` can either be 
-    # "SK" (simple kriging) or "UK" (universal kriging). The latter 
-    # incorporates uncertainty due to estimation of the GP mean function 
-    # coefficients. Note that if using "UK" then the predictive variance will 
-    # not necessarily stabilize to the prior variance far away from the design 
-    # points.
-    
-    if(return_cross_cov) stop("`return_cross_cov` not yet implemented for gpKerGP class.")
+    # See class notes above for information on `force_interp`; we set this 
+    # FALSE here. To align with gpWrapper conventions, the default behavior 
+    # is to call kergp's predict function with `type = "SK"` (simple kriging)
+    # and `biasCorrect = FALSE` (the latter is already kergp's default). 
+    # The former can be overwritten by passing `pred_type="UK"` (universal 
+    # kriging). The latter can be overwritten by including `biasCorrect=TRUE`
+    # in `...`. The kergp `predict` method returns a list with elements 
+    # "sdSK" and "sd" regardless of these specifications. If using "UK" then 
+    # "sd" is the inflated variance. If "SK", then both "sd" and "sdSK" are 
+    # the same. Since we are setting `force_interp = FALSE` then kergp will 
+    # return predictive variances for f(x), not y(x). Therefore, if 
+    # `include_noise=TRUE`, we add the noise variance post-hoc.
+
+    if(return_cross_cov) {
+      stop("`return_cross_cov` not yet implemented for gpKerGP class.")
+    }
     if(is.null(colnames(X_new))) colnames(X_new) <- .self$X_names
     
     pred <- kergp:::predict.gp(.self$gp_model[[output_idx]], newdata=X_new, 
@@ -1865,13 +1896,11 @@ gpWrapperKerGP$methods(
     if(return_cov) return_list$cov <- pred$cov
     if(return_trend) return_list$trend <- pred$trend
     
-    # Using the current nugget hack, the nugget variance will be added whenever 
-    # the two matrices passed to the kernel have the same number of observations. 
-    # TODO: need to check whether varVec includes this nugget or not. For now 
-    # assuming it does; thus, the nugget will be added by default. 
-    if(!include_noise) {
-      if(return_var) return_list$var <- return_list$var - default_jitter
-      if(return_cov) return_list$cov <- hetGP:::fast_diag(return_list$cov, -rep(default_jitter, nrow(cov)))
+    # If requested, convert predictive variances of f(x) to predictive variances
+    # of y(x).
+    if(include_noise) {
+      if(return_var) return_list$var <- return_list$var + .self$noise_var
+      if(return_cov) diag(return_list$cov) <- diag(return_list$cov) + .self$noise_var 
     }
 
     return(return_list)
@@ -1897,9 +1926,8 @@ gpWrapperKerGP$methods(
     gp_obj$y <- .self$Y_train[,output_idx]
 
     # Update basis functions for the GP mean.
-    # TODO: store mean func name as attribute. 
-    df <- data.frame(y=gp_obj$y, gp_obj$X )
-    mean_func_formula <- map_mean_func_name(.self$mean_func_name)
+    df <- data.frame(y=gp_obj$y, gp_obj$X)
+    mean_func_formula <- .self$mean_func$formula
     mf <- model.frame(mean_func_formula, data=df)
     gp_obj$F <- model.matrix(mean_func_formula, data=mf)
 
@@ -1909,7 +1937,8 @@ gpWrapperKerGP$methods(
     # this is thus to simply compute intermediate quantities (e.g., Cholesky 
     # factor of covariance). 
     gls_list <- kergp::gls(object=gp_obj$covariance, y=gp_obj$y, X=gp_obj$X, 
-                           F=gp_obj$F, beta=gp_obj$betaHat, varNoise=NULL)
+                           F=gp_obj$F, beta=gp_obj$betaHat, 
+                           varNoise=.self$noise_var)
     
     # Update quantities computed by the GLS function. 
     gls_quantities <- c("L","eStar","sseStar","FStar","RStar")
