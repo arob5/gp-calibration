@@ -130,8 +130,9 @@ gpWrapper$methods(
   },
   
   set_gp_prior = function(kernel_name="Gaussian", mean_func_name="constant", 
-                          hyperpar_bounds=NULL, fixed_hyperpars=NULL, 
-                          include_noise=TRUE, jitter=NULL, ...) {
+                          include_noise=TRUE, fixed_hyperpars=NULL, 
+                          kernel_bounds=NULL, mean_func_bounds=NULL,
+                          noise_var_bounds=NULL, jitter=NULL, ...) {
     # This method specifies the GP prior distribution by setting the `kernel` 
     # and `mean_func` attributes, with default hyperparameters (this method does
     # not perform hyperparameter optimization). The kernel and mean function 
@@ -141,7 +142,7 @@ gpWrapper$methods(
     # are each assigned a separate noise variance in the `noise_var`
     # attribute. The specific type of the `kernel` and `mean_func` attributes 
     # will depend on the specific gpWrapper class. The methods 
-    # `map_kernel_name()` and `map_mean_func_name()` are defined specially for 
+    # `define_kernel()` and `define_mean_func()` are defined specially for 
     # each class that inherits from base gpWrapper. `fixed_hyperpars` is a 
     # list with elements "mean_func", "kernel", and "noise_var". The former two 
     # are themselves lists, with named elements that will depend on the specific 
@@ -150,20 +151,12 @@ gpWrapper$methods(
     # `par_bounds`, is a list with the same element names. The "kernel" and 
     # "mean_func" elements are each lists length `dim_Y` with names set to the 
     # corresponding output names `Y_names". Each element is a matrix with 
-    # 4 columns with column names "name", "init", "lower", and "upper". "name" 
-    # is the hyperparameter name and the remaining columns are used to specify
-    # initial values, lower bounds, and upper bounds. `par_bounds$noise_var`
-    # is a matrix with columns "y_name", "init", "lower", "upper" used to 
-    # specify the analogous quantities for the noise variance of each output.
-    
-    # Set `par_bounds` attribute.
-    if(is.null(hyperpar_bounds)) {
-      hyperpar_bounds <- list(kernel=list(), mean_func=list(), noise_var=matrix())
-    } else {
-      assert_that(all(c("kernel", "mean_func", 
-                        "noise_var") %in% names(hyperpar_bounds)))
-    }
-    par_bounds <<- hyperpar_bounds
+    # 4 columns with column names "par_name", "init", "lower", and "upper". 
+    # "par_name" is the hyperparameter name and the remaining columns are used 
+    # to specify initial values, lower bounds, and upper bounds. 
+    # `par_bounds$noise_var` is a matrix with columns "y_name", "init", "lower", 
+    # "upper" used to specify the analogous quantities for the noise variance of 
+    # each output.
     
     # Set `fixed_pars` attribute.
     if(is.null(fixed_hyperpars)) {
@@ -204,32 +197,191 @@ gpWrapper$methods(
     
     # Set up mean and covariance functions (no hyperparameter optimization 
     # is performed here). 
-    kernel <<- .self$map_kernel_name(kernel_name, ...)
-    mean_func <<- .self$map_mean_func_name(mean_func_name, ...)
+    kernel <<- .self$define_kernel(kernel_name, ...)
+    mean_func <<- .self$define_mean_func(mean_func_name, ...)
+    
+    # Set `par_bounds` attribute, which controls bounds/initialization values
+    # for mean function and kernel hyperparameters, as well as the noise 
+    # variance parameter.
+    par_bounds <<- .self$define_par_bounds(kernel_bounds=kernel_bounds, 
+                                           mean_func_bounds=mean_func_bounds,
+                                           noise_var_bounds=noise_var_bounds,
+                                           ...)
   },
   
   
-  map_kernel_name = function(kernel_name, ...) {
+  define_kernel = function(kernel_name, ...) {
     # This function is intended to be called from `set_gp_prior()`, and 
     # thus assumes that certain attributes (e.g., `fixed_pars`, `noise`)
-    # have already been set.
+    # have already been set. Must return a list with at minimum elements 
+    # "name" (the kernel name), and "par_names" (a vector of names of the 
+    # hyperparameters defining the kernel). "par_names" is used to set the 
+    # official order of the kernel parameter names.
 
-    stop("`map_kernel_name()` is implemented by each class that inherits from ",
+    stop("`define_kernel()` is implemented by each class that inherits from ",
          "the base gpWrapper class.")
   },
   
-  map_mean_func_name = function(mean_func_name, ...) {
+  define_mean_func = function(mean_func_name, ...) {
     # This function is intended to be called from `set_gp_prior()`, and 
     # thus assumes that certain attributes (e.g., `fixed_pars`, `noise`)
     # have already been set.
     
-    stop("`map_mean_func_name()` is implemented by each class that inherits ",
+    stop("`define_mean_func()` is implemented by each class that inherits ",
          "from the base gpWrapper class.")
   },
   
-  get_default_hyperpar_bounds = function(mean_func_name, kernel_name, X_fit, 
-                                         y_fit, ...) {
-    .NotYetImplemented()
+  define_par_bounds = function(kernel_bounds=NULL, mean_func_bounds=NULL, 
+                               noise_var_bounds=NULL, ...) {
+    # Controls bounds/initialization values for kernel and mean function 
+    # hyperparameters, as well as the noise variance parameter. See 
+    # `get_noise_var_bounds()` and `get_mean_func_bounds()` for information
+    # on the required formats for the arguments to this method.
+    #
+    # NOTE: get_mean_func_bounds() is not yet implemented, as neither 
+    #       hetGP nor kergp support bounds or init values for the mean function
+    #       parameters.
+    #
+    # The default method returns NULL, which does not set any bounds/init 
+    # values. This method should typically be overloaded by classes inheriting 
+    # from `gpWrapper`.
+    
+    noise_var_bounds <- .self$get_noise_var_bounds(noise_var_bounds, ...)
+    kernel_bounds <- .self$get_kernel_bounds(kernel_bounds, ...)
+    
+    list(kernel=kernel_bounds, mean_func=NULL, noise_var=noise_var_bounds)
+  },
+  
+  get_noise_var_bounds = function(noise_var_bounds=NULL, ...) {
+    # Returns a matrix with rownames set to `Y_names` and colnames 
+    # "init", "lower", "upper". Used to specify initialization values and 
+    # lower/upper bounds for the noise variance of each 
+    # output. Not set if `.self$noise` if FALSE (in which case the jitter 
+    # will be used). This default method may be overloaded for certain classes
+    # that inherit from gpWrapper.
+    
+    # In noiseless observation setting, no need to define bounds.
+    if(!.self$noise) return(NULL)
+
+    row_names <- .self$Y_names
+    col_names <- c("init", "lower", "upper")
+    
+    # Set up empty matrix if missing.
+    if(is.null(noise_var_bounds)) {
+      noise_var_bounds <- matrix(nrow=length(row_names), ncol=length(col_names),
+                                 dimnames=list(row_names, col_names))
+    } else {
+      assert_that(is.matrix(noise_var_bounds))
+    }
+    
+    # Fill in missing columns.
+    missing_cols <- setdiff(col_names, colnames(noise_var_bounds))
+    if(length(missing_cols) > 0) {
+      noise_var_bounds <- cbind(noise_var_bounds, 
+                                matrix(NA, nrow=nrow(noise_var_bounds), 
+                                      ncol=length(missing_cols),
+                                      dimnames=list(row_names, missing_cols)))
+      noise_var_bounds <- noise_var_bounds[,col_names]
+    }
+    
+    # Fill in missing rows.
+    missing_rows <- setdiff(row_names, rownames(noise_var_bounds))
+    if(length(missing_rows) > 0) {
+      new_mat <- matrix(NA, nrow=length(missing_rows), ncol=length(col_names),
+                        dimnames=list(missing_rows, col_names))
+      noise_var_bounds <- rbind(noise_var_bounds, new_mat)[row_names,]
+    }
+    
+    # Fill in missing values with defaults derived from observed variability 
+    # in design outputs.
+    if(any(is.na(noise_var_bounds))) {
+      defaults <- matrix(nrow=nrow(noise_var_bounds), 
+                         ncol=ncol(noise_var_bounds), 
+                         dimnames=list(row_names, col_names))
+      y_train_sd <- apply(.self$Y_train, 2, sd)
+      defaults[,"lower"] <- .self$default_jitter
+      defaults[,"upper"] <- y_train_sd^2
+      defaults[,"init"] <- (0.3 * y_train_sd)^2
+      
+      noise_var_bounds[is.na(noise_var_bounds)] <- defaults[is.na(noise_var_bounds)]
+    }
+  
+    assert_that(all(as.vector(noise_var_bounds[,c("lower","upper","init")]) >= 0))
+    return(noise_var_bounds[row_names, col_names])
+  },
+  
+  get_kernel_bounds = function(kernel_bounds=NULL, ...) {
+    # This method is intended to be called from `define_par_bounds()`. It 
+    # accepts NULL or a list, with names set to a subset of `Y_names`. Each 
+    # element of this list must be a matrix with rownames set to "par_name" and 
+    # colnames set to "init", "lower", and "upper". The argument can be used to 
+    # specify only a subset subset of `Y_names`. Can also be used to specify 
+    # bounds for only a subset of kernel hyperparameters, or only a subset 
+    # of the columns for the bounds matrix. In either case, the bounds matrix
+    # need only contain the rows and/or columns necessary to set the desired 
+    # bounds (with the row and column names always required). Missing rows
+    # and/or columns will be automatically added and filled with NAs.
+    # This method is intended to check that any specified information is in the 
+    # right format, and fill in any information not provided with NAs. The list 
+    # is then passed one element at a time (i.e., one output dimension at a  
+    # time) to `get_default_kernel_bounds()`, which is a method that is defined  
+    # on a class-by-class basis. The `get_kernel_bounds()` method may be 
+    # overwritten for certain classes with special structure. 
+    
+    col_names <- c("init", "lower", "upper")
+    row_names <- .self$kernel$par_names
+    
+    # Set up the `kernel_bounds` list. 
+    if(is.null(kernel_bounds)) kernel_bounds <- list()
+    assert_that(is.list(kernel_bounds))
+    if(length(kernel_bounds) > 1) {
+      assert_that(!is.null(names(kernel_bounds)))
+      assert_that(all(names(kernel_bounds) %in% .self$Y_names))
+    }
+    
+    # For each output, set up the matrix storing the bounds/init values, and 
+    # call `get_default_kernel_bounds()` to populate any missing values in 
+    # this matrix.
+    for(j in 1:.self$Y_dim) {
+      y_name <- .self$Y_names[j]
+      mat <- kernel_bounds[[y_name]]
+      
+      # Set up empty matrix if missing.
+      if(is.null(mat)) {
+        mat <- matrix(nrow=length(row_names), ncol=length(col_names),
+                      dimnames=list(row_names, col_names))
+      } else {
+        assert_that(is.matrix(mat))
+      }
+      
+      # Fill in missing columns.
+      missing_cols <- setdiff(col_names, colnames(mat))
+      if(length(missing_cols) > 0) {
+        mat <- cbind(mat, matrix(NA, nrow=nrow(mat), 
+                                 ncol=length(missing_cols),
+                                 dimnames=list(row_names, missing_cols)))
+        mat <- mat[,col_names]
+      }
+      
+      # Fill in missing rows.
+      missing_pars <- setdiff(row_names, rownames(mat))
+      if(length(missing_pars) > 0) {
+        new_mat <- matrix(NA, nrow=length(missing_pars), ncol=length(col_names),
+                          dimnames=list(missing_pars, col_names))
+        mat <- rbind(mat, new_mat)[row_names,]
+      }
+      
+      # Call `get_default_kernel_bounds()` to fill in missing bounds/init vals.
+      kernel_bounds[[y_name]] <- .self$get_default_kernel_bounds(mat, j, ...)
+    }
+    
+    return(kernel_bounds)
+  },
+  
+  get_default_kernel_bounds = function(bounds_mat, output_idx, ...) {
+    # Specified on a class by class basis. By default just returns 
+    # `bounds_mat` as is.
+    bounds_mat
   },
   
   gp_is_fit = function() {
@@ -297,7 +449,7 @@ gpWrapper$methods(
     }
     
     # Noise/jitter.
-    str <- paste0("GP prior defined: TRUE\n")
+    str <- paste0(str, "GP prior defined: TRUE\n")
     str <- paste0(str, "Include noise: ", .self$noise, "\n")
     str <- paste0(str, "Default jitter: ", .self$default_jitter, "\n")
     
@@ -309,9 +461,13 @@ gpWrapper$methods(
     }
     
     if(!.self$noise) {
-      str <- paste0(str, "Note: noise variance(s) fixed at `default_jitter` ",
+      str <- paste0(str, "\t> Note: noise variance(s) fixed at `default_jitter` ",
                     "for numerical stability.\n")
     }
+    
+    # Mean function and kernel name.
+    str <- paste0(str, "Mean function name: ", .self$mean_func$name, "\n")
+    str <- paste0(str, "Kernel name: ", .self$kernel$name, "\n")
     
     # Fit/hyperparameters optimized. 
     gp_obj_exists <- .self$gp_is_fit()
@@ -1464,7 +1620,7 @@ gpWrapperHet$methods(
     callSuper(X=X, Y=Y, lib="hetGP", ...)
   }, 
   
-  map_kernel_name = function(kernel_name, ...) {
+  define_kernel = function(kernel_name, ...) {
     # For gpWrapperHet, we define the `kernel` attribute to be a list with 
     # element "name" (the kernel name, using the hetGP conventions).
 
@@ -1476,10 +1632,10 @@ gpWrapperHet$methods(
     else if(kernel_name == "Matern3_2") l$name <- "Matern3_2"
     else stop("gpWrapperHet does not support kernel: ", kernel_name)
 
-    kernel <<- l
+    return(l)
   },
   
-  map_mean_func_name = function(mean_func_name, ...) {
+  define_mean_func = function(mean_func_name, ...) {
     # gpWrapperHet defines the attribute `mean_func` to be a list with 
     # element "name" set to the name of the mean function. hetGP only allows 
     # a constant mean, so an error is thrown for any other mean function.
@@ -1489,7 +1645,25 @@ gpWrapperHet$methods(
     if(mean_func_name == "constant") l$name <- mean_func_name 
     else stop("gpWrapperHet does not support mean function: ", mean_func_name)
     
-    mean_func <<- l
+    return(l)
+  },
+  
+  define_par_bounds = function(kernel_bounds=NULL, mean_func_bounds=NULL, 
+                               noise_var_bounds=NULL, ...) {
+    # hetGP has a method for choosing default bounds for hyperparameters; 
+    # if `hyperpar_bounds` is not explicitly provided, we fall back on this 
+    # hetGP method.
+    
+    if(is.null(hyperpar_bounds)) {
+      message("No bounds/initialization values explicitly defined for ",
+              "kernel and mean function hyperparameters. Falling back on ",
+              "hetGP's method for defining bounds/init values.")
+      return(NULL)
+    } else {
+      message("gpWrapperHet does not yet support explicit setting of ",
+              " hyperparameter bounds. hetGP's default bounds will be used.")
+      return(NULL)
+    }
   },
   
   fit_package = function(X_fit, y_fit, output_idx, ...) {
@@ -1519,7 +1693,7 @@ gpWrapperHet$methods(
     # Update the noise variance attribute based on the hyperparameter 
     # optimization. See class comments for notes on the parameterization used 
     # here.
-    noise_var[output_idx] <<- gp_fit$nu_hat * gp_fit$g
+    .self$noise_var[output_idx] <<- gp_fit$nu_hat * gp_fit$g
     
     return(gp_fit)
   },
@@ -1684,7 +1858,7 @@ gpWrapperKerGP$methods(
     callSuper(X=X, Y=Y, lib="kergp", ...)
   }, 
   
-  map_kernel_name = function(kernel_name, ...) {
+  define_kernel = function(kernel_name, ...) {
     # The `kernel` attribute is defined to be a list with elements "name" and 
     # "object", the latter being the kergp kernel object of class "covMan".
     # Some kernel names have been standardized, so that a string can be passed 
@@ -1773,25 +1947,22 @@ gpWrapperKerGP$methods(
     # used by gpWrapper. 
     inputNames(ker) <- X_names
     
-    # Specify hyperparameter bounds and defaults. 
-    # par_info_list <- .self$get_default_hyperpar_bounds(mean_func_name, kernel_name, X_fit, y_fit)
-    # attr(ker, "parLower") <- par_info_list$lower
-    # attr(ker, "parUpper") <- par_info_list$upper
-    # attr(ker, "par") <- par_info_list$default
+    # Define kernel hyperparameters.
+    par_names <- attr(ker, "kernParNames")
     
-    # Set `kernel` attribute.
-    .self$kernel <- list(name=kernel_name, object=ker)
+    return(list(name=kernel_name, object=ker, par_names=par_names))
   },
   
   
-  map_mean_func_name = function(mean_func_name, ...) {
+  define_mean_func = function(mean_func_name, ...) {
     # kergp allows specification of a mean function by an R formula (analogous 
     # to the way it is done in `lm()` to fit a linear model). The `mean_func`
-    # attribute for gpWrapperKer is defined to be a list with elements "name"
-    # and "formula". Some mean function names have been standardized, so that 
-    # a string can be passed for "mean_func_name" and the formula will be 
-    # automatically created. Alternatively, `mean_func_name` can be a 
-    # formula, in which case the "name" will be set to "user-defined formula".
+    # attribute for gpWrapperKer is defined to be a list with elements "name",
+    # "formula", and "par_names". Some mean function names have been 
+    # standardized, so that a string can be passed for "mean_func_name" and the 
+    # formula will be automatically created. Alternatively, `mean_func_name` can
+    # be a formula, in which case the "name" will be set to 
+    # "user-defined formula".
     
     l <- list()
     
@@ -1804,7 +1975,7 @@ gpWrapperKerGP$methods(
     } else if(mean_func_name == "quadratic") {
       l$name <- "quadratic (no cross terms)"
       l$formula <- as.formula(paste0("y ~ ", 
-                                     paste0("poly(", X_names, ", degree=2)", 
+                                     paste0("poly(", .self$X_names, ", degree=2)", 
                                             collapse=" + ")))
     } else if(inherits(mean_func_name,"formula")) {
       l$name <- "user-specified formula"
@@ -1816,7 +1987,15 @@ gpWrapperKerGP$methods(
     return(l)
   },
   
+  get_default_kernel_bounds = function(bounds_mat, output_idx, ...) {
+    # Set default bounds and initial values for kernel hyperparameters that have
+    # not been provided these values explicitly.
+    
+    bounds_mat
+    
+  },
   
+
   fit_package = function(X_fit, y_fit, output_idx, ...) {
     # `kergp` supports a variety of different optimization algorithms, which can 
     # be specified using the `...` arguments. 
@@ -1825,7 +2004,8 @@ gpWrapperKerGP$methods(
     # `noise = FALSE`. Then for the returned GP object we can set 
     # `gp_fit$varNoise <- nugget`. Then when predicting want to use 
     # `predict(..., forceInterp=TRUE)` to include the nugget variance in the 
-    # kernel matrix. 
+    # kernel matrix. By passing and integer argument `multistart = k` via `...`
+    # the optimization will be run from `k` different initializations.
 
     par_bounds_kergp <- .self$par_bounds
     
@@ -1858,7 +2038,7 @@ gpWrapperKerGP$methods(
                         ...)
     
     # Store noise variance.
-    .self$noise_var <- gp_fit$varNoise
+    .self$noise_var[output_idx] <- gp_fit$varNoise
     
     return(gp_fit)
   },

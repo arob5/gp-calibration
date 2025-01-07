@@ -186,11 +186,11 @@ design_info <- list(input=U, W=project_orthog_scalar(G, B, m))
 
 # Fit GPs. Note that the empirical mean of each weight vector `w_j(U)` is 
 # already 0, but we still set `normalize_output=TRUE` to scale these to have 
-# standard deviation 1. 
-gp_w <- gpWrapperHet(design_info$input, design_info$W, scale_input=TRUE,
-                     normalize_output=TRUE)
-gp_w$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
-gp_w$fit()
+# standard deviation 1.
+gp_w <- gpWrapperKerGP(design_info$input, design_info$W, scale_input=TRUE,
+                       normalize_output=TRUE)
+gp_w$set_gp_prior("Gaussian", "quadratic", include_noise=TRUE)
+gp_w$fit(multistart=10)
 gp_w$summarize()
 ```
 
