@@ -1989,9 +1989,42 @@ gpWrapperKerGP$methods(
   
   get_default_kernel_bounds = function(bounds_mat, output_idx, ...) {
     # Set default bounds and initial values for kernel hyperparameters that have
-    # not been provided these values explicitly.
+    # not been provided these values explicitly. A procedure for defining 
+    # default bounds is only defined for certain kernels. For example, 
+    # no default method is defined for user-defined kernels, as the 
+    # interpretation of the kernel hyperparameters is not known a priori.
+    # Note that kergp uses the following parameterization for the Gaussian
+    # kernel: v * exp{(x-y)^2 / ell^2}
+    #
+    # Logic for defining defaults:
+    #
+    # For marginal variance parameters:
+    #   Fit a linear model using the formula `mean_func$formula`, then use the 
+    #   residuals from this model to inform the default bounds. If the 
+    #   mean function is "constant" then no linear model is fit and the 
+    #   `Y_train` data is used in place of the residuals. The residuals are 
+    #   then passed to the helper function `get_marginal_variance_bounds()`
+    #   in `gp_helper_functions.r`.
+    #
+    # For lengthscale parameters:
+    #   Utilizes the set of pairwise distances calculated between all design 
+    #   inputs ("x" values) to set bounds that avoid lengthscales that are 
+    #   well above or below the minimum/maximum observed pairwise input 
+    #   distance. Details are described in the helper function 
+    #   `get_lengthscale_bounds()` in `gp_helper_functions.r`.
     
-    bounds_mat
+    kernel_name <- .self$kernel$name
+    mean_func_name <- .self$mean_func$name
+    
+    # Lengthscale bounds: currently just applies to "Gaussian" kernel, but this
+    # could also apply to Matérn.  
+    if(kernel_name == "Gaussian") {
+      ls <- get_lengthscale_bounds(.self$X_fit, p_extra=0.15, dim_by_dim=FALSE,
+                                   include_one_half=FALSE, 
+                                   convert_to_square=FALSE)
+    }
+    
+    
     
   },
   
@@ -2187,21 +2220,24 @@ gpWrapperKerGP$methods(
     if(!.self$gp_is_fit()) return(NULL)
     gp_kergp <- .self$gp_model[[idx]]
     
-    summary_str <- paste0("\n-----> gpWrapperKerGP GP ", idx, "; output = ", .self$Y_names[idx], ":\n")
+    summary_str <- paste0("\n-----> gpWrapperKerGP GP ", idx, "; output = ", 
+                          .self$Y_names[idx], ":\n")
     
     # Mean function.
     mean_coefs <- gp_kergp$betaHat
     summary_str <- paste0(summary_str, "\n>>> Mean function:\n")
-    summary_str <- paste0(summary_str, "Estimted trend: ", !gp_kergp$trendKnown, "\n")
+    summary_str <- paste0(summary_str, "Estimted trend: ", 
+                          !gp_kergp$trendKnown, "\n")
     summary_str <- paste0(summary_str, "Mean function coefs:\n")
     for(i in seq_along(mean_coefs)) {
-      summary_str <- paste0(summary_str, "\t", names(mean_coefs)[i], ": ", mean_coefs[i], "\n")
+      summary_str <- paste0(summary_str, "\t", names(mean_coefs)[i], ": ", 
+                            mean_coefs[i], "\n")
     }
     
     # Kernel.
-    # TODO: need to standardize parameter names to be able to extract the correct
-    # parameters from the parameter vector. And need to account for different 
-    # kernel types like quadratic. 
+    # TODO: need to standardize parameter names to be able to extract the 
+    # correct parameters from the parameter vector. And need to account for  
+    # different kernel types like quadratic. 
     cov_obj <- gp_kergp$covariance
     summary_str <- paste0(summary_str, "\n>>> Kernel:\n")
     summary_str <- paste0(summary_str, "Kernel description: ", attr(cov_obj,"label"), "\n")

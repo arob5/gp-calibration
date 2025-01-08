@@ -53,11 +53,11 @@ get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01,
   # row containing the lower bounds for ell_1,...,ell_d, 
   # respectively, and the second row containing the upper bounds. 
   # The rownames for these two rows is set to ("lower","upper")
-  # The colnames of the matrix is set to `colnames(X)`. If `p` is non-NULL
+  # The colnames of the matrix is set to `colnames(X)`. If `p_extra` is non-NULL
   # then one row will be added corresponding to the respective quantiles 
-  # specified by `p`. The rownames for these rows will be set to 
-  # `q<100*pi>` where `pi` is the respective element of `p`; e.g., 
-  # "q10" indicates the 10th percentile (pi = 0.1). Note that these 
+  # specified by `p_extra`. The rownames for these rows will be set to 
+  # `q<100*p_i>` where `p_i` is the respective element of `p_extra`; e.g., 
+  # "q10" indicates the 10th percentile (p_i = 0.1). Note that these 
   # quantiles may differ from those returned by `get_pairwise_dist_quantiles()`
   # since they will be adjusted to account for the 1/2 factor when 
   # `include_one_half=TRUE`. Note also that these quantiles are returned 
@@ -91,7 +91,8 @@ get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01,
   if(!dim_by_dim) {
     bounds <- mult_vec_with_mat_rows(X_bounds[2,]-X_bounds[1,], bounds)
     if(nrow(bounds)>2) {
-      bounds[3:nrow(bounds),] <- add_vec_to_mat_rows(X_bounds[1,], bounds[3:nrow(bounds),,drop=FALSE])  
+      bounds[3:nrow(bounds),] <- add_vec_to_mat_rows(X_bounds[1,], 
+                                                     bounds[3:nrow(bounds),,drop=FALSE])  
     }
   }
   
