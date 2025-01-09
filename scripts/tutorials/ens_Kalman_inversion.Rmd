@@ -119,9 +119,13 @@ plot_obs <- function(pred, y_true, xlab = NULL, ylab = NULL) {
 ```
 
 ```{r}
-rand_idx <- sample(1:200,20)
-plot_obs(t(G[rand_idx,]),drop(inv_prob$model_output_true[,,5]), xlab = "Days", ylab = "LAI")
-plot_obs(t(G[rand_idx,]),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
+lai_idx <- which(get_vsem_output_names() == "LAI")
+
+plot_fwd_model_output(fwd_ens=G, fwd_true=inv_prob$y_true, 
+                      output_true=inv_prob$model_output_true[,,lai_idx], 
+                      fwd_obs=inv_prob$y, n_subsample=20,
+                      xlab="Months", ylab="LAI",
+                      title="Ground truth, data, and observations")
 ```
 
 ## Exact posterior samples

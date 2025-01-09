@@ -495,6 +495,205 @@ plot_true_pred_scatter <- function(y_pred, y_true, include_CI=FALSE, CI_lower=NU
 
 
 # -----------------------------------------------------------------------------
+# Plotting Inverse Problem Outputs 
+# -----------------------------------------------------------------------------
+
+plot_fwd_model_output <- function(fwd_ens=NULL, output_ens=NULL, fwd_true=NULL, 
+                                  output_true=NULL, fwd_obs=NULL,
+                                  n_subsample=NULL, xlab=NULL, ylab=NULL, 
+                                  title=NULL) {
+  # This function is intended to summarize an ensemble of outputs for an 
+  # inverse problem y = G(u) + eps, where the forward model G is of the form 
+  # of a composition G(u) = H(F(u)). We call F: R^d -> R^T the 
+  # parameter-to-output map, and H: R^T -> R^p the observation operator.
+  # The former typically outputs a time series, where T is the number of 
+  # time points. This function handles the case where p <= T (the observation 
+  # dimension is no larger than the number of time points), and the observation 
+  # operator is assumed to take the form of time averages over equally-spaced 
+  # intervals. For example, F(u) might output a time series on a daily time 
+  # step, and H(F(u)) returns monthly averages of this time series. In the
+  # function arguments, anything with the `fwd_` prefix is on the observation 
+  # scale, and arguments with prefix `output_` is on the finer scale 
+  # corresponding to outputs of F. If only arguments from one scale are 
+  # provided, then the plot will be on this scale. If arguments from both are 
+  # provided, then the x-axis will be on the finer scale, with the coarser 
+  # arguments plotted as piecewise constant functions.
+  #
+  # Args:
+  # fwd_ens: matrix, of dimension (m,p) containing `m` outputs of G(u), 
+  #          typically implying `m` different parameter values were used.
+  # output_ens: matrix, of dimension (m,T), containing `m` outputs of `F(u)`.
+  #             Applying `H` to these outputs should yield `fwd_ens`.
+  # fwd_true: object that can be coerced to vector of length `p`. Typically 
+  #           interpreted as G(u*) for some "ground-truth" parameter `u*`.
+  # output_true: object that can be coerced to vector of length `T`. Typically 
+  #              interpreted as F(u*). Applying H to `output_true` should yield
+  #              `fwd_true`.
+  # fwd_obs: object that can be coerced to vector of length `p`. Typically 
+  #          interpreted as observed data `y`.
+  # xlab, ylab, title: strings to set x/y labels and plot title.
+  # n_subsample: if not NULL, then an integer used to randomly subsample the 
+  #              rows of `fwd_ens` and `output_ens`.
+  #
+  # Returns:
+  # ggplot object. All non-NULL arguments are included in the plot. When 
+  # T > p, the averaging window is inferred by computing k := round(T/p),
+  # so that the first observation output is considered as an average of the 
+  # first `k` model outputs, and so on.
+  
+  # There must be something to plot.
+  assert_that(!all(is.null(fwd_ens), is.null(output_ens), is.null(fwd_true),
+                   is.null(output_true), is.null(fwd_obs)))
+  
+  # If any data on the output scale is provided, then this establishes the 
+  # x-axis scale of the plot.
+  include_ens <- FALSE
+  n_output <- NULL
+  if(!is.null(output_true)) {
+    output_true <- drop(output_true)
+    n_output <- length(output_true)
+  }
+  
+  if(!is.null(output_ens)) {
+    # Establish output dimension `T`.
+    assert_that(is.matrix(output_ens))
+    if(is.null(n_output)) {
+      n_output <- ncol(output_ens)
+    } else {
+      assert_that(ncol(output_ens) == n_output) 
+    }
+    
+    include_ens <- TRUE
+  }
+  
+  # Set up for data on the coarser observation scale.
+  n_obs <- NULL
+  if(!is.null(fwd_true)) {
+    fwd_true <- drop(fwd_true)
+    n_obs <- length(fwd_true)
+  }
+  
+  if(!is.null(fwd_obs)) {
+    if(is.null(n_obs)) {
+      n_obs <- length(fwd_obs)
+    } else {
+      assert_that(length(fwd_obs) == n_obs) 
+    }
+  }
+  
+  if(!is.null(fwd_ens)) {
+    if(is.null(n_obs)) {
+      assert_that(is.matrix(fwd_ens))
+      n_obs <- ncol(fwd_ens)
+    } else {
+      assert_that(ncol(fwd_ens) == n_obs) 
+    }
+    
+    include_ens <- TRUE
+  }
+  
+  # If one of two scales not provided, then no need to distinguish between 
+  # them.
+  if(is.null(n_obs)) n_obs <- n_output
+  if(is.null(n_output)) n_output <- n_obs
+  
+  # Assert that the ensemble matrices are the same dimension.
+  if(!is.null(fwd_ens) && !is.null(output_ens)) {
+    assert_that(all(dim(fwd_ens) == dim(output_ens)))
+  }
+  
+  # Optionally subsample ensemble matrices.
+  if(!is.null(n_subsample) && include_ens) {
+    n_ens <- ifelse(is.null(fwd_ens), nrow(output_ens), nrow(fwd_ens))
+    rand_idx <- sample(1:n_ens, n_subsample)
+    
+    if(!is.null(fwd_ens)) fwd_ens <- fwd_ens[rand_idx,,drop=FALSE]
+    if(!is.null(output_ens)) fwd_ens <- output_ens[rand_idx,,drop=FALSE]
+  }
+  
+  # incre := P / T (rounded to nearest integer).
+  incre <- round(n_output / n_obs)
+  obs_idx <- seq(1, n_output, by=incre)
+  output_idx <- seq(1, n_output)
+  plt <- ggplot() + theme_minimal()
+  
+  #
+  # Plot all data on finer output scale.
+  #
+  
+  # Plot ensemble F(u_1), ..., F(u_m)
+  if(!is.null(output_ens)) {
+    dt <- as.data.table(t(output_ens))
+    dt$output_idx <-output_idx
+    dt <- melt.data.table(dt, id.vars="output_idx", variable.name="run_id", 
+                          value.name="val")
+    plt <- plt + geom_line(aes(x=output_idx, y=val, group=factor(run_id)),
+                           dt, color="grey")
+  }
+  
+  # Plot F(u*).
+  if(!is.null(output_true)) {
+    plt <- plt + geom_line(aes(x=t, y=y), data.frame(t=output_idx, y=output_true),
+                           color="black")
+  }
+  
+  #
+  # Plot all data on coarser observation scale.
+  #
+  
+  # Plot ensemble G(u_1), ..., G(u_m)
+  if(!is.null(fwd_ens)) {
+    dt <- as.data.table(t(fwd_ens))
+    dt$obs_idx <- obs_idx
+    dt <- melt.data.table(dt, id.vars="obs_idx", variable.name="run_id", 
+                          value.name="val")
+    
+    if(incre > 1) {
+      plt <- plt + 
+        geom_segment(aes(x=obs_idx, xend=obs_idx+incre, y=val, 
+                         group=factor(run_id)), dt, color="darkgrey")
+    } else {
+      plt <- plt + 
+        geom_line(aes(x=obs_idx, y=val, group=factor(run_id)),
+                  dt, color="darkgrey") 
+    }
+  }
+  
+  # Plot G(u*)
+  if(!is.null(fwd_true)) {
+    if(incre > 1) {
+      plt <- plt + 
+        geom_segment(aes(x=obs_idx, xend=obs_idx+incre, y=y), 
+                     data.frame(t=obs_idx, y=fwd_true), color="black")
+    } else {
+      plt <- plt + 
+        geom_line(aes(x=obs_idx, y=y),
+                  data.frame(t=obs_idx, y=fwd_true), color="black") 
+    }
+  }
+  
+  # Plot `y`.
+  if(!is.null(fwd_obs)) {
+    if(incre > 1) {
+      plt <- plt + 
+        geom_segment(aes(x=obs_idx, xend=obs_idx+incre, y=y), 
+                     data.frame(t=obs_idx, y=fwd_obs), color="red")
+    } else {
+      plt <- plt + 
+        geom_line(aes(x=obs_idx, y=y),
+                  data.frame(t=obs_idx, y=fwd_obs), color="red") 
+    }
+  }
+  
+  # Add labels.
+  plt <- plt + xlab(xlab) + ylab(ylab) + ggtitle(title)
+  
+  return(plt)
+}
+
+
+
+# -----------------------------------------------------------------------------
 # ggplot themes and formatting functions. 
 # -----------------------------------------------------------------------------
 
