@@ -313,20 +313,21 @@ gpWrapper$methods(
   get_kernel_bounds = function(kernel_bounds=NULL, ...) {
     # This method is intended to be called from `define_par_bounds()`. It 
     # accepts NULL or a list, with names set to a subset of `Y_names`. Each 
-    # element of this list must be a matrix with rownames set to "par_name" and 
-    # colnames set to "init", "lower", and "upper". The argument can be used to 
-    # specify only a subset subset of `Y_names`. Can also be used to specify 
-    # bounds for only a subset of kernel hyperparameters, or only a subset 
-    # of the columns for the bounds matrix. In either case, the bounds matrix
-    # need only contain the rows and/or columns necessary to set the desired 
-    # bounds (with the row and column names always required). Missing rows
-    # and/or columns will be automatically added and filled with NAs.
-    # This method is intended to check that any specified information is in the 
-    # right format, and fill in any information not provided with NAs. The list 
-    # is then passed one element at a time (i.e., one output dimension at a  
-    # time) to `get_default_kernel_bounds()`, which is a method that is defined  
-    # on a class-by-class basis. The `get_kernel_bounds()` method may be 
-    # overwritten for certain classes with special structure. 
+    # element of this list must be a matrix with rownames set to the kernel 
+    # parameter names and colnames set to "init", "lower", and "upper". The 
+    # argument can be used to specify only a subset subset of `Y_names`. Can 
+    # also be used to specify bounds for only a subset of kernel 
+    # hyperparameters, or only a subset of the columns for the bounds matrix. 
+    # In either case, the bounds matrix need only contain the rows and/or 
+    # columns necessary to set the desired bounds (with the row and column 
+    # names always required). Missing rows and/or columns will be automatically 
+    # added and filled with NAs. This method is intended to check that any 
+    # specified information is in the right format, and fill in any information 
+    # not provided with NAs. The list is then passed one element at a time 
+    # (i.e., one output dimension at a time) to `get_default_kernel_bounds()`, 
+    # which is a method that is defined on a class-by-class basis. The 
+    # `get_kernel_bounds()` method may be overwritten for certain classes with 
+    # special structure. 
     
     col_names <- c("init", "lower", "upper")
     row_names <- .self$kernel$par_names
@@ -1878,7 +1879,7 @@ gpWrapperKerGP$methods(
       # Hyperparameters are the lengthscales (on per input dimension), and 
       # the marginal variance.
       ker <- kergp::kGauss(d=.self$X_dim)
-      attr(ker, "kernParNames") <- c(.self$X_names, "marg_var")
+      attr(ker, "kernParNames") <- c(paste0("ell_", .self$X_names), "marg_var")
     } else if(kernel_name == "Quadratic") {
       # Hyperparameters are "quad_center" and "quad_offset", which are the 
       # constants `c` and `a` in the expression (<x-a,z-a> + c)^2, 
@@ -1934,7 +1935,8 @@ gpWrapperKerGP$methods(
                     acceptMatrix = TRUE, 
                     hasGrad = TRUE,
                     d = .self$X_dim,
-                    parNames = c(.self$X_names, "marg_var", "quad_offset"), 
+                    parNames = c(paste0("ell_", .self$X_names), 
+                                 "marg_var", "quad_offset"), 
                     label = "Gaussian plus quadratic kernel")
     } else if(inherits(kernel_name, "covMan")) {
       ker <- kernel_name
@@ -1994,7 +1996,7 @@ gpWrapperKerGP$methods(
     # no default method is defined for user-defined kernels, as the 
     # interpretation of the kernel hyperparameters is not known a priori.
     # Note that kergp uses the following parameterization for the Gaussian
-    # kernel: v * exp{(x-y)^2 / ell^2}
+    # kernel: v * exp{(x-y)^2 / ell^2}.
     #
     # Logic for defining defaults:
     #
@@ -2011,21 +2013,43 @@ gpWrapperKerGP$methods(
     #   inputs ("x" values) to set bounds that avoid lengthscales that are 
     #   well above or below the minimum/maximum observed pairwise input 
     #   distance. Details are described in the helper function 
-    #   `get_lengthscale_bounds()` in `gp_helper_functions.r`.
+    #   `get_lengthscale_bounds()` in `gp_helper_functions.r`. Note that the 
+    #   current convention is to name lengthscale parameters as
+    #   "ell_<x_name>", where `x_name` is the respective name in `X_names`.
+    
+    # TODO: need to define marginal variance bounds.
+    # TODO: issue with the default value. Should not be setting the default 
+    # based on the multivariate distance distribution. 
     
     kernel_name <- .self$kernel$name
     mean_func_name <- .self$mean_func$name
+    col_names <- c("init", "lower", "upper")
     
     # Lengthscale bounds: currently just applies to "Gaussian" kernel, but this
-    # could also apply to Matérn.  
+    # could also apply to Matérn. For now, using default arguments in 
+    # `get_lengthscale_bounds()`, and setting init lengthscale to the 15th 
+    # percentile of the pairwise distance distribution. Note that doing this 
+    # for each independent GP is unneccesary, but leaving it for now.
     if(kernel_name == "Gaussian") {
-      ls <- get_lengthscale_bounds(.self$X_fit, p_extra=0.15, dim_by_dim=FALSE,
+      ls <- get_lengthscale_bounds(.self$X_train, p_extra=0.15, dim_by_dim=FALSE,
                                    include_one_half=FALSE, 
                                    convert_to_square=FALSE)
+      ell_names <- paste0("ell_", .self$X_names)
+      ell_bounds <- t(ls$ell_bounds)[.self$X_names,]
+      ell_bounds <- cbind(init=ls$dist_quantiles[5,], ell_bounds)
+      
+      bounds_mat[ell_names, col_names] <- ifelse(is.na(bounds_mat[ell_names, col_names]), 
+                                                 ell_bounds,
+                                                 bounds_mat[ell_names, col_names])
+    } else {
+      if(any(is.na(bounds_mat))) {
+        message("No default bounds set up for kernel ", kernel_name, 
+                " for output ", .self$Y_names[output_idx], ". kergp does not ",
+                " provide defaults so this may cause issues.")
+      }
     }
     
-    
-    
+    return(bounds_mat)  
   },
   
 

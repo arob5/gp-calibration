@@ -8,7 +8,8 @@
 
 get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01, 
                                    cor_max=0.5, p_extra=NULL, dim_by_dim=FALSE,
-                                   include_one_half=FALSE, convert_to_square=FALSE) {
+                                   include_one_half=FALSE, 
+                                   convert_to_square=FALSE) {
   # Returns empirically-determined bounds (and quantiles - see below)
   # for the lengthscale parameters of a Gaussian (exponentiated quadratic)
   # covariance function, parameterized for a d-dimensional input 
@@ -49,20 +50,17 @@ get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01,
   # `auto_bounds()` when `dim_by_dim = FALSE` and `convert_to_square = TRUE`. 
   #
   # Returns:
-  # matrix of dimension (2+length(p),d) [where d=ncol(X)] with the first 
-  # row containing the lower bounds for ell_1,...,ell_d, 
-  # respectively, and the second row containing the upper bounds. 
-  # The rownames for these two rows is set to ("lower","upper")
-  # The colnames of the matrix is set to `colnames(X)`. If `p_extra` is non-NULL
-  # then one row will be added corresponding to the respective quantiles 
-  # specified by `p_extra`. The rownames for these rows will be set to 
-  # `q<100*p_i>` where `p_i` is the respective element of `p_extra`; e.g., 
-  # "q10" indicates the 10th percentile (p_i = 0.1). Note that these 
-  # quantiles may differ from those returned by `get_pairwise_dist_quantiles()`
-  # since they will be adjusted to account for the 1/2 factor when 
-  # `include_one_half=TRUE`. Note also that these quantiles are returned 
-  # directly, not making the adjustments for the min/max correlation 
-  # constraints, as is the case with the min/max lengthscale bounds.
+  # list, with elements "ell_bounds" and "dist_quantiles". The former is a 
+  # matrix of dimension (2,d) [where d=ncol(X)] with rownames "lower" and 
+  # "upper". The first contains the lower bounds for ell_1,...,ell_d, and 
+  # the second row contains the upper bounds. "dist_quantiles" is 
+  # the matrix returned by `get_pairwise_dist_quantiles_by_dim()` or 
+  # `get_pairwise_dist_quantiles()`, but potentially adjusted to account 
+  # for the "one half" scaling and converted to squared distances if 
+  # `convert_to_square = TRUE`. This matrix contains the distance quantiles 
+  # used in constructing the lengthscale bounds, as well as the min/max 
+  # pairwise distances, and any other quantiles specified in `p_extra`.
+  # For both matrices, column names are set to `colnames(X)`.
 
   # Compute min/max and quantiles of pairwise distances in each dimension.
   # Note that the first two rows of `dist_q` will be the min/max and the 
@@ -81,23 +79,27 @@ get_lengthscale_bounds <- function(X, p_min=0.05, p_max=0.95, cor_min=0.01,
   if(include_one_half) dist_q <- dist_q / sqrt(2)
 
   # Adjust min/max bounds to account for the correlation constraints.
-  # The 3rd and 4th rows correspond to the min and max quantiles. 
-  bounds <- dist_q[3:nrow(dist_q),,drop=FALSE]
-  bounds[1L,] <- bounds[1L,] / sqrt(-log(cor_min))
-  bounds[2L,] <- bounds[2L,] / sqrt(-log(cor_max))
-  rownames(bounds)[1:2] <- c("lower", "upper")
-  
-  # Convert back to original scale. 
+  # The 3rd and 4th rows correspond to the distance quantiles to use in 
+  # constructing the bounds.
+  ell_bounds <- dist_q[c(3,4),,drop=FALSE]
+  ell_bounds[1L,] <- ell_bounds[1L,] / sqrt(-log(cor_min))
+  ell_bounds[2L,] <- ell_bounds[2L,] / sqrt(-log(cor_max))
+  rownames(ell_bounds) <- c("lower", "upper")
+
+  # Convert back to original scale. Note that the additive shift does not 
+  # need to be done since these quantities are distances, so the shift 
+  # cancels out.
   if(!dim_by_dim) {
-    bounds <- mult_vec_with_mat_rows(X_bounds[2,]-X_bounds[1,], bounds)
-    if(nrow(bounds)>2) {
-      bounds[3:nrow(bounds),] <- add_vec_to_mat_rows(X_bounds[1,], 
-                                                     bounds[3:nrow(bounds),,drop=FALSE])  
-    }
+    ell_bounds <- mult_vec_with_mat_rows(X_bounds[2,]-X_bounds[1,], ell_bounds)
+    dist_q <- mult_vec_with_mat_rows(X_bounds[2,]-X_bounds[1,], dist_q)
   }
   
-  if(convert_to_square) return(bounds^2)
-  return(bounds)
+  if(convert_to_square) {
+    ell_bounds <- ell_bounds^2
+    dist_q <- dist_q^2
+  }
+  
+  return(list(ell_bounds=ell_bounds, dist_quantiles=dist_q))
 }
 
 
@@ -117,7 +119,7 @@ get_pairwise_dist_quantiles_by_dim <- function(X, p=NULL) {
   # Returns:
   # matrix of dimension (2+length(p),d) [where d=ncol(X)] with the first 
   # row containing the minimum pairwise distances in each respective dimension, 
-  # and the second row containing the upper bounds. 
+  # and the second row containing the maximum pairwise distances. 
   # The rownames for these two rows is set to ("min","max")
   # The colnames of the matrix is set to `colnames(X)`. If `p` is non-NULL
   # then one row will be added corresponding to the respective quantiles 
