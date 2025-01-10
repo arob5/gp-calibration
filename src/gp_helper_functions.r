@@ -220,7 +220,7 @@ get_marginal_variance_bounds <- function(M, p=0.9, return_variance=FALSE) {
   # A convenience function for determining bounds/default values for 
   # the marginal variance (i.e., scale) parameter of 
   # a Gaussian process (GP). For a correlation function C, the 
-  # assumed parameterization is s^2 * C is `return_variance` is 
+  # assumed parameterization is s^2 * C if `return_variance` is 
   # FALSE (the default), and otherwise s * C. This function 
   # assumes a mean-zero process. In particular, this function 
   # returns the scale `s` such that 
@@ -231,7 +231,9 @@ get_marginal_variance_bounds <- function(M, p=0.9, return_variance=FALSE) {
   # solved for by noting that the above probability can be rearranged
   # to obtain 
   #    s = M / Q(0.5*[1+p])
-  # where Q is the standard normal inverse CDF/quantile function. 
+  # where Q is the standard normal inverse CDF/quantile function. If 
+  # `return_variance = TRUE`, then the returned quantities correspond to the 
+  # variance bounds, not standard deviations.
   
   # Argument checking. 
   assert_that(is.vector(p))

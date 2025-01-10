@@ -194,6 +194,7 @@ gpWrapper$methods(
       # If estimating noise variances.
       noise_var <<- rep(NA_real_, .self$Y_dim)
     }
+    names(noise_var) <<- .self$Y_names
     
     # Set up mean and covariance functions (no hyperparameter optimization 
     # is performed here). 
@@ -2017,10 +2018,6 @@ gpWrapperKerGP$methods(
     #   current convention is to name lengthscale parameters as
     #   "ell_<x_name>", where `x_name` is the respective name in `X_names`.
     
-    # TODO: need to define marginal variance bounds.
-    # TODO: issue with the default value. Should not be setting the default 
-    # based on the multivariate distance distribution. 
-    
     kernel_name <- .self$kernel$name
     mean_func_name <- .self$mean_func$name
     col_names <- c("init", "lower", "upper")
@@ -2030,24 +2027,75 @@ gpWrapperKerGP$methods(
     # `get_lengthscale_bounds()`, and setting init lengthscale to the 15th 
     # percentile of the pairwise distance distribution. Note that doing this 
     # for each independent GP is unneccesary, but leaving it for now.
-    if(kernel_name == "Gaussian") {
-      ls <- get_lengthscale_bounds(.self$X_train, p_extra=0.15, dim_by_dim=FALSE,
+    if(kernel_name %in% c("Gaussian", "Gaussian_plus_Quadratic")) {
+      
+      # Lengthscale bounds and defaults.
+      ls <- get_lengthscale_bounds(.self$X_train, dim_by_dim=FALSE,
                                    include_one_half=FALSE, 
                                    convert_to_square=FALSE)
       ell_names <- paste0("ell_", .self$X_names)
       ell_bounds <- t(ls$ell_bounds)[.self$X_names,]
-      ell_bounds <- cbind(init=ls$dist_quantiles[5,], ell_bounds)
-      
+      ell_init <- 0.2*ell_bounds[,"lower"] + 0.8*ell_bounds[,"upper"]
+      ell_bounds <- cbind(init=ell_init, ell_bounds)
+  
       bounds_mat[ell_names, col_names] <- ifelse(is.na(bounds_mat[ell_names, col_names]), 
                                                  ell_bounds,
                                                  bounds_mat[ell_names, col_names])
-    } else {
-      if(any(is.na(bounds_mat))) {
-        message("No default bounds set up for kernel ", kernel_name, 
-                " for output ", .self$Y_names[output_idx], ". kergp does not ",
-                " provide defaults so this may cause issues.")
+      
+      # Marginal variance bounds and defaults.
+      if(any(is.na(bounds_mat["marg_var",]))) {
+        beta <- .self$fixed_pars$mean_func$beta
+        df <- data.frame(y=.self$Y_train[,output_idx], .self$X_train)
+        
+        if(is.null(beta)) {
+          lm_fit <- lm(.self$mean_func$formula, data=df)
+          lm_resid <- resid(lm_fit)
+          p <- 0.7
+        } else {
+          mf <- model.frame(formula, data=df)
+          basis_mat <- model.matrix(.self$mean_func$formula, data=mf)
+          lm_resid <- .self$Y_train[,output_idx] - drop(basis_mat %*% beta)
+          p <- 0.99
+        }
+        
+        if(is.na(bounds_mat["marg_var","init"])) {
+          bounds_mat["marg_var","init"] <- max(var(lm_resid), 
+                                               sqrt(.Machine$double.eps))
+        }
+        
+        if(is.na(bounds_mat["marg_var","lower"])) {
+          bounds_mat["marg_var","lower"] <- sqrt(.Machine$double.eps)
+        }
+        
+        if(is.na(bounds_mat["marg_var","upper"])) {
+          v <- get_marginal_variance_bounds(max(abs(lm_resid)), p=p, 
+                                            return_variance=TRUE)
+          bounds_mat["marg_var","upper"] <- v
+        }
       }
     }
+    
+    # Print warning if any hyperparameters are missing bounds.
+    if(any(is.na(bounds_mat[,c("lower","upper")]))) {
+       message("Some kernel hyperparameters do not have bounds set, output = ",
+               .self$Y_names[output_idx], 
+               " This implies there is no default procedure set up to define",
+               " bounds for kernel ", kernel_name, ". kergp does not",
+               " provide defaults so this may cause issues.")
+    }
+    
+    # Include bounds in kergp kernel object.
+    assert_that(all(attr(ker, "kernParNames") == rownames(bounds_mat)))
+    ker <- .self$kernel$object
+    
+    attr(ker, "par") <- ifelse(is.na(bounds_mat[,"init"]), 
+                               attr(ker, "par"), bounds_mat[,"init"])
+    attr(ker, "parLower") <- ifelse(is.na(bounds_mat[,"lower"]), 
+                                    attr(ker, "parLower"), bounds_mat[,"lower"])
+    attr(ker, "parUpper") <- ifelse(is.na(bounds_mat[,"upper"]), 
+                                    attr(ker, "parUpper"), bounds_mat[,"upper"])
+    kernel$object <<- ker 
+    
     
     return(bounds_mat)  
   },
@@ -2063,24 +2111,24 @@ gpWrapperKerGP$methods(
     # `predict(..., forceInterp=TRUE)` to include the nugget variance in the 
     # kernel matrix. By passing and integer argument `multistart = k` via `...`
     # the optimization will be run from `k` different initializations.
+    # Bounds on the kernel hyperparameters are included as part of the 
+    # `kernel$object` object, which are set when setting the prior.
 
-    par_bounds_kergp <- .self$par_bounds
+    y_name <- .self$Y_names[output_idx]
+    noise_var_bounds <- .self$par_bounds$noise_var[y_name,]
     
-    # kergp supports fixing known mean function coefficients `beta`. 
-    if(isTRUE("beta" %in% names(.self$fixed_pars$mean_func))) {
-      beta <- fixed_pars$beta
-    } else {
-      beta <- NULL
-    }
-    
+    # kergp supports fixing known mean function coefficients `beta`. Will be 
+    # NULL if no fixed beta was provided.
+    beta <- .self$fixed_pars$mean_func[[y_name]]$beta
+
     # When the noise variance is fixed, we use a hack to fix in during kergp's 
     # optimization: define the upper and lower bounds to be the desired value.
-    fixed_noise_var <- .self$fixed_pars$noise_var
+    fixed_noise_var <- .self$fixed_pars$noise_var[y_name]
     if(!.self$noise) fixed_noise_var <- .self$default_jitter
     if(!is.null(fixed_noise_var)) {
-      par_bounds_kergp$noise_var$init <- fixed_noise_var
-      par_bounds_kergp$noise_var$lower <- fixed_noise_var
-      par_bounds_kergp$noise_var$upper <- fixed_noise_var
+      noise_var_bounds["init"] <- fixed_noise_var
+      noise_var_bounds["lower"] <- fixed_noise_var
+      noise_var_bounds["upper"] <- fixed_noise_var
     }
 
     # Fit GP. 
@@ -2089,13 +2137,13 @@ gpWrapperKerGP$methods(
                         inputs=.self$X_names, 
                         cov=.self$kernel$object, 
                         estim=TRUE, beta=beta, noise=TRUE, 
-                        varNoiseIni=par_bounds_kergp$noise_var$init,
-                        varNoiseLower=par_bounds_kergp$noise_var$lower,
-                        varNoiseUpper=par_bounds_kergp$noise_var$upper,
+                        varNoiseIni=noise_var_bounds["init"],
+                        varNoiseLower=noise_var_bounds["lower"],
+                        varNoiseUpper=noise_var_bounds["upper"],
                         ...)
     
     # Store noise variance.
-    .self$noise_var[output_idx] <- gp_fit$varNoise
+    noise_var[output_idx] <<- gp_fit$varNoise
     
     return(gp_fit)
   },
@@ -2136,8 +2184,8 @@ gpWrapperKerGP$methods(
     # If requested, convert predictive variances of f(x) to predictive variances
     # of y(x).
     if(include_noise) {
-      if(return_var) return_list$var <- return_list$var + .self$noise_var
-      if(return_cov) diag(return_list$cov) <- diag(return_list$cov) + .self$noise_var 
+      if(return_var) return_list$var <- return_list$var + .self$noise_var[output_idx]
+      if(return_cov) diag(return_list$cov) <- diag(return_list$cov) + .self$noise_var[output_idx] 
     }
 
     return(return_list)
@@ -2250,7 +2298,7 @@ gpWrapperKerGP$methods(
     # Mean function.
     mean_coefs <- gp_kergp$betaHat
     summary_str <- paste0(summary_str, "\n>>> Mean function:\n")
-    summary_str <- paste0(summary_str, "Estimted trend: ", 
+    summary_str <- paste0(summary_str, "Estimated trend: ", 
                           !gp_kergp$trendKnown, "\n")
     summary_str <- paste0(summary_str, "Mean function coefs:\n")
     for(i in seq_along(mean_coefs)) {
