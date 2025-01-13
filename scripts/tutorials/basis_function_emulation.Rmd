@@ -32,6 +32,7 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
 
 # Main functions being illustrated.
 source(file.path(src_dir, "basis_function_emulation.r"))
@@ -200,23 +201,59 @@ n_test <- 500
 test_info <- list(input=get_batch_design("LHS", N_batch=n_test, 
                                          prior_params=inv_prob$par_prior))
 test_info$W <- eval_basis_weights(test_info$input, g, B, m) 
+pred_list_w <- gp_w$predict(test_info$input, return_cov=TRUE)
 ```
 
 ```{r}
 # Summarize predictions at validation points.
-gp_w$plot_pred(test_info$input, test_info$W, include_CI=TRUE)
+gp_w$plot_pred(test_info$input, test_info$W, include_CI=TRUE, pred_list=pred_list_w)
 ```
 
 ```{r}
 gp_w$plot_1d_projection(include_design=FALSE)
 ```
 
+## Using `gpWrapperSum` to combine the GPs
+The `gpWrapperSum` class wraps accepts our object defining a set of independent 
+GPs, as well as the basis vectors, to define a multi-output GP where the 
+independent GPs are used as weights in a linear combination of the basis 
+vectors.
+
+```{r}
+# Should update this to set the noise var in a more informed way.
+noise_var <- sqrt(.Machine$double.eps)
+
+gp_g <- gpWrapperSum(gp_w, B, shift=m, sig2=noise_var)
+gp_g$summarize()
+```
 
 
+```{r}
+# Plot samples G(x) at single input x vs. true trajectory G(x).
+idcs <- sample(1:nrow(test_info$input), size=5)
 
+for(i in idcs) {
+  plt <- gp_g$plot_samp(X_new=test_info$input[i,,drop=FALSE], N_samp=10, 
+                        use_cov=TRUE, g_func=g)
+  plot(plt)
+}
+```
 
+```{r}
+# Plot one sample of G(x_i) at each input x_1, ..., x_M.
+gp_g$plot_samp(X_new=test_info$input[1:15,], use_cov=TRUE)
+```
 
+```{r}
+# Plot pointwise predictive distribution for trajectory G(x) at different 
+# inputs x. By pointwise, we mean no covariance is considered across output
+# indices.
 
+for(i in idcs) {
+  plt <- gp_g$plot_pred(X_new=test_info$input[i,,drop=FALSE], g_func=g)
+  plot(plt)
+}
 
+```
 
 

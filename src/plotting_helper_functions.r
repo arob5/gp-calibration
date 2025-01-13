@@ -7,46 +7,66 @@
 
 library(reshape2)
 
-plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_design=!is.null(X_design), 
-                                  include_interval=TRUE, interval_method="pm_std_dev",
-                                  N_std_dev=1, CI_prob=0.9, y_new=NULL, X_design=NULL, y_design=NULL,
-                                  transformation=NULL, plot_title=NULL, xlab="x", ylab="y",
-                                  ground_truth_col="black", design_color="black", ...) {
+plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, 
+                                  include_design=!is.null(X_design), 
+                                  include_interval=TRUE, 
+                                  interval_method="pm_std_dev",
+                                  N_std_dev=1, CI_prob=0.9, y_new=NULL, 
+                                  X_design=NULL, y_design=NULL,
+                                  transformation=NULL, plot_title=NULL,
+                                  xlab="x", ylab="y",
+                                  ground_truth_col="black", 
+                                  design_color="black", ...) {
   # Produces a Gaussian process prediction plot for one-dimensional input space. 
   #
   # Args:
   #    X_new: numeric, or one-column matrix, the input test locations. 
-  #    pred_mean: numeric, or one-column matrix, the predictive mean at the test locations. 
-  #    pred_var: numeric, or one-column matrix, the predictive variance at the test locations. 
-  #    include_design: logical(1), whether or not to plot the design (i.e. training) points. 
+  #    pred_mean: numeric, or one-column matrix, the predictive mean at the test 
+  #               locations. 
+  #    pred_var: numeric, or one-column matrix, the predictive variance at the 
+  #              test locations. 
+  #    include_design: logical(1), whether or not to plot the design 
+  #                    (i.e. training) points. 
   #    include_interval: logical(1), whether or not to plot confidence intervals. 
-  #    interval_method: character(1), either "CI" or "pm_std_dev". If "CI", computes 
-  #                     100*`CI_prob`% confidence interval. If "pm_std_dev" (pm="plus-minus"), 
-  #                     the interval is defined by adding/subtracting `N_std_dev` standard 
-  #                     deviations. 
-  #    CI_prob: numeric value in (0,1); e.g. `0.9` corresponds to 90% confidence interval. Only used 
-  #             if `include_interval` is TRUE and `interval_method` is "CI". 
-  #    N_std_dev: integer, the number of standard deviations to add/subtract from the mean to 
-  #               define the interval. Only used if `include_interval` is TRUE and `interval_method` 
-  #               is "pm_std_dev". 
-  #    y_new: numeric, or one-column matrix, the true response values at the prediction locations. 
+  #    interval_method: character(1), either "CI" or "pm_std_dev". If "CI", 
+  #                     computes 100*`CI_prob`% confidence interval. If 
+  #                     "pm_std_dev" (pm="plus-minus"), the interval is defined 
+  #                     by adding/subtracting `N_std_dev` standard deviations. 
+  #    CI_prob: numeric value in (0,1); e.g. `0.9` corresponds to 90% confidence 
+  #             interval. Only used if `include_interval` is TRUE and 
+  #             `interval_method` is "CI". 
+  #    N_std_dev: integer, the number of standard deviations to add/subtract 
+  #               from the mean to define the interval. Only used if 
+  #               `include_interval` is TRUE and `interval_method` is 
+  #               "pm_std_dev". 
+  #    y_new: numeric, or one-column matrix, the true response values at the 
+  #           prediction locations. 
   #    X_design: numeric, or one-column matrix, the design locations. 
-  #    y_design: numeric, or one-column matrix, the response values at the design locations. 
-  #    transformation: character, not yet implemented but intended to allow the options 
-  #                    "LN", "truncated", or "rectified" as transformations of the Gaussian predictions. 
+  #    y_design: numeric, or one-column matrix, the response values at the 
+  #              design locations. 
+  #    transformation: character, not yet implemented but intended to allow the 
+  #                    options "LN", "truncated", or "rectified" as 
+  #                    transformations of the Gaussian predictions. 
   # 
   # Returns: 
   #    ggplot2 object. 
   
-  assert_that(is.numeric(X_new) || (ncol(X_new)==1), msg="plot_Gaussian_pred_1d() requires 1d input space.")
+  assert_that(is.numeric(X_new) || (ncol(X_new)==1), 
+              msg="plot_Gaussian_pred_1d() requires 1d input space.")
   if(!is.null(transformation)) .NotYetImplemented() 
   
   # Set default title, if not provided. 
   if(is.null(plot_title)) {
     plot_title <- paste0("GP Predictions")
-    if(include_interval && (interval_method == "CI")) plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
-    if(include_interval && (interval_method == "pm_std_dev")) plot_title <- paste0(plot_title, ", +/- ", N_std_dev, " std dev")
-    if(!is.null(transformation)) plot_title <- paste0(plot_title, " ", transformation, "transform")
+    if(include_interval && (interval_method == "CI")) {
+      plot_title <- paste0(plot_title, ", ", 100*CI_prob, "% CI")
+    }
+    if(include_interval && (interval_method == "pm_std_dev")) {
+      plot_title <- paste0(plot_title, ", +/- ", N_std_dev, " std dev")
+    }
+    if(!is.null(transformation)) {
+      plot_title <- paste0(plot_title, " ", transformation, "transform")
+    }
   }
 
   # Confidence intervals. 
@@ -62,24 +82,30 @@ plot_Gaussian_pred_1d <- function(X_new, pred_mean, pred_var=NULL, include_desig
     CI_lower <- NULL
   }
   
-  plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, include_CI=include_interval,
-                             CI_lower=CI_lower, CI_upper=CI_upper, y_new=y_new, X_design=X_design,
-                             y_design=y_design, plot_title=plot_title, xlab=xlab, ylab=ylab, 
-                             ground_truth_col=ground_truth_col, design_color=design_color, ...) 
+  plt <- plot_pred_1d_helper(X_new, pred_mean, include_design=include_design, 
+                             include_CI=include_interval, CI_lower=CI_lower, 
+                             CI_upper=CI_upper, y_new=y_new, X_design=X_design,
+                             y_design=y_design, plot_title=plot_title, 
+                             xlab=xlab, ylab=ylab, 
+                             ground_truth_col=ground_truth_col, 
+                             design_color=design_color, ...) 
   return(plt)
 }
 
 
-plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_design), 
-                                include_CI=!is.null(CI_lower), CI_lower=NULL, CI_upper=NULL, 
-                                y_new=NULL, X_design=NULL, y_design=NULL, plot_title=NULL,
+plot_pred_1d_helper <- function(X_new, pred_mean, 
+                                include_design=!is.null(X_design), 
+                                include_CI=!is.null(CI_lower), CI_lower=NULL, 
+                                CI_upper=NULL,  y_new=NULL, X_design=NULL, 
+                                y_design=NULL, plot_title=NULL,
                                 xlab="x", ylab="y", ground_truth_col="black", 
-                                design_color="black", design_pt_size=1.5, line_thickness=1.0) {
+                                design_color="black", design_pt_size=1.5, 
+                                line_thickness=1.0, ...) {
   # This is used by the `gpWrapper` and `llikEmulator` classes to produce plots 
-  # summarizing the predictive distribution in the case of a 1d input space. It provides 
-  # a generic interface to plot the fit to a curve over a one-dimensional input space 
-  # that includes: 1.) predictive mean (point estimate); 2.) error bars; 
-  # 3.) design points; 4.) ground truth curve. 
+  # summarizing the predictive distribution in the case of a 1d input space. 
+  # It provides a generic interface to plot the fit to a curve over a 
+  # one-dimensional input space that includes: 1.) predictive mean 
+  # (point estimate); 2.) error bars; 3.) design points; 4.) ground truth curve. 
   
   # Set default title, if not provided. 
   if(is.null(plot_title)) plot_title <- "Model Predictions"
@@ -93,24 +119,27 @@ plot_pred_1d_helper <- function(X_new, pred_mean, include_design=!is.null(X_desi
   if(include_CI) {
     df_pred$CI_upper <- CI_upper
     df_pred$CI_lower <- CI_lower
-    plt <- plt + geom_ribbon(aes(x=x, ymin=CI_lower, ymax=CI_upper), df_pred, fill="gray")
+    plt <- plt + geom_ribbon(aes(x=x, ymin=CI_lower, ymax=CI_upper), 
+                             df_pred, fill="gray")
   }
   
   # True values at prediction locations. 
   if(!is.null(y_new)) {
-    df_pred$y_true <- y_new
+    df_pred$y_true <- drop(y_new)
     plt <- plt + geom_line(aes(x=x, y=y_true), df_pred, color=ground_truth_col, 
                            linetype="dashed", linewidth=line_thickness)
   }
   
   # Base plot: mean at prediction locations.
-  plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue", linewidth=line_thickness) + 
+  plt <- plt + geom_line(aes(x, y_mean), df_pred, color="blue", 
+                         linewidth=line_thickness) + 
                ggtitle(plot_title) + xlab(xlab) + ylab(ylab)
   
   # Design points. 
   if(include_design) {
     df_design <- data.frame(x=drop(X_design), y=drop(y_design))
-    plt <- plt + geom_point(aes(x,y), df_design, color=design_color, size=design_pt_size)
+    plt <- plt + geom_point(aes(x,y), df_design, color=design_color, 
+                            size=design_pt_size)
   }
   
   return(plt)

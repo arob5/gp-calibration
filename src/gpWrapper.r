@@ -1197,7 +1197,7 @@ gpWrapperSum$methods(
     assert_that(is.matrix(B))
     
     if(!is.null(shift)) {
-      assert_that(ncol(B) == length(drop(shift)))
+      assert_that(nrow(B) == length(drop(shift)))
     }
     
     if(!is.null(sig2)) assert_that(sig2 > 0)
@@ -1210,7 +1210,7 @@ gpWrapperSum$methods(
     # with `gp$Y_dim`, which is the dimension of `w(u)`. `X_mat` and `Y_mat` 
     # are defined so that `callSuper()` can be called without errors, but are 
     # not intended to be used in any way.
-    out_dim <- ncol(B)
+    out_dim <- nrow(B)
     Y_mat <- matrix(-1, ncol=out_dim)
     X_mat <- matrix(-1, ncol=gp$X_dim)
     B_names <- paste0("b", 1:out_dim)
@@ -1438,13 +1438,13 @@ gpWrapperSum$methods(
     w_samp <- .self$gp_model$sample(X_new, use_cov=use_cov, 
                                     include_noise=include_noise,
                                     N_samp=N_samp, pred_list=pred_list, ...)
-    n_input <- dim(w_samp)[2]
+    n_input <- dim(w_samp)[1]
 
     # Compute linear combination of weight samples to produce samples from G.
     G_samp <- array(NA, dim=c(n_input, N_samp, .self$Y_dim))
     for(i in 1:n_input) {
-      W <- w_samp[,i,,drop=FALSE]
-      G <- tcrossprod(W, .self$B)
+      W <- w_samp[i,,]
+      G <- tcrossprod(W, .self$B) # Works for N_samp=1 case when W is numeric().
       
       if(!is.null(.self$shift)) G <- add_vec_to_mat_rows(.self$shift, G)
       if(!is.null(.self$sig2)) {
@@ -1453,7 +1453,7 @@ gpWrapperSum$methods(
         G <- G + Z
       }
       
-      G_samp[,i,] <- G
+      G_samp[i,,] <- G
     }
     
     return(G_samp)
@@ -1469,7 +1469,9 @@ gpWrapperSum$methods(
     summary_str <- paste0(summary_str, "Include noise: ", !is.null(.self$sig2), "\n")
     
     # Append attributes for underlying GPs.
-    summary_str <- paste0(summary_str, .self$emulator_model$get_summary_str(...))
+    summary_str <- paste0(summary_str, 
+                          "\n----- Underlying independent GPs -----\n\n")
+    summary_str <- paste0(summary_str, .self$gp_model$get_summary_str(...))
   }, 
   
   scale = function(Xnew, inverse=FALSE) {
@@ -1498,15 +1500,40 @@ gpWrapperSum$methods(
     .NotYetImplemented()
   }, 
   
-  plot_pred = function(X_new, Y_new=NULL, include_CI=FALSE, include_noise=TRUE, 
-                       CI_prob=0.9, pred_list=NULL) {
+  plot_pred = function(X_new, Y_new=NULL, include_CI=TRUE, include_noise=TRUE, 
+                       CI_method="CI", CI_prob=0.9, N_std_dev=1, 
+                       pred_list=NULL, g_true=NULL, g_func=NULL, ...) {
     # This method is overloaded to plot the predictive distribution of G(x) as 
     # a function of the output index; i.e., plot pairs of the form (p, G(x)_p),
     # where `x` is a fixed input. In particular, plots the mean 
     # (p, E[G(x)_p]). Optionally also plots the true trajectory (p, G*(x)_p)
     # for comparison, as well as a credible interval around (p, E[G(x)_p]).
+    # Only allows plotting for a single input `x`, so requires
+    # `nrow(X_new)==1`. "CI_method", "CI_prob", and "N_std_dev" are passed 
+    # to `plot_Gaussian_plot_1d()` to control the type of confidence interval
+    # that is plotted. `g_true` can optionally be passed as a numeric vector or 
+    # one-row/column matrix, in which case the trajectory `g_true`
+    # will also be plotted. Alternatively, a function `g_func` can be provided 
+    # and the "true" trajectory will be computed by calling `g_func(X_new)`.
     
-    .NotYetImplemented()
+    assert_that(nrow(X_new)==1, msg="plot_pred() requires `nrow(X_new)=1`")
+    
+    pred_list_g <- .self$predict(X_new, return_var=include_CI, 
+                                 include_noise=include_noise, 
+                                 pred_list=pred_list, ...)
+    
+    # Determine if "true" trajectory will be plotted.
+    if(!is.null(g_true) || !is.null(g_func)) {
+      if(is.null(g_true)) g_true <- g_func(X_new)
+      assert_that(length(drop(g_true)) == .self$Y_dim)
+    }
+    
+    plot_Gaussian_pred_1d(seq_len(.self$Y_dim), drop(pred_list_g$mean), 
+                          pred_var=drop(pred_list_g$var),
+                          y_new=g_true, include_interval=include_CI, 
+                          interval_method=CI_method,
+                          N_std_dev=N_std_dev, CI_prob=CI_prob,
+                          xlab="output index", ylab="G", ...)
   },
   
   plot_pred_lin_proj = function() {
@@ -1521,8 +1548,47 @@ gpWrapperSum$methods(
     .NotYetImplemented()
   },
   
-  plot_samp = function() {
-    .NotYetImplemented()
+  plot_samp = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1,
+                       pred_list=NULL, g_true=NULL, g_func=NULL, ...) {
+    # A helper function that wraps around the `sample()` method to plot sample 
+    # trajectories of G(x) at different x values given in `X_new`. This method 
+    # operates in one of two different modes. `N_samp` is the number of samp
+    # per input. It is only allowed to be greater than 1 if `nrow(X_new)=1`.
+    # In this case, the plot contains samples from G(x) at a single fixed input 
+    # value `x`. If `nrow(X_new) > 1` then `N_samp` must be 1, in which case 
+    # the function plots one sample each from `G(x_1), ..., G(x_M)`. `g_true`
+    # can optionally be passed as a numeric vector or one-row/column matrix 
+    # in the case that `nrow(X_new) = 1`, in which case the trajectory `g_true`
+    # will also be plotted. Alternatively, a function `g_func` can be provided 
+    # and the "true" trajectory will be computed by calling `g_func(X_new)`.
+    
+    assert_that(!((nrow(X_new)>1) && (N_samp>1)), 
+                msg="`plot_samp()` does not allow `nrow(Xnew) > 1` and `N_samp > 1`.")
+    
+    G_samp <- .self$sample(X_new, use_cov=use_cov, N_samp=N_samp, 
+                           pred_list=pred_list)
+    
+    # Prepare input for passing to `plot_curves_1d_helper()`.
+    if(N_samp > 1) {
+      G_samp <- G_samp[1,,]
+      title <- "G(x) samples (single input)"
+      
+      if(!is.null(g_true) || !is.null(g_func)) {
+        if(is.null(g_true)) g_true <- g_func(X_new)
+        assert_that(length(drop(g_true)) == .self$Y_dim)
+      }
+    } else {
+      G_samp <- G_samp[,1,]
+      title <- "G(x) samples (one sample per input)"
+      g_true <- NULL
+    }
+    
+    if(!is.matrix(G_samp)) G_samp <- matrix(G_samp, nrow=1)
+    G_samp <- t(G_samp)
+    
+    plot_curves_1d_helper(seq_len(.self$Y_dim), G_samp, df_by=NULL, 
+                          plot_title=title, xlab="output index", 
+                          ylab="G", y_new=g_true, legend=FALSE)
   }
   
 )
@@ -2085,8 +2151,8 @@ gpWrapperKerGP$methods(
     }
     
     # Include bounds in kergp kernel object.
-    assert_that(all(attr(ker, "kernParNames") == rownames(bounds_mat)))
     ker <- .self$kernel$object
+    assert_that(all(attr(ker, "kernParNames") == rownames(bounds_mat)))
     
     attr(ker, "par") <- ifelse(is.na(bounds_mat[,"init"]), 
                                attr(ker, "par"), bounds_mat[,"init"])
