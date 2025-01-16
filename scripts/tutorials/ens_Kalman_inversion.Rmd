@@ -87,38 +87,11 @@ G <- fwd(U)
 
 
 ```{r}
-plot_obs <- function(pred, y_true, xlab = NULL, ylab = NULL) {
-  # the x-axis limit depends on number of time points in y_true
-  
-  incre <- round(length(y_true)/nrow(pred))
-  obs_idx <- seq(1, length(y_true), by=incre)
-  
-  if(is.null(colnames(pred))) {
-    ids <- paste0("y", 1:ncol(pred))
-    colnames(pred) <- ids
-  } else {
-    ids <- colnames(pred)
-  }
-  
-  df_pred <- cbind(obs_idx, as.data.frame(pred))
-  df_pred <- melt(df_pred, id.vars="obs_idx", variable.name="samp_id", value.name="y_val")
-  
-  plt <- ggplot() + theme_minimal()
-  
-  if (incre > 1) {
-    plt <- plt + geom_segment(aes(x=obs_idx, xend = obs_idx+incre, y=y_val, group = factor(samp_id)), 
-                          df_pred, color="grey")
-  } else {
-    plt <- plt + geom_line(aes(x=obs_idx, y=y_val, group = factor(samp_id)), df_pred, color="grey") 
-  }
-  
-  df_true <- data.frame(x=1:length(y_true), y=y_true)
-  plt <- plt + geom_line(aes(x,y), df_true, color = "black") + xlab(xlab) + ylab(ylab)
-  plt
-}
-```
+# This plot allows for a visual assessment of the forward model outputs implied
+# by the initial parameter design, as compared to the ground truth trajectory
+# and observations. It also illustrates the smoothing effect of the observation 
+# operator.
 
-```{r}
 lai_idx <- which(get_vsem_output_names() == "LAI")
 
 plot_fwd_model_output(fwd_ens=G, fwd_true=inv_prob$y_true, 
@@ -133,15 +106,27 @@ We will compare the EKI posterior approximations to the baseline of exact
 MCMC sampling. The exact MCMC samples are obtained below.
 ```{r}
 n_mcmc <- 25000L
-mcmc_list <- mcmc_bt_wrapper(llik_exact, par_prior, n_itr=n_mcmc, sampler="DEzs")
-samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="mcmc") 
+
+mcmc_list <- run_mcmc_chains("mcmc_bt_wrapper", llik_exact, n_chain=4L, 
+                             par_prior=par_prior, test_label="mcmc", 
+                             defer_ic=TRUE, n_itr=n_mcmc, try_parallel=FALSE)
+samp_dt <- mcmc_list$samp
 ```
 
+
 ```{r}
-burn_in_start <- 12500L
+burn_in_start <- round(n_mcmc/2)
 trace_plots <- get_trace_plots(samp_dt, itr_start=burn_in_start)
 for(plt in trace_plots) plot(plt)
 ```
+
+```{r}
+# Log-likelihood evaluations from the MCMC runs.
+trace_plots_llik <- get_trace_plots(mcmc_list$info, itr_start=burn_in_start, 
+                                    param_name="llik")
+plot(trace_plots_llik[[1]])
+```
+
 
 # Ensemble Kalman Inversion
 The main entry point for running EKI is the function `run_eki()`. We demonstrate
@@ -170,12 +155,14 @@ can be overwritten by explicitly passing a map via the `par_map` argument.
 # Run single step of EKI.
 eki_output <- run_eki(y, fwd, Sig, par_prior=par_prior, U0=U, G0=G) 
 U_new <- eki_output$U
+G_new <- fwd(U_new)
 eki_list <- eki_output$eki_list
 ```
 
 
 ```{r}
 # Append EKI approximate posterior samples to samples data.table.
+samp_dt <- select_mcmc_itr(samp_dt, itr_start=burn_in_start)
 samp_dt <- append_samples_mat(samp_dt, U_new, param_type="par",  
                               test_label="eki", chain_idx=1L)
 
@@ -191,31 +178,22 @@ for(plt in kde_plts) plot(plt)
 ```
 
 ### EKI Posterior Predictive Distribution
-TODO: below is an example for the kind of plot that would be useful, but it 
-needs updating. In general, this style of plot nicely shows that the EnKF update 
-tends to make the model runs concentrate around the observed data. 
-The `plot_curves_1d_helper()` needs updating so I would 
-probably write a new function to produce these plots instead of using this 
-helper function (for now). Some thoughts on this kind of plot:
-1. The line colors are currently not telling us anything, so I would either make 
-them all the same neutral color (e.g., gray). Or you could try coloring them by 
-a color gradient which is given by the true posterior density.
-2. 
 
 ```{r}
-obs_idx <- seq_along(y)
-G_new <- fwd(U_new)
+prior_ens_plt <- plot_fwd_model_output(fwd_ens=G, fwd_true=inv_prob$y_true, 
+                      output_true=inv_prob$model_output_true[,,lai_idx], 
+                      fwd_obs=inv_prob$y, n_subsample=20,
+                      xlab="Months", ylab="LAI",
+                      title="Prior output ensemble")
 
-prior_pred <- plot_curves_1d_helper(obs_idx, t(G), plot_title="Prior", 
-                                    legend=FALSE, y_new=y, xlab="month")
-eki_post_pred <- plot_curves_1d_helper(obs_idx, t(G_new), plot_title="EKI single step", 
-                                       legend=FALSE, y_new=y, xlab="month")
+post_ens_plt <- plot_fwd_model_output(fwd_ens=G_new, fwd_true=inv_prob$y_true, 
+                      output_true=inv_prob$model_output_true[,,lai_idx], 
+                      fwd_obs=inv_prob$y, n_subsample=20,
+                      xlab="Months", ylab="LAI",
+                      title="Posterior output ensemble")
 
-plot(prior_pred)
-plot(eki_post_pred)
-
-plot_obs(t(G),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
-plot_obs(t(G_new),drop(inv_prob$y_true), xlab = "Months", ylab = "LAI")
+plot(prior_ens_plt)
+plot(post_ens_plt)
 ```
 
 
@@ -271,14 +249,12 @@ plot_density_pairs <- function(df, num_samp, df2 = NULL,
 ```
 
 ```{r}
-samp_dt <- format_mcmc_output(mcmc_list$samp, test_label="mcmc") 
-samp_filt <- select_mcmc_samp(samp_dt,param_types="par", itr_start=12500L)
-samp_f2 <- dcast(samp_filt, itr ~ param_name, value.var = "sample")
+samp_f2 <- dcast(samp_dt, itr~param_name, value.var="sample")
 samp_mcmc <- samp_f2[,inv_prob$par_names]
 
 # transform U to gaussian space
 U_new_gauss <- eki_output$par_map(U_new)
-plot_density_pairs(U_new_gauss, num_samp = 2)
+plot_density_pairs(U_new_gauss, num_samp=2)
 
 # constrained space U
 plot_density_pairs(U_new, num_samp = 2, baseline_df = samp_mcmc)
@@ -346,3 +322,6 @@ for (num in 2:5) {
 mul_kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="mcmc")
 for(plt in mul_kde_plts) plot(plt)
 ```
+
+
+
