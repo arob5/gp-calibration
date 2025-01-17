@@ -1590,7 +1590,7 @@ llikEmulatorExactGaussDiag$methods(
     # `input` should have dimension (N_input, D). Returns vector of length `N_input.` 
 
     # Fetch the variance parameters. 
-    sig2_val <- get_lik_par(lik_par_val)
+    sig2_val <- .self$get_lik_par(lik_par_val)
     
     # Run forward model. 
     fwd_model_vals <- .self$run_fwd_model(input, ...)
@@ -1620,14 +1620,17 @@ llikEmulatorExactGaussDiag$methods(
     # There is no emulator, so this does nothing. 
   },
   
-  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
+  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1L, 
                     conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     
     # Compute unnormalized or normalized log-likelihood (exact, deterministic 
     # calculation - no sampling is actually performed). For consistency with 
     # other classes, duplicates the exact likelihood calculation when `N_samp`>1.
-    matrix(assemble_llik(get_input(input), lik_par_val, conditional, normalize), 
+  
+    input <- .self$get_input(input)
+  
+    matrix(.self$assemble_llik(input, lik_par_val, conditional, normalize), 
            nrow=nrow(input), ncol=N_samp)
   }, 
   

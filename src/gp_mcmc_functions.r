@@ -147,7 +147,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   times_adapted <- 0
   
   # Store initial chain info.
-  llik_curr <- drop(llik_em$sample(par_curr, include_nugget=TRUE, ...))
+  llik_curr <- drop(llik_em$sample(par_curr, ...))
   chain_info[1,] <- c(llik_curr, lprior_curr, 
                       exp(log_scale_prop) * sqrt(diag(cov_prop)))
   
