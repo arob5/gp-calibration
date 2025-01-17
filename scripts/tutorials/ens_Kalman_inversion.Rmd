@@ -47,7 +47,8 @@ of the list returned by these functions in a standardized format.
 ```{r}
 # Example inverse problem based on calibrating parameters of the 
 # VSEM vegetation model.
-inv_prob <- get_vsem_test_1_time_avg()
+#inv_prob <- get_vsem_test_1_time_avg()
+inv_prob <- get_vsem_test_1()
 
 # Exact likelihood (no emulation).
 llik_exact <- inv_prob$llik_obj
@@ -80,7 +81,7 @@ Sig <- diag(inv_prob$sig2_model, nrow=p)
 fwd <- inv_prob$par_to_obs_op
 
 # Initial ensembles (parameters and model outputs).
-n_ens <- 200L
+n_ens <- 2000L
 U <- get_batch_design(method="LHS", N_batch=n_ens, prior_params=par_prior)
 G <- fwd(U)
 ```
@@ -162,18 +163,19 @@ eki_list <- eki_output$eki_list
 
 ```{r}
 # Append EKI approximate posterior samples to samples data.table.
-samp_dt <- select_mcmc_itr(samp_dt, itr_start=burn_in_start)
-samp_dt <- append_samples_mat(samp_dt, U_new, param_type="par",  
+
+samp_dt01 <- append_samples_mat(samp_dt, U_new, param_type="par",  
+
                               test_label="eki", chain_idx=1L)
 
 # Also append the prior ensemble for comparison.
-samp_dt <- append_samples_mat(samp_dt, U, param_type="par", test_label="prior")
+samp_dt02 <- append_samples_mat(samp_dt01, U, param_type="par", test_label="prior")
 ```
 
 
 ### 1d Marginal Posterior Approximations
 ```{r}
-kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="mcmc")
+kde_plts <- get_1d_kde_plots(samp_dt02, test_label_baseline="mcmc")
 for(plt in kde_plts) plot(plt)
 ```
 
@@ -321,6 +323,14 @@ for (num in 2:5) {
 
 mul_kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="mcmc")
 for(plt in mul_kde_plts) plot(plt)
+```
+
+
+Diagnostic plots
+
+```{r}
+plt_list <- run_eki_diagnostics(eki_output, U, mcmc_samp=samp_filt,num_margin_pairs = 4)
+
 ```
 
 

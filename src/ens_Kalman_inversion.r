@@ -400,3 +400,173 @@ calc_lin_Gauss_cond_moments_obs <- function(G_fwd, y, m0, C0=NULL, Sig=NULL,
   return(list(mean=drop(m_cond), cov=C_cond))
 }
 
+
+################
+# Diagnostics
+
+run_eki_diagnostics <- function(eki_output, U, mcmc_samp, num_margin_pairs=2, prec_trans_fun=NULL) {
+  # Args:
+  #    U: matrix of shape (J,D), where J = number of ensemble members and 
+  #       D = dimension of each ensemble member.
+  #    eki_output:       list object that is the output of eki update. 
+  #    mcmc_samp:        baselins sample exclusing burn-in period.
+  #    num_margin_pairs: number of random plots for 2-d marginals.
+  #    prec_trans_fun:   function applied to transform precision matrix. 
+  #
+  # Returns:
+  #    a list containing diagnostic plots
+  
+  U_new <- eki_output$U
+  eki_list <- eki_output$eki_list
+  # transform U_new to gaussian space
+  U_new_gauss <- eki_output$par_map(U_new)
+  
+  samp_dt01 <- append_samples_mat(mcmc_samp, U_new, param_type="par",  
+                                  test_label="eki", chain_idx=1L)
+  samp_dt02 <- append_samples_mat(samp_dt01, U, param_type="par", test_label="prior")
+  
+  #######################
+  ##     Posterior     ##
+  #######################
+  # 1d marginals of the posterior ensemble
+  kde_plts <- get_1d_kde_plots(samp_dt02, test_label_baseline="mcmc")
+  # 2d marginals of the posterior ensemble
+  samp_f2 <- dcast(mcmc_samp, itr ~ param_name, value.var = "sample")
+  samp_mcmc2 <- samp_f2[,inv_prob$par_names]
+  
+  post_marg_2d_unbd <- plot_density_pairs(U_new_gauss, num_samp = num_margin_pairs)
+  ### constrained space U, with baseline
+  post_marg_2d_bd <- plot_density_pairs(U_new, num_samp = num_margin_pairs, baseline_df = samp_mcmc2)
+  
+  #######################
+  ##       Prior       ##
+  #######################
+  G <- fwd(U)
+  U_gauss <- eki_output$par_map(U)
+  samp_dtp1 <- append_samples_mat(samp_filt, U_gauss, param_type="par",  
+                                  test_label="prior_gauss", chain_idx=1L)
+  samp_dtp2 <- append_samples_mat(samp_dtp1, U, param_type="par", test_label="prior")
+  
+  prior_kde_plts <- get_1d_kde_plots(samp_dtp2, test_label_baseline="mcmc")
+  ##2d
+  pri_marg_2d_unbd <- plot_density_pairs(U_gauss, num_samp = num_margin_pairs)
+  pri_marg_2d_bd <- plot_density_pairs(U, num_samp = num_margin_pairs)
+  
+  # Heatmap of covariance matrix cov[u] (in transformed space)
+  corr_u <- cor(U_gauss)
+  hm_corr_U <- plot_corr_heatmap(corr_u, triangle = "upper", plt_title = "correlation")
+  
+  # prior predictive
+  #1. Heatmap of covariance matrix cov[y]
+  cov_y <- cov(G) + Sig
+  corr_y <- get_corr(cov_y)
+  hm_corr_y <- plot_corr_heatmap(corr_y, triangle = "upper", plt_title = "correlation")
+  
+  #2. Heatmap of precision matrix cov[y]^{-1}
+  prec <- chol2inv(chol(cov_y))
+  part_cor_y <- get_part_corr(prec)
+  hm_part_cor_y <- plot_corr_heatmap(part_cor_y, triangle = "upper", plt_title = "partial correlation")
+  # plot_corr_heatmap(prec, triangle = "upper", plt_title = "Precision Matrix")
+  
+  #3. If sparse estimate of precision matrix is used (e.g., banded precision), then also plot heatmap of this.
+  hm_part_cor_y_spar <- NULL
+  if(!is.null(prec_trans_fun)) {
+    alt_prec <- prec_trans_fun(prec)
+    part_cor_y_spar <- get_part_corr(alt_prec)
+    hm_part_cor_y_spar <- plot_corr_heatmap(part_cor_y_spar, triangle = "upper", plt_title = "partial correlation sparse")
+  }
+  
+  # 1. Heatmap of cross-covariance matrix cov[u,y] (where u samples are in transformed space)
+  cov_uy <- cov(U,G)
+  cor_uy <- cor(U,G)
+  C_uy <- cor(U,G)  
+  hm_corr_uy <- plot_cross_cov(C_uy, corr = TRUE)
+  
+  list(post_ens_kde = kde_plts, post_ens_kde2d_unbd = post_marg_2d_unbd, post_ens_kde2d_bd = post_marg_2d_bd,
+       pri_ens_kde = prior_kde_plts, pri_ens_kde2d_unbd = pri_marg_2d_unbd, 
+       pri_ens_kde2d_bd = pri_marg_2d_bd, pri_corhm_U = hm_corr_U,
+       pri_corhm_y = hm_corr_y, pri_partcorhm_y = hm_part_cor_y, 
+       pri_partcorhm_y_spar = hm_part_cor_y_spar, pri_corhm_uy = hm_corr_uy)
+}
+
+plot_cross_cov <- function(mat, corr=TRUE) {
+  # helper funciton to plot cross covariance
+  C_melted <- melt(mat)
+  pltname <- "Cross-Correlation"
+  if (corr==FALSE) pltname <- "Cross-Covariance"
+  
+  ggplot(C_melted, aes(Var2, Var1, fill = value)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                         midpoint = 0, space = "Lab",
+                         name = "rho") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 8)) +
+    labs(x = "", y = "", title = pltname)
+}
+
+get_part_corr <- function(prec_mat) {
+  # input: precision matrix
+  # output: partial correlation matrix
+  if (!is.matrix(prec_mat) || nrow(prec_mat) != ncol(prec_mat)) {
+    stop("need square precision matrix")
+  }
+  # norm and negate
+  diag_vec <- diag(prec_mat)
+  norm_fac <- sqrt(outer(diag_vec, diag_vec, "*"))
+  norm_prec <- prec_mat/norm_fac
+  corr_mat  <- -norm_prec
+  diag(corr_mat) <- 1  
+  return(corr_mat)
+}
+
+get_corr <- function(cov_mat) {
+  # input: covariance matrix
+  # output: correlation matrix
+  if (!is.matrix(cov_mat) || nrow(cov_mat) != ncol(cov_mat)) {
+    stop("need square cov matrix")
+  }
+  diag_vec <- diag(cov_mat)
+  norm_fac <- sqrt(outer(diag_vec, diag_vec, "*"))
+  corr <- cov_mat/norm_fac
+  return(corr)
+}
+
+plot_corr_heatmap <- function(cormat, triangle = "upper", output_file = NULL,
+                              plt_title = NULL, mid=0) {
+  # helper function to plot covaraince matrix
+  if (triangle == "upper") {
+    cormat[lower.tri(cormat,diag = TRUE)] <- NA
+    matrix_tri <- cormat
+  } else if (triangle == "lower") {
+    cormat[upper.tri(cormat,diag = TRUE)] <- NA
+    matrix_tri <- cormat
+  } else {
+    stop("Invalid triangle argument. Use 'upper' or 'lower'.")
+  }
+  
+  melted_cormat <- melt(matrix_tri, na.rm = TRUE)
+  
+  heatmap <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                         midpoint = 0, space = "Lab", 
+                         name = "rho") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, 
+                                 size = 12, hjust = 1),
+      axis.text.y = element_text(size = 12)
+    ) +
+    coord_fixed() + ggtitle(plt_title) +
+    xlab("") +
+    ylab("")
+  
+  if (!is.null(output_file)) {
+    ggsave(output_file, plot = heatmap, width = 8, height = 6)
+    message("Heatmap saved to: ", output_file)
+  } else {
+    print(heatmap)
+  }
+}
