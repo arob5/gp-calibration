@@ -910,8 +910,43 @@ gpWrapper$methods(
   },
   
   
+  plot_resid_hist = function(X_new, Y_new, include_noise=TRUE, CI_prob=0.9, 
+                             normalize_resid=TRUE, pred_list=NULL, ...) {
+    # If `norm_resid = TRUE` then the normalized reiduals (y-mean)/sd are 
+    # plotted. Otherwise y-mean is plotted.
+    # Compute required predictive quantities if not already provided. 
+    # TODO: finish this method.
+    
+    if(!normalize_resid) .NotYetImplemented()
+    
+    if(is.null(pred_list)) {
+      pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=TRUE, 
+                                 include_noise=include_noise)
+    }
+    
+    CI_tail_prob <- 0.5 * (1-CI_prob)
+    plts <- vector(mode="list", length=.self$Y_dim)
+    
+    for(i in 1:.self$Y_dim) {
+      plot_title <- paste0("GP predictions: ", .self$Y_names[i])
+      resids <- Y_new[,i] - pred_list$mean[,i]
+      vars <- pred_list$var[,i]
+      idx <- (vars > .self$default_jitter)
+      resids <- resids[idx]
+      vars <- vars[idx]
+      resids <- resids / sqrt(vars)
+      
+      plts[[i]] <- ggplot(data.frame(x=resids)) + 
+                    geom_histogram(aes(x=x), ...)
+    }
+    
+    return(plts)
+  },
+
+    
   plot_pred = function(X_new, Y_new, include_CI=FALSE, include_noise=TRUE, 
                        CI_prob=0.9, pred_list=NULL, ...) {
+
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=include_CI, 
@@ -2138,6 +2173,13 @@ gpWrapperKerGP$methods(
                                             return_variance=TRUE)
           bounds_mat["marg_var","upper"] <- v
         }
+      }
+    }
+    
+    # Defining bound for the "c" parameter in the quadratic portion of the kernel.
+    if(kernel_name=="Gaussian_plus_Quadratic") {
+      if(is.na(bounds_mat["quad_offset","lower"])) {
+        bounds_mat["quad_offset","lower"] <- sqrt(.Machine$double.eps)
       }
     }
     

@@ -257,3 +257,43 @@ for(i in idcs) {
 ```
 
 
+
+```{r}
+hist_prior <- em_llik$emulator_model$plot_resid_hist(test_info_prior$input, 
+                                                     matrix(test_info_prior$llik,ncol=1), 
+                                                     pred_list=em_pred_list_prior)
+
+hist_post <- em_llik$emulator_model$plot_resid_hist(test_info_post$input, 
+                                                    matrix(test_info_post$llik,ncol=1), 
+                                                    pred_list=em_pred_list_post)
+
+plot(hist_prior[[1]])
+plot(hist_post[[1]])
+
+```
+
+```{r}
+llik_em2 <- readRDS(file.path(out_dir, "../2365236/em_llik.rds"))
+
+hist_prior2 <- llik_em2$emulator_model$plot_resid_hist(test_info_prior$input, 
+                                                     matrix(test_info_prior$llik,ncol=1))
+
+hist_post2 <- llik_em2$emulator_model$plot_resid_hist(test_info_post$input, 
+                                                    matrix(test_info_post$llik,ncol=1))
+
+plot(hist_prior2[[1]])
+plot(hist_post2[[1]])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

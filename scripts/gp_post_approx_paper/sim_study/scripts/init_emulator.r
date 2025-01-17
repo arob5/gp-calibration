@@ -128,14 +128,15 @@ construct_init_em <- function(seed) {
   
   print("-----> Fit emulator")
   
-  # Initialize GP for log-likelihood.
+  # Fit GP for log-likelihood.
   gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
-                           normalize_output=TRUE, scale_input=TRUE)
+                           scale_input=TRUE, normalize_output=TRUE)
+  gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
   
-  # Fit GP.
-  gp_obj$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, 
-             optimFun="nloptr::nloptr", trace=TRUE, multistart=10)
-  
+  # gp_obj$set_gp_prior("Gaussian_plus_Quadratic", "constant", 
+  #                     include_noise=FALSE)
+  gp_obj$fit(multistart=10, trace=TRUE)
+
   # Instantiate and save log-likelihood emulator object.
   em_llik <- llikEmulatorGP("em_llik", gp_obj, default_conditional=FALSE, 
                             default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
