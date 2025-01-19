@@ -658,12 +658,18 @@ gpWrapper$methods(
   
   
   sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1, 
-                    pred_list=NULL, adjustment="none", ...) {
+                    pred_list=NULL, adjustment="none", bounds=c(0,Inf), ...) {
     # If `pred_list` is passed, it should have all the required components. 
-    # Returns array of dimension (num input, num samp, Y_dim). 
+    # Returns array of dimension (num input, num samp, Y_dim). The "adjustment"
+    # argument can be used to truncate the Gaussian predictive distribution
+    # to satisfy the bounds given by `bounds`. `adjustment = "truncated"` will 
+    # sample from a truncated Gaussian, while `adjustment = "rectified"` will 
+    # sample from a rectified Gaussian (i.e., a sample exceeding the upper bound
+    # will be set to the upper bound, and likewise for the lower bound).
 
     n_input <- nrow(X_new)
     if(n_input < 2) use_cov <- FALSE
+    assert_that(length(bounds)==2L)
     
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
@@ -691,12 +697,16 @@ gpWrapper$methods(
       if(adjustment=="truncated") { # Zero left-truncated Gaussian. 
         samp[,,i] <- t(rtmvnorm(N_samp, mean=pred_list$mean[,i], 
                                 sigma=pred_list$cov[,,i], 
-                                lower=rep(0, nrow(X_new))))
+                                lower=rep(bounds[1], nrow(X_new)),
+                                upper=rep(bounds[2], nrow(X_new))))
       } else {
         samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i],
                                           as.matrix(pred_list$chol_cov[,,i]), 
                                           N_samp)
-        if(adjustment=="rectified") samp[,,i] <- pmax(samp[,,i], 0)
+        if(adjustment=="rectified") {
+          samp[,,i] <- pmax(samp[,,i], bounds[1])
+          samp[,,i] <- pmin(samp[,,i], bounds[2])
+        }
       }
     }
     
@@ -2122,7 +2132,7 @@ gpWrapperKerGP$methods(
     kernel_name <- .self$kernel$name
     mean_func_name <- .self$mean_func$name
     col_names <- c("init", "lower", "upper")
-    
+
     # Lengthscale bounds: currently just applies to "Gaussian" kernel, but this
     # could also apply to Matérn. For now, using default arguments in 
     # `get_lengthscale_bounds()`, and setting init lengthscale to the 15th 
@@ -2135,7 +2145,7 @@ gpWrapperKerGP$methods(
                                    include_one_half=FALSE, 
                                    convert_to_square=FALSE)
       ell_names <- paste0("ell_", .self$X_names)
-      ell_bounds <- t(ls$ell_bounds)[.self$X_names,]
+      ell_bounds <- t(ls$ell_bounds)[.self$X_names,,drop=FALSE]
       ell_init <- 0.2*ell_bounds[,"lower"] + 0.8*ell_bounds[,"upper"]
       ell_bounds <- cbind(init=ell_init, ell_bounds)
   

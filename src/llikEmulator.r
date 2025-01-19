@@ -161,16 +161,23 @@ llikEmulator$methods(
   initialize = function(llik_label, input_names, lik_description, 
                         emulator_description, dim_input,  emulator_model=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, 
+                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_bounds=NULL,
                         llik_pred_dist="unspecified", exact_llik=FALSE, ...) {
 
+    if(is.null(llik_bounds)) {
+      llik_bounds <- c(-Inf, Inf)
+    }
+    assert_that(length(llik_bounds)==2L)
+    assert_that(llik_bounds[2] >= llik_bounds[1])
+    
     initFields(llik_label=llik_label, input_names=input_names, 
                lik_description=lik_description, dim_input=dim_input, 
                emulator_description=emulator_description, 
                emulator_model=emulator_model, 
                default_conditional=default_conditional,
                default_normalize=default_normalize, 
-               use_fixed_lik_par=use_fixed_lik_par, 
+               use_fixed_lik_par=use_fixed_lik_par,
+               llik_bounds=llik_bounds,
                lik_par=lik_par, llik_pred_dist=llik_pred_dist, 
                exact_llik=exact_llik)  
         
@@ -1237,6 +1244,10 @@ is_llik_em <- function(model) {
 # for reference and validation purposes. Similar to  `normalize` and 
 # `conditional`, an error is thrown if the user tries to pass a likelihood 
 # parameter that differs from the fixed value set when initializing the class.
+#
+# Since this class does not know anything about the specific form of the 
+# likelihood, the user may optionally provide bounds on the log-likelihood 
+# that will be enforced by truncating GP predictive distribution.
 # -----------------------------------------------------------------------------
 
 llikEmulatorGP <- setRefClass(
@@ -1248,8 +1259,11 @@ llikEmulatorGP$methods(
   
   initialize = function(llik_lbl, gp_model, default_conditional, 
                         default_normalize, use_fixed_lik_par=TRUE, 
-                        lik_par=NULL, ...) {
-                        
+                        lik_par=NULL, llik_bounds=NULL, ...) {
+    # `llik_bounds`, if provided, should be a vector of length 2 storing lower
+    # and/or upper bounds on the log-likelihood. One-sided bounds can be 
+    # specified by setting one of the entries to Inf or -Inf.
+    
     # There are issues related to the use of `$copy()` method regarding missing 
     # arguments. The below line is somewhat of a hack that deals with this case.
     if(any(missing(llik_lbl), missing(gp_model), missing(default_conditional),
@@ -1270,7 +1284,7 @@ llikEmulatorGP$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, 
               input_names=gp_model$X_names, dim_input=gp_model$X_dim, 
               default_conditional=default_conditional, 
-              default_normalize=default_normalize, 
+              default_normalize=default_normalize, llik_bounds=llik_bounds,
               use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Generic log likelihood",
               emulator_description="GP directly emulating the log-likelihood.", 
@@ -1321,12 +1335,16 @@ llikEmulatorGP$methods(
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_noise=TRUE, ...) {
+                             include_noise=TRUE, adjustment="truncated", ...) {
+    # Default behavior is to sample from a truncated Gaussian to satisfy 
+    # the likelihood bounds.
     
     .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
                                 include_noise=include_noise, 
                                 N_samp=N_samp, 
-                                pred_list=em_pred_list, ...)[,,1,drop=FALSE]             
+                                pred_list=em_pred_list, 
+                                adjustment=adjustment, 
+                                bounds=.self$llik_bounds, ...)[,,1,drop=FALSE]             
   },
   
   update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
@@ -1336,13 +1354,13 @@ llikEmulatorGP$methods(
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
-                    use_cov=FALSE, include_noise=TRUE, 
+                    use_cov=FALSE, include_noise=TRUE, adjustment="truncated",
                     conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     .self$sample_emulator(input, em_pred_list, N_samp, use_cov, 
-                          include_noise, ...)[,,1]
+                          include_noise, adjustment=adjustment, ...)[,,1]
   }, 
   
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
@@ -1373,7 +1391,7 @@ llikEmulatorGP$methods(
     em_pred_list$trend <- drop(em_pred_list$trend)
     em_pred_list$cov <- em_pred_list$cov[,,1]
     em_pred_list$cross_cov <- em_pred_list$cross_cov[,,1]
-    
+ 
     return(em_pred_list)
   }, 
   
