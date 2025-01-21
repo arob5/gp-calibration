@@ -18,8 +18,8 @@ knitr::opts_chunk$set(echo=FALSE)
 # Settings
 experiment_tag <- "vsem"
 design_tag <- file.path("init_emulator", "LHS_250")
-run_id <- "test_run7"
-design_id <- "1018157756"
+run_id <- "mcmc_round1"
+design_id <- "1035720143"
 
 # Burn-in for exact MCMC samples.
 itr_start <- c(exact=150000L)
@@ -246,7 +246,10 @@ summarize_approx_mcmc("pm-ind", itr_start=itr_start_approx)
 summarize_approx_mcmc("pm-joint", itr_start=itr_start_approx, chain_idcs=2)
 ```
 
-
+```{r}
+test <- run_mcmc_chains("mcmc_gp_acc_prob_approx", llik_em, n_chain=1L,
+                        par_prior=par_prior, par_init=par_init)
+```
 
 
 

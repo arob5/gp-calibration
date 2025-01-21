@@ -408,12 +408,20 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
   # Currently only marginal acceptance probability approximation is supported.
   assert_that(mode %in% "marginal")
   
-  # Objects to store samples and auxiliary informantion.
+  # Objects to store samples and auxiliary information.
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
-  chain_info <- matrix(nrow=n_itr, ncol=d+2)
+  chain_info <- matrix(nrow=n_itr, ncol=d+3)
   colnames(par_samp) <- llik_em$input_names
-  colnames(chain_info) <- c("acc_prob", "lprior", llik_em$input_names)
+  colnames(chain_info) <- c("acc_prob", "lprior", "accept_rate", 
+                            llik_em$input_names)
+  
+  # For algorithm analysis, store GP predictive quantities used in computing 
+  # the acceptance probability approximation.
+  gp_pred_quantities <- c("mean_curr", "mean_prop", "var_curr", "var_prop",
+                          "cov", "acc_prob")
+  gp_pred <- matrix(NA, nrow=n_itr, ncol=6L, 
+                    dimnames=list(NULL, gp_pred_quantities))
 
   # At present, this function assumes that the likelihood parameters are fixed.
   learn_sig2 <- FALSE
@@ -435,7 +443,9 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
   times_adapted <- 0L
   
   # Store information at iteration zero (no accept prob computed yet).
-  chain_info[1,] <- c(NA, lprior_curr, 
+  alpha <- NA
+  accept_rate <- NA
+  chain_info[1,] <- c(alpha, lprior_curr, accept_rate,
                       exp(log_scale_prop) * sqrt(diag(cov_prop)))
   
   # Variable to store error condition, if it occurs.
@@ -455,13 +465,19 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
         # design bounds). 
         if(is.infinite(lprior_prop)) {
           par_samp[itr,] <- par_samp[itr-1,]
+          alpha <- 0
         } else {
           # Compute acceptance probability approximation.
-          alpha <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, 
-                                             mode=mode, use_joint=use_joint,
-                                             lik_par_val=sig2_curr,
-                                             lprior_curr=lprior_curr,
-                                             lprior_prop=lprior_prop, ...)
+          alpha_list <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, 
+                                                  mode=mode, use_joint=use_joint,
+                                                  lik_par_val=sig2_curr,
+                                                  lprior_curr=lprior_curr,
+                                                  lprior_prop=lprior_prop, ...)
+          
+          alpha <- alpha_list$acc_prob
+          pred <- alpha_list$llik_pred_list
+          gp_pred[itr,] <- c(pred$mean[1], pred$mean[2], pred$var[1], 
+                             pred$var[2], pred$cov[1,2], alpha)
           
           # Accept-Reject step.
           if(runif(1) <= alpha) {
@@ -477,12 +493,13 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
         # Adapt proposal covariance matrix and scaling term.
         if(adapt && (((itr-1) %% adapt_interval) == 0)) {
           times_adapted <- times_adapted + 1L
+          accept_rate <- accept_count/adapt_interval
           adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, log_scale_prop=log_scale_prop, 
                                               times_adapted=times_adapted, 
                                               adapt_cov=adapt_cov_prop, 
                                               adapt_scale=adapt_scale_prop,
                                               samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
-                                              accept_rate=accept_count/adapt_interval, accept_rate_target, 
+                                              accept_rate=accept_rate, accept_rate_target, 
                                               adapt_factor_exponent, adapt_factor_numerator)
           cov_prop <- adapt_list$cov
           log_scale_prop <- adapt_list$log_scale
@@ -491,7 +508,7 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
         }
         
         # Store chain info for current step.
-        chain_info[itr,] <- c(chain_info[itr-1,1], lprior_curr, 
+        chain_info[itr,] <- c(alpha, lprior_curr, accept_rate,
                               exp(log_scale_prop) * sqrt(diag(cov_prop)))
       }
       
@@ -505,6 +522,7 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
   return(list(samp=list(par=par_samp, sig2=sig2_samp), 
               info=list(dens=chain_info[,1:2], 
                         prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
+              gp_pred=gp_pred,
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, par_init=par_init, condition=err))
@@ -799,6 +817,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
       ic_settings[c("llik_em","par_prior","n_ic")] <- list(llik_em, par_prior, n_chain)
       par_init <- do.call("get_mcmc_ic", ic_settings)
     } else {
+      if(!is.matrix(par_init)) par_init <- matrix(par_init, nrow=1)
       assert_that(nrow(par_init) == n_chain)
     }
     par_init_list <- lapply(1:n_chain, function(i) par_init[i,])
@@ -1108,10 +1127,52 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
   # log_w <- lpost_dens(samp) - calc_lprior_dens(samp, par_prior)
 }
 
+
 # ------------------------------------------------------------------------------
 # Metropolis-Hastings acceptance probability approximations using 
 # log-likelihood emulators. 
 # ------------------------------------------------------------------------------
+
+calc_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em,
+                                    lik_par_val=NULL, llik_exact=NULL, 
+                                    llik_pred_list=NULL, acc_prob_tag="mean", 
+                                    ...) {
+  
+  
+  
+
+}
+
+get_acc_prob_approx_comparison <- function(input_curr, input_prop, llik_em,
+                                           lik_par_val=NULL, llik_exact=NULL, 
+                                           llik_pred_list=NULL, 
+                                           acc_prob_tags="mean", 
+                                           quantile_probs=c(0.7, 0.9), ...) {
+  # Only a single `lik_par_val` is allowed. `input_curr` and `input_prop`
+  # can both be vectors, and they must be of equal length. `acc_prob_tags`
+  # can be "all" to include all tags. If tag "exact" is included then 
+  # "llik_exact" object must be provided.
+  #
+  # 
+  # TODO: will be interesting to run this: (i.) for values sampled from prior; 
+  # (ii.) for vlaues sampled from true posterior, and (iii.) for current values
+  # from true posterior and proposed values from prior (or for this latter one
+  # could consider the hyperrectangle defined by the extent of the exact 
+  # posterior samples, and only sample proposed values falling outside of this 
+  # hyperrectangle). 
+  #
+  # TODO: want this to return a matrix with columns:
+  # all par names current and proposed values, gp pred mean/var at current 
+  # and proposed values, gp cov, exact acc prob, and all the different 
+  # acc prob combinations. 
+  
+  if(acc_prob_tags=="all") {
+    acc_prob_tags <- c("exact", "mean", "marg", "alpha-marg-ind", 
+                       "alpha-marg-joint", "quantile")
+  }
+  
+}
+
 
 get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em, 
                                       mode="marginal", use_joint=TRUE,
@@ -1130,17 +1191,18 @@ get_gp_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em,
   if(mode == "mean") {
     .NotYetImplemented()
   } else if(mode == "marginal") {
-    alpha <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, use_joint, 
-                                  lik_par_val=lik_par_val, 
-                                  conditional=conditional, normalize=normalize, 
-                                  llik_pred_list=llik_pred_list, 
-                                  lprior_curr=lprior_curr, 
-                                  lprior_prop=lprior_prop, ...)
+    alpha_list <- gp_acc_prob_marginal(input_curr, input_prop, llik_em, use_joint, 
+                                       lik_par_val=lik_par_val, 
+                                       conditional=conditional, 
+                                       normalize=normalize, 
+                                       llik_pred_list=llik_pred_list, 
+                                       lprior_curr=lprior_curr, 
+                                       lprior_prop=lprior_prop, ...)
   } else {
     stop("Invalid `approx_type` ", alpha_approx_type)
   }
   
-  return(alpha)
+  return(alpha_list)
 }
 
 
@@ -1179,9 +1241,9 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em,
   # s^2 in r ~ LN(m, s^2). The variance depends on whether or not the joint 
   # dist is used. 
   # TODO: update the cov indexing below once this is changed. 
-  m <- lprior_prop - lprior_curr + drop(llik_pred_list$mean)[2] - drop(llik_pred_list$mean)[1]
+  m <- lprior_prop - lprior_curr + llik_pred_list$mean[2] - llik_pred_list$mean[1]
   s2 <- sum(llik_pred_list$var)
-  if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2,1]
+  if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2]
 
   # Marginal acceptance ratio approximation. 
   return(exp(m + 0.5*s2))
@@ -1221,18 +1283,18 @@ gp_acc_prob_marginal <- function(input_curr, input_prop, llik_em,
   # m and s^2 in r ~ LN(m, s^2). The variance depends on whether or not the 
   # joint dist is used.
   # TODO: update the cov indexing below once this is changed. 
-  m <- lprior_prop - lprior_curr + drop(llik_pred_list$mean)[2] - drop(llik_pred_list$mean)[1]
+  m <- lprior_prop - lprior_curr + llik_pred_list$mean[2] - llik_pred_list$mean[1]
   s2 <- sum(llik_pred_list$var)
-  if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2,1]
+  if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2]
   
   # Marginal acceptance probability is a linear combination of 1 and the 
   # marginal ratio approximation.
   log_acc_ratio_marginal <- m + 0.5*s2
   lw1 <- log(pnorm(m/sqrt(s2)))
   lw2 <- log(pnorm(-(m+s2)/sqrt(s2)))
-  acc_ratio_marginal <- exp(matrixStats::logSumExp(c(lw1, lw2+log_acc_ratio_marginal)))
+  acc_prob_marginal <- exp(matrixStats::logSumExp(c(lw1, lw2+log_acc_ratio_marginal)))
   
-  return(acc_ratio_marginal)
+  return(list(acc_prob=acc_prob_marginal, llik_pred_list=llik_pred_list))
 }
 
 

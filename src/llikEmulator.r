@@ -161,16 +161,23 @@ llikEmulator$methods(
   initialize = function(llik_label, input_names, lik_description, 
                         emulator_description, dim_input,  emulator_model=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, 
+                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_bounds=NULL,
                         llik_pred_dist="unspecified", exact_llik=FALSE, ...) {
 
+    if(is.null(llik_bounds)) {
+      llik_bounds <- c(-Inf, Inf)
+    }
+    assert_that(length(llik_bounds)==2L)
+    assert_that(llik_bounds[2] >= llik_bounds[1])
+    
     initFields(llik_label=llik_label, input_names=input_names, 
                lik_description=lik_description, dim_input=dim_input, 
                emulator_description=emulator_description, 
                emulator_model=emulator_model, 
                default_conditional=default_conditional,
                default_normalize=default_normalize, 
-               use_fixed_lik_par=use_fixed_lik_par, 
+               use_fixed_lik_par=use_fixed_lik_par,
+               llik_bounds=llik_bounds,
                lik_par=lik_par, llik_pred_dist=llik_pred_dist, 
                exact_llik=exact_llik)  
         
@@ -507,7 +514,7 @@ llikEmulator$methods(
                                       lik_par_val=NULL, 
                                       conditional=default_conditional,
                                       normalize=default_normalize, 
-                                      include_nugget=TRUE, log_scale=TRUE, ...) {
+                                      include_noise=TRUE, log_scale=TRUE, ...) {
     .NotYetImplemented()  
   },
   
@@ -515,7 +522,7 @@ llikEmulator$methods(
                                     lik_par_val=NULL, 
                                     conditional=default_conditional,
                                     normalize=default_normalize, 
-                                    include_nugget=TRUE, log_scale=TRUE, ...) {
+                                    include_noise=TRUE, log_scale=TRUE, ...) {
     .NotYetImplemented()  
   },
   
@@ -523,7 +530,7 @@ llikEmulator$methods(
                                       lik_par_val=NULL, alpha=0.9,
                                       conditional=default_conditional,
                                       normalize=default_normalize, 
-                                      include_nugget=TRUE, log_scale=TRUE, ...) {
+                                      include_noise=TRUE, log_scale=TRUE, ...) {
     .NotYetImplemented()
   },
   
@@ -531,7 +538,7 @@ llikEmulator$methods(
                                   lik_par_val=NULL, 
                                   conditional=default_conditional,
                                   normalize=default_normalize, 
-                                  include_nugget=TRUE, log_scale=TRUE, ...) {
+                                  include_noise=TRUE, log_scale=TRUE, ...) {
     # `Mean approx` means that the `emulator_model` predictive mean is computed
     # at inputs `input`, then the predictive mean is passed to `assemble_llik()` 
     # and the result is exponentiated (if `log_scale` is FALSE). This implements 
@@ -543,7 +550,7 @@ llikEmulator$methods(
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 
                                              return_var=FALSE, 
-                                             include_nugget=include_nugget, ...)
+                                             include_noise=include_noise, ...)
     } else {
       assert_that(!is.null(em_pred_list$mean))
     }
@@ -557,7 +564,7 @@ llikEmulator$methods(
   },
   
   calc_expected_lik_cond_var = function(input_eval, input_cond, 
-                                        include_nugget=TRUE, log_scale=TRUE, 
+                                        include_noise=TRUE, log_scale=TRUE, 
                                         plugin=FALSE, ...) {
     # Under the default setting `plugin = FALSE`, computes the log of 
     # E_l Var[exp(L(input_eval))|L(input_cond)=l]
@@ -586,7 +593,7 @@ llikEmulator$methods(
                                log_scale=TRUE, method="pm_std_dev", N_std_dev=2, 
                                CI_prob=0.9, conditional=default_conditional, 
                                normalize=default_normalize, 
-                               include_nugget=TRUE, ...) {
+                               include_noise=TRUE, ...) {
     # Options for `target`: "llik" and "lik". 
     # Options for `method`: "pm_std_dev" (pm = "plus-minus"), "CI". The former 
     # computes the bounds by adding and subtracting `N_std_dev` standard 
@@ -655,7 +662,7 @@ llikEmulator$methods(
                                                   conditional=conditional, 
                                                   normalize=normalize, 
                                                   lower_tail=FALSE, 
-                                                  include_nugget=include_nugget, ...)
+                                                  include_noise=include_noise, ...)
       interval_list$upper <- .self$calc_quantiles(p=CI_tail_prob, input=input, 
                                                   lik_par_val=lik_par_val, 
                                                   em_pred_list=em_pred_list, 
@@ -663,7 +670,7 @@ llikEmulator$methods(
                                                   conditional=conditional,
                                                   normalize=normalize, 
                                                   lower_tail=TRUE, 
-                                                  include_nugget=include_nugget, ...)
+                                                  include_noise=include_noise, ...)
     }
     
     return(interval_list)
@@ -1016,7 +1023,7 @@ llikEmulator$methods(
                                 lik_par_val=NULL, include_design=FALSE, 
                                 llik_func_true=NULL, include_interval=TRUE,   
                                 interval_method="pm_std_dev", N_std_dev=2, 
-                                CI_prob=0.9, include_nugget=TRUE, 
+                                CI_prob=0.9, include_noise=TRUE, 
                                 plot_type="llik", approx_type="mean", 
                                 log_scale=TRUE, input_bounds=NULL, 
                                 conditional=default_conditional, 
@@ -1142,7 +1149,7 @@ llikEmulator$methods(
       if(plot_type=="llik") {
         pred_list <- .self$predict(inputs, lik_par_val=lik_par_val, 
                                    return_var=include_interval, 
-                                   include_nugget=include_nugget, 
+                                   include_noise=include_noise, 
                                    conditional=conditional, 
                                    normalize=normalize, ...)
         list_sel <- "mean"
@@ -1237,6 +1244,10 @@ is_llik_em <- function(model) {
 # for reference and validation purposes. Similar to  `normalize` and 
 # `conditional`, an error is thrown if the user tries to pass a likelihood 
 # parameter that differs from the fixed value set when initializing the class.
+#
+# Since this class does not know anything about the specific form of the 
+# likelihood, the user may optionally provide bounds on the log-likelihood 
+# that will be enforced by truncating GP predictive distribution.
 # -----------------------------------------------------------------------------
 
 llikEmulatorGP <- setRefClass(
@@ -1248,8 +1259,11 @@ llikEmulatorGP$methods(
   
   initialize = function(llik_lbl, gp_model, default_conditional, 
                         default_normalize, use_fixed_lik_par=TRUE, 
-                        lik_par=NULL, ...) {
-                        
+                        lik_par=NULL, llik_bounds=NULL, ...) {
+    # `llik_bounds`, if provided, should be a vector of length 2 storing lower
+    # and/or upper bounds on the log-likelihood. One-sided bounds can be 
+    # specified by setting one of the entries to Inf or -Inf.
+    
     # There are issues related to the use of `$copy()` method regarding missing 
     # arguments. The below line is somewhat of a hack that deals with this case.
     if(any(missing(llik_lbl), missing(gp_model), missing(default_conditional),
@@ -1270,7 +1284,7 @@ llikEmulatorGP$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, 
               input_names=gp_model$X_names, dim_input=gp_model$X_dim, 
               default_conditional=default_conditional, 
-              default_normalize=default_normalize, 
+              default_normalize=default_normalize, llik_bounds=llik_bounds,
               use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Generic log likelihood",
               emulator_description="GP directly emulating the log-likelihood.", 
@@ -1321,12 +1335,16 @@ llikEmulatorGP$methods(
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_nugget=TRUE, ...) {
+                             include_noise=TRUE, adjustment="truncated", ...) {
+    # Default behavior is to sample from a truncated Gaussian to satisfy 
+    # the likelihood bounds.
     
     .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
-                                include_nugget=include_nugget, 
+                                include_noise=include_noise, 
                                 N_samp=N_samp, 
-                                pred_list=em_pred_list, ...)[,,1,drop=FALSE]             
+                                pred_list=em_pred_list, 
+                                adjustment=adjustment, 
+                                bounds=.self$llik_bounds, ...)[,,1,drop=FALSE]             
   },
   
   update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
@@ -1336,32 +1354,45 @@ llikEmulatorGP$methods(
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
-                    use_cov=FALSE, include_nugget=TRUE, 
+                    use_cov=FALSE, include_noise=TRUE, adjustment="truncated",
                     conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     .self$sample_emulator(input, em_pred_list, N_samp, use_cov, 
-                          include_nugget, ...)[,,1]
+                          include_noise, adjustment=adjustment, ...)[,,1]
   }, 
   
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, include_nugget=TRUE, ...) {
+                     normalize=default_normalize, include_noise=TRUE, ...) {
     # Log-likelihood emulator mean/var/cov predictions. Since the GP directly  
-    # emulates the log-likelihood, then simply return the GP predictions directly. 
+    # emulates the log-likelihood, then simply return the GP predictions 
+    # directly. The only modification is to flatten the mean/var/cov predictions
+    # since the gpWrapper predictions can be multi-output, but the predictions
+    # here will always be univariate.
     
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+
+    if(is.null(em_pred_list)) {
+      em_pred_list <- .self$emulator_model$predict(get_input(input), 
+                                                   return_mean=return_mean, 
+                                                   return_var=return_var,
+                                                   return_cov=return_cov, 
+                                                   return_cross_cov=return_cross_cov,
+                                                   X_cross=input_cross, 
+                                                   include_noise=include_noise, ...)
+    }
     
-    if(!is.null(em_pred_list)) return(em_pred_list)
-    
-    .self$emulator_model$predict(get_input(input), return_mean=return_mean, 
-                                 return_var=return_var,
-                                 return_cov=return_cov, 
-                                 return_cross_cov=return_cross_cov,
-                                 X_cross=input_cross, 
-                                 include_nugget=include_nugget, ...)
+    # Flatten predictions.
+    em_pred_list$mean <- drop(em_pred_list$mean)
+    em_pred_list$var <- drop(em_pred_list$var)
+    em_pred_list$trend <- drop(em_pred_list$trend)
+    em_pred_list$cov <- em_pred_list$cov[,,1]
+    em_pred_list$cross_cov <- em_pred_list$cross_cov[,,1]
+ 
+    return(em_pred_list)
   }, 
   
   predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, 
@@ -1369,7 +1400,7 @@ llikEmulatorGP$methods(
                          return_cross_cov=FALSE, input_cross=NULL, 
                          conditional=default_conditional, 
                          normalize=default_normalize, 
-                         include_nugget=TRUE, log_scale=FALSE, ...) {
+                         include_noise=TRUE, log_scale=FALSE, ...) {
     # Likelihood emulator mean/var/cov predictions. For this class (under direct 
     # GP emulation of the log-likelihood), the likelihood emulator is a 
     # log-normal process. Thus, the GP log-likelihood predictions can simply be 
@@ -1386,7 +1417,7 @@ llikEmulatorGP$methods(
                                return_var=TRUE, return_cov=return_cov,  
                                return_cross_cov=return_cross_cov, 
                                input_cross=input_cross, conditional=conditional, 
-                               normalize=normalize, include_nugget=include_nugget, ...)
+                               normalize=normalize, include_noise=include_noise, ...)
                                
     convert_Gaussian_to_LN(mean_Gaussian=llik_pred$mean, 
                            var_Gaussian=llik_pred$var, cov_Gaussian=llik_pred$cov, 
@@ -1399,21 +1430,21 @@ llikEmulatorGP$methods(
                                       lik_par_val=NULL, 
                                       conditional=default_conditional, 
                                       normalize=default_normalize,
-                                      include_nugget=TRUE, log_scale=TRUE, ...) {
+                                      include_noise=TRUE, log_scale=TRUE, ...) {
     
     selector <- ifelse(log_scale, "log_mean", "mean")
     
     .self$predict_lik(input, lik_par_val=lik_par_val, em_pred_list=em_pred_list, 
                       return_mean=TRUE, return_var=FALSE, conditional=conditional, 
                       normalize=normalize, log_scale=log_scale, 
-                      include_nugget=include_nugget, ...)[[selector]]
+                      include_noise=include_noise, ...)[[selector]]
   },
   
   calc_lik_quantile_approx = function(em_pred_list=NULL, input=NULL, alpha=0.9,  
                                       lik_par_val=NULL,
                                       conditional=default_conditional, 
                                       normalize=default_normalize,
-                                      include_nugget=TRUE, log_scale=TRUE, ...) {
+                                      include_noise=TRUE, log_scale=TRUE, ...) {
     # Deterministic likelihood approximation that is given by the alpha
     # quantile of the likelihood surrogate. Since the likelihood surrogate is 
     # log-normally distributed in this case, this function simply computes the 
@@ -1440,7 +1471,7 @@ llikEmulatorGP$methods(
                             llik_pred_list=NULL, target="llik", 
                             conditional=default_conditional, 
                             normalize=default_normalize, 
-                            lower_tail=TRUE, include_nugget=TRUE, ...) {
+                            lower_tail=TRUE, include_noise=TRUE, ...) {
     # The log-likelihood emulator distribution is Gaussian, and the likelihood 
     # emulator is log-normal. Both the Gaussian and Log-normal quantile functions 
     # are parameterized in terms of the underlying Gaussian mean/variance, so 
@@ -1473,7 +1504,7 @@ llikEmulatorGP$methods(
   }, 
   
   
-  calc_expected_lik_cond_var = function(input_eval, input_cond, include_nugget=TRUE, 
+  calc_expected_lik_cond_var = function(input_eval, input_cond, include_noise=TRUE, 
                                         log_scale=TRUE, plugin=FALSE, ...) {
     # Since the emulator model directly emulates the log-likelihood in this 
     # class, the  options `plugin = FALSE` and `plugin = TRUE` are equivalent 
@@ -1481,7 +1512,7 @@ llikEmulatorGP$methods(
     # `emulator_model` is dispatched. 
     
     .self$emulator_model$calc_expected_exp_cond_var(input_eval, input_cond, 
-                                                    include_nugget=include_nugget, 
+                                                    include_noise=include_noise, 
                                                     log_scale=log_scale, ...)
   }
 )
@@ -1751,7 +1782,7 @@ llikEmulatorGPFwdGauss$methods(
     # (M input vectors). Returns array of dimension (M, N_samp, N_output). 
     
     emulator_model$sample(get_input(input), use_cov=use_cov, 
-                          include_nugget=include_nugget, 
+                          include_noise=include_noise, 
                           N_samp=N_samp, pred_list=em_pred_list, ...)
   },
   
@@ -1915,13 +1946,13 @@ llikEmulatorGPFwdGaussDiag$methods(
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_nugget=TRUE, ...) {
+                             include_noise=TRUE, ...) {
     # Sample the forward model emulator at specified inputs. `input` has  
     # dimension (M,D) (where M is the number of inputs). Returns array of 
     # dimension (M, N_samp, N_output). 
     
     .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
-                                include_nugget=include_nugget, 
+                                include_noise=include_noise, 
                                 N_samp=N_samp, pred_list=em_pred_list, ...)
   },
   
@@ -1950,7 +1981,7 @@ llikEmulatorGPFwdGaussDiag$methods(
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional,  
                      normalize=default_normalize, log_scale=FALSE, 
-                     include_nugget=TRUE, ...) {
+                     include_noise=TRUE, ...) {
     
     if(return_cross_cov || return_cov) {
       stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict()`.")
@@ -1962,7 +1993,7 @@ llikEmulatorGPFwdGaussDiag$methods(
                                              return_var=TRUE, return_cov=return_cov, 
                                              return_cross_cov=return_cross_cov, 
                                              input_cross=input_cross, 
-                                             include_nugget=include_nugget, ...)
+                                             include_noise=include_noise, ...)
     } else {
       assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$var), 
                   msg=paste0("Log-likelihood predictive quantities require ", 
@@ -2004,7 +2035,7 @@ llikEmulatorGPFwdGaussDiag$methods(
                          return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                          input_cross=NULL, conditional=default_conditional,  
                          normalize=default_normalize, log_scale=FALSE, 
-                         include_nugget=TRUE, ...) {
+                         include_noise=TRUE, ...) {
     # The mean/variance of the likelihood emulator in this case are available 
     # in closed-form, though note that the distribution is not known, so the 
     # mean and variance might not provide a full characterization of the 
@@ -2028,7 +2059,7 @@ llikEmulatorGPFwdGaussDiag$methods(
                                              return_var=TRUE, return_cov=return_cov, 
                                              return_cross_cov=return_cross_cov, 
                                              input_cross=input_cross, 
-                                             include_nugget=include_nugget, ...)
+                                             include_noise=include_noise, ...)
     } else {
       assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$var), 
                   msg=paste("Likelihood predictive quantities require forward",
@@ -2067,16 +2098,16 @@ llikEmulatorGPFwdGaussDiag$methods(
   
   calc_lik_marginal_approx = function(input, lik_par_val=NULL, em_pred_list=NULL, 
                                       conditional=default_conditional, normalize=default_normalize,
-                                      log_scale=TRUE, include_nugget=TRUE, ...) {
+                                      log_scale=TRUE, include_noise=TRUE, ...) {
     
     .self$predict_lik(input, lik_par_val=lik_par_val, em_pred_list=em_pred_list, 
                       return_mean=TRUE, return_var=FALSE, conditional=conditional,  
                       normalize=normalize, log_scale=FALSE, 
-                      include_nugget=include_nugget, ...)$mean
+                      include_noise=include_noise, ...)$mean
   },
   
   calc_expected_lik_cond_var = function(input_eval, input_cond, lik_par_val=NULL,
-                                        include_nugget=TRUE, log_scale=TRUE, plugin=FALSE, 
+                                        include_noise=TRUE, log_scale=TRUE, plugin=FALSE, 
                                         conditional=default_conditional, 
                                         normalize=default_normalize, ...) {
     assert_that(plugin, 
@@ -2528,20 +2559,20 @@ llikEmulatorMultGausGP$methods(
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_nugget=TRUE, adjustment="rectified", ...) {
+                             include_noise=TRUE, adjustment="rectified", ...) {
     
     emulator_model$sample(get_input(input), use_cov=use_cov, 
-                          include_nugget=include_nugget, 
+                          include_noise=include_noise, 
                           N_samp=N_samp, adjustment=adjustment, 
                           pred_list=em_pred_list)[,,1,drop=FALSE]             
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
-                    use_cov=FALSE, include_nugget=TRUE, 
+                    use_cov=FALSE, include_noise=TRUE, 
                     conditional=default_conditional, normalize=default_normalize, ...) {
     # Sample SSR. 
     samp <- sample_emulator(input, em_pred_list, N_samp, use_cov, 
-                            include_nugget, ...)
+                            include_noise, ...)
     
     # Compute unnormalized or normalized log-likelihood. 
     assemble_llik(samp, lik_par_val, conditional, normalize)
@@ -2550,12 +2581,12 @@ llikEmulatorMultGausGP$methods(
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
                      return_var=TRUE,  return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, include_nugget=TRUE, ...) {
+                     normalize=default_normalize, include_noise=TRUE, ...) {
     
     if(is.null(em_pred_list)) {
       pred_list <- .self$emulator_model$predict(get_input(input), return_mean=return_mean, return_var=return_var,
                                                 return_cov=return_cov, return_cross_cov=return_cross_cov,
-                                                X_cross=input_cross, include_nugget=include_nugget, ...)
+                                                X_cross=input_cross, include_noise=include_noise, ...)
     } else {
       pred_list <- em_pred_list
     }
@@ -2581,7 +2612,7 @@ llikEmulatorMultGausGP$methods(
   
   calc_quantiles = function(p, input=NULL, lik_par_val=NULL, em_pred_list=NULL, llik_pred_list=NULL,
                             target="llik", conditional=default_conditional, normalize=default_normalize, 
-                            lower_tail=TRUE, include_nugget=TRUE, ...) {
+                            lower_tail=TRUE, include_noise=TRUE, ...) {
     # The log-likelihood emulator distribution is Gaussian, and the likelihood emulator is log-normal. 
     # Both the Gaussian and Log-normal quantile functions are parameterized in terms of the underlying 
     # Gaussian mean/variance, so only `llik_pred_list` is required, regardless of whether `target`
@@ -2785,9 +2816,9 @@ llikSumEmulatorMultGausGP$methods(
   },
   
   
-  sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_nugget=TRUE, sum_output_llik=TRUE,
+  sample = function(input, sig2, N_samp=1, use_cov=FALSE, include_noise=TRUE, sum_output_llik=TRUE,
                     conditional=default_conditional, normalize=FALSE, ...) {
-    samp <- emulator_model$sample(input, use_cov=use_cov, include_nugget=include_nugget, N_samp=N_samp)
+    samp <- emulator_model$sample(input, use_cov=use_cov, include_noise=include_noise, N_samp=N_samp)
     
     for(j in 1:N_output) {
       samp[,,j] <- -0.5 * samp[,,j] / sig2[j]
