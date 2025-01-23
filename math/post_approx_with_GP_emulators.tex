@@ -62,6 +62,32 @@
 
 % Introduction 
 \section{Introduction}
+Owing to increases in computing resources, there is growing interest in performing Bayesian inference in settings 
+where evaluation of the likelihood function incurs significant computational expense. This situation commonly 
+arises across various disciplines in the physical and engineering sciences, whereby evaluating the likelihood 
+implies performing a complex computer simulation. Such computer models often derive from systems of differential 
+equations, with the goal being to calibrate (i.e., estimate) unknown parameters characterizing the physical model.
+To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
+posterior distribution over model parameters while minimizing the number of required likelihood evaluations. 
+A popular class of methods involves replacing either the computer model or the likelihood function with a statistical 
+surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
+
+In the present work we focus on the use of Gaussian processes (GPs) for this task, which have been widely used for the 
+calibration of complex computer codes. GP predictions come in the form of a probability distribution, implying that GP 
+emulators induce a stochastic approximation of the likelihood function. This fact offers the potential for propagating the 
+additional uncertainty introduced by the emulator to the approximate posterior distribution, but also introduces the challenge 
+of defining an adequate posterior approximation using the stochastic likelihood surrogate. This question has gained recent 
+attention, and a wide variety of (mostly ad hoc) approaches have been proposed. In addition to suggesting a new class of 
+posterior approximation algorithms, our aim is to provide a comprehensive review of existing methods and their implications 
+with regards to uncertainty quantification.
+
+[paragraph on llik vs fwd model emulation] As we will demonstrate, the propagation of GP uncertainty depends heavily 
+on which component of the likelihood function is being emulated. Existing literature tends to focus on one of two approaches:
+(i.) emulation of the underlying forward model; and (ii.) direct emulation of the log-likelihood. Both methods have their 
+merits and drawbacks; our intention is not to argue universally in favor of one approach, but rather to illustrate the 
+implications of this choice in defining a GP-induced posterior approximation. [maybe briefly mention the types of approximations and what we propsose] 
+
+[paragraph on sequential design]
 
 % Setting and Background 
 \section{Setting and Background}
