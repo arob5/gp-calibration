@@ -1,0 +1,83 @@
+---
+title: "Comparing Approximations of Likelihood Ratio"
+author: "Andrew Roberts"
+date: "2025-01-23"
+output: html_document
+---
+
+This file compares various Gaussian process (GP) emulator induced approximations
+of the likelihood ratio
+$$
+\lambda(u, \tilde{u}) = \frac{\exp\{\mathcal{L}(\tilde{u})\}}{\exp\{\mathcal{L}(u)\}}
+$$
+where $\mathcal{L}(u)$ is a log-likelihood evaluated at a parameter value 
+$u$. Comparing approximations of the likelihood offers limited insight, owing 
+to the fact that it does not account for the normalizing constant. We are 
+really interested in differences in the posterior approximation induced by 
+an approximation of the likelihood in a Bayesian inverse problem. Therefore, 
+we consider the likelihood ratio, which gives information on the relative 
+weighting between two locations in parameter space.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+# Filepath definitions.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+```{r}
+# Load inverse problem setup information.
+inv_prob <- get_vsem_test_1()
+```
+
+```{r}
+# Create an initial input design, and design of test points.
+n_design <- 200L
+n_design_test <- 500L
+design_method <- "LHS"
+
+design_info <- get_init_design_list(inv_prob, design_method, n_design)
+test_info <- get_init_design_list(inv_prob, design_method, n_design_test)
+```
+
+```{r}
+# Fit GP for log-likelihood.
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
+                          default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                          use_fixed_lik_par=TRUE)
+```
+
+
+```{r}
+
+calc_lik_ratio_approx(test_info$input[1,], test_info$input[2,], llik_em, 
+                      methods="all", log_scale=TRUE, quantile_prob=0.9)
+
+```
+
+
+
+
+
+
+
+

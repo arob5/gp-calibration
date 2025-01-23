@@ -211,6 +211,9 @@ em_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 ```
 
 ```{r}
+# Truncating the log-likelihood predictive distribution.
+
+# Compute truncated Gaussian moments.
 sig2 <- em_llik$get_lik_par()
 upper_bound <- -0.5 * log(2*pi*sig2)
 
@@ -219,13 +222,21 @@ em_pred_llik_trunc$mean <- etruncnorm(a=-Inf, b=upper_bound,
                                       mean=em_pred_llik$mean, 
                                       sd=sqrt(em_pred_llik$var))
 
-# TODO: add quantiles as well and plot the llik truncated predictive 
-# distribution. Then plot the expected likelihood (i.e., the marginal prediction)
-# using Gunderson's formula for truncated log-normal. Need to make sure 
-# I adapt the formula properly to the upper bound setting.
+em_pred_llik_trunc$lower <- qtruncnorm(p=0.05, a=-Inf, b=upper_bound, 
+                                       mean=em_pred_llik$mean, 
+                                       sd=sqrt(em_pred_llik$var))
+em_pred_llik_trunc$upper <- qtruncnorm(p=0.95, a=-Inf, b=upper_bound, 
+                                       mean=em_pred_llik$mean, 
+                                       sd=sqrt(em_pred_llik$var))
+
+# llik distribution: truncated Gaussian.
+plot_pred_1d_helper(drop(test_info$input), pred_mean=em_pred_llik_trunc$mean,
+                    CI_lower=em_pred_llik_trunc$lower, 
+                    CI_upper=em_pred_llik_trunc$upper, y_new=test_info$llik, 
+                    X_design=drop(design_info$input), y_design=design_info$llik,
+                    design_color=design_color, design_pt_size=design_pt_size) 
 
 ```
-
 
 ```{r}
 #
@@ -291,8 +302,9 @@ plot(plt_llik_dist_fwd)
 plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
                                           plot_type="lik", include_interval=FALSE, 
                                           true_llik=test_info$llik, CI_prob=CI_prob,
-                                          line_thickness=line_thickness, log_scale=TRUE,
-                                          design_color=design_color, design_pt_size=design_pt_size, 
+                                          line_thickness=line_thickness, 
+                                          log_scale=FALSE, design_color=design_color, 
+                                          design_pt_size=design_pt_size, 
                                           plot_title="likelihood predictions [llik]")
 
 
@@ -320,6 +332,27 @@ plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fw
 
 plot(plt_lik_dist_llik)
 plot(plt_lik_dist_fwd)
+
+```
+
+```{r}
+# Truncated log-normal predictive distribution for likelihood.
+
+lik_pred_trunc <- list()
+
+ln_list <- convert_Gaussian_to_LN(mean_Gaussian=em_pred_llik$mean, 
+                                  var_Gaussian=em_pred_llik$var, log_scale=TRUE)
+z <- drop((upper_bound - em_pred_llik$mean) / sqrt(em_pred_llik$var))
+lik_pred_trunc$mean <- exp(ln_list$log_mean + 
+                             log(pnorm(z-sqrt(em_pred_llik$var))) - 
+                             log(pnorm(z)))
+
+plot_pred_1d_helper(drop(test_info$input), pred_mean=lik_pred_trunc$mean,
+                    y_new=exp(test_info$llik), 
+                    X_design=drop(design_info$input), 
+                    y_design=exp(design_info$llik),
+                    design_color=design_color, design_pt_size=design_pt_size)
+
 
 ```
 

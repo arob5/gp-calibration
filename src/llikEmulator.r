@@ -149,7 +149,8 @@ llikEmulator <- setRefClass(
                 default_conditional="logical", default_normalize="logical", 
                 use_fixed_lik_par="logical", lik_par="ANY", 
                 input_names="character", dim_input="integer", 
-                llik_pred_dist="character", exact_llik="logical")
+                llik_pred_dist="character", exact_llik="logical", 
+                llik_bounds="numeric")
 )
 
 llikEmulator$lock("llik_label")
@@ -161,12 +162,10 @@ llikEmulator$methods(
   initialize = function(llik_label, input_names, lik_description, 
                         emulator_description, dim_input,  emulator_model=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, llik_bounds=NULL,
-                        llik_pred_dist="unspecified", exact_llik=FALSE, ...) {
+                        use_fixed_lik_par=FALSE, lik_par=NULL, 
+                        llik_bounds=c(-Inf, Inf), llik_pred_dist="unspecified", 
+                        exact_llik=FALSE, ...) {
 
-    if(is.null(llik_bounds)) {
-      llik_bounds <- c(-Inf, Inf)
-    }
     assert_that(length(llik_bounds)==2L)
     assert_that(llik_bounds[2] >= llik_bounds[1])
     
@@ -376,8 +375,8 @@ llikEmulator$methods(
                              lik_par_val=NULL, conditional=default_conditional, 
                              normalize=default_normalize, log_scale=TRUE, 
                              return_type="list", simplify=FALSE, ...) {
-    # A wrapper around `calc_multi_func()` that computes functions of the emulator 
-    # predictive distribution that are interpreted as deterministic 
+    # A wrapper around `calc_multi_func()` that computes functions of the  
+    # emulator predictive distribution that are interpreted as deterministic 
     # approximations of the likelihood function (or the log of such 
     # deterministic predictions). The string `approx_type` is used to specify 
     # a method of the form `calc_lik_<approx_type>_approx()`. The argument 
@@ -407,6 +406,7 @@ llikEmulator$methods(
     if(simplify_output) return(func_evals[[1]])
     return(func_evals)
   },
+  
   
   calc_lik_approx_pw_err = function(llik_true, approx_type="mean", err_type="mse",  
                                     em_pred_list=NULL, input=NULL, lik_par_val=NULL, 
@@ -1259,11 +1259,7 @@ llikEmulatorGP$methods(
   
   initialize = function(llik_lbl, gp_model, default_conditional, 
                         default_normalize, use_fixed_lik_par=TRUE, 
-                        lik_par=NULL, llik_bounds=NULL, ...) {
-    # `llik_bounds`, if provided, should be a vector of length 2 storing lower
-    # and/or upper bounds on the log-likelihood. One-sided bounds can be 
-    # specified by setting one of the entries to Inf or -Inf.
-    
+                        lik_par=NULL, ...) {
     # There are issues related to the use of `$copy()` method regarding missing 
     # arguments. The below line is somewhat of a hack that deals with this case.
     if(any(missing(llik_lbl), missing(gp_model), missing(default_conditional),
@@ -1284,7 +1280,7 @@ llikEmulatorGP$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=lik_par, 
               input_names=gp_model$X_names, dim_input=gp_model$X_dim, 
               default_conditional=default_conditional, 
-              default_normalize=default_normalize, llik_bounds=llik_bounds,
+              default_normalize=default_normalize,
               use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Generic log likelihood",
               emulator_description="GP directly emulating the log-likelihood.", 
