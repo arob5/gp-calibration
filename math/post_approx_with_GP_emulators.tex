@@ -29,6 +29,8 @@
 % Tables. 
 \usepackage{multirow}
 
+
+
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_gp_inv_prob}
@@ -111,7 +113,7 @@ to target high probability regions, while also acknowledging uncertainty in the 
 (an exploration vs. exploitation tradeoff) \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}. 
 This sequential optimization framework bears close resemblance to related 
 topics such as Bayesian optimization \citep{reviewBayesOpt} and Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadrature,BayesQuadRatios},
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios},
  but in this case the goal is to estimate a posterior density.
 We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
 facilitate improved interpretation of the resulting criteria. We also demonstrate that our noisy approximate MCMC 
@@ -121,8 +123,8 @@ Batch sequential design becomes increasingly essential as the cost of likelihood
 parallel computations.
 
 While much of the discussion here is agnostic to the specifics of the underlying simulation model, we present applications 
-to parameter estimation for systems of ordinary differential equations. In particular, we provide numerical results for 
-parameter calibration problems for ecological models of the carbon cycle.
+to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
+using dynamic ecological models of the carbon cycle.
 
 % Setting and Background 
 \section{Setting and Background}
@@ -161,8 +163,7 @@ model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to
 generic likelihoods, we will give special attention to the additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber \\
-\Par &\sim \priorDens \nonumber, 
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
 \end{align}
 with corresponding log-likelihood 
 \begin{align}
@@ -173,16 +174,13 @@ with corresponding log-likelihood
 In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
 standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
 algorithm. Such algorithms are iterative in nature, often requiring $\BigO(10^6)$ iterations, with each 
-iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par)$. In the inverse problem 
-context, this computational requirement is often prohibitive when the forward model evaluations $\fwd(\Par)$
-incur significant computational cost. This becomes clear upon observing that each log-likelihood evaluation 
-$\llik(\Par; \fwd)$ (e.g., \ref{llik_Gaussian} in the additive Gaussian case) requires the corresponding forward 
-model evaluation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
+iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
+In the inverse problem context, this computational requirement is often prohibitive when the forward model 
+evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
+expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
 cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
-an approximation of the latter). We refer to such approximations interchangeably 
-as \textit{surrogates} or \textit{emulators}. The focus of the present work is on utilizing \textit{Gaussian processes} 
-to derive emulators for the forward model or log-likelihood. 
-
+an approximation of the latter). 
+ 
 % Motivating Example: Parameter Estimation for Dynamical Models
 \subsection{Motivating Example: Parameter Estimation for Dynamical Models} \label{dynamical_models}
 While many problems fall under the generic setting outlined above, our primary application of interest 
