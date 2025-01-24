@@ -362,6 +362,18 @@ URL = {https://bg.copernicus.org/articles/15/5801/2018/},
 DOI = {10.5194/bg-15-5801-2018}
 }
 
+% Log-likelihood emulation. MCMC scheme that runs exact model if GP variance is larger than a pre-set threshold, otherwise 
+% uses GP mean approximation.
+@misc{ActiveLearningMCMC,
+      title={Integration of Active Learning and MCMC Sampling for Efficient Bayesian Calibration of Mechanical Properties}, 
+      author={Leon Riccius and Iuri B. C. M. Rocha and Joris Bierkens and Hanne Kekkonen and Frans P. van der Meer},
+      year={2024},
+      eprint={2411.13361},
+      archivePrefix={arXiv},
+      primaryClass={physics.comp-ph},
+      url={https://arxiv.org/abs/2411.13361}, 
+}
+
 
 %  ---------------------------------------------------------------------------------------------------
 % Forward model emulation: marginal approximation
@@ -438,8 +450,6 @@ abstract = {Abstract Parameters in climate models are usually calibrated manuall
 year = {2021}
 }
 
-
-
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
 %  ---------------------------------------------------------------------------------------------------
@@ -453,7 +463,6 @@ year = {2021}
       archivePrefix={arXiv},
       primaryClass={math.NA}
 }
-
 
 %  ---------------------------------------------------------------------------------------------------
 % Sequential design which seeks to target true posterior. 
@@ -717,7 +726,7 @@ URL = {https://doi.org/10.1214/09-BA415}
 }
 
 % ---------------------------------------------------------------------------------------------------
-% Integrated variance criteria
+% Integrated variance and related criteria
 % ---------------------------------------------------------------------------------------------------
 
 % Integrated variance criterion targeting the GP directly, but weighted by the approx posterior; accompanying theory. 
@@ -763,6 +772,17 @@ URL = {
 eprint = { 
         https://doi.org/10.1137/15M1017119
 }
+}
+
+% KL based criteria. Emulate forward model.
+@misc{VillaniAdaptiveGP,
+      title={Adaptive Gaussian Process Regression for Bayesian inverse problems}, 
+      author={Paolo Villani and Jörg Unger and Martin Weiser},
+      year={2024},
+      eprint={2404.19459},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2404.19459}, 
 }
 
 % Active Learning Cohn
