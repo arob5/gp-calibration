@@ -1135,7 +1135,7 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
 
 calc_lik_ratio_approx <- function(input_num, input_denom, llik_em, 
                                   lik_par_val=NULL, methods=c("mean"),
-                                  log_scale=TRUE, quantile_prob=NULL, 
+                                  log_scale=TRUE, quantile_probs=NULL, 
                                   em_pred_list=NULL, ...) {
   # Computes approximations to the likelihood ratio L(u')/L(u) using a log
   # likelihood emulator. Here `input_num` and `input_denom` are u' and u,
@@ -1249,34 +1249,59 @@ calc_lik_ratio_approx <- function(input_num, input_denom, llik_em,
 }
 
 
-calc_lik_ratio_comparison <- function(input_curr, input_prop, llik_em,
-                                           lik_par_val=NULL, llik_exact=NULL, 
-                                           llik_pred_list=NULL, 
-                                           acc_prob_tags="mean", 
-                                           quantile_probs=c(0.7, 0.9), ...) {
+calc_lik_ratio_comparison <- function(input_num, input_denom, llik_em,
+                                      lik_par_val=NULL, llik_exact=NULL, 
+                                      methods="mean", log_scale=TRUE,
+                                      quantile_probs=c(0.9), ...) {
+  # This function wraps around `calc_lik_ratio_approx()` in order to facililate 
+  # computation of approximate likelihood ratios over multiple pairs of points,
+  # and to optionally compute the exact likelihood ratio as a basis for 
+  # comparison. `input_num` and `input_denom` are matrices of input points, 
+  # with each row representing a single input point. The matrices must be the
+  # same length. The (approximate) ikelihood ratios are computed for each 
+  # pair `input_num[i,]`, `input_denom[i,]`.
   # Only a single `lik_par_val` is allowed. `input_curr` and `input_prop`
-  # can both be vectors, and they must be of equal length. `acc_prob_tags`
-  # can be "all" to include all tags. If `llik_exact` is provided then the 
-  # exact likelihood ratio will be computed as well.
-  #
+  # can both be vectors, and they must be of equal length. `methods`
+  # can be "all" to include all tags. See `calc_lik_ratio_approx()` for 
+  # specifics. If `llik_exact` is provided then the exact likelihood ratio will 
+  # be computed as well. `llik_exact` is currently assumed to be a llikEmulator
+  # object.
   # 
   # TODO: will be interesting to run this: (i.) for values sampled from prior; 
-  # (ii.) for vlaues sampled from true posterior, and (iii.) for current values
+  # (ii.) for values sampled from true posterior, and (iii.) for current values
   # from true posterior and proposed values from prior (or for this latter one
   # could consider the hyperrectangle defined by the extent of the exact 
   # posterior samples, and only sample proposed values falling outside of this 
   # hyperrectangle). 
-  #
-  # TODO: want this to return a matrix with columns:
-  # all par names current and proposed values, gp pred mean/var at current 
-  # and proposed values, gp cov, exact acc prob, and all the different 
-  # acc prob combinations. 
-  
-  if(acc_prob_tags=="all") {
-    acc_prob_tags <- c("exact", "mean", "marg", "alpha-marg-ind", 
-                       "alpha-marg-joint", "quantile")
+
+  assert_that(nrow(input_num) == nrow(input_denom))
+
+  # Compute approximate likelihood ratios one input pair at a time.
+  results <- NULL
+  for(i in 1:nrow(input_num)) {
+    results_pair <- calc_lik_ratio_approx(input_num[i,], input_denom[i,], 
+                                          llik_em, lik_par_val=lik_par_val, 
+                                          methods=methods, log_scale=log_scale, 
+                                          quantile_probs=quantile_probs, ...)
+    results <- rbind(results, results_pair)
   }
   
+  # Optionally compute exact likelihood ratio.
+  if(!is.null(llik_exact)) {
+    llik_num <- llik_exact$assemble_llik(input_num, 
+                                         lik_par_val=lik_par_val, ...)
+    llik_denom <- llik_exact$assemble_llik(input_denom, 
+                                           lik_par_val=lik_par_val, ...)
+    
+    llik_diff <- llik_num-llik_denom
+    if(!log_scale) llik_diff <- exp(llik_diff)
+    results <- cbind(results, llik_exact_num=llik_num)
+    results <- cbind(results, llik_exact_denom=llik_denom)
+    results <- cbind(results, exact=llik_diff)
+  }
+  
+  rownames(results) <- NULL
+  return(results)
 }
 
 

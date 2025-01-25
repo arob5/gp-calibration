@@ -18,6 +18,23 @@ an approximation of the likelihood in a Bayesian inverse problem. Therefore,
 we consider the likelihood ratio, which gives information on the relative 
 weighting between two locations in parameter space.
 
+The baseline approximation is given by the plug-in GP mean approximation 
+(referred to here as just the "mean" approximation). For a pair of inputs, 
+$u, \tilde{u}$, let $\ell^{\text{mean}}$ and $\tilde{\ell}^{\text{mean}}$ 
+denote the mean approximation at each input, respectively. Similarly, let 
+$\ell$ and $\tilde{\ell}$ denote the log-likelihood values derived from some 
+other approximation. We are interested in the ratio of ratios
+$$
+\frac{\exp\{\tilde{\ell}-\ell\}}{\exp\{\tilde{\ell}^{\text{mean}}-\ell^{\text{mean}}\}}
+$$
+Working on the log scale, this becomes
+$$
+\gamma := [\tilde{\ell}-\ell] - [\tilde{\ell}^{\text{mean}}-\ell^{\text{mean}}]
+$$
+A value $\gamma = 0$ implies the likelihood ratios are the same, and a 
+positive value implies that the other approximation weights the input 
+$\tilde{u}$ relative to $u$ more heavily as compared to the mean approximation.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
 
@@ -44,14 +61,19 @@ inv_prob <- get_vsem_test_1()
 ```
 
 ```{r}
-# Create an initial input design, and design of test points.
+# Create initial design.
 n_design <- 200L
-n_design_test <- 500L
 design_method <- "LHS"
 
 design_info <- get_init_design_list(inv_prob, design_method, n_design)
-test_info <- get_init_design_list(inv_prob, design_method, n_design_test)
 ```
+```{r}
+# Create sets of test points at which to evaluate approximate likelihood ratios.
+n_design_test <- 500L
+test_info_num <- get_init_design_list(inv_prob, design_method, n_design_test)
+test_info_denom <- get_init_design_list(inv_prob, design_method, n_design_test)
+```
+
 
 ```{r}
 # Fit GP for log-likelihood.
@@ -68,16 +90,66 @@ llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE,
 
 
 ```{r}
+# Compute (log) likelihood ratios.
+lik_ratios <- calc_lik_ratio_comparison(test_info_num$input, 
+                                        test_info_denom$input,
+                                        llik_em, llik_exact=inv_prob$llik_obj, 
+                                        methods="all", log_scale=TRUE)
 
-calc_lik_ratio_approx(test_info$input[1,], test_info$input[2,], llik_em, 
-                      methods="all", log_scale=TRUE, quantile_prob=0.9)
+# Relative to mean approximation.
+lik_ratios_rel <- lik_ratios
+methods <- c("joint-marg", "joint-marg-ind", "mean", "marginal", 
+             "quantile", "exact")
+for(method in methods) {
+  lik_ratios_rel[,method] <- lik_ratios_rel[,method] - lik_ratios_rel[,"mean"]
+}
+```
 
+```{r}
+for(method in setdiff(methods,"mean")) {
+  hist(lik_ratios_rel[,method], main=method, breaks=30,
+       xlab="log ratio, relative to mean approximation")
+}
+```
+
+# Assessing Violation of Bound Constraints
+TODO
+
+
+# Plug-In Mean Approximation
+```{r}
+mean_errs <- lik_ratios[,"exact"] - lik_ratios[,"mean"]
+
+plot(lik_ratios[,"exact"], mean_errs,
+     xlab="exact", ylab="exact minus mean", 
+     main="Exact ratio vs. plug-in mean ratio errors")
+```
+
+
+# Joint Marginal Approximations
+
+TODO: 
+- investigate cross-covariances; convert to corrs for easier interpretation.
+- how does variance in difference compare to difference in variances?
+
+```{r}
+# Comparing the marginal approximations.
+
+plot(lik_ratios[,"joint-marg"], lik_ratios[,"joint-marg-ind"],
+     xlab="joint-marg", ylab="joint-marg-ind", 
+     main="Marginal Approximations")
+
+hist(lik_ratios[,"joint-marg"] - lik_ratios[,"joint-marg-ind"],
+     xlab="joint-marg minus joint-marg-ind", 
+     main="Difference in marginal approximations", breaks=30)
 ```
 
 
 
 
-
+Questions:
+- Surprised at the wide spread of the plug-in mean approximation. Do the 
+large errors correlate with certain regions of parameter space?
 
 
 
