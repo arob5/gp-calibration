@@ -221,19 +221,36 @@ for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this fa
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Some of the methods discussed below readily 
 generalize to more complicated settings that consider non-additive or non-Gaussian noise, or the presence of 
-model discrepancy terms. While the observation map can assume many forms across different applications, 
-common examples include 
+model discrepancy terms. The observation operator commonly maps to statistical moments of the state 
+trajectory (e.g., a time average), or may simply extract the state values at a subset of the simulated time 
+points.
+
+\subsubsection{A Toy Carbon Cycle Model}
+As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
+structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
+describes the evolution of the state vector
+\begin{align*}
+\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}, 
+\end{align*}
+with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, below-ground 
+vegetation (roots), and soil reservoirs, respectively. The VSEM model is given by the system of coupled 
+ordinary differential equations
 \begin{align}
-\obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
-&\Def \frac{1}{\NTimeStep} \left(\sum_{\timeIndex=1}^{\NTimeStep} \left[\state^{(\stateIndex)}_{\timeIndex} \right]^{\idxObsDim} \right)_{\idxObsDim=1}^{\dimObs} \label{obs_op_moments} \\ 
-\obsOp(\indexState[0]{\state}, \dots, \indexState[\dimState]{\state}) 
-&\Def \left(\state^{(\stateIndex)}_{\timeIndex} \right)_{\timeIndex \in \mathcal{K}}, \ \mathcal{K} \subset \{1, 2, \dots, \NTimeStep\} \label{obs_op_subset}
+\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
+\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
+\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
+\end{align}
+where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
+(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
+\begin{align}
+\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
+\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
+\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
 \end{align} 
-for some $\stateIndex \in \{1, 2, \dots, \dimState\}$. The map \ref{obs_op_moments} corresponds to the first $\dimObs$ moments of the 
-$\stateIndex^{\text{th}}$ state trajectory, with $\dimObs=1$ implying a standard time average. The second example \ref{obs_op_subset}
-indicates that noisy observations of the $\stateIndex^{\text{th}}$ state are available at a subset of the discrete time set. 
-Of course, we can also generalize so that these observation operators depend on multiple state variables. Such ``multi-objective'' 
-formulations are common in parameter estimation studies for land surface models. (\todo: cite)
+We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
+time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
+$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables.
 
 % Gaussian Processes
 \subsection{Gaussian Processes}
@@ -256,7 +273,7 @@ the defining property of the GP can be written as
 \end{align}
 For our purposes, the GP $\funcPrior$ will be a prior distribution for a \textit{deterministic} function $\func: \parSpace \to \R$. 
 However, the underlying ideas explored here can be extended to the setting where the evaluations of $\func$ 
-are corrupted by noise. 
+are corrupted by noise \citep{VehtariParallelGP}. 
 Now suppose that, at a set of \textit{design points} $\designIn$, we have computed the noiseless function values
 $\func(\designIn)$. Viewing these values as a realization of the random variable $\funcPrior(\designIn)$, we can 
 consider the conditional (i.e., \textit{predictive}) distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
@@ -302,7 +319,7 @@ $M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive
 
 \subsection{Surrogate Construction}
 We now consider modeling either $\fwd$ or $\llik$ with a GP, referring to these cases as \textit{forward model emulation} and 
-\textit{log-likelihood} emulation, respectively. As mentioned previously, computationally costly forward models render 
+\textit{log-likelihood emulation}, respectively. As mentioned previously, computationally costly forward models render 
 standard inference algorithms intractable for solving Bayesian inverse problems due to the large number of model 
 evaluations that must be conducted iteratively. The main idea of model emulation is to front-load the forward model 
 runs, which can often be computed in parallel, to obtain a design $\{\designIn, \fwd(\designIn)\}$ or 
@@ -316,15 +333,8 @@ multi-output GP prior directly for the forward model, $\fwdPrior \sim \GP(\emMea
 Conditioning on this design yields the predictive distribution 
 $\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
 which constitutes the emulator for $\fwd. $
-We emphasize that $\fwdEm[\Ndesign]$ is a \textit{stochastic} surrogate; 
-the model predictions at inputs $\parMat$ are given by the entire distribution 
-$\fwdEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\parMat), \emKer[\Ndesign]{\fwd}(\parMat))$. 
-Thus, the mean $\emMean[\Ndesign]{\fwd}(\parMat)$ provides a point estimate while the covariance 
-$\emKer[\Ndesign]{\fwd}(\parMat)$ summarizes the uncertainty in the estimate. This is useful for the purpose
-of uncertainty quantification in that the additional uncertainty introduced as a consequence of the surrogate 
-approximation can be propagated to the approximate posterior distribution. We note that plugging the random 
-function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces an approximation of the log-likelihood,
-which we denote by $\llikEmFwd$. 
+Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces a random approximation of the 
+log-likelihood, which we denote by $\llikEmFwd(\cdot)$. 
 In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approximation takes the form 
 \begin{align}
 \llikEmFwd(\Par) \Def \llik(\Par; \fwdEm) =  \log\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar). \label{induced_llik_emulator}
@@ -333,7 +343,10 @@ We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFw
 stochastic, but no longer Gaussian in general; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
 the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by plugging the 
 conditioned forward model emulator into the log-likelihood function, 
-constituting a modular surrogate-modeling approach \cite{modularization}. While the induced stochastic approximation 
+constituting a modular surrogate-modeling approach \citep{modularization}. The mean and variance of the induced 
+likelihood approximation can be described in closed-form for \todo
+
+While the induced stochastic approximation 
 to the likelihood (and posterior density) cannot in general be described explicitly, the Gaussian likelihood 
 example \ref{induced_llik_emulator} represents an important exception. The mean and variance of the induced
 likelihood approximation are given in the following proposition. 
