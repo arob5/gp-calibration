@@ -105,7 +105,7 @@ plot(data_plt2)
 Below we instantiate a GP object. We then "fit" the GP, by which we mean 
 that the GP hyperparameters are optimized. For now, the GP mean and covariance 
 functions are specified in the `fit` method, but this will eventually be 
-updated so that they are specified when instatiating the object.
+updated so that they are specified when instantiating the object.
 ```{r}
 # Instantiate the GP object.
 gp_obj <- gpWrapperHet(X, Y, normalize_output=TRUE, scale_input=TRUE)

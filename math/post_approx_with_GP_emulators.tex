@@ -29,6 +29,8 @@
 % Tables. 
 \usepackage{multirow}
 
+
+
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_gp_inv_prob}
@@ -62,6 +64,67 @@
 
 % Introduction 
 \section{Introduction}
+Owing to increases in computing resources [\todo: change this], there is growing interest in performing Bayesian inference 
+in settings where evaluation of the likelihood function incurs significant computational expense. This situation commonly 
+arises across various disciplines in the physical and engineering sciences, whereby evaluating the likelihood 
+implies performing a complex computer simulation \citep{ESM_modeling_2pt0}. Such computer models often derive from 
+systems of differential equations, with the goal being to calibrate (i.e., estimate) unknown parameters characterizing the physical model.
+To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
+posterior distribution over model parameters while minimizing the number of required likelihood evaluations. 
+A popular class of methods involves replacing either the computer model or the likelihood function with a statistical 
+surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
+The emulator can be trained offline \citep{modularization} using a small set of expensive model runs, which can often be 
+performed in parallel. The exact likelihood is then replaced by the fit surrogate in order to facilitate the application of 
+standard inference schemes such as Markov chain Monte Carlo (MCMC). 
+
+In the present work we focus on the use of Gaussian processes (GPs; \citet{gpML}) for this task, which have been widely used as 
+emulators in calibrating complex computer codes 
+\citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}. 
+GP predictions come in the form of a probability distribution, implying that 
+the emulator induces a stochastic approximation of the likelihood function. The fact that the surrogate likelihood is a random 
+function presents both opportunities and challenges. As opposed to a deterministic surrogate, GPs offer the potential to 
+propagate the additional uncertainty introduced due to the likelihood approximation. However, this presents the question
+of defining an adequate posterior approximation that reflects the full GP distribution. This question has gained recent 
+attention, and a wide variety of (mostly ad hoc) approaches have been proposed. We provide a comprehensive review of 
+existing methods and their implications with regards to uncertainty quantification. We then propose a new class of 
+approximate inference algorithms based on noisy modifications of Metropolis-Hastings MCMC schemes.
+
+As we will demonstrate, the propagation of GP uncertainty depends heavily on which component of the likelihood function 
+is emulated. Existing literature tends to focus on one of two approaches: (i.) emulation of the underlying forward model; and 
+(ii.) direct emulation of the log-likelihood. Existing studies from the Bayesian inverse problems and computer modeling 
+literature tend to favor the former approach, often coupled with the assumption of a Gaussian likelihood to enable
+convenient closed-form computations \citep{HigdonBasis,functionValuedModels,hydrologicalModel,VillaniAdaptiveGP}. 
+A growing number of papers have also begun to explore the latter option 
+\citep{VehtariParallelGP,gp_surrogates_random_exploration,FerEmulation,ActiveLearningMCMC,quantileApprox,llikRBF,trainDynamics,MCMC_GP_proposal,landslideCalibration,Kandasamy_2017,wang2018adaptive}. 
+Both methods have their merits and drawbacks; our intention is not to argue universally in favor of one approach, but rather
+to illustrate the implications of this choice in defining a GP-induced posterior approximation. The papers 
+\citet{StuartTeck1,StuartTeck2,random_fwd_models} also consider the distinction between these two emulation strategies, 
+with a focus on proving theoretical posterior consistency results. In \citet{GP_PDE_priors}, both options are compared 
+for developing emulators for inverse problems derived from PDE models.
+
+The second portion of this article focuses on improving an existing GP surrogate by augmenting the training data 
+with another set of input-output pairs derived from running the expensive simulation at a new set of parameter 
+values. Choosing this new set of parameter values is a question of sequential design, also referred to as active learning.
+Given that the GP is ultimately used to approximate a posterior distribution, various papers have noted the benefit of 
+focusing the model evaluation locations in regions of significant posterior probability 
+\citep{CES,idealizedGCM}. Casting the selection of 
+design points as an optimization problem, different objective (i.e., acquisition) functions have been proposed that seek 
+to target high probability regions, while also acknowledging uncertainty in the GP model 
+(an exploration vs. exploitation tradeoff) \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}. 
+This sequential optimization framework bears close resemblance to related 
+topics such as Bayesian optimization \citep{reviewBayesOpt} and Bayesian quadrature 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios},
+ but in this case the goal is to estimate a posterior density.
+We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
+facilitate improved interpretation of the resulting criteria. We also demonstrate that our noisy approximate MCMC 
+schemes pair naturally with a class of acquisition functions derived from Monte Carlo approximations of integrals over the 
+parameter space. We highlight batch sequential approaches, where multiple design points are acquired simultaneously. 
+Batch sequential design becomes increasingly essential as the cost of likelihood evaluations increases, as it allows for 
+parallel computations.
+
+While much of the discussion here is agnostic to the specifics of the underlying simulation model, we present applications 
+to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
+using dynamic ecological models of the carbon cycle.
 
 % Setting and Background 
 \section{Setting and Background}
@@ -100,8 +163,7 @@ model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to
 generic likelihoods, we will give special attention to the additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber \\
-\Par &\sim \priorDens \nonumber, 
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
 \end{align}
 with corresponding log-likelihood 
 \begin{align}
@@ -112,16 +174,13 @@ with corresponding log-likelihood
 In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
 standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
 algorithm. Such algorithms are iterative in nature, often requiring $\BigO(10^6)$ iterations, with each 
-iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par)$. In the inverse problem 
-context, this computational requirement is often prohibitive when the forward model evaluations $\fwd(\Par)$
-incur significant computational cost. This becomes clear upon observing that each log-likelihood evaluation 
-$\llik(\Par; \fwd)$ (e.g., \ref{llik_Gaussian} in the additive Gaussian case) requires the corresponding forward 
-model evaluation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
+iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
+In the inverse problem context, this computational requirement is often prohibitive when the forward model 
+evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
+expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
 cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
-an approximation of the latter). We refer to such approximations interchangeably 
-as \textit{surrogates} or \textit{emulators}. The focus of the present work is on utilizing \textit{Gaussian processes} 
-to derive emulators for the forward model or log-likelihood. 
-
+an approximation of the latter). 
+ 
 % Motivating Example: Parameter Estimation for Dynamical Models
 \subsection{Motivating Example: Parameter Estimation for Dynamical Models} \label{dynamical_models}
 While many problems fall under the generic setting outlined above, our primary application of interest 
