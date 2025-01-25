@@ -1753,6 +1753,51 @@ llikEmulatorGPFwdGauss$methods(
     else return(lik_par_val)
   },
   
+  assemble_llik_new = function(fwd_model_vals, lik_par_val=NULL, 
+                               conditional=default_conditional, 
+                               normalize=default_normalize, ...) {
+    # `fwd_model_vals` should be of dimension (N_inputs, N_output). Returns 
+    # vector of length N_inputs.
+    
+    # Fetch the lower triangular Cholesky factor of the covariance matrix.
+    L <- get_lik_par(lik_par_val, return_chol=TRUE)
+    
+    # Construct log likelihood.
+    llik <- colSums(solve(L, add_vec_to_mat_cols(.self$y, -t(fwd_model_vals)))^2)
+    if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
+    if(normalize) llik <- llik - 0.5 * log(2*pi)
+    
+    return(llik)
+  },
+  
+  sample_new = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
+                        use_cov=FALSE, conditional=default_conditional, 
+                        normalize=default_normalize, ...) {
+    # Sample the log-likelihood emulator at specified inputs. `input` is M x D 
+    # (M input vectors). Returns array of dimension (M, N_samp). `use_cov`
+    # refers to covariance across inputs; inclusion of output covariance 
+    # falls back on default behavior of .self$sample_emulator(), which should 
+    # typically be to always include output covariance. See, e.g., 
+    # gpWrapperSum$sample() for an example.
+    
+    input <- .self$get_input(input)
+    fwd_model_samp <- .self$sample_emulator(input, N_samp=N_samp, 
+                                            use_cov=use_cov, 
+                                            pred_list=em_pred_list, ...)
+    llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
+    
+    for(i in 1:N_samp) {
+      llik_samp[,i] <- .self$assemble_llik(matrix(fwd_model_samp[,i,], 
+                                                  nrow=nrow(input),
+                                                  ncol=.self$N_output), 
+                                           lik_par_val, conditional, 
+                                           normalize, ...)
+    }
+    
+    return(llik_samp)
+  },
+  
+
   assemble_llik = function(fwd_model_vals, lik_par_val=NULL, 
                            conditional=default_conditional, 
                            normalize=default_normalize, ...) {
@@ -1777,9 +1822,9 @@ llikEmulatorGPFwdGauss$methods(
     # Sample the forward model emulator at specified inputs. `input` is M x D 
     # (M input vectors). Returns array of dimension (M, N_samp, N_output). 
     
-    emulator_model$sample(get_input(input), use_cov=use_cov, 
-                          include_noise=include_noise, 
-                          N_samp=N_samp, pred_list=em_pred_list, ...)
+    .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
+                                include_noise=include_noise, 
+                                N_samp=N_samp, pred_list=em_pred_list, ...)
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
@@ -1883,12 +1928,13 @@ llikEmulatorGPFwdGaussDiag$methods(
     # an array of dimension `M` x `N_samp` x `N_output`. Therefore, this 
     # function also allows `fwd_model_vals` to have three dimensions, as long 
     # as the second dimension equals 1 (as is the case with a default call to 
-    # `sample_emulator`). `var_inflation_vals` allows adds values to `sig2`, 
-    # and is used in computing the marginal likelihood approximation. If shape 
-    # (`M`, `N_output`) then each row of `var_inflation_vals` to `sig2` for the 
-    # corresponding row of `fwd_model_vals`. If a numeric vector of length 
-    # `N_output`, then the same variance inflation is applied to the likelihood 
-    # evaluations at all `M` values of the forward model output. 
+    # `sample_emulator`). `var_inflation_vals` adds values to `sig2`
+    # ("variance inflation"), and is used in computing the marginal likelihood 
+    # approximation. If shape (`M`, `N_output`) then each row of 
+    # `var_inflation_vals` is added to to `sig2` for the corresponding row of 
+    # `fwd_model_vals`. If a numeric vector of length `N_output`, then the same 
+    # variance inflation is applied to the likelihood evaluations at all `M` 
+    # values of the forward model output. 
 
     # If `fwd_model_vals` has three dimensions, with second dimension equal to 
     # 1, then collapse  to a matrix along this dimension. 
@@ -1909,7 +1955,8 @@ llikEmulatorGPFwdGaussDiag$methods(
       inflate_var <- TRUE
       if(is.null(dim(var_inflation_vals))) {
         assert_that(length(var_inflation_vals) == N_output)
-        var_inflation_vals <- matrix(var_inflation_vals, nrow=nrow(fwd_model_vals), 
+        var_inflation_vals <- matrix(var_inflation_vals, 
+                                     nrow=nrow(fwd_model_vals), 
                                      ncol=N_output, byrow=TRUE)
       }
       assert_that(all(dim(var_inflation_vals) == dim(fwd_model_vals)))
