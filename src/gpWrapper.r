@@ -1252,18 +1252,21 @@ gpWrapperSum$methods(
     initFields(gp_model=gp, B=B, shift=drop(shift), sig2=sig2)
       
     # Output dimension corresponds to the dimension of `B`, not to be confused 
-    # with `gp$Y_dim`, which is the dimension of `w(u)`. `X_mat` and `Y_mat` 
-    # are defined so that `callSuper()` can be called without errors, but are 
-    # not intended to be used in any way.
+    # with `gp$Y_dim`, which is the dimension of `w(u)`. Here we define the 
+    # design set (X,Y) by transforming the design of the underlying GP object.
+    # These matrices don't really need to be computed, so could improve 
+    # efficiency in the future by not storing them, and only computing them 
+    # if needed.
     out_dim <- nrow(B)
-    Y_mat <- matrix(-1, ncol=out_dim)
-    X_mat <- matrix(-1, ncol=gp$X_dim)
     B_names <- paste0("b", 1:out_dim)
+    Y_design <- tcrossprod(.self$gp_model$Y, .self$B)
+    if(!is.null(.self$shift)) Y_design <- add_vec_to_mat_rows(.self$shift, Y_design)
     
     # Call `gpWrapper` constructor so that `Y_names` and `Y_dim` will be 
     # correctly set to the output dimension of the basis vectors.
-    callSuper(X=X_mat, Y=Y_mat, normalize_output=FALSE, scale_input=FALSE,
-              x_names=gp$X_names, y_names=B_names)
+    callSuper(X=.self$gp_model$X, Y=Y_design, normalize_output=FALSE, 
+              scale_input=FALSE, x_names=.self$gp_model$X_names, 
+              y_names=B_names)
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 

@@ -1753,14 +1753,24 @@ llikEmulatorGPFwdGauss$methods(
     else return(lik_par_val)
   },
   
-  assemble_llik_new = function(fwd_model_vals, lik_par_val=NULL, 
-                               conditional=default_conditional, 
-                               normalize=default_normalize, ...) {
+  get_design_inputs = function(...) {
+    .self$emulator_model$X
+  },
+  
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, ...) {
+    .self$assemble_llik(.self$emulator_model$Y, lik_par_val=lik_par_val, 
+                        conditional=conditional, normalize=normalize, ...)
+  },
+  
+  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, 
+                           conditional=default_conditional, 
+                           normalize=default_normalize, ...) {
     # `fwd_model_vals` should be of dimension (N_inputs, N_output). Returns 
     # vector of length N_inputs.
     
     # Fetch the lower triangular Cholesky factor of the covariance matrix.
-    L <- get_lik_par(lik_par_val, return_chol=TRUE)
+    L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
     
     # Construct log likelihood.
     llik <- colSums(solve(L, add_vec_to_mat_cols(.self$y, -t(fwd_model_vals)))^2)
@@ -1770,9 +1780,9 @@ llikEmulatorGPFwdGauss$methods(
     return(llik)
   },
   
-  sample_new = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
-                        use_cov=FALSE, conditional=default_conditional, 
-                        normalize=default_normalize, ...) {
+  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
+                    use_cov=FALSE, conditional=default_conditional, 
+                    normalize=default_normalize, ...) {
     # Sample the log-likelihood emulator at specified inputs. `input` is M x D 
     # (M input vectors). Returns array of dimension (M, N_samp). `use_cov`
     # refers to covariance across inputs; inclusion of output covariance 
@@ -1797,26 +1807,6 @@ llikEmulatorGPFwdGauss$methods(
     return(llik_samp)
   },
   
-
-  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, 
-                           conditional=default_conditional, 
-                           normalize=default_normalize, ...) {
-    # `fwd_model_vals` should be of dimension `N_inputs` x `N_output`.
-    
-    # Fetch the lower triangular Cholesky factor of the covariance matrix.
-    L <- get_lik_par(lik_par_val, return_chol=TRUE)
-    
-    # Construct log likelihood.
-    llik <- rep(0, nrow(fwd_model_vals))
-    for(n in seq_along(.self$N_obs)) {
-      llik <- llik + colSums(solve(L, add_vec_to_mat_cols(.self$y[n,], -t(fwd_model_vals)))^2)
-    }
-    if(normalize || !conditional) llik <- llik - .self$N_obs * sum(log(diag(L)))
-    if(normalize) llik <- llik - 0.5 * .self$N_obs * .self$N_output * log(2*pi)
-
-    return(llik)
-  }, 
-  
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, 
                              use_cov=FALSE, ...) {
     # Sample the forward model emulator at specified inputs. `input` is M x D 
@@ -1825,28 +1815,85 @@ llikEmulatorGPFwdGauss$methods(
     .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
                                 include_noise=include_noise, 
                                 N_samp=N_samp, pred_list=em_pred_list, ...)
-  },
+  }, 
   
-  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1, 
-                    use_cov=FALSE, conditional=default_conditional, 
-                    normalize=default_normalize, ...) {
-    # Sample the log-likelihood emulator at specified inputs. `input` is M x D 
-    # (M input vectors). Returns array of dimension (M, N_samp). 
+  predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  
+                     return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                     input_cross=NULL, conditional=default_conditional,  
+                     normalize=default_normalize, log_scale=FALSE, 
+                     include_noise=TRUE, ...) {
+    # Let M := nrow(input) (number of input points).
+    #
+    # Return formatting:
+    # "mean": numeric vector of length M.
+    # "var": numeric vector of length M.
+    # "trend": numeric vector of length M.
+    # Covariance return options "cov" and "cross_cov" not yet supported.
     
-    input <- get_input(input)
-    fwd_model_samp <- .self$sample_emulator(input, em_pred_list, N_samp=N_samp, 
-                                            use_cov=use_cov, ...)
-    llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
-    
-    for(i in 1:N_samp) {
-      llik_samp[,i] <- assemble_llik(matrix(fwd_model_samp[,i,], nrow=nrow(input),
-                                            ncol=N_output), 
-                                     lik_par_val, conditional, normalize, ...)
+    if(return_cross_cov || return_cov) {
+      stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict()`.")
     }
     
-    return(llik_samp)
+    input <- .self$get_input(input)
+    L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
+    
+    # Forward model emulator predictions. 
+    if(is.null(em_pred_list)) {
+      em_pred_list <- .self$predict_emulator(.self$get_input(input), 
+                                             return_mean=TRUE, 
+                                             return_var=TRUE, 
+                                             return_cov=return_cov, 
+                                             return_cross_cov=return_cross_cov, 
+                                             input_cross=input_cross, 
+                                             include_output_cov=TRUE,
+                                             include_noise=include_noise, ...)
+    } else {
+      assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$var), 
+                  msg=paste0("Log-likelihood predictive quantities require ", 
+                             "forward model emulator mean and variance."))
+    }
+    
+    # Log-likelihood mean can be shown to be equal to the plug-in mean plus 
+    # a variance inflation term depending on the likelihood covariance and 
+    # GP covariance.
+
+    if(return_mean) {
+      llik_pred_list$mean <- vector(mode="numeric", length=nrow(input))
+      llik_plug_in_mean <- .self$assemble_llik(em_pred_list$mean, 
+                                               lik_par_val=lik_par_val, 
+                                               conditional=conditional, 
+                                               normalize=normalize, ...)
+    }
+    
+    if(return_var) {
+      llik_pred_list$var <- vector(mode="numeric", length=nrow(input))
+    }
+    
+    if(return_mean || return_var) {
+      for(i in 1:nrow(input)) {
+        sig_inv_K <- backsolve(t(L), forwardsolve(L, em_pred_list$var[i,,]))
+          
+        # Compute mean.
+        if(return_mean) {
+          var_inflation <- sum(diag(sig_inv_K))
+          llik_pred_list$mean[i] <- llik_plug_in_mean[i] + var_inflation
+        }
+          
+        # Compute variance.
+        if(return_var) {
+          resid_mean <- .self$y - em_pred_list$mean[i,]
+          sig_inv_K_sig_inv <- t(backsolve(t(L), forwardsolve(L, t(sig_inv_K))))
+          trace_term <- 0.5 * sum(sig_inv_K * t(sig_inv_K))
+          quad_form_term <- 2 * sum(resid_mean * (sig_inv_K_sig_inv %*% resid_mean))
+          llik_pred_list$var[i] <- trace_term + quad_form_term
+        }
+      }
+    }
+   
+    return(llik_pred_list)
+     
   }
-  
+
 )
 
 
@@ -2032,8 +2079,10 @@ llikEmulatorGPFwdGaussDiag$methods(
     
     # Forward model emulator predictions. 
     if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(get_input(input), return_mean=TRUE, 
-                                             return_var=TRUE, return_cov=return_cov, 
+      em_pred_list <- .self$predict_emulator(.self$get_input(input), 
+                                             return_mean=TRUE, 
+                                             return_var=TRUE, 
+                                             return_cov=return_cov, 
                                              return_cross_cov=return_cross_cov, 
                                              input_cross=input_cross, 
                                              include_noise=include_noise, ...)
@@ -2045,11 +2094,13 @@ llikEmulatorGPFwdGaussDiag$methods(
     
     # Compute induced likelihood emulator predictions. 
     llik_pred_list <- list()
-    sig2_val <- get_lik_par(lik_par_val)
+    sig2_val <- .self$get_lik_par(lik_par_val)
     
     if(return_mean) {
-      llik_plug_in_mean <- assemble_llik(em_pred_list$mean, lik_par_val=lik_par_val, 
-                                         conditional=conditional, normalize=normalize, ...)
+      llik_plug_in_mean <- .self$assemble_llik(em_pred_list$mean, 
+                                               lik_par_val=lik_par_val, 
+                                               conditional=conditional, 
+                                               normalize=normalize, ...)
       llik_var_inflation <- -0.5 * .self$N_obs * rowSums(exp(log(em_pred_list$var) - rep(log(sig2_val), each=nrow(input))))
       llik_pred_list$mean <- llik_plug_in_mean + llik_var_inflation
     }
