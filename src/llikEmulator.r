@@ -86,8 +86,6 @@ library(abind)
 #                    `lik_par` parameters are viewed as constant terms in 
 #                    addition to any true constants. Also just sets the default
 #                    behavior.
-# use_fixed_lik_par: logical, if TRUE then `lik_par` must be supplied when an  
-#                    object is instantiated, and not changed thereafter.
 #                      
 # emulator_model: The emulator underlying the likelihood approximation. At 
 #                 present, this is typically a `gpWrapper` object.
@@ -147,8 +145,7 @@ llikEmulator <- setRefClass(
   fields = list(emulator_model="ANY", lik_description="character", 
                 llik_label="character", emulator_description="character", 
                 default_conditional="logical", default_normalize="logical", 
-                use_fixed_lik_par="logical", lik_par="ANY", 
-                input_names="character", dim_input="integer", 
+                lik_par="ANY", input_names="character", dim_input="integer", 
                 llik_pred_dist="character", exact_llik="logical", 
                 llik_bounds="numeric")
 )
@@ -162,9 +159,8 @@ llikEmulator$methods(
   initialize = function(llik_label, input_names, lik_description, 
                         emulator_description, dim_input,  emulator_model=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE,
-                        use_fixed_lik_par=FALSE, lik_par=NULL, 
-                        llik_bounds=c(-Inf, Inf), llik_pred_dist="unspecified", 
-                        exact_llik=FALSE, ...) {
+                        lik_par=NULL, llik_bounds=c(-Inf, Inf), 
+                        llik_pred_dist="unspecified", exact_llik=FALSE, ...) {
 
     assert_that(length(llik_bounds)==2L)
     assert_that(llik_bounds[2] >= llik_bounds[1])
@@ -175,20 +171,15 @@ llikEmulator$methods(
                emulator_model=emulator_model, 
                default_conditional=default_conditional,
                default_normalize=default_normalize, 
-               use_fixed_lik_par=use_fixed_lik_par,
                llik_bounds=llik_bounds,
                lik_par=lik_par, llik_pred_dist=llik_pred_dist, 
                exact_llik=exact_llik)  
-        
-    if(use_fixed_lik_par && is.null(lik_par)) {
-      stop("Fixed `lik_par` not passed but `use_fixed_lik_par` is TRUE.")
-    }
   }, 
   
   get_lik_par = function(lik_par_val=NULL, ...) {
-    if(use_fixed_lik_par) return(lik_par)
+    if(is.null(lik_par_val)) lik_par_val <- .self$lik_par
     assert_that(!is.null(lik_par_val), 
-                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+                msg="Missing likelihood parameter.")
     return(lik_par_val)
   },
   
@@ -1258,17 +1249,13 @@ llikEmulatorGP <- setRefClass(
 llikEmulatorGP$methods(
   
   initialize = function(llik_lbl, gp_model, default_conditional, 
-                        default_normalize, use_fixed_lik_par=TRUE, 
-                        lik_par=NULL, ...) {
+                        default_normalize, lik_par=NULL, ...) {
     # There are issues related to the use of `$copy()` method regarding missing 
     # arguments. The below line is somewhat of a hack that deals with this case.
     if(any(missing(llik_lbl), missing(gp_model), missing(default_conditional),
            missing(default_normalize))) return(NULL)
     
     # Argument checking.
-    assert_that(use_fixed_lik_par, 
-                msg=paste0("llikEmulatorGP does not yet",
-                           "support emulation as a function of `lik_par`."))
     assert_that(inherits(gp_model, "gpWrapper"),
                 msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(gp_model$Y_dim==1, 
@@ -1281,7 +1268,6 @@ llikEmulatorGP$methods(
               input_names=gp_model$X_names, dim_input=gp_model$X_dim, 
               default_conditional=default_conditional, 
               default_normalize=default_normalize,
-              use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Generic log likelihood",
               emulator_description="GP directly emulating the log-likelihood.", 
               llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
@@ -1302,7 +1288,7 @@ llikEmulatorGP$methods(
     }
     
     if(!is.null(lik_par_val)) {
-      assert_that(lik_par_val==get_lik_par(lik_par), 
+      assert_that(lik_par_val==.self$get_lik_par(lik_par), 
                   msg=paste0("`llikEmulatorGP` class requires `lik_par_val` to",
                              "agree with `lik_par`."))
     }
@@ -1319,7 +1305,7 @@ llikEmulatorGP$methods(
   },
   
   get_design_inputs = function(...) {
-    emulator_model$X
+    .self$emulator_model$X
   }, 
   
   get_design_llik = function(lik_par_val=NULL, conditional=default_conditional,
@@ -1553,7 +1539,7 @@ llikEmulatorExactGaussDiag$methods(
   initialize = function(llik_lbl, y_obs, dim_par, fwd_model=NULL, 
                         fwd_model_vectorized=NULL, sig2=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE, 
-                        use_fixed_lik_par=FALSE, par_names=NULL, ...) {
+                        par_names=NULL, ...) {
 
     # Forward model must be provided, either vectorized or single-input version. 
     assert_that(is.null(fwd_model) || is.function(fwd_model))
@@ -1578,7 +1564,6 @@ llikEmulatorExactGaussDiag$methods(
     callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=sig2, 
               dim_input=dim_par, default_conditional=default_conditional, 
               input_names=par_names, default_normalize=default_normalize, 
-              use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Exact Gaussian likelihood, diagonal covariance structure.",
               emulator_description="No emulation.", exact_llik=TRUE, ...)
   },
@@ -1598,16 +1583,16 @@ llikEmulatorExactGaussDiag$methods(
   },
   
   get_lik_par = function(lik_par_val=NULL, ...) {
-    if(use_fixed_lik_par) lik_par_val <- lik_par
+    if(is.null(lik_par_val)) lik_par_val <- .self$lik_par
     
     assert_that(!is.null(lik_par_val), 
-                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+                msg="Missing likelihood parameter.")
     
     if((length(lik_par_val)==1) && (.self$N_output > 1)) {
-      return(rep(lik_par_val, N_output))
+      return(rep(lik_par_val, .self$N_output))
     }
     
-    assert_that(length(lik_par_val)==N_output, 
+    assert_that(length(lik_par_val)==.self$N_output, 
                 msg="`lik_par_val` length not equal to 1 or `N_output`.")
     return(lik_par_val)
   },
@@ -1710,7 +1695,7 @@ llikEmulatorGPFwdGauss$methods(
   
   initialize = function(llik_lbl, gp_model, y_obs, Cov=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE, 
-                        use_fixed_lik_par=FALSE, par_names=NULL, ...) {
+                        par_names=NULL, ...) {
     
     assert_that(inherits(gp_model, "gpWrapper"), 
                 msg="`gp_model` must inherit from `gpWrapper` class.")
@@ -1734,7 +1719,6 @@ llikEmulatorGPFwdGauss$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=Cov, 
               dim_input=dim_par, default_conditional=default_conditional, 
               input_names=par_names, default_normalize=default_normalize, 
-              use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Gaussian likelihood",
               emulator_description="Forward model GP emulator", 
               exact_llik=FALSE, ...)
@@ -1742,15 +1726,19 @@ llikEmulatorGPFwdGauss$methods(
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
-    if(use_fixed_lik_par) {
-      if(return_chol) return(L_Cov)
-      else return(lik_par)
-    }
     
+    # If covariance matrix is passed, convert to Cholesky factor is requested.
+    if(!is.null(lik_par_val)) {
+      if(return_chol) lik_par_val <- t(chol(lik_par_val))
+    } else {
+      if(return_chol) lik_par_val <- .self$L_Cov
+      else lik_par_val <- .self$lik_par
+    }
+
     assert_that(!is.null(lik_par_val), 
-                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
-    if(return_chol) return(t(chol(lik_par_val)))
-    else return(lik_par_val)
+                msg="Likelihood parameter (noise covariance) missing.")
+  
+    return(lik_par_val)
   },
   
   get_design_inputs = function(...) {
@@ -1763,18 +1751,38 @@ llikEmulatorGPFwdGauss$methods(
                         conditional=conditional, normalize=normalize, ...)
   },
   
-  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, 
+  compute_log_det = function(lik_par_val=NULL, lik_par_chol=NULL) {
+    # Computes the log of the normalizing constant of the Gaussian density. 
+    # Specifically, for covariance matrix C, computes 0.5 * log{det(2*pi*C)}.
+    # Note that `lik_par_val` is the covariance matrix C. Optionally can pass 
+    # `lik_par_chol`, the lower Cholesky factor of C.
+    
+    if(is.null(lik_par_chol)) {
+      lik_par_chol <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
+    }
+    
+    sum(log(diag(lik_par_chol)))
+  },
+  
+  assemble_llik = function(fwd_model_vals, lik_par_val=NULL, lik_par_chol=NULL,
                            conditional=default_conditional, 
                            normalize=default_normalize, ...) {
     # `fwd_model_vals` should be of dimension (N_inputs, N_output). Returns 
-    # vector of length N_inputs.
+    # vector of length N_inputs. `lik_par_val` is the covariance matrix of 
+    # the Gaussian density. The density is computed using the Cholesky factor
+    # of the covariance. If the Cholesky factor has already been computed, 
+    # it can be passed via `lik_par_chol`.
     
     # Fetch the lower triangular Cholesky factor of the covariance matrix.
-    L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
+    if(is.null(lik_par_chol)) {
+      L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
+    } else {
+      L <- lik_par_chol
+    }
     
     # Construct log likelihood.
     llik <- colSums(solve(L, add_vec_to_mat_cols(.self$y, -t(fwd_model_vals)))^2)
-    if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
+    if(normalize || !conditional) llik <- llik - .self$compute_log_det(lik_par_chol=L)
     if(normalize) llik <- llik - 0.5 * log(2*pi)
     
     return(llik)
@@ -1820,14 +1828,12 @@ llikEmulatorGPFwdGauss$methods(
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional,  
-                     normalize=default_normalize, log_scale=FALSE, 
-                     include_noise=TRUE, ...) {
+                     normalize=default_normalize, include_noise=TRUE, ...) {
     # Let M := nrow(input) (number of input points).
     #
     # Return formatting:
     # "mean": numeric vector of length M.
     # "var": numeric vector of length M.
-    # "trend": numeric vector of length M.
     # Covariance return options "cov" and "cross_cov" not yet supported.
     
     if(return_cross_cov || return_cov) {
@@ -1836,10 +1842,11 @@ llikEmulatorGPFwdGauss$methods(
     
     input <- .self$get_input(input)
     L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
+    llik_pred_list <- list()
     
     # Forward model emulator predictions. 
     if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(.self$get_input(input), 
+      em_pred_list <- .self$predict_emulator(input, 
                                              return_mean=TRUE, 
                                              return_var=TRUE, 
                                              return_cov=return_cov, 
@@ -1856,7 +1863,6 @@ llikEmulatorGPFwdGauss$methods(
     # Log-likelihood mean can be shown to be equal to the plug-in mean plus 
     # a variance inflation term depending on the likelihood covariance and 
     # GP covariance.
-
     if(return_mean) {
       llik_pred_list$mean <- vector(mode="numeric", length=nrow(input))
       llik_plug_in_mean <- .self$assemble_llik(em_pred_list$mean, 
@@ -1891,9 +1897,85 @@ llikEmulatorGPFwdGauss$methods(
     }
    
     return(llik_pred_list)
-     
-  }
+  }, 
+  
+  predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, 
+                         return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
+                         return_cross_cov=FALSE, input_cross=NULL, 
+                         conditional=default_conditional,  
+                         normalize=default_normalize, log_scale=FALSE, 
+                         include_noise=TRUE, ...) {
+    
+    if(return_cross_cov || return_cov) {
+      stop("`return_cross_cov` and `return_cov` are not yet supported for",
+           "`llikEmulatorGP$predict_lik()`.")
+    }
+    
+    input <- .self$get_input(input)
+    lik_pred_list <- list()
 
+    # Forward model emulator predictions. 
+    if(is.null(em_pred_list)) {
+      em_pred_list <- .self$predict_emulator(input, 
+                                             return_mean=TRUE, 
+                                             return_var=TRUE, 
+                                             return_cov=return_cov, 
+                                             return_cross_cov=return_cross_cov, 
+                                             input_cross=input_cross, 
+                                             include_output_cov=TRUE,
+                                             include_noise=include_noise, ...)
+    } else {
+      assert_that(!is.null(em_pred_list$mean), 
+                  msg="Likelihood predictive quantities require emulator mean")
+      assert_that(!(return_var && is.null(em_pred_list$cov)),
+                  msg="Likelihood variance requires emulator output covariance.")
+    }
+    
+    n_input <- nrow(em_pred_list$mean)
+    Sig <- .self$get_lik_par(lik_par_val, return_chol=FALSE)
+    
+    if(return_mean) {
+      lik_pred_list$log_mean <- vector(mode="numeric", length=n_input)
+    }
+    
+    if(return_var) {
+      lik_pred_list$log_var <- vector(mode="numeric", length=n_input)
+    }
+    
+    for(i in 1:n_input) {
+      K <- em_pred_list$cov[i,,]
+      L_Sig_plus_K <- t(chol(Sig+K))
+      
+      if(return_mean) {
+        lik_pred_list$log_mean[i] <- .self$assemble_llik(em_pred_list$mean[i,], 
+                                                         lik_par_chol=L_Sig_plus_K,
+                                                         conditional=conditional,
+                                                         normalize=normalize)
+      }
+      
+      if(return_var) {
+        log_num1 <- .self$assemble_llik(em_pred_list$mean[i,],
+                                        lik_par_val=0.5*Sig + K,
+                                        conditional=conditional,
+                                        normalize=normalize)
+        log_num2 <- .self$assemble_llik(em_pred_list$mean[i,],
+                                        lik_par_chol=L_Sig_plus_K/sqrt(2),
+                                        conditional=conditional,
+                                        normalize=normalize)
+        log_denom1 <- .self$compute_log_det(lik_par_val=lik_par_val)
+        log_denom2 <- .self$compute_log_det(lik_par_chol=L_Sig_plus_K)
+        lik_pred_list$log_var[i] <- log_diff_exp(log_num1 - log_denom1, 
+                                                 log_num2 - log_denom2)
+      }
+    }
+    
+    if(!log_scale) {
+      if(return_mean) lik_pred_list$mean <- exp(lik_pred_list$log_mean)
+      if(return_var) lik_pred_list$var <- exp(lik_pred_list$log_var)
+    }
+
+    return(lik_pred_list)
+  }
 )
 
 
@@ -1917,8 +1999,7 @@ llikEmulatorGPFwdGaussDiag$methods(
   
   initialize = function(llik_lbl, gp_model, y_obs, sig2=NULL, 
                         default_conditional=FALSE, 
-                        default_normalize=FALSE, use_fixed_lik_par=FALSE,
-                        par_names=NULL, ...) {
+                        default_normalize=FALSE, par_names=NULL, ...) {
     
     assert_that(inherits(gp_model, "gpWrapper"), 
                 msg="`gp_model` must inherit from `gpWrapper` class.")
@@ -1942,24 +2023,21 @@ llikEmulatorGPFwdGaussDiag$methods(
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, 
               dim_input=dim_par, default_conditional=default_conditional, 
               input_names=par_names, default_normalize=default_normalize, 
-              use_fixed_lik_par=use_fixed_lik_par, 
               lik_description="Gaussian likelihood, diagonal covariance.",
               emulator_description="Forward model GP emulator", 
               exact_llik=FALSE, ...)
   },
   
   get_lik_par = function(lik_par_val=NULL, ...) {
-    if(use_fixed_lik_par) lik_par_val <- lik_par
+    if(is.null(lik_par_val)) lik_par_val <- .self$lik_par
     
     assert_that(!is.null(lik_par_val), 
-                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
+                msg="Likelihood parameter missing.")
     
     if((length(lik_par_val)==1) && (.self$N_output > 1)) {
-      return(rep(lik_par_val, N_output))
+      lik_par_val <- rep(lik_par_val, .self$N_output)
     }
     
-    assert_that(length(lik_par_val)==N_output, 
-                msg="`lik_par_val` length not equal to 1 or `N_output`.")
     return(lik_par_val)
   },
   
@@ -2070,8 +2148,7 @@ llikEmulatorGPFwdGaussDiag$methods(
   predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional,  
-                     normalize=default_normalize, log_scale=FALSE, 
-                     include_noise=TRUE, ...) {
+                     normalize=default_normalize, include_noise=TRUE, ...) {
     
     if(return_cross_cov || return_cov) {
       stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict()`.")
@@ -2117,7 +2194,6 @@ llikEmulatorGPFwdGaussDiag$methods(
     }
     
     return(llik_pred_list)
-    
   },
   
   # TODO: need to think about normalization here. For the marginal approximation, the 
@@ -2318,7 +2394,6 @@ llikSumEmulator$methods(
               emulator_model=NULL, default_conditional=default_conditional, 
               default_normalize=default_normalize, dim_input=llik_emulator_list[[1]]$dim_input,
               input_names=llik_emulator_list[[1]]$input_names,
-              use_fixed_lik_par=all(sapply(llik_emulator_list, function(x) x$use_fixed_lik_par)), 
               lik_par=NULL, llik_pred_dist=llik_sum_dist, exact_llik=llik_sum_exact)
     
   },
@@ -2611,7 +2686,7 @@ llikEmulatorMultGausGP <- setRefClass(
 llikEmulatorMultGausGP$methods(
   
   initialize = function(gp_model, llik_lbl, N_obs, sig2=NULL, default_conditional=FALSE, 
-                        default_normalize=FALSE, use_fixed_lik_par=FALSE, ...) {
+                        default_normalize=FALSE, ...) {
     assert_that(inherits(gp_model, "gpWrapper"), msg="`gp_model` must inherit from `gpWrapper` class.")
     assert_that(is.integer(N_obs) && (length(N_obs) == 1) && (N_obs > 0),
                 msg="`N_obs` must be an integer greater than 0.")
@@ -2623,7 +2698,7 @@ llikEmulatorMultGausGP$methods(
     initFields(N_obs=N_obs)
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, input_names=gp_model$X_names,
               dim_input=gp_model$X_dim, default_conditional=default_conditional, 
-              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              default_normalize=default_normalize, 
               lik_description="Multiplicative Gaussian.",
               emulator_description="GP emulating sum of squared error function.", 
               llik_pred_dist="Gaussian", exact_llik=FALSE, ...)
@@ -2764,7 +2839,7 @@ llikEmulatorExactGauss <- setRefClass(
 llikEmulatorExactGauss$methods(
   
   initialize = function(llik_lbl, y_obs, dim_par, fwd_model=NULL, fwd_model_vectorized=NULL, Cov=NULL, 
-                        default_conditional=FALSE, default_normalize=FALSE, use_fixed_lik_par=FALSE, 
+                        default_conditional=FALSE, default_normalize=FALSE, 
                         par_names=NULL, ...) {
     
     # Forward model must be provided, either vectorized or single-input version. 
@@ -2787,7 +2862,7 @@ llikEmulatorExactGauss$methods(
     
     callSuper(emulator_model=NULL, llik_label=llik_lbl, lik_par=Cov, dim_input=dim_par,
               default_conditional=default_conditional, input_names=par_names,
-              default_normalize=default_normalize, use_fixed_lik_par=use_fixed_lik_par, 
+              default_normalize=default_normalize, 
               lik_description="Exact Gaussian likelihood.",
               emulator_description="No emulation.", exact_llik=TRUE, ...)
   },
@@ -2807,25 +2882,30 @@ llikEmulatorExactGauss$methods(
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
-    if(use_fixed_lik_par) {
-      if(return_chol) return(L_Cov)
-      else return(lik_par)
+    # If covariance matrix is passed, convert to Cholesky factor is requested.
+    if(!is.null(lik_par_val)) {
+      if(return_chol) lik_par_val <- t(chol(lik_par_val))
+    } else {
+      if(return_chol) lik_par_val <- .self$L_Cov
+      else lik_par_val <- .self$lik_par
     }
     
     assert_that(!is.null(lik_par_val), 
-                msg="`lik_par_val` arg must be non-NULL if `use_fixed_lik_par` is FALSE.")
-    if(return_chol) return(t(chol(lik_par_val)))
-    else return(lik_par_val)
+                msg="Likelihood parameter (noise covariance) missing.")
+    
+    return(lik_par_val)
   },
   
-  assemble_llik = function(input, lik_par_val=NULL, conditional=default_conditional, normalize=default_normalize, ...) {
+  assemble_llik = function(input, lik_par_val=NULL, 
+                           conditional=default_conditional, 
+                           normalize=default_normalize, ...) {
     # `input` should be N_input x N_samp. 
     
     # Fetch the lower triangular Cholesky factor of the covariance matrix.
-    L <- get_lik_par(lik_par_val, return_chol=TRUE)
+    L <- .self$get_lik_par(lik_par_val, return_chol=TRUE)
     
     # Construct log likelihood. 
-    llik <- -0.5 * colSums(solve(L, y - run_fwd_model(input, ...))^2, na.rm=TRUE)
+    llik <- -0.5 * colSums(solve(L, y - .self$run_fwd_model(input, ...))^2, na.rm=TRUE)
     if(normalize || !conditional) llik <- llik - sum(log(diag(L)))
     if(normalize) llik <- llik - 0.5*N_obs*log(2*pi)
     
