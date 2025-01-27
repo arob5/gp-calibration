@@ -1,0 +1,155 @@
+---
+title: "Comparing Approximations of Likelihood Ratio"
+author: "Andrew Roberts"
+date: "2025-01-23"
+output: html_document
+---
+
+This file compares various Gaussian process (GP) emulator induced approximations
+of the likelihood ratio
+$$
+\lambda(u, \tilde{u}) = \frac{\exp\{\mathcal{L}(\tilde{u})\}}{\exp\{\mathcal{L}(u)\}}
+$$
+where $\mathcal{L}(u)$ is a log-likelihood evaluated at a parameter value 
+$u$. Comparing approximations of the likelihood offers limited insight, owing 
+to the fact that it does not account for the normalizing constant. We are 
+really interested in differences in the posterior approximation induced by 
+an approximation of the likelihood in a Bayesian inverse problem. Therefore, 
+we consider the likelihood ratio, which gives information on the relative 
+weighting between two locations in parameter space.
+
+The baseline approximation is given by the plug-in GP mean approximation 
+(referred to here as just the "mean" approximation). For a pair of inputs, 
+$u, \tilde{u}$, let $\ell^{\text{mean}}$ and $\tilde{\ell}^{\text{mean}}$ 
+denote the mean approximation at each input, respectively. Similarly, let 
+$\ell$ and $\tilde{\ell}$ denote the log-likelihood values derived from some 
+other approximation. We are interested in the ratio of ratios
+$$
+\frac{\exp\{\tilde{\ell}-\ell\}}{\exp\{\tilde{\ell}^{\text{mean}}-\ell^{\text{mean}}\}}
+$$
+Working on the log scale, this becomes
+$$
+\gamma := [\tilde{\ell}-\ell] - [\tilde{\ell}^{\text{mean}}-\ell^{\text{mean}}]
+$$
+A value $\gamma = 0$ implies the likelihood ratios are the same, and a 
+positive value implies that the other approximation weights the input 
+$\tilde{u}$ relative to $u$ more heavily as compared to the mean approximation.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+# Filepath definitions.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+```{r}
+# Load inverse problem setup information.
+inv_prob <- get_vsem_test_1()
+```
+
+```{r}
+# Create initial design.
+n_design <- 200L
+design_method <- "LHS"
+
+design_info <- get_init_design_list(inv_prob, design_method, n_design)
+```
+```{r}
+# Create sets of test points at which to evaluate approximate likelihood ratios.
+n_design_test <- 500L
+test_info_num <- get_init_design_list(inv_prob, design_method, n_design_test)
+test_info_denom <- get_init_design_list(inv_prob, design_method, n_design_test)
+```
+
+
+```{r}
+# Fit GP for log-likelihood.
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
+                          default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                          use_fixed_lik_par=TRUE)
+```
+
+
+```{r}
+# Compute (log) likelihood ratios.
+lik_ratios <- calc_lik_ratio_comparison(test_info_num$input, 
+                                        test_info_denom$input,
+                                        llik_em, llik_exact=inv_prob$llik_obj, 
+                                        methods="all", log_scale=TRUE)
+
+# Relative to mean approximation.
+lik_ratios_rel <- lik_ratios
+methods <- c("joint-marg", "joint-marg-ind", "mean", "marginal", 
+             "quantile", "exact")
+for(method in methods) {
+  lik_ratios_rel[,method] <- lik_ratios_rel[,method] - lik_ratios_rel[,"mean"]
+}
+```
+
+```{r}
+for(method in setdiff(methods,"mean")) {
+  hist(lik_ratios_rel[,method], main=method, breaks=30,
+       xlab="log ratio, relative to mean approximation")
+}
+```
+
+# Assessing Violation of Bound Constraints
+TODO
+
+
+# Plug-In Mean Approximation
+```{r}
+mean_errs <- lik_ratios[,"exact"] - lik_ratios[,"mean"]
+
+plot(lik_ratios[,"exact"], mean_errs,
+     xlab="exact", ylab="exact minus mean", 
+     main="Exact ratio vs. plug-in mean ratio errors")
+```
+
+
+# Joint Marginal Approximations
+
+TODO: 
+- investigate cross-covariances; convert to corrs for easier interpretation.
+- how does variance in difference compare to difference in variances?
+
+```{r}
+# Comparing the marginal approximations.
+
+plot(lik_ratios[,"joint-marg"], lik_ratios[,"joint-marg-ind"],
+     xlab="joint-marg", ylab="joint-marg-ind", 
+     main="Marginal Approximations")
+
+hist(lik_ratios[,"joint-marg"] - lik_ratios[,"joint-marg-ind"],
+     xlab="joint-marg minus joint-marg-ind", 
+     main="Difference in marginal approximations", breaks=30)
+```
+
+
+
+
+Questions:
+- Surprised at the wide spread of the plug-in mean approximation. Do the 
+large errors correlate with certain regions of parameter space?
+
+
+

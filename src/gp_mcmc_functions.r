@@ -1133,44 +1133,175 @@ estimate_post_cov <- function(lpost_dens, par_prior, n_samp) {
 # log-likelihood emulators. 
 # ------------------------------------------------------------------------------
 
-calc_mh_acc_prob_approx <- function(input_curr, input_prop, llik_em,
-                                    lik_par_val=NULL, llik_exact=NULL, 
-                                    llik_pred_list=NULL, acc_prob_tag="mean", 
-                                    ...) {
+calc_lik_ratio_approx <- function(input_num, input_denom, llik_em, 
+                                  lik_par_val=NULL, methods=c("mean"),
+                                  log_scale=TRUE, quantile_probs=NULL, 
+                                  em_pred_list=NULL, ...) {
+  # Computes approximations to the likelihood ratio L(u')/L(u) using a log
+  # likelihood emulator. Here `input_num` and `input_denom` are u' and u,
+  # respectively. Only one pair of inputs is accepted, but multiple 
+  # approximation methods may be provided. The function 
+  # `calc_lik_ratio_comparison()` wraps around `calc_lik_ratio_approx()` in 
+  # order to compute likelihood ratios over multiple pairs of points, as well 
+  # as to include computation of the exact likelihood ratio for comparison.
+  # 
+  # NOTE: this function is intended for testing purposes. It is not intended 
+  #       for use with any of the MCMC functions.
+  #
+  # Args:
+  #    input_num: numeric, or matrix with one row representing `u`.
+  #    input_denom: numeric, or matrix with one row representing `u'`.
+  #    llik_em: llikEmulator object.
+  #    lik_par_val: Likelihood parameter to use. Only a single likelihood 
+  #                 parameter is allowed.
+  #    method: character vector of likelihood ratio approximation methods to 
+  #            compute. See function body for valid options. Setting this 
+  #            argument to "all" will use all available approximations.
+  #    log_scale: logical, if TRUE returns the log of the likelihood ratio 
+  #               approximation.
+  #    quantile_prob: only used if `method = "quantile"`. The probability 
+  #                   determining which quantile will be used. Can be a 
+  #                   vector of probabilities to compute quantile approximations
+  #                   using different quantiles.
+  #    em_pred_list: optional emulator prediction list, as returned by 
+  #                  `llik_em$predict_emulator()`, assumed to correspond to 
+  #                   predictions for `rbind(input_num, input_denom)` 
+  #                   (in that order).
   
+  # TODO: need to add ability to pass quantile prob to `llik_em$calc_lik_approx()`.
   
+  input_num <- matrix(input_num, nrow=1)
+  input_denom <- matrix(input_denom, nrow=1)
   
+  valid_methods <- c("mean", "marginal", "quantile", "joint-marg",
+                     "joint-marg-ind")
+  if(methods=="all") methods <- valid_methods
+  assert_that(all(methods %in% valid_methods))
+  require_cov <- ("joint-marg" %in% methods)
+  pointwise_methods <- setdiff(methods, c("joint-marg", "joint-marg-ind"))
+  
+  # If not provided, compute predictive quantities.
+  input_pair <- rbind(input_num, input_denom)
+  if(is.null(em_pred_list)) {
+    colnames(input_pair) <- llik_em$input_names
+    em_pred_list <- llik_em$predict_emulator(input_pair, lik_par_val=lik_par_val,
+                                             return_mean=TRUE, return_var=TRUE, 
+                                             return_cov=require_cov, ...)
+  }
+  
+  # Assemble log-likelihood predictions.
+  llik_pred_list <- llik_em$predict(input, lik_par_val=lik_par_val, 
+                                    return_mean=TRUE, return_var=TRUE, 
+                                    return_cov=require_cov, 
+                                    em_pred_list=em_pred_list, ...)
+  if(require_cov) assert_that(!is.null(llik_pred_list$cov))
+  else llik_pred_list$cov <- NA
+  
+  # Vector to store results.
+  return_vec <- c(llik_num_mean=llik_pred_list$mean[[1]], 
+                  llik_denom_mean=llik_pred_list$mean[[2]],
+                  llik_num_sd=sqrt(llik_pred_list$var[[1]]),
+                  llik_denom_sd=sqrt(llik_pred_list$var[[2]]),
+                  llik_cross_cov=llik_pred_list$cov[1,2])
 
+    # `joint-marg` is the only method that requires the cross-covariance.
+    # Setting the priors equal here implies we are calculating the likelihood
+    # ratio.
+  if("joint-marg" %in% methods) {
+    l <- gp_acc_ratio_marginal(input_curr=input_denom, 
+                               input_prop=input_num, 
+                               llik_em, use_joint=TRUE, 
+                               lik_par_val=lik_par_val, 
+                               llik_pred_list=llik_pred_list, 
+                               lprior_curr=1, 
+                               lprior_prop=1, 
+                               log_scale=log_scale, ...)
+    return_vec["joint-marg"] <- l$accept_ratio
+  }
+    
+  if("joint-marg-ind" %in% methods) {
+    l <- gp_acc_ratio_marginal(input_curr=input_denom, 
+                               input_prop=input_num, 
+                               llik_em, use_joint=FALSE, 
+                               lik_par_val=lik_par_val, 
+                               llik_pred_list=llik_pred_list, 
+                               lprior_curr=1, 
+                               lprior_prop=1, 
+                               log_scale=log_scale, ...)
+    return_vec["joint-marg-ind"] <- l$accept_ratio
+  } 
+    
+  # Pointwise methods compute approximations for the numerator and denominator
+  # separately, then take the ratio of the approximations.
+  if(length(pointwise_methods) > 0) {
+    pw_llik_approx <- llik_em$calc_lik_approx(pointwise_methods, 
+                                              input=input_pair, 
+                                              em_pred_list=em_pred_list,
+                                              lik_par_val=lik_par_val, 
+                                              log_scale=TRUE, 
+                                              return_type="matrix", ...)
+    log_lik_approx <- pw_llik_approx[1,] - pw_llik_approx[2,]
+    if(!log_scale) log_lik_approx <- exp(log_lik_approx)
+    return_vec <- c(return_vec, log_lik_approx)
+  }
+    
+  return(return_vec)
 }
 
-get_acc_prob_approx_comparison <- function(input_curr, input_prop, llik_em,
-                                           lik_par_val=NULL, llik_exact=NULL, 
-                                           llik_pred_list=NULL, 
-                                           acc_prob_tags="mean", 
-                                           quantile_probs=c(0.7, 0.9), ...) {
+
+calc_lik_ratio_comparison <- function(input_num, input_denom, llik_em,
+                                      lik_par_val=NULL, llik_exact=NULL, 
+                                      methods="mean", log_scale=TRUE,
+                                      quantile_probs=c(0.9), ...) {
+  # This function wraps around `calc_lik_ratio_approx()` in order to facililate 
+  # computation of approximate likelihood ratios over multiple pairs of points,
+  # and to optionally compute the exact likelihood ratio as a basis for 
+  # comparison. `input_num` and `input_denom` are matrices of input points, 
+  # with each row representing a single input point. The matrices must be the
+  # same length. The (approximate) ikelihood ratios are computed for each 
+  # pair `input_num[i,]`, `input_denom[i,]`.
   # Only a single `lik_par_val` is allowed. `input_curr` and `input_prop`
-  # can both be vectors, and they must be of equal length. `acc_prob_tags`
-  # can be "all" to include all tags. If tag "exact" is included then 
-  # "llik_exact" object must be provided.
-  #
+  # can both be vectors, and they must be of equal length. `methods`
+  # can be "all" to include all tags. See `calc_lik_ratio_approx()` for 
+  # specifics. If `llik_exact` is provided then the exact likelihood ratio will 
+  # be computed as well. `llik_exact` is currently assumed to be a llikEmulator
+  # object.
   # 
   # TODO: will be interesting to run this: (i.) for values sampled from prior; 
-  # (ii.) for vlaues sampled from true posterior, and (iii.) for current values
+  # (ii.) for values sampled from true posterior, and (iii.) for current values
   # from true posterior and proposed values from prior (or for this latter one
   # could consider the hyperrectangle defined by the extent of the exact 
   # posterior samples, and only sample proposed values falling outside of this 
   # hyperrectangle). 
-  #
-  # TODO: want this to return a matrix with columns:
-  # all par names current and proposed values, gp pred mean/var at current 
-  # and proposed values, gp cov, exact acc prob, and all the different 
-  # acc prob combinations. 
-  
-  if(acc_prob_tags=="all") {
-    acc_prob_tags <- c("exact", "mean", "marg", "alpha-marg-ind", 
-                       "alpha-marg-joint", "quantile")
+
+  assert_that(nrow(input_num) == nrow(input_denom))
+
+  # Compute approximate likelihood ratios one input pair at a time.
+  results <- NULL
+  for(i in 1:nrow(input_num)) {
+    results_pair <- calc_lik_ratio_approx(input_num[i,], input_denom[i,], 
+                                          llik_em, lik_par_val=lik_par_val, 
+                                          methods=methods, log_scale=log_scale, 
+                                          quantile_probs=quantile_probs, ...)
+    results <- rbind(results, results_pair)
   }
   
+  # Optionally compute exact likelihood ratio.
+  if(!is.null(llik_exact)) {
+    llik_num <- llik_exact$assemble_llik(input_num, 
+                                         lik_par_val=lik_par_val, ...)
+    llik_denom <- llik_exact$assemble_llik(input_denom, 
+                                           lik_par_val=lik_par_val, ...)
+    
+    llik_diff <- llik_num-llik_denom
+    if(!log_scale) llik_diff <- exp(llik_diff)
+    results <- cbind(results, llik_exact_num=llik_num)
+    results <- cbind(results, llik_exact_denom=llik_denom)
+    results <- cbind(results, exact=llik_diff)
+  }
+  
+  rownames(results) <- NULL
+  return(results)
 }
 
 
@@ -1211,14 +1342,16 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em,
                                   conditional=llik_em$default_conditional, 
                                   normalize=llik_em$default_normalize, 
                                   llik_pred_list=NULL, par_prior=NULL, 
-                                  lprior_curr=NULL, lprior_prop=NULL, ...) {
+                                  lprior_curr=NULL, lprior_prop=NULL, 
+                                  log_scale=FALSE, ...) {
   # For a Metropolis-Hastings acceptance probability of the form 
   # min{1, r(input_curr, input_prop)}, this function returns 
   # log E[r(input_curr, input_prop)], where the expectation is with respect to 
   # the `llik_em` distribution. Currently this function only works when the 
-  # emulator distribution implies that r(input_curr, input_prop) ~ LN(m, s^2). 
+  # emulator distribution implies that r(input_curr, input_prop) ~ LN(m, s^2).
+  # Currently assumes a symmetric proposal distribution, as the proposal 
+  # density is not considered here.
   
-  # Compute log-prior evaluations, if not already provided. 
   # Compute log-prior evaluations, if not already provided. 
   if(is.null(lprior_curr)) lprior_curr <- calc_lprior_dens(input_curr, par_prior)
   if(is.null(lprior_prop)) lprior_prop <- calc_lprior_dens(input_prop, par_prior)
@@ -1245,8 +1378,12 @@ gp_acc_ratio_marginal <- function(input_curr, input_prop, llik_em,
   s2 <- sum(llik_pred_list$var)
   if(use_joint) s2 <- s2 - 2*llik_pred_list$cov[1,2]
 
-  # Marginal acceptance ratio approximation. 
-  return(exp(m + 0.5*s2))
+  # Marginal acceptance ratio approximation.
+  log_ratio <- m + 0.5*s2
+  return_list <- list(llik_pred_list=llik_pred_list)
+  return_list$accept_ratio <- ifelse(log_scale, log_ratio, exp(log_ratio))
+  
+  return(return_list)
 }
 
 
