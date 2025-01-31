@@ -79,7 +79,6 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
   #              samples from the prior to determine the initial condition.
   #    sig2_init: numeric, the initial condition for the variance parameters. 
-  #               Not used if `llik_em$use_fixed_lik_par` is TRUE.
   #    sig2_prior: list defining the prior distribution on the variance 
   #                parameters.
   #    mode: character, either "mcwmh" or "pseudo-marginal" to run either the Monte
@@ -124,8 +123,8 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   
   # Setup for `sig2` (observation variances). Safe to assume that all of the 
   # non-fixed likelihood parameters are `sig2` since this is verified by 
-  # `validate_args_mcmc_gp_noisy()` above. 
-  learn_sig2 <- !unlist(llik_em$get_llik_attr("use_fixed_lik_par"))
+  # `validate_args_mcmc_gp_noisy()` above.
+  learn_sig2 <- !is.null(sig2_prior)
   term_labels_learn_sig2 <- names(learn_sig2)[learn_sig2]
   include_sig2_Gibbs_step <- (length(term_labels_learn_sig2) > 0)
   sig2_curr <- sig2_init[term_labels_learn_sig2] # Only includes non-fixed variance params.
@@ -564,8 +563,6 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   #
   # Args:
   #    llik_em: an object for which `is_llik_em(llik_em)` is TRUE.
-  #                   Also, for the time being `llik_em$use_fixed_lik_par`
-  #                   must be TRUE.
   #    par_prior: data.frame defining the prior distribution for `par`. 
   #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
   #              falls back on the default BayesianTools behavior for setting 
@@ -602,7 +599,6 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   
   # TODO: why does this check fail when executed in parallel?
   # assert_that(is_llik_em(llik_em))
-  assert_that(llik_em$use_fixed_lik_par)
 
   # Log-likelihood function. Set up to accept numeric vector `par` as an 
   # argument.

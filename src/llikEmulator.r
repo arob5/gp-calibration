@@ -235,7 +235,7 @@ llikEmulator$methods(
     .self$emulator_model$predict(.self$get_input(input), return_mean=return_mean, 
                                  return_var=return_var, return_cov=return_cov, 
                                  return_cross_cov=return_cross_cov, 
-                                 input_cross=input_cross)
+                                 input_cross=input_cross, ...)
   },
   
   assemble_llik = function(em_val, lik_par_val=NULL, 
@@ -1671,23 +1671,32 @@ llikEmulatorExactGaussDiag$methods(
 #
 # Implements a surrogate likelihood for the Gaussian inverse problem 
 # y|u ~ N(G(u), Sig) where the forward model G is replaced by a 
-# Gaussian process (GP) emulator. The forward model may have multiple 
-# outputs, in which case independent GP emulators are fit for 
-# each output. The attribute `N_output` is the number of outputs (i.e. the 
-# dimension of the vector returned by G). This class also allows for 
-# multiple independent observations, in which case the likelihood takes the form 
-# prod_{n=1}^{N_obs} N(y_n | G(u), Sig), where `N_obs` is the number of 
-# independent observations. Note that G(u) and Sig are assumed constant over 
-# all observations. The `lik_par` for this class is defined to be the 
-# covariance matrix `Sig`. The attribute `y` is the `N_obs` x `N_output`
-# data matrix. If `y` is a numeric vector, then it is assumed that 
-# `N_obs = 1` and the vector is reshaped into a 1 x `N_output` matrix. 
+# Gaussian process (GP) emulator G ~ GP(m,k). The forward model may have  
+# multiple outputs, in which case the GP is assumed to be a multi-output GP 
+# with the  same number of outputs as the observation space dimension.
+# The attribute `N_output` is the number of outputs (i.e. the 
+# dimension of the vector returned by G). This class does not assume any 
+# special structure in the covariance `Sig`, so it is primarily intended for 
+# dense observation covariances, or for multi-output GPs with dense output 
+# covariances. Note that the expectation of the random likelihood (i.e., 
+# the marginal approximation) is given by 
+# E{N(y|G(u), Sig)} = N(y|m(u), Sig + k(u)). So the covariance matrix of the 
+# marginal approximation can be dense when either Sig or k(u) are dense.
+# The class llikEmulatorGPFwdGaussDiag treats the special case where both 
+# Sig and k(u) are diagonal.
+#
+# At present, this class only supports emulators of the gpWrapperSum class.
+# This is due to the fact that it is assuming the emulator is a multi-output
+# GP, and the "include_output_cov" argument is only currently available in this
+# class. This can be generalized to other gpWrapper classes by including 
+# `include_output_cov`, which would just be a diagonal matrix for independent
+# GPs.
 # -----------------------------------------------------------------------------
 
 llikEmulatorGPFwdGauss <- setRefClass(
   Class = "llikEmulatorGPFwdGauss", 
   contains = "llikEmulator",
-  fields = list(y="ANY", N_output="integer", N_obs="integer", L_cov="matrix")
+  fields = list(y="ANY", N_output="integer", N_obs="integer", L_Cov="matrix")
                 
 )
 
@@ -1699,10 +1708,13 @@ llikEmulatorGPFwdGauss$methods(
     
     assert_that(inherits(gp_model, "gpWrapper"), 
                 msg="`gp_model` must inherit from `gpWrapper` class.")
+    # assert_that(isTRUE(class(gp_model)=="gpWrapperSum"),
+    #             msg="At present, only gpWrapperSum objects are allowed for the ",
+    #                 "emulator model in llikEmulatorGPFwdGauss.")
     assert_that(is.numeric(y_obs) || is.matrix(y_obs))
-    if(is.numeric(y_obs)) y_obs <- matrix(y_obs, nrow=1)
-    assert_that(ncol(y_obs) == gp_model$Y_dim)
-    initFields(y=y_obs, N_output=ncol(y_obs), N_obs=nrow(y_obs))
+    y_obs <- drop(y_obs)
+    assert_that(length(y_obs) == gp_model$Y_dim)
+    initFields(y=y_obs, N_output=length(y_obs))
     
     # Set parameter names. 
     dim_par <- gp_model$X_dim
@@ -1711,6 +1723,10 @@ llikEmulatorGPFwdGauss$methods(
     
     # Covariance matrix of Gaussian likelihood. 
     if(!is.null(Cov)) {
+      if(length(drop(Cov)) %in% c(1L, .self$N_output)) {
+        Cov <- diag(Cov, nrow=.self$N_output, ncol=.self$N_output)
+      }
+      
       assert_that(is.matrix(Cov) && (nrow(Cov)==N_output) && (ncol(Cov)==N_output),
                   msg="`Cov` must be a positive definite matrix with dim `N_output` x `N_output`")
       initFields(L_Cov=t(chol(Cov))) 
@@ -1820,7 +1836,7 @@ llikEmulatorGPFwdGauss$methods(
     # Sample the forward model emulator at specified inputs. `input` is M x D 
     # (M input vectors). Returns array of dimension (M, N_samp, N_output). 
     
-    .self$emulator_model$sample(get_input(input), use_cov=use_cov, 
+    .self$emulator_model$sample(.self$get_input(input), use_cov=use_cov, 
                                 include_noise=include_noise, 
                                 N_samp=N_samp, pred_list=em_pred_list, ...)
   }, 
@@ -1829,7 +1845,10 @@ llikEmulatorGPFwdGauss$methods(
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional,  
                      normalize=default_normalize, include_noise=TRUE, ...) {
-    # Let M := nrow(input) (number of input points).
+    # Let M := nrow(input) (number of input points). Currently this method 
+    # only supports computation of pointwise means and variances. Note that the 
+    # both of these quantities require the underlying GP means and GP pointwise 
+    # covariances in the output space.
     #
     # Return formatting:
     # "mean": numeric vector of length M.
@@ -1837,7 +1856,8 @@ llikEmulatorGPFwdGauss$methods(
     # Covariance return options "cov" and "cross_cov" not yet supported.
     
     if(return_cross_cov || return_cov) {
-      stop("`return_cross_cov` and `return_cov` are not yet supported for `llikEmulatorGP$predict()`.")
+      stop("`return_cross_cov` and/or `return_cov` not yet supported for ",
+           "`llikEmulatorGPFwdGauss$predict()`.")
     }
     
     input <- .self$get_input(input)
@@ -1846,23 +1866,21 @@ llikEmulatorGPFwdGauss$methods(
     
     # Forward model emulator predictions. 
     if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(input, 
-                                             return_mean=TRUE, 
-                                             return_var=TRUE, 
-                                             return_cov=return_cov, 
+      em_pred_list <- .self$predict_emulator(input, return_mean=TRUE, 
+                                             return_var=FALSE, return_cov=FALSE, 
+                                             return_output_cov=TRUE,
                                              return_cross_cov=return_cross_cov, 
                                              input_cross=input_cross, 
-                                             include_output_cov=TRUE,
                                              include_noise=include_noise, ...)
     } else {
-      assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$var), 
+      assert_that(!is.null(em_pred_list$mean) && !is.null(em_pred_list$output_cov), 
                   msg=paste0("Log-likelihood predictive quantities require ", 
-                             "forward model emulator mean and variance."))
+                             "forward model emulator mean and output covariance."))
     }
     
     # Log-likelihood mean can be shown to be equal to the plug-in mean plus 
     # a variance inflation term depending on the likelihood covariance and 
-    # GP covariance.
+    # GP covariance. The inflation term is added below.
     if(return_mean) {
       llik_pred_list$mean <- vector(mode="numeric", length=nrow(input))
       llik_plug_in_mean <- .self$assemble_llik(em_pred_list$mean, 
@@ -1877,7 +1895,7 @@ llikEmulatorGPFwdGauss$methods(
     
     if(return_mean || return_var) {
       for(i in 1:nrow(input)) {
-        sig_inv_K <- backsolve(t(L), forwardsolve(L, em_pred_list$var[i,,]))
+        sig_inv_K <- backsolve(t(L), forwardsolve(L, em_pred_list$output_cov[i,,]))
           
         # Compute mean.
         if(return_mean) {
@@ -2833,7 +2851,8 @@ llikEmulatorMultGausGP$methods(
 llikEmulatorExactGauss <- setRefClass(
   Class = "llikEmulatorExactGauss", 
   contains = "llikEmulator",
-  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", N_obs="integer", L_Cov="matrix")
+  fields = list(fwd_model="ANY", fwd_model_vectorized="ANY", y="numeric", 
+                N_obs="integer", L_Cov="matrix")
 )
 
 llikEmulatorExactGauss$methods(

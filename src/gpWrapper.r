@@ -149,7 +149,7 @@ gpWrapper$methods(
     # gpWrapper class. "noise_var" is a numeric value or NULL, which can be 
     # used to specify a known noise variance. 
     # `par_bounds`, is a list with the same element names. The "kernel" and 
-    # "mean_func" elements are each lists length `dim_Y` with names set to the 
+    # "mean_func" elements are each lists length `Y_dim` with names set to the 
     # corresponding output names `Y_names". Each element is a matrix with 
     # 4 columns with column names "par_name", "init", "lower", and "upper". 
     # "par_name" is the hyperparameter name and the remaining columns are used 
@@ -1270,9 +1270,9 @@ gpWrapperSum$methods(
   }, 
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
-                     return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
-                     return_trend=TRUE, pred_list=NULL, include_output_cov=FALSE, 
-                     ...) {
+                     return_cross_cov=FALSE, return_output_cov=FALSE,
+                     return_output_cross_cov=FALSE, X_cross=NULL, 
+                     include_noise=TRUE, return_trend=TRUE, pred_list=NULL, ...) {
     # `pred_list` is a GP prediction list corresponding to `gp_model`, the 
     # set of independent GPs. Given that the gpWrapperSum GP is a multi-output 
     # GP, there are two notions of covariance here: covariance across input 
@@ -1281,7 +1281,8 @@ gpWrapperSum$methods(
     # behavior of `predict()` for other gpWrapper classes; and (2) to avoid 
     # computing with very large matrices when not required. The different 
     # return options are summarized below. Let `M := nrow(X_new)`, 
-    # `Q := nrow(X_cross)`, and `P := dim_Y`.
+    # `Q := nrow(X_cross)`, and `P := Y_dim`. Currently cross-covariances in 
+    # the output space are not supported.
     #
     # Returns:
     # list, with different potential elements:
@@ -1291,20 +1292,18 @@ gpWrapperSum$methods(
     #          GP prior mean predictions.
     # "var": included if `return_var = TRUE`. matrix of shape (M,P), where the 
     #        (m,p) element is Var[G(x_m)_p].
-    #
-    # The elements "cov" and "cross_cov" will depend on the value of 
-    # `include_output_cov`. At present, no output cross-covariance computation
-    # is supported.
-    #
-    # If `include_output_cov = FALSE` (the default): 
-    # "cov": included if `return_cov = TRUE`. matrix of shape (M,M,P)
+    # "cov": included if `return_cov = TRUE`. matrix of shape (M,M,P), where the
+    #        (m,n,p) element is the covariance Cov[G(x_m)_p, G(x_n)_p]. i.e.,
+    #        the (,,p) element gives the covariance matrix Cov[G(X)_p], where
+    #        X is the set of all inputs. These covariances are all with respect
+    #        to the input space; no output covarainces are computed.
     # "cross_cov": included if `return_cross_cov = TRUE`. matrix of shape 
-    #              (M,Q,P).
-    #
-    # If `include_output_cov = TRUE`:
-    # "cov": included if `return_cov = TRUE`. matrix of shape (M,P,P), where the
-    #        (m,,) element contains the covariance matrix Cov[G(x_m)].
-    # "cross_cov": not yet supported.
+    #              (M,Q,P). The (,,p) element is the cross covariance matrix
+    #              Cov[G(X)_p, G(X_cross)_p]. Only computes input covariances.
+    # "output_cov": included if `return_output_cov = TRUE`. matrix of shape 
+    #               (M,P,P), where the (m,,) element contains the covariance 
+    #               matrix Cov[G(x_m)]. This is the output covariance for 
+    #               the input x_m. No input covariances are computed.
     
     n_input <- nrow(X_new)
     if((n_input==1) && return_cov) return_var <- TRUE
@@ -1314,7 +1313,7 @@ gpWrapperSum$methods(
     # Predict using independent GPs, if required.
     if(is.null(pred_list)) {
       pred_list <- .self$gp_model$predict(X_new, return_mean=return_mean, 
-                                          return_var=return_var, 
+                                          return_var=return_var || return_output_cov, 
                                           return_cov=return_cov,
                                           return_cross_cov=return_cross_cov,
                                           X_cross=X_cross, 
@@ -1343,24 +1342,26 @@ gpWrapperSum$methods(
       return_list$var <- vars
     }
     
-    # Compute covariances and cross-covariances. Predictive covariances will 
-    # either be with respect to the output space or input space.
+    # Compute input covariances and cross covariances.
     if(return_cov || return_cross_cov) {
-      if(include_output_cov) {
-        return_list_covs <- .self$predict_output_cov(X_new, return_cov=FALSE, 
-                                                     return_cross_cov=FALSE, 
-                                                     X_cross=NULL, 
-                                                     include_noise=TRUE,
-                                                     pred_list=pred_list)
-      } else {
-        return_list_covs <- .self$predict_input_cov(X_new, return_cov=FALSE, 
-                                                    return_cross_cov=FALSE, 
-                                                    X_cross=NULL, 
-                                                    include_noise=TRUE,
-                                                    pred_list=pred_list)
-      }
-      
-      return_list <- c(return_list, return_list_covs)
+      input_covs <- .self$predict_input_cov(X_new, return_cov=return_cov, 
+                                            return_cross_cov=return_cross_cov, 
+                                            X_cross=X_cross, 
+                                            include_noise=include_noise,
+                                            pred_list=pred_list)
+      return_list <- c(return_list, input_covs)
+    }
+    
+    
+    # Compute output covariances and cross covariances.
+    if(return_output_cov || return_output_cross_cov) {
+      output_covs <- .self$predict_output_cov(X_new, 
+                                              return_output_cov=return_output_cov, 
+                                              return_output_cross_cov=return_output_cross_cov, 
+                                              X_cross=X_cross, 
+                                              include_noise=include_noise,
+                                              pred_list=pred_list)
+      return_list <- c(return_list, output_covs)
     }
     
     return(return_list)
@@ -1390,14 +1391,14 @@ gpWrapperSum$methods(
     
     # Compute covariance predictions.
     if(return_cov) {
-      covs <- array(0, dim=c(n_input, n_input, .self$dim_Y))
+      covs <- array(0, dim=c(n_input, n_input, .self$Y_dim))
       
       if(n_input==1) {
         covs[1,1,] <- return_list$var[1,]
       } else {
-        for(p in seq_len(.self$dim_Y)) {
-          for(j in 1:nrow(.self$B)) {
-            cov[,,p] <- cov[,,p] + (.self$B[p,j])^2 * pred_list$cov[,,j,drop=FALSE]
+        for(p in seq_len(.self$Y_dim)) {
+          for(j in 1:ncol(.self$B)) {
+            covs[,,p] <- covs[,,p] + (.self$B[p,j])^2 * pred_list$cov[,,j]
           }
         }
       }
@@ -1407,9 +1408,9 @@ gpWrapperSum$methods(
     
     # Compute cross-covariance predictions.
     if(return_cross_cov) {
-      cross_covs <- array(0, dim=c(n_input, nrow(X_cross), .self$dim_Y))
-      for(p in seq_len(.self$dim_Y)) {
-        for(j in 1:nrow(.self$B)) {
+      cross_covs <- array(0, dim=c(n_input, nrow(X_cross), .self$Y_dim))
+      for(p in seq_len(.self$Y_dim)) {
+        for(j in 1:ncol(.self$B)) {
           cross_covs[,,p] <- cross_covs[,,p] + (.self$B[p,j])^2 * pred_list$cross_cov[,,j,drop=FALSE]
         }
       }
@@ -1421,7 +1422,8 @@ gpWrapperSum$methods(
   },
   
   
-  predict_output_cov = function(X_new, return_cov=FALSE, return_cross_cov=FALSE, 
+  predict_output_cov = function(X_new, return_output_cov=FALSE, 
+                                return_output_cross_cov=FALSE, 
                                 X_cross=NULL, include_noise=TRUE, 
                                 pred_list=NULL, ...) {
     # Compute predictive covariances and cross-covariances, where 
@@ -1431,37 +1433,42 @@ gpWrapperSum$methods(
     # method does not support computation of cross-covariances. For covariances,
     # returns array of shape (M,P,P), where M=nrow(X_new) and P=Y_dim.
     # The (i,,) element of this array contains the PxP covariance matrix 
-    # Cov[G(x_i), G(x_i)], where x_i is the ith row of X_new.
+    # Cov[G(x_i)], where x_i is the ith row of X_new. Note that this output
+    # covariance matrix only requires the variances k_j(x_i) of the underlying
+    # independent GPs.
+    #
+    # At present, cross covariances in the output space are not supported.
     
     return_list <- list()
     
     # Predict using independent GPs, if required.
     if(is.null(pred_list)) {
       pred_list <- .self$gp_model$predict(X_new, return_mean=FALSE, 
-                                          return_var=return_cov, 
+                                          return_var=return_output_cov, 
                                           return_cov=FALSE,
-                                          return_cross_cov=return_cross_cov,
+                                          return_cross_cov=return_output_cross_cov,
                                           X_cross=X_cross, 
                                           include_noise=include_noise, ...)
+    } else {
+      assert_that(isTRUE(!is.null(pred_list$var)), 
+                  msg=paste0("Output covariance computation requires predictive ",
+                             "varainces of underlying independent GPs."))
     }
     
     # Loop input-by-input to compute the (cross) covariance matrices.
     n_input <- nrow(X_new)
     
-    if(return_cov) {
+    if(return_output_cov) {
       cov_arr <- array(NA, dim=c(n_input, .self$Y_dim, .self$Y_dim))
       for(i in seq_len(n_input)) {
-        # Compute covariance predictions.
-        if(return_cov) {
-          cov_arr[i,,] <- tcrossprod(mult_vec_with_mat_rows(pred_list$var[i,], .self$B), .self$B)
-          diag(cov_arr[i,,]) <- diag(cov_arr[i,,]) + .self$sig2
-        }
+        cov_arr[i,,] <- tcrossprod(mult_vec_with_mat_rows(pred_list$var[i,], .self$B), .self$B)
+        diag(cov_arr[i,,]) <- diag(cov_arr[i,,]) + .self$sig2
       }
-      return_list$cov <- cov_arr
+      return_list$output_cov <- cov_arr
     }
 
     # Compute cross-covariance predictions.
-    if(return_cross_cov) {
+    if(return_output_cross_cov) {
       message("gpWrapperSum does not currently support cross-covariances ",
               "across output variables.")
     }

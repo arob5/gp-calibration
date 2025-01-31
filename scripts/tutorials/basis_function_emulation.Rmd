@@ -256,40 +256,42 @@ for(i in idcs) {
 
 ```
 
-
+## Creating a `llikEmulator` object using `gpWrapperSum`.
+We know use the GP emulator for the forward model encoded by the `gpWrapperSum`
+object, and use it to approximate the true forward model in the context of 
+Bayesian inference. The induced approximation to the log-likelihood is encoded
+by the below `llikEmulatorGPFwdGauss` object.
 
 ```{r}
-hist_prior <- em_llik$emulator_model$plot_resid_hist(test_info_prior$input, 
-                                                     matrix(test_info_prior$llik,ncol=1), 
-                                                     pred_list=em_pred_list_prior)
-
-hist_post <- em_llik$emulator_model$plot_resid_hist(test_info_post$input, 
-                                                    matrix(test_info_post$llik,ncol=1), 
-                                                    pred_list=em_pred_list_post)
-
-plot(hist_prior[[1]])
-plot(hist_post[[1]])
-
+llik_em <- llikEmulatorGPFwdGauss("llik_em", gp_g, y_obs=inv_prob$y, 
+                                  Cov=inv_prob$sig2_model, 
+                                  default_conditional=FALSE, 
+                                  default_normalize=TRUE,
+                                  par_names=inv_prob$par_names)
 ```
 
 ```{r}
-llik_em2 <- readRDS(file.path(out_dir, "../2365236/em_llik.rds"))
+# Compute emulator predictions at test points.
+em_pred_list <- llik_em$predict_emulator(test_info$input, return_mean=TRUE,
+                                         return_var=FALSE,
+                                         return_output_cov=TRUE)
 
-hist_prior2 <- llik_em2$emulator_model$plot_resid_hist(test_info_prior$input, 
-                                                     matrix(test_info_prior$llik,ncol=1))
 
-hist_post2 <- llik_em2$emulator_model$plot_resid_hist(test_info_post$input, 
-                                                    matrix(test_info_post$llik,ncol=1))
-
-plot(hist_prior2[[1]])
-plot(hist_post2[[1]])
+# llik_pred_list <- llik_em$predict(test_info$input, return_mean=TRUE,
+#                                   return_var=TRUE)
 ```
 
 
+```{r}
+test_info$llik <- inv_prob$llik_obj$assemble_llik(test_info$input)
+  
+  
+plt <- llik_em$plot_pred_validation(test_info$input, true_llik=test_info$llik,
+                                    em_pred_list=em_pred_list)
+plot(plt)
 
-
-
-
+# Seems to be off by a negative. 
+```
 
 
 
