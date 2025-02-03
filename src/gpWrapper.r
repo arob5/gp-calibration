@@ -599,13 +599,13 @@ gpWrapper$methods(
     pred_list <- vector(mode="list", length=Y_dim)
     for(i in seq_along(pred_list)) {
       pred_list[[i]] <- .self$predict_package(X_new=X_new, output_idx=i, 
-                                        return_mean=return_mean, 
-                                        return_var=return_var, 
-                                        return_cov=return_cov, 
-                                        return_cross_cov=return_cross_cov, 
-                                        X_cross=X_cross, 
-                                        include_noise=include_noise, 
-                                        return_trend=return_trend, ...)
+                                              return_mean=return_mean, 
+                                              return_var=return_var, 
+                                              return_cov=return_cov, 
+                                              return_cross_cov=return_cross_cov, 
+                                              X_cross=X_cross, 
+                                              include_noise=include_noise, 
+                                              return_trend=return_trend, ...)
     }
 
     names(pred_list) <- .self$Y_names
@@ -650,8 +650,9 @@ gpWrapper$methods(
   }, 
   
   
-  predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE,
-                              return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE,
+  predict_parallel = function(X_new, return_mean=TRUE, return_var=TRUE, 
+                              return_cov=FALSE, return_cross_cov=FALSE, 
+                              X_cross=NULL, include_noise=TRUE,
                               return_trend=TRUE) {
     .NotYetImplemented()
   },
@@ -922,7 +923,7 @@ gpWrapper$methods(
   
   plot_resid_hist = function(X_new, Y_new, include_noise=TRUE, CI_prob=0.9, 
                              normalize_resid=TRUE, pred_list=NULL, ...) {
-    # If `norm_resid = TRUE` then the normalized reiduals (y-mean)/sd are 
+    # If `normalize_resid = TRUE` then the normalized reiduals (y-mean)/sd are 
     # plotted. Otherwise y-mean is plotted.
     # Compute required predictive quantities if not already provided. 
     # TODO: finish this method.
@@ -931,7 +932,7 @@ gpWrapper$methods(
     
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=TRUE, 
-                                 include_noise=include_noise)
+                                 include_noise=include_noise, ...)
     }
     
     CI_tail_prob <- 0.5 * (1-CI_prob)
