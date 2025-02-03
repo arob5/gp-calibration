@@ -343,13 +343,8 @@ We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFw
 stochastic, but no longer Gaussian in general; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
 the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by plugging the 
 conditioned forward model emulator into the log-likelihood function, 
-constituting a modular surrogate-modeling approach \citep{modularization}. The mean and variance of the induced 
-likelihood approximation can be described in closed-form for \todo
-
-While the induced stochastic approximation 
-to the likelihood (and posterior density) cannot in general be described explicitly, the Gaussian likelihood 
-example \ref{induced_llik_emulator} represents an important exception. The mean and variance of the induced
-likelihood approximation are given in the following proposition. 
+constituting a modular surrogate-modeling approach \citep{modularization}. If the likelihood is Gaussian  
+\ref{induced_llik_emulator}, then the first two moments of the induced likelihood surrogate are available in closed-form.
 
 \begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
 Given a GP forward model emulator $\fwdEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
@@ -363,29 +358,26 @@ mean and variance given by
 - \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}
 \end{align}
 \end{prop}
-This follows as a special case of \Cref{prop:Gaussian_marginal_moments}, and its implications will be explored in subsequent sections. 
 
-We note that the emulation of expensive models is one of the central questions studied in the 
-computer experiments literature, with GPs arguably representing the most popular tool 
-for the job; see \cite{gramacy2020surrogates} and 
-\cite{design_analysis_computer_experiments} for detailed treatments.
+This follows from general facts about Gaussians; see \Cref{prop:Gaussian_marginal_moments} in the appendix for a full derivation.
 The forward model emulation strategy detailed above becomes problematic when the output 
-dimension $\dimObs$ is large or the outputs are highly interdependent, rendering the independent GP 
-approach infeasible or ill-advised.
+dimension $\dimObs$ is large or the outputs are highly interdependent, rendering the independent GP approach infeasible or ill-advised.
 For example, the forward model output may correspond to the numerical solution of 
 a differential equation and thus may take the form of a time series or spatiotemporal grid. 
 A great deal of literature has addressed these challenges, including approaches tailored to forward models
-with dynamical structure 
-(e.g., \cite{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}).
-A popular alternative is to first approximately express the high-dimensional output as a linear combination of basis vectors 
+with dynamical structure; e.g., \citet{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
+One popular strategy is to approximate the model output as a linear combination of a small number of basis vectors, with the 
+coefficients modeled as independent GPs; that is, 
 \begin{align}
-\fwd(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec}, \label{fwd_model_basis_func}
+\fwdEm(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{fwd_model_basis_func} \\
+\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean{(\idxBasis)}, \emKer{(\idxBasis)}),  \\
+ \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec})
 \end{align}
-and then model the coefficients $\basisWeight_{\idxBasis}(\Par)$ using independent GPs. The basis vectors 
-are typically found via a singular value decomposition, though other bases have been explored 
-\citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}. The surrogate constructed in 
-this fashion is simply a linear combination of independent GP emulators, and hence most of the results on forward model 
-emulation in this paper are easily extended to this setting. See the appendix for details (\todo). 
+where the noise term $\noise_{\basisVec}$ accounts for the approximation error in the basis expansion.
+The basis vectors are typically found via a singular value decomposition, though other bases have been explored 
+\citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}. The surrogate predictive distribution
+under the model in \cref{fwd_model_basis_func} remains Gaussian, 
+and thus \cref{fwd_em_lik_emulator_moments_Gaussian} still holds.
 
 \subsubsection{Log-Likelihood Emulation}
 We observe in \ref{post_dens} that the forward model evaluations appear in the posterior density only through the 
@@ -495,7 +487,8 @@ may outweigh the downsides of log-likelihood emulation in many applications.
 
 % Posterior Approximation
 \section{Posterior Approximation} \label{sec:post_approx}
-With a fit GP emulator in hand, we now turn to the question of how best to utilize the emulator in approximating the posterior 
+With a fit GP emulator in hand, we now turn to the question of how best to utilize the resulting likelihood surrogate 
+in approximating the posterior 
 distribution of the Bayesian inverse problem. We systematically review the various methods that have been considered in the 
 literature, and propose a new approach based on noisy approximations of MCMC algorithms. For succinctness, we restrict 
 to the log-likelihood emulation setting when introducing posterior approximation methods throughout this section. Natural 
