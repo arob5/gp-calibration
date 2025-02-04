@@ -246,7 +246,7 @@ gpWrapper$methods(
     # The default method returns NULL, which does not set any bounds/init 
     # values. This method should typically be overloaded by classes inheriting 
     # from `gpWrapper`.
-    
+
     noise_var_bounds <- .self$get_noise_var_bounds(noise_var_bounds, ...)
     kernel_bounds <- .self$get_kernel_bounds(kernel_bounds, ...)
     
@@ -1772,20 +1772,19 @@ gpWrapperHet$methods(
   
   define_par_bounds = function(kernel_bounds=NULL, mean_func_bounds=NULL, 
                                noise_var_bounds=NULL, ...) {
-    # hetGP has a method for choosing default bounds for hyperparameters; 
-    # if `hyperpar_bounds` is not explicitly provided, we fall back on this 
-    # hetGP method.
+    # hetGP has a method for choosing default bounds for hyperparameters, so
+    # we fall back on hetGP's methods.
     
-    if(is.null(hyperpar_bounds)) {
+    if(all(is.null(kernel_bounds), is.null(mean_func_bounds), is.null(noise_var_bounds))) {
       message("No bounds/initialization values explicitly defined for ",
               "kernel and mean function hyperparameters. Falling back on ",
               "hetGP's method for defining bounds/init values.")
-      return(NULL)
     } else {
       message("gpWrapperHet does not yet support explicit setting of ",
               " hyperparameter bounds. hetGP's default bounds will be used.")
-      return(NULL)
     }
+    
+    list(kernel=NULL, mean_func=NULL, noise_var=NULL)
   },
   
   fit_package = function(X_fit, y_fit, output_idx, ...) {
@@ -1815,7 +1814,7 @@ gpWrapperHet$methods(
     # Update the noise variance attribute based on the hyperparameter 
     # optimization. See class comments for notes on the parameterization used 
     # here.
-    .self$noise_var[output_idx] <<- gp_fit$nu_hat * gp_fit$g
+    .self$noise_var[output_idx] <- gp_fit$nu_hat * gp_fit$g
     
     return(gp_fit)
   },

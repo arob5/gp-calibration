@@ -171,6 +171,10 @@ pred_exact <- llik_em$plot_pred_validation(test_info_exact$input,
                                            geom_hline(yintercept=llik_bound,
                                                       color="green")
 plot(pred_exact)
+
+
+
+plot(test_info_exact$llik, em_pred_list_exact$trend)
 ```
 
 # Investigating the Mean Approximation
@@ -200,12 +204,18 @@ info_dt <- combine_samp_dt(mcmc_list_mean$info, mcmc_list_mean_trunc$info,
 trace_plts_mean <- get_trace_plots(samp_dt, test_labels=c("mean","mean_trunc"))
 for(plt in trace_plts_mean) plot(plt)
 ```
-
 ```{r}
 # Trace plots: log-likelihood, mean approximation.
 trace_plts_llik_mean <- get_trace_plots(info_dt, param_name="llik")
 for(plt in trace_plts_llik_mean) plot(plt)
 ```
+
+```{r}
+# Histograms of 1d marginals.
+hist_plots_mean <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact")
+for(plt in hist_plots_mean) plot(plt)
+```
+
 
 For the un-truncated mean approx run, it appears that the weight assigned to 
 one chain (chain 2) will dominate all of the others. For the truncated 
@@ -260,10 +270,6 @@ test_info_mean <- get_init_design_list(inv_prob, design_method="subsample",
 em_pred_list_mean <- llik_em$predict_emulator(test_info_mean$input)
 llik_pred_list_mean <- llik_em$predict(test_info_mean$input, 
                                        em_pred_list=em_pred_list_mean)
-
-
-
-
 
 pred_mean <- llik_em$plot_pred_validation(test_info_mean$input, 
                                           true_llik=test_info_mean$llik,
