@@ -107,11 +107,23 @@ that the GP hyperparameters are optimized. For now, the GP mean and covariance
 functions are specified in the `fit` method, but this will eventually be 
 updated so that they are specified when instantiating the object.
 ```{r}
-# Instantiate the GP object.
+# Instantiate the GP object. We pass the training data (design points) that 
+# will be used to fit the GP. We also specify that we want the inputs X to 
+# be scaled to the unit hypercube, and the outputs Y to be normalized to 
+# have mean zero and variance one. These transformations will be done behind
+# the scenes, so that the user always works with inputs/ouputs on the original
+# scale.
 gp_obj <- gpWrapperHet(X, Y, normalize_output=TRUE, scale_input=TRUE)
 
-# Optimize the GP hyperparameters.
-gp_obj$fit("Gaussian", "constant", estimate_nugget=TRUE)
+# Specify the GP prior. This essentially means specifying three things: (1)
+# the kernel/covariance function (in this case the Gaussian kernel); (2) the 
+# mean function (in this case a constant mean); and (3) whether or not to 
+# include an additive Gaussian noise term (in this case, yes). 
+gp_obj$set_gp_prior("Gaussian", "constant", include_noise=TRUE)
+
+# Optimize the GP hyperparameters (mean function and kernel parameters, as well
+# as the noise variance parameter).
+gp_obj$fit()
 
 # Summarize the GP fit.
 gp_obj$summarize()
@@ -160,6 +172,7 @@ print(dim(pred_list$cov))
 # Example of passing `pred_list` to another plotting method.
 gp_obj$plot_pred(pred_list=pred_list, Y_new=f_test)
 ```
+
 ## Functions of GP Predictions
 Often one in interested in functions of the GP predictive distribution. The 
 mean and variance are two such examples, but `gpWrapper` offers the 
@@ -187,7 +200,6 @@ err_metrics_pw <- gp_obj$calc_pred_multi_func(c("mae", "mse", "crps", "log_score
                                               Y_new=f_test)
 head(err_metrics_pw)
 ```
-
 
 ```{r}
 # The above metrics are all pointwise. We now consider some aggregate 

@@ -38,6 +38,9 @@ $\tilde{u}$ relative to $u$ more heavily as compared to the mean approximation.
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
 
+library(data.table)
+library(ggplot2)
+
 # Filepath definitions.
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
@@ -56,8 +59,9 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 ```
 
 ```{r}
-# Load inverse problem setup information.
+# Load inverse problem setup information. Store log-likelihood upper bound.
 inv_prob <- get_vsem_test_1()
+llik_bound <- inv_prob$llik_obj$get_llik_bounds()[2]
 ```
 
 ```{r}
@@ -67,13 +71,26 @@ design_method <- "LHS"
 
 design_info <- get_init_design_list(inv_prob, design_method, n_design)
 ```
+
+
+```{r}
+inv_prob$llik_obj$plot_1d_projection(input_bounds=design_info$bounds)
+```
+
+
 ```{r}
 # Create sets of test points at which to evaluate approximate likelihood ratios.
 n_design_test <- 500L
+test_info_prior <- get_init_design_list(inv_prob, design_method, n_design_test)
 test_info_num <- get_init_design_list(inv_prob, design_method, n_design_test)
 test_info_denom <- get_init_design_list(inv_prob, design_method, n_design_test)
 ```
 
+```{r}
+# Truncate prior based on design points - used in certain tests.
+par_prior <- inv_prob$par_prior
+par_prior_trunc <- truncate_prior(par_prior, design_info$bounds)
+```
 
 ```{r}
 # Fit GP for log-likelihood.
@@ -85,8 +102,227 @@ gp_obj$fit(multistart=10, trace=TRUE)
 # Instantiate and save log-likelihood emulator object.
 llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
                           default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
-                          use_fixed_lik_par=TRUE)
+                          use_fixed_lik_par=TRUE, llik_bounds=c(-Inf, llik_bound))
 ```
+
+```{r}
+em_pred_list_prior <- llik_em$predict_emulator(test_info_prior$input)
+
+scatter_plot <- llik_em$plot_pred_validation(test_info_prior$input, 
+                                             true_llik=test_info_prior$llik, 
+                                             include_interval=TRUE, 
+                                             interval_method="CI",
+                                             CI_prob=0.95, 
+                                             em_pred_list=em_pred_list_prior) 
+resid_hist_plot <- llik_em$emulator_model$plot_resid_hist(test_info_prior$input, 
+                                                          Y_new=matrix(test_info_prior$llik, ncol=1),
+                                                          pred_list=em_pred_list_prior)
+
+plot(scatter_plot)
+plot(resid_hist_plot[[1]])
+```
+
+# Exact MCMC
+```{r}
+mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
+                      sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                      n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood.
+mcmc_list <- run_mcmc(inv_prob$llik_obj, inv_prob$par_prior, mcmc_settings)
+
+# Table storing MCMC samples.
+samp_dt <- mcmc_list$samp
+mcmc_metadata <- mcmc_list$output_list
+```
+
+```{r}
+# Trace plots: exact MCMC.
+burn_in_exact <- round(mcmc_settings$n_itr/2)
+samp_dt <- select_mcmc_itr(samp_dt, itr_start=burn_in_exact)
+
+trace_plts <- get_trace_plots(samp_dt)
+for(plt in trace_plts) plot(plt)
+```
+
+```{r}
+# Trace plots log-likelihood: exact MCMC.
+trace_plt_llik <- get_trace_plots(mcmc_list$info, param_names="llik",
+                                  itr_start=burn_in_exact)[[1]]
+plot(trace_plt_llik)
+```
+
+```{r}
+# Emulator predictions at true posterior samples.
+par_names <- inv_prob$par_names
+samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="exact", 
+                                 param_type="par")[,par_names]
+test_info_exact <- get_init_design_list(inv_prob, design_method="subsample", 
+                                        N_design=n_design_test,
+                                        design_candidates=samp_mat)
+em_pred_list_exact <- llik_em$predict_emulator(test_info_exact$input)
+
+pred_exact <- llik_em$plot_pred_validation(test_info_exact$input, 
+                                           true_llik=test_info_exact$llik,
+                                           em_pred_list=em_pred_list_exact, 
+                                           include_interval=TRUE, 
+                                           interval_method="CI",
+                                           CI_prob=0.95) + 
+                                           geom_hline(yintercept=llik_bound,
+                                                      color="green")
+plot(pred_exact)
+
+
+
+plot(test_info_exact$llik, em_pred_list_exact$trend)
+```
+
+# Investigating the Mean Approximation
+```{r}
+mcmc_settings_mean <- list(test_label="mean", approx_type="mean",
+                           mcmc_func_name="mcmc_bt_wrapper", 
+                           sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                           n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean <- run_mcmc(llik_em, par_prior, mcmc_settings_mean)
+mcmc_list_mean_trunc <- run_mcmc(llik_em, par_prior_trunc, mcmc_settings_mean)
+
+# Store samples.
+burn_in_mean <- 40000
+samp_dt_mean <- select_mcmc_itr(mcmc_list_mean$samp, itr_start=burn_in_mean)
+samp_dt_mean_trunc <- select_mcmc_itr(mcmc_list_mean_trunc$samp, itr_start=burn_in_mean)
+samp_dt_mean_trunc$test_label <- "mean_trunc"
+mcmc_list_mean_trunc$info$test_label <- "mean_trunc"
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean, samp_dt_mean_trunc)
+info_dt <- combine_samp_dt(mcmc_list_mean$info, mcmc_list_mean_trunc$info,
+                           itr_start=burn_in_mean)
+```
+
+```{r}
+# Trace plots: mean approximation.
+trace_plts_mean <- get_trace_plots(samp_dt, test_labels=c("mean","mean_trunc"))
+for(plt in trace_plts_mean) plot(plt)
+```
+```{r}
+# Trace plots: log-likelihood, mean approximation.
+trace_plts_llik_mean <- get_trace_plots(info_dt, param_name="llik")
+for(plt in trace_plts_llik_mean) plot(plt)
+```
+
+```{r}
+# Histograms of 1d marginals.
+hist_plots_mean <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact")
+for(plt in hist_plots_mean) plot(plt)
+```
+
+
+For the un-truncated mean approx run, it appears that the weight assigned to 
+one chain (chain 2) will dominate all of the others. For the truncated 
+distribution, three of the chains (1,2,4) have approximately equal weights, 
+and dominate the weight of the fourth chain. 
+
+```{r}
+calc_chain_weights(info_dt)
+```
+
+```{r}
+# Mean approx: only dominant chain.
+samp_dt_mean <- select_mcmc_samp(samp_dt, test_labels=c("mean","exact"))
+samp_dt_mean <- samp_dt_mean[(test_label=="exact") | (chain_idx==2)]
+
+hist_plts_mean <- get_hist_plot_comparisons(samp_dt_mean, test_label_baseline="exact")
+for(plt in hist_plts_mean) plot(plt)
+```
+
+```{r}
+# Mean approx: non-dominant chains.
+samp_dt_mean <- select_mcmc_samp(samp_dt, test_labels=c("mean","exact"))
+samp_dt_mean <- samp_dt_mean[(test_label=="exact") | (chain_idx != 2)]
+
+hist_plts_mean <- get_hist_plot_comparisons(samp_dt_mean, test_label_baseline="exact")
+for(plt in hist_plts_mean) plot(plt)
+```
+
+```{r}
+# Mean approx: only dominant chains.
+samp_dt_mean_trunc <- select_mcmc_samp(samp_dt, test_labels=c("mean","exact"))
+samp_dt_mean_trunc <- samp_dt_mean_trunc[(test_label=="exact") | (chain_idx %in% c(1,2,4))]
+
+hist_plts_mean_trunc <- get_hist_plot_comparisons(samp_dt_mean_trunc, test_label_baseline="exact")
+for(plt in hist_plts_mean_trunc) plot(plt)
+```
+
+
+```{r}
+# Bound constraint violations.
+select_mcmc_samp(info_dt, param_names="llik")[sample > llik_bound, .N, by=test_label]
+
+```
+
+```{r}
+# Emulator predictions at mean approx posterior samples.
+samp_mat <- select_mcmc_samp_mat(samp_dt_mean, test_label="mean", 
+                                 param_type="par")[,par_names]
+test_info_mean <- get_init_design_list(inv_prob, design_method="subsample", 
+                                       N_design=n_design_test,
+                                       design_candidates=samp_mat)
+em_pred_list_mean <- llik_em$predict_emulator(test_info_mean$input)
+llik_pred_list_mean <- llik_em$predict(test_info_mean$input, 
+                                       em_pred_list=em_pred_list_mean)
+
+pred_mean <- llik_em$plot_pred_validation(test_info_mean$input, 
+                                          true_llik=test_info_mean$llik,
+                                          em_pred_list=em_pred_list_mean, 
+                                          include_interval=TRUE, 
+                                          interval_method="CI",
+                                          CI_prob=0.95) + 
+                                          geom_hline(yintercept=llik_bound,
+                                                     color="green")
+plot(pred_mean)
+```
+
+```{r}
+plot(test_info_mean$llik, em_pred_list_mean$mean)
+```
+
+
+It appears that that GP mean predictions all satisfy the bound constraint for 
+the test inputs that are sampled from the prior. However, this is not the 
+case for the points subsampled from the true posterior, and the bound violations
+become much more severe for the points sampled from the mean-approx. The 
+GP prior mean trend way underpredicts for the points sampled from the mean-approx.
+So the overpredictions are due to the kernel.
+
+```{r}
+# Extract the test points sampled from the prior that have mean predictions 
+# with 1000 of the maximum prediction.
+
+llik_pred_list_prior <- llik_em$predict(input=test_info_prior$input, 
+                                        em_pred_list=em_pred_list_prior)
+
+max_mean_pred <- max(em_pred_list_prior$mean)
+
+max(llik_pred_list_prior$mean)
+
+```
+
+
+I should sample from the prior, then restrict to the points where the mean
+approx is within 1000 or so of the max mean approximation. These are the only
+points that really matter. Most of the prior test design are regions where 
+the approx posterior is zero.
+
+- add emulator diagnostic above
+- effect of prior truncation
+- why mean concentrates
+- why tauv approximation is bad
+- how often is llik bound constraint violated? 
+
+Current conclusions:
+- Quadratic prior mean seems to be very off in some regions.
+- There seems to be at least one region where the GP mean predictions far exceed
+the bound constraint and. 
 
 
 ```{r}

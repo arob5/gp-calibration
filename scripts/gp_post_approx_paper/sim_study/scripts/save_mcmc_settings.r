@@ -84,7 +84,7 @@ mcmc_settings_list <- list(
 tags <- sapply(mcmc_settings_list, function(x) x$test_label)
 names(mcmc_settings_list) <- tags
 
-# Fine-tune intiial condition generation for specific algorithms
+# Fine-tune initial condition generation for specific algorithms.
 mcmc_settings_list[["pm-ind"]]$ic_settings$approx_type <- "marginal"
 mcmc_settings_list[["quantile7"]]$ic_settings[c("approx_type","alpha")] <- list("quantile", 0.7)
 mcmc_settings_list[["quantile8"]]$ic_settings[c("approx_type","alpha")] <- list("quantile", 0.8)

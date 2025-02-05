@@ -25,7 +25,7 @@
 # Acquisition Function Framework 
 # The acquisition function framework is generally split into two pieces: 
 # acquisition functions that target Gaussian processes (GPs) (seq_design_gp.r)
-# and those that opetate on log-likelihood emulators 
+# and those that operate on log-likelihood emulators 
 # (seq_design_for_post_approx.r). The functions here are high-level functions 
 # that interface between the two. This primarily means that the functions 
 # here will identify whether the passed model object is a `gpWrapper` or 
