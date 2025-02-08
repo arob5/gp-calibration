@@ -402,7 +402,6 @@ get_vsem_test_1 <- function(default_conditional=FALSE, default_normalize=TRUE) {
                                            fwd_model_vectorized=inv_prob$par_to_obs_op,
                                            y_obs=inv_prob$y, 
                                            dim_par=as.integer(inv_prob$dim_par),
-                                           use_fixed_lik_par=TRUE, 
                                            sig2=inv_prob$sig2_model,
                                            par_names=inv_prob$par_names, 
                                            default_conditional=default_conditional, 
@@ -466,7 +465,7 @@ get_vsem_test_1_time_avg <- function(default_conditional=FALSE, default_normaliz
   llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
                                            fwd_model_vectorized=inv_prob$par_to_obs_op,
                                            y_obs=inv_prob$y, dim_par=as.integer(inv_prob$dim_par),
-                                           use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_model,
+                                           sig2=inv_prob$sig2_model,
                                            par_names=inv_prob$par_names, 
                                            default_conditional=default_conditional, 
                                            default_normalize=default_normalize)
@@ -523,7 +522,7 @@ get_vsem_test_1d_vis <- function(default_conditional=FALSE, default_normalize=TR
   llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", fwd_model=inv_prob$par_to_obs_op, 
                                            fwd_model_vectorized=inv_prob$par_to_obs_op,
                                            y_obs=inv_prob$y, dim_par=as.integer(inv_prob$dim_par),
-                                           use_fixed_lik_par=TRUE, sig2=inv_prob$sig2_model,
+                                           sig2=inv_prob$sig2_model,
                                            par_names=inv_prob$par_names, 
                                            default_conditional=default_conditional, 
                                            default_normalize=default_normalize)
@@ -532,7 +531,64 @@ get_vsem_test_1d_vis <- function(default_conditional=FALSE, default_normalize=TR
   return(inv_prob)
 }
 
-
+get_vsem_test_1d_traj <- function(default_conditional=FALSE, 
+                                  default_normalize=TRUE) {
+  # The same example as `get_vsem_test_1d_traj()` except that the observable
+  # is the entire LAI trajectory instead of a time-average of LAI. The single
+  # input parameter is the initial condition for above-ground vegetation.
+  # This example was designed for testing forward model emulation using a basis
+  # expansion of the output space.
+  
+  # Random seeds. 
+  driver_seed <- 623434
+  par_true_seed <- 7854332
+  obs_seed <- 5632
+  
+  # Observation operator (map from model outputs to observable): time averages
+  # of LAI observations.
+  output_names <- get_vsem_output_names()
+  observed_output <- "LAI"
+  lai_idx <- match(observed_output, output_names)
+  
+  obs_op <- function(model_outputs) {
+    single_run <- (dim(model_outputs)[1]==1L)
+    lai_trajectory <- model_outputs[,,lai_idx]
+    if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
+    lai_trajectory
+  }
+  
+  # Ground truth parameters (differ from VSEM defaults). 
+  par_true <- c(KEXT=0.42, LAR=1.6, LUE=0.006, GAMMA=0.2, tauV=1000, tauS=30000,
+                tauR=1000, Av=0.3, Cv=3.4, Cs=14.0, Cr=2.6)
+  
+  # Parameters to calibrate. 
+  par_cal_names <- "Cv"
+  
+  # Priors: using defaults with some modifications.
+  par_prior <- get_vsem_default_priors()
+  
+  # Set up inverse problem. 
+  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, 
+                                par_prior=par_prior, sig2_method="fixed", 
+                                sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
+                                driver_seed=driver_seed, 
+                                par_true_seed=par_true_seed, 
+                                obs_seed=obs_seed)
+  
+  # Define exact log-likelihood object. 
+  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", 
+                                           fwd_model=inv_prob$par_to_obs_op, 
+                                           fwd_model_vectorized=inv_prob$par_to_obs_op,
+                                           y_obs=inv_prob$y, 
+                                           dim_par=as.integer(inv_prob$dim_par),
+                                           sig2=inv_prob$sig2_model,
+                                           par_names=inv_prob$par_names, 
+                                           default_conditional=default_conditional, 
+                                           default_normalize=default_normalize)
+  inv_prob$llik_obj <- llik_exact
+  
+  return(inv_prob)
+}
 
 
 

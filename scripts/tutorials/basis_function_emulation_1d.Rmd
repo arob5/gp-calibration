@@ -1,5 +1,5 @@
 ---
-title: "Basis Function Emulation"
+title: "basis_function_emulation_1d"
 author: "Andrew Roberts"
 date: "2024-10-22"
 output: html_document
@@ -15,8 +15,9 @@ weights given by independent Gaussian processes (GPs). See
 writeup for background on models of this form. Finally, it shows how 
 `gpWrapperSum` can be combined with `llikEmulatorGPFwdGauss` to approximate 
 the likelihood in a Bayesian inverse problem. This examples considers 
-a multi-dimensional input (parameter) space. For a simpler example with a single
-parameter, see `basis_function_emulation_1d.Rmd`.
+a 1d input (parameter) space, which conveniently allows for easy visualization
+and illustration of the concepts. For an example with a multiple dimensional
+parameter space, see `basis_function_emulation.Rmd`.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE)
@@ -36,6 +37,7 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "general_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "gp_helper_functions.r"))
 
 # Main functions being illustrated.
@@ -45,13 +47,13 @@ source(file.path(src_dir, "basis_function_emulation.r"))
 # Evaluate function at design points.
 ```{r}
 # The function g() will be the test function used throughout this document.
-inv_prob <- get_vsem_test_1()
+inv_prob <- get_vsem_test_1d_traj()
 g <- inv_prob$par_to_obs_op
 ```
 
 ```{r}
 # Create an initial input design.
-n_design <- 200L
+n_design <- 4L
 U <- get_batch_design("LHS", N_batch=n_design, prior_params=inv_prob$par_prior)
 
 # Run forward model g() at the design points.
@@ -59,9 +61,8 @@ G <- g(U)
 ```
 
 ```{r}
-# Plot a subset of the function evaluations.
-idx <- sample(1:nrow(G), size=20L)
-plt_design <- plot_curves_1d_helper(inv_prob$time_points, t(G[idx,,drop=FALSE]), 
+# Plot the function evaluations.
+plt_design <- plot_curves_1d_helper(inv_prob$time_points, t(G), 
                                     plot_title="Model runs at design points",
                                     xlab="days", ylab="LAI")
               
@@ -77,6 +78,14 @@ m <- pca_list$mean
 ```
 
 ```{r}
+# Plot empirical mean of model outputs.
+
+plot_curves_1d_helper(inv_prob$time_points, matrix(m,ncol=1), 
+                      plot_title="Mean of model outputs",
+                      xlab="days", ylab="LAI")
+```
+
+```{r}
 # Eigenvalue (scree) plot. Different scalings emphasize different features.
 scree_plt <- get_scree_plot(pca_list, sdev=TRUE, log_scale=FALSE)
 scree_plt_log <- get_scree_plot(pca_list, sdev=FALSE, log_scale=TRUE)
@@ -85,14 +94,13 @@ plot(scree_plt)
 plot(scree_plt_log)
 ```
 
-
 We define a cutoff and only include the dominant principal components. We 
 visually compare true evaluations of $g(u)$ versus evaluations of $g(u)$ that 
 have been approximated by projecting the functions outputs on the subspace 
 spanned by the dominant eigenvalues. The plot considers a set of new 
 "out-of-sample" $u$ values. 
 ```{r}
-variance_threshold <- 0.975
+variance_threshold <- 0.999
 pca_list_trunc <- truncate_pca_basis(pca_list, variance_threshold)
 
 # Basis vectors and eigenvalues.
@@ -154,25 +162,18 @@ plot(plt_approx)
 ```
 
 Below we plot the basis weight functions $w_j(u)$ over a grid of $u$ values. 
-Since these functions map from $\mathbb{R}^r$ to $\mathbb{R}$ we cannot easily 
-plot them when $r > 1$. We therefore plot 1d projections by varying only one 
-input variable at a time. 
 ```{r}
-# First, get the grids of input points to plot. Note that the below code for 
-# defining `par_bounds` only works for uniform priors.
-par_bounds <- t(inv_prob$par_prior[,c("param1","param2")])
-U_proj_list <- get_input_grid_1d_projection(inv_prob$par_names, X_bounds=par_bounds)
+n_grid <- 100
+test_info_grid <- get_init_design_list(inv_prob, "tensor_product_grid",
+                                       N_design=n_grid)
 
-# Plot 1d projections of w_j(u), for j=1,...,r.
-for(par in names(U_proj_list)) {
-  U_proj <- U_proj_list[[par]][[1]]
-  w_U <- eval_basis_weights(U_proj, g, B, m=pca_list$mean)
-  plt <- plot_curves_1d_helper(U_proj[,par], w_U, df_by=NULL, 
-                               plot_title=paste0("w(u), projection on ", par),
-                               xlab="u", ylab=par)
+w_U <- eval_basis_weights(test_info_grid$input, g, B, m=pca_list$mean)
+
+for(j in 1:ncol(w_U)) {
+  plt <- plot_curves_1d_helper(drop(test_info_grid$input), w_U[,j,drop=FALSE],
+                               plot_title="w(u)", xlab="u", ylab=par)
   plot(plt)
 }
-
 ```
 
 # Gaussian Process (GP) Emulators
@@ -194,27 +195,22 @@ design_info <- list(input=U, W=project_orthog_scalar(G, B, m))
 # standard deviation 1.
 gp_w <- gpWrapperKerGP(design_info$input, design_info$W, scale_input=TRUE,
                        normalize_output=TRUE)
-gp_w$set_gp_prior("Gaussian", "quadratic", include_noise=TRUE)
+gp_w$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
 gp_w$fit(multistart=10)
 gp_w$summarize()
 ```
 
 ```{r}
 # Validation points to test GP fit.
-n_test <- 500
-test_info <- list(input=get_batch_design("LHS", N_batch=n_test, 
-                                         prior_params=inv_prob$par_prior))
-test_info$W <- eval_basis_weights(test_info$input, g, B, m) 
-pred_list_w <- gp_w$predict(test_info$input, return_cov=TRUE)
+test_info_grid$W <- eval_basis_weights(test_info_grid$input, g, B, m) 
+pred_list_w <- gp_w$predict(test_info_grid$input, return_cov=TRUE)
 ```
 
 ```{r}
 # Summarize predictions at validation points.
-gp_w$plot_pred(test_info$input, test_info$W, include_CI=TRUE, pred_list=pred_list_w)
-```
-
-```{r}
-gp_w$plot_1d_projection(include_design=FALSE)
+gp_w$plot_pred_1d(test_info_grid$input, Y_new=test_info_grid$W, 
+                  pred_list=pred_list_w, include_interval=TRUE, 
+                  interval_method="CI", CI_prob=0.99)
 ```
 
 ## Using `gpWrapperSum` to combine the GPs
@@ -234,10 +230,10 @@ gp_g$summarize()
 
 ```{r}
 # Plot samples G(x) at single input x vs. true trajectory G(x).
-idcs <- sample(1:nrow(test_info$input), size=5)
+idcs <- sample(1:nrow(test_info_grid$input), size=5)
 
 for(i in idcs) {
-  plt <- gp_g$plot_samp(X_new=test_info$input[i,,drop=FALSE], N_samp=10, 
+  plt <- gp_g$plot_samp(X_new=test_info_grid$input[i,,drop=FALSE], N_samp=10, 
                         use_cov=TRUE, g_func=g)
   plot(plt)
 }
@@ -245,7 +241,7 @@ for(i in idcs) {
 
 ```{r}
 # Plot one sample of G(x_i) at each input x_1, ..., x_M.
-gp_g$plot_samp(X_new=test_info$input[1:15,], use_cov=TRUE)
+gp_g$plot_samp(X_new=test_info_grid$input[1:15,,drop=FALSE], use_cov=TRUE)
 ```
 
 ```{r}
@@ -254,7 +250,7 @@ gp_g$plot_samp(X_new=test_info$input[1:15,], use_cov=TRUE)
 # indices.
 
 for(i in idcs) {
-  plt <- gp_g$plot_pred(X_new=test_info$input[i,,drop=FALSE], g_func=g)
+  plt <- gp_g$plot_pred(X_new=test_info_grid$input[i,,drop=FALSE], g_func=g)
   plot(plt)
 }
 
@@ -276,27 +272,32 @@ llik_em <- llikEmulatorGPFwdGauss("llik_em", gp_g, y_obs=inv_prob$y,
 
 ```{r}
 # Compute emulator predictions at test points.
-em_pred_list <- llik_em$predict_emulator(test_info$input, return_mean=TRUE,
-                                         return_var=FALSE,
+em_pred_list <- llik_em$predict_emulator(test_info_grid$input, return_mean=TRUE,
+                                         return_var=FALSE, return_cov=FALSE,
                                          return_output_cov=TRUE)
-
-
-# llik_pred_list <- llik_em$predict(test_info$input, return_mean=TRUE,
-#                                   return_var=TRUE)
+llik_pred_list <- llik_em$predict(test_info_grid$input, return_mean=TRUE,
+                                  return_var=TRUE, em_pred_list=em_pred_list)
+lik_pred_list <- llik_em$predict_lik(test_info_grid$input, return_mean=TRUE,
+                                     return_var=TRUE, em_pred_list=em_pred_list)
 ```
-
 
 ```{r}
-test_info$llik <- inv_prob$llik_obj$assemble_llik(test_info$input)
-  
-  
-plt <- llik_em$plot_pred_validation(test_info$input, true_llik=test_info$llik,
-                                    em_pred_list=em_pred_list)
-plot(plt)
-
-# Seems to be off by a negative. 
+# Log-likelihood surrogate distribution. 
+llik_em$plot_pred_1d(test_info_grid$input, pred_list=llik_pred_list,
+                     true_llik=test_info_grid$llik, interval_method="pm_std_dev", 
+                     N_std_dev=2)
 ```
 
+```{r}
+# Likelihood surrogate distribution (on log scale).
+llik_em$plot_pred_1d(test_info_grid$input, pred_list=lik_pred_list, 
+                     plot_type="lik", log_scale=TRUE,
+                     true_llik=test_info_grid$llik, include_interval=FALSE)
+
+# Predictive (log) standard deviation.
+plot(test_info_grid$input, 0.5*lik_pred_list$log_var, main="log std dev",
+     xlab=inv_prob$par_names, ylab="log std dev", type="l")
+```
 
 
 

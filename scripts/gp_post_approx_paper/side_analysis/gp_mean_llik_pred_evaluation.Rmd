@@ -1,0 +1,424 @@
+---
+title: "Comparing Approximations of Likelihood Ratio"
+author: "Andrew Roberts"
+date: "2025-01-23"
+output: html_document
+---
+
+This file assesses the ability to emulate the log-likelihood surface in an
+inverse problem using a Gaussian process (GP). In particular, it investigates
+the challenge of emulating a log-likelihood that exhibits a large dynamic 
+range, which can prove troublesome for stationary GP priors. GP predictive 
+accuracy is assessed with respect to the prior distribution, as well as with 
+respect to the true posterior distribution of the Bayesian inverse problem.
+Often, the posterior is highly concentrated relative to the prior, and the 
+GP fit might look reasonable on a global scale, but be completely off in the 
+region of true posterior support.
+
+- maybe this problem is just quite hard.
+- maybe its okay the mean prediction looks bad after the first round; that is 
+what sequential design is for. What's more concerning is the MCMC runs not even
+working; it seems that the truncated approach seems to reduce these errors.
+- this is a situation where sub-sampling the current approx posterior might not
+perform well, but more targeted acquisition functions should hopefully help.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(data.table)
+library(ggplot2)
+
+# Filepath definitions.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+# Setup: load inverse problem
+```{r}
+# Load inverse problem setup information. Store log-likelihood upper bound.
+inv_prob <- get_vsem_test_1()
+par_names <- inv_prob$par_names
+par_prior <- inv_prob$par_prior
+llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
+
+print(paste0("Input dimension: ", inv_prob$dim_par))
+print(paste0("Observation space dimension: ", inv_prob$dim_obs))
+print(paste0("Log-likelihood bounds: ", paste(llik_bounds, collapse=", ")))
+```
+
+```{r}
+# Create initial design.
+n_design <- 250L
+design_method <- "LHS"
+design_info <- get_init_design_list(inv_prob, design_method, n_design)
+
+print(paste0("Number design points: ", n_design))
+print(paste0("Design method: ", design_method))
+```
+
+```{r}
+# Sample test points from prior.
+n_design_test <- 500L
+test_info_prior <- get_init_design_list(inv_prob, design_method, n_design_test)
+```
+
+
+## 1d projections of llik surface
+
+### Fixed values at midpoints of design bounds.
+```{r}
+# 1d projections of llik surface.
+inv_prob$llik_obj$plot_1d_projection(input_bounds=design_info$bounds)
+```
+### Fixed values randomly sampled.
+```{r}
+n_random_samp <- 5
+fixed_inputs <- sample_prior(par_prior, n_random_samp)
+
+for(i in seq_len(n_random_samp)) {
+  plts <- inv_prob$llik_obj$plot_1d_projection(input_fixed=fixed_inputs[i,,drop=FALSE], 
+                                               input_bounds=design_info$bounds)
+  for(plt in plts) plot(plt)
+}
+```
+
+
+# Exact Posterior Samples
+```{r}
+# Run exact MCMC.
+mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
+                      sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                      n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood.
+mcmc_list <- run_mcmc(inv_prob$llik_obj, par_prior, mcmc_settings)
+
+# Table storing MCMC samples.
+burn_in_exact <- round(mcmc_settings$n_itr/2)
+samp_dt <- select_mcmc_itr(mcmc_list$samp, itr_start=burn_in_exact)
+mcmc_metadata <- mcmc_list$output_list
+```
+
+```{r}
+trace_plts <- get_trace_plots(samp_dt)
+for(plt in trace_plts) plot(plt)
+```
+```{r}
+# 1d marginals, compared to prior.
+prior_samp <- sample_prior(par_prior, n=1e6)
+samp_dt_temp <- append_samples_mat(samp_dt, prior_samp, param_type="par", 
+                                   test_label="prior")
+
+hist_plts_exact <- get_hist_plot_comparisons(samp_dt_temp, test_label_baseline="prior")
+for(plt in hist_plts_exact) plot(plt)
+
+rm(list="samp_dt_temp")
+```
+
+```{r}
+# 2d marginals, compared to prior.
+kde2d_plts_exact <- get_2d_density_plots(samp_dt)
+
+for(plt in kde2d_plts_exact$exact) plot(plt)
+```
+
+
+```{r}
+# Test points subsampled from true posterior.
+samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="exact", 
+                                 param_type="par")[,par_names]
+test_info_exact <- get_init_design_list(inv_prob, design_method="subsample", 
+                                        N_design=n_design_test,
+                                        design_candidates=samp_mat)
+```
+
+
+# Assessing Quadratic Fit to Log-Likelihood Surface
+
+## Quadratic Fit, no cross terms
+```{r}
+df <- data.frame(y=design_info$llik, design_info$input)
+quad_formula <- as.formula(paste0("y ~ ", paste0("poly(", inv_prob$par_names, ", degree=2)", 
+                                                 collapse=" + ")))
+
+lm_quad <- lm(quad_formula, df)
+resid_quad <- resid(lm_quad)
+pred_quad_design <- predict(lm_quad)
+pred_quad_prior <- predict(lm_quad, newdata=data.frame(test_info_prior$input))
+pred_quad_exact <- predict(lm_quad, newdata=data.frame(test_info_exact$input))
+
+coef(lm_quad)
+```
+
+```{r}
+plot(design_info$llik, pred_quad_design, main="Predictions at design", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+```{r}
+plot(test_info_prior$llik, pred_quad_prior, main="Predictions at prior points", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+```{r}
+plot(test_info_exact$llik, pred_quad_exact, main="Predictions at posterior points", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+## Quadratic Fit, cross terms
+
+```{r}
+B <- poly(design_info$input, degree=2)
+df2 <- data.frame(y=design_info$llik, B)
+lm_quad2 <- lm(y~., df2)
+resid_quad2 <- resid(lm_quad2)
+pred_quad2_design <- predict(lm_quad2)
+
+B_prior <- poly(test_info_prior$input, degree=2)
+pred_quad2_prior <- predict(lm_quad2, newdata=data.frame(B_prior))
+
+B_exact <- poly(test_info_exact$input, degree=2)
+pred_quad2_exact <- predict(lm_quad2, newdata=data.frame(B_exact))
+
+coef(lm_quad2)
+```
+
+```{r}
+plot(design_info$llik, pred_quad2_design, main="Predictions at design", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+```{r}
+plot(test_info_prior$llik, pred_quad2_prior, main="Predictions at prior points", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+```{r}
+plot(test_info_exact$llik, pred_quad2_exact, main="Predictions at posterior points", 
+     xlab="true", ylab="predicted")
+abline(a=0,b=1, col="red")
+abline(h=llik_bounds[2], col="blue", lty="dashed")
+```
+
+# Fit Log-Likelihood GP Emulators
+
+## Gaussian Kernel, Quadratic Mean (no cross terms)
+```{r}
+# Fit GP for log-likelihood.
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
+                          default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                          use_fixed_lik_par=TRUE, llik_bounds=llik_bounds)
+```
+
+
+```{r}
+# Compute emulator predictions.
+em_pred_list_prior <- llik_em$predict_emulator(test_info_prior$input)
+em_pred_list_exact <- llik_em$predict_emulator(test_info_exact$input)
+```
+
+### Gaussian Predictions
+```{r}
+interval_method <- "pm_std_dev"
+N_std_dev <- 2
+
+llik_plot_prior <- llik_em$plot_pred_validation(input=test_info_prior$input,
+                                                true_llik=test_info_prior$llik,
+                                                em_pred_list=em_pred_list_prior, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="none", 
+                                                plot_title="Prior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_plot_exact<- llik_em$plot_pred_validation(input=test_info_exact$input,
+                                                true_llik=test_info_exact$llik,
+                                                em_pred_list=em_pred_list_exact, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="none", 
+                                                plot_title="Posterior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+plot(llik_plot_prior)
+plot(llik_plot_exact)
+```
+
+### Truncated Gaussian Predictions
+```{r}
+llik_plot_prior <- llik_em$plot_pred_validation(input=test_info_prior$input,
+                                                true_llik=test_info_prior$llik,
+                                                em_pred_list=em_pred_list_prior, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="truncated", 
+                                                plot_title="Prior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_plot_exact <- llik_em$plot_pred_validation(input=test_info_exact$input,
+                                                true_llik=test_info_exact$llik,
+                                                em_pred_list=em_pred_list_exact, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="truncated", 
+                                                plot_title="Posterior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+plot(llik_plot_prior)
+plot(llik_plot_exact)
+```
+
+## Gaussian Plus Quadratic Kernel, Constant Mean
+```{r}
+# Fit GP for log-likelihood.
+gp_obj2 <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                          scale_input=TRUE, normalize_output=TRUE)
+gp_obj2$set_gp_prior("Gaussian_plus_Quadratic", "constant", include_noise=FALSE)
+gp_obj2$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em2 <- llikEmulatorGP("llik_em2", gp_obj2, default_conditional=FALSE, 
+                          default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                          use_fixed_lik_par=TRUE, llik_bounds=llik_bounds)
+```
+
+```{r}
+# Compute emulator predictions.
+em2_pred_list_prior <- llik_em2$predict_emulator(test_info_prior$input)
+em2_pred_list_exact <- llik_em2$predict_emulator(test_info_exact$input)
+```
+
+### Gaussian Predictions
+```{r}
+llik_plot_prior <- llik_em2$plot_pred_validation(input=test_info_prior$input,
+                                                true_llik=test_info_prior$llik,
+                                                em_pred_list=em2_pred_list_prior, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="none", 
+                                                plot_title="Prior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_plot_exact <- llik_em2$plot_pred_validation(input=test_info_exact$input,
+                                                true_llik=test_info_exact$llik,
+                                                em_pred_list=em2_pred_list_exact, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="none", 
+                                                plot_title="Posterior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+plot(llik_plot_prior)
+plot(llik_plot_exact)
+```
+
+### Truncated Gaussian Predictions
+```{r}
+llik_plot_prior <- llik_em2$plot_pred_validation(input=test_info_prior$input,
+                                                true_llik=test_info_prior$llik,
+                                                em2_pred_list=em_pred_list_prior, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="truncated", 
+                                                plot_title="Prior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_plot_exact <- llik_em2$plot_pred_validation(input=test_info_exact$input,
+                                                true_llik=test_info_exact$llik,
+                                                em2_pred_list=em_pred_list_exact, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="truncated", 
+                                                plot_title="Posterior Predictions") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+plot(llik_plot_prior)
+plot(llik_plot_exact)
+```
+
+# Plug-In Mean Approximation: MCMC Sampling
+
+## Using Truncated Predictive Distribution
+```{r}
+mcmc_settings_mean <- list(test_label="mean", approx_type="mean",
+                           mcmc_func_name="mcmc_bt_wrapper", 
+                           sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                           n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean <- run_mcmc(llik_em, par_prior, mcmc_settings_mean)
+
+# Store samples.
+burn_in_mean <- round(mcmc_settings_mean$n_itr/2)
+samp_dt_mean <- select_mcmc_itr(mcmc_list_mean$samp, itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean)
+info_dt <- select_mcmc_itr(mcmc_list_mean$info, itr_start=burn_in_mean)
+```
+
+```{r}
+trace_plts_mean <- get_trace_plots(samp_dt, test_label="mean")
+for(plt in trace_plts_mean) plot(plt)
+```
+
+```{r}
+hist_plts_mean <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact")
+for(plt in hist_plts_mean) plot(plt)
+```
+
+```{r}
+# Test points subsampled from plug-in mean posterior.
+samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="mean", 
+                                 param_type="par")[,par_names]
+test_info_mean <- get_init_design_list(inv_prob, design_method="subsample", 
+                                       N_design=n_design_test,
+                                       design_candidates=samp_mat)
+
+em_pred_list_mean <- llik_em$predict_emulator(test_info_mean$input)
+```
+
+```{r}
+# Plot emulator predictions at points sampled from plug-in mean approximation.
+llik_plot_mean <- llik_em$plot_pred_validation(input=test_info_mean$input,
+                                                true_llik=test_info_mean$llik,
+                                                em_pred_list=em_pred_list_mean, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="none", 
+                                                plot_title="Predictions at Plug-in Mean Points") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+
+llik_plot_mean_trunc <- llik_em$plot_pred_validation(input=test_info_mean$input,
+                                                true_llik=test_info_mean$llik,
+                                                em_pred_list=em_pred_list_mean, 
+                                                interval_method=interval_method,
+                                                N_std_dev=N_std_dev, adjustment="truncated", 
+                                                plot_title="Predictions at Plug-in Mean Points (Truncated)") + 
+                   geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+plot(llik_plot_mean)
+plot(llik_plot_mean_trunc)
+```
+
+
+
+

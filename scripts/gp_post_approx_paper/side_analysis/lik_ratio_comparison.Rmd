@@ -153,13 +153,19 @@ plot(trace_plt_llik)
 ```
 
 ```{r}
-# Emulator predictions at true posterior samples.
+# Test points subsampled from true posterior.
+
 par_names <- inv_prob$par_names
 samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="exact", 
                                  param_type="par")[,par_names]
 test_info_exact <- get_init_design_list(inv_prob, design_method="subsample", 
                                         N_design=n_design_test,
                                         design_candidates=samp_mat)
+```
+
+
+```{r}
+# Emulator predictions at true posterior samples.
 em_pred_list_exact <- llik_em$predict_emulator(test_info_exact$input)
 
 pred_exact <- llik_em$plot_pred_validation(test_info_exact$input, 
@@ -171,7 +177,137 @@ pred_exact <- llik_em$plot_pred_validation(test_info_exact$input,
                                            geom_hline(yintercept=llik_bound,
                                                       color="green")
 plot(pred_exact)
+
+
+
+plot(test_info_exact$llik, em_pred_list_exact$trend)
 ```
+
+# Understanding the Structure of the Log-Likelihood
+
+We interrogate the structure of the log-likelihood surface to better inform 
+the GP prior. In particular, we seek to see how well a quadratic apprximates
+the log-likelihood surface.
+
+## Quadratic, no cross terms
+```{r}
+df <- data.frame(y=design_info$llik, design_info$input)
+quad_formula <- as.formula(paste0("y ~ ", paste0("poly(", inv_prob$par_names, ", degree=2)", 
+                                                 collapse=" + ")))
+
+lm_quad <- lm(quad_formula, df)
+resid_quad <- resid(lm_quad)
+pred_quad_design <- predict(lm_quad)
+pred_quad_prior <- predict(lm_quad, newdata=data.frame(test_info_prior$input))
+pred_quad_exact <- predict(lm_quad, newdata=data.frame(test_info_exact$input))
+
+coef(lm_quad)
+```
+
+```{r}
+plot(design_info$llik, pred_quad_design, main="Predictions at design")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_prior$llik, pred_quad_prior, main="Prior Predictions")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_exact$llik, pred_quad_exact, main="Predictions at Posterior Samples")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+hist(resid_quad, 30)
+```
+
+## Quadratic, with cross terms
+```{r}
+B <- poly(design_info$input, degree=2)
+df2 <- data.frame(y=design_info$llik, B)
+lm_quad2 <- lm(y~., df2)
+resid_quad2 <- resid(lm_quad2)
+pred_quad2_design <- predict(lm_quad2)
+
+B_prior <- poly(test_info_prior$input, degree=2)
+pred_quad2_prior <- predict(lm_quad2, newdata=data.frame(B_prior))
+
+B_exact <- poly(test_info_exact$input, degree=2)
+pred_quad2_exact <- predict(lm_quad2, newdata=data.frame(B_exact))
+
+coef(lm_quad2)
+```
+
+```{r}
+plot(design_info$llik, pred_quad2_design, main="Predictions at design")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_prior$llik, pred_quad2_prior, main="Prior Predictions")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_exact$llik, pred_quad2_exact, main="Predictions at Posterior Samples")
+abline(a=0,b=1, col="red")
+```
+
+## Quadratic, fixing intercept term
+```{r}
+idx_max <- which.max(design_info$llik)
+u_max <- design_info$input[idx_max,]
+llik_max <- design_info$llik[idx_max]
+
+b_max <- B[idx_max,]
+B_shift <- add_vec_to_mat_rows(-b_max, B)
+y_shift <- design_info$llik - llik_max
+df3 <- data.frame(y=y_shift, B_shift)
+
+lm_quad3 <- lm(y~0 + ., df3)
+resid_quad3 <- resid(lm_quad3)
+pred_quad3_design <- predict(lm_quad3)
+
+B_prior_shift <- add_vec_to_mat_rows(-b_max, B_prior)
+pred_quad3_prior <- predict(lm_quad3, newdata=data.frame(B_prior_shift)) + llik_max
+
+B_exact_shift <- add_vec_to_mat_rows(-b_max, B_exact)
+pred_quad3_exact <- predict(lm_quad3, newdata=data.frame(B_exact_shift)) + llik_max
+
+coef(lm_quad3)
+```
+
+
+```{r}
+plot(design_info$llik, pred_quad3_design, main="Predictions at design")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_prior$llik, pred_quad3_prior, main="Prior Predictions")
+abline(a=0,b=1, col="red")
+```
+
+```{r}
+plot(test_info_exact$llik, pred_quad3_exact, main="Predictions at Posterior Samples")
+abline(a=0,b=1, col="red")
+```
+
+
+
+
+
+## Quadratic, weighted least squares
+```{r}
+
+```
+
+
+
+
+
 
 # Investigating the Mean Approximation
 ```{r}
@@ -200,12 +336,18 @@ info_dt <- combine_samp_dt(mcmc_list_mean$info, mcmc_list_mean_trunc$info,
 trace_plts_mean <- get_trace_plots(samp_dt, test_labels=c("mean","mean_trunc"))
 for(plt in trace_plts_mean) plot(plt)
 ```
-
 ```{r}
 # Trace plots: log-likelihood, mean approximation.
 trace_plts_llik_mean <- get_trace_plots(info_dt, param_name="llik")
 for(plt in trace_plts_llik_mean) plot(plt)
 ```
+
+```{r}
+# Histograms of 1d marginals.
+hist_plots_mean <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact")
+for(plt in hist_plots_mean) plot(plt)
+```
+
 
 For the un-truncated mean approx run, it appears that the weight assigned to 
 one chain (chain 2) will dominate all of the others. For the truncated 
@@ -260,10 +402,6 @@ test_info_mean <- get_init_design_list(inv_prob, design_method="subsample",
 em_pred_list_mean <- llik_em$predict_emulator(test_info_mean$input)
 llik_pred_list_mean <- llik_em$predict(test_info_mean$input, 
                                        em_pred_list=em_pred_list_mean)
-
-
-
-
 
 pred_mean <- llik_em$plot_pred_validation(test_info_mean$input, 
                                           true_llik=test_info_mean$llik,
