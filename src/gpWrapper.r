@@ -282,7 +282,7 @@ gpWrapper$methods(
                                 matrix(NA, nrow=nrow(noise_var_bounds), 
                                       ncol=length(missing_cols),
                                       dimnames=list(row_names, missing_cols)))
-      noise_var_bounds <- noise_var_bounds[,col_names]
+      noise_var_bounds <- noise_var_bounds[,col_names, drop=FALSE]
     }
     
     # Fill in missing rows.
@@ -290,7 +290,7 @@ gpWrapper$methods(
     if(length(missing_rows) > 0) {
       new_mat <- matrix(NA, nrow=length(missing_rows), ncol=length(col_names),
                         dimnames=list(missing_rows, col_names))
-      noise_var_bounds <- rbind(noise_var_bounds, new_mat)[row_names,]
+      noise_var_bounds <- rbind(noise_var_bounds, new_mat)[row_names,, drop=FALSE]
     }
     
     # Fill in missing values with defaults derived from observed variability 
@@ -308,8 +308,9 @@ gpWrapper$methods(
     }
   
     assert_that(all(as.vector(noise_var_bounds[,c("lower","upper","init")]) >= 0))
-    return(noise_var_bounds[row_names, col_names])
+    return(noise_var_bounds[row_names, col_names, drop=FALSE])
   },
+  
   
   get_kernel_bounds = function(kernel_bounds=NULL, ...) {
     # This method is intended to be called from `define_par_bounds()`. It 

@@ -738,12 +738,16 @@ llikEmulator$methods(
   },
   
   plot_pred_1d = function(input, lik_par_val=NULL, em_pred_list=NULL, 
-                          plot_type="llik", log_scale=TRUE, 
+                          pred_list=NULL, plot_type="llik", log_scale=TRUE, 
                           conditional=default_conditional, 
                           normalize=default_normalize, include_interval=TRUE, 
                           interval_method="pm_std_dev", N_std_dev=1, 
                           CI_prob=0.9, true_llik=NULL, include_design=TRUE, 
                           xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
+    # `pred_list` can be passed if llik or lik predictions have already been 
+    # computed. In this case, it should be a llik prediction list (as returned
+    # by `predict()`) if `plot_type = llik` and a likelihood prediction list
+    # (as returned by `predict_lik()`) if `plot_type = lik`.
     
     if(plot_type=="llik") log_scale <- TRUE
     
@@ -762,19 +766,25 @@ llikEmulator$methods(
     mean_sel <- "mean"
     var_sel <- "var"
     
-    if(plot_type == "llik") {
-      pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
-                                 em_pred_list=em_pred_list, return_mean=TRUE, 
-                                 return_var=include_interval, 
-                                 conditional=conditional, 
-                                 normalize=normalize, ...)
-    } else {
-      pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, 
-                                     em_pred_list=em_pred_list,  
-                                     return_mean=TRUE, 
-                                     return_var=include_interval, 
-                                     conditional=conditional, 
-                                     normalize=normalize, log_scale=log_scale, ...)
+    if(is.null(pred_list)) {
+      if(plot_type == "llik") {
+        pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
+                                   em_pred_list=em_pred_list, return_mean=TRUE, 
+                                   return_var=include_interval, 
+                                   conditional=conditional, 
+                                   normalize=normalize, ...)
+      } else {
+        pred_list <- .self$predict_lik(input, lik_par_val=lik_par_val, 
+                                       em_pred_list=em_pred_list,  
+                                       return_mean=TRUE, 
+                                       return_var=include_interval, 
+                                       conditional=conditional, 
+                                       normalize=normalize, log_scale=log_scale, ...)
+      }
+    }
+    
+    # Adjustments for likelihood plot.
+    if(plot_type == "lik") {
       if(!is.null(true_vals) && !log_scale) true_vals <- exp(true_vals)
       if(log_scale) {
         mean_sel <- "log_mean"
@@ -1061,7 +1071,7 @@ llikEmulator$methods(
       input_bounds <- input_bounds[, .self$input_names]
     }
     
-    # Code currently only supports fixing fixed paramters at a single value;  
+    # Code currently only supports fixing fixed parameters at a single value;  
     # i.e., only one line plotted per plot. 
     if(!is.null(input_fixed)) {
       assert_that(nrow(input_fixed)==1, 
@@ -1400,7 +1410,7 @@ llikEmulatorGP$methods(
       }
       
       if(return_var) {
-        em_pred_list$var <- truncnorm::etruncnorm(a=bounds[1], 
+        em_pred_list$var <- truncnorm::vtruncnorm(a=bounds[1], 
                                                   b=bounds[2],
                                                   mean=mean_Gaussian, 
                                                   sd=sqrt(em_pred_list$var))
@@ -1814,7 +1824,6 @@ llikEmulatorGPFwdGauss$methods(
               lik_description="Gaussian likelihood",
               emulator_description="Forward model GP emulator", 
               exact_llik=FALSE, ...)
-              
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
@@ -2025,7 +2034,7 @@ llikEmulatorGPFwdGauss$methods(
     } else {
       assert_that(!is.null(em_pred_list$mean), 
                   msg="Likelihood predictive quantities require emulator mean")
-      assert_that(!(return_var && is.null(em_pred_list$cov)),
+      assert_that(!(return_var && is.null(em_pred_list$output_cov)),
                   msg="Likelihood variance requires emulator output covariance.")
     }
     
@@ -2041,22 +2050,22 @@ llikEmulatorGPFwdGauss$methods(
     }
     
     for(i in 1:n_input) {
-      K <- em_pred_list$cov[i,,]
+      K <- em_pred_list$output_cov[i,,]
       L_Sig_plus_K <- t(chol(Sig+K))
       
       if(return_mean) {
-        lik_pred_list$log_mean[i] <- .self$assemble_llik(em_pred_list$mean[i,], 
+        lik_pred_list$log_mean[i] <- .self$assemble_llik(em_pred_list$mean[i,,drop=FALSE], 
                                                          lik_par_chol=L_Sig_plus_K,
                                                          conditional=conditional,
                                                          normalize=normalize)
       }
       
       if(return_var) {
-        log_num1 <- .self$assemble_llik(em_pred_list$mean[i,],
+        log_num1 <- .self$assemble_llik(em_pred_list$mean[i,,drop=FALSE],
                                         lik_par_val=0.5*Sig + K,
                                         conditional=conditional,
                                         normalize=normalize)
-        log_num2 <- .self$assemble_llik(em_pred_list$mean[i,],
+        log_num2 <- .self$assemble_llik(em_pred_list$mean[i,,drop=FALSE],
                                         lik_par_chol=L_Sig_plus_K/sqrt(2),
                                         conditional=conditional,
                                         normalize=normalize)
