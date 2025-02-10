@@ -1,0 +1,394 @@
+---
+title: "eki_gp_emulation"
+author: "Andrew Roberts"
+date: "2025-02-08"
+output: html_document
+---
+
+This tutorial demonstrates how ensemble Kalman inversion 
+(EKI; implemented in `ens_Kalman_inversion.r`) and Gaussian process (GP)
+emulation can be combined to approximate the posterior distribution in a 
+Bayesian inverse problem. In particular, EKI is used to cheaply generate 
+approximate samples from the posterior distribution. These samples are then 
+used as an initial design to fit a GP emulator of the forward model or 
+log-likelihood, which can then be used in MCMC algorithms.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(data.table)
+library(ggplot2)
+
+# Filepath definitions.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(base_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "ens_Kalman_inversion.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "gp_mcmc_functions.r"))
+```
+
+# Setup: load inverse problem
+```{r}
+# Load inverse problem setup information. Store log-likelihood upper bound.
+inv_prob <- get_vsem_test_1()
+par_names <- inv_prob$par_names
+par_prior <- inv_prob$par_prior
+llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
+
+print(paste0("Input dimension: ", inv_prob$dim_par))
+print(paste0("Observation space dimension: ", inv_prob$dim_obs))
+print(paste0("Log-likelihood bounds: ", paste(llik_bounds, collapse=", ")))
+```
+
+```{r}
+# Create initial design.
+n_design <- 250L
+design_method <- "LHS"
+design_info <- get_init_design_list(inv_prob, design_method, n_design)
+
+print(paste0("Number design points: ", n_design))
+print(paste0("Design method: ", design_method))
+```
+
+```{r}
+# Sample test points from prior.
+n_design_test <- 500L
+test_info_prior <- get_init_design_list(inv_prob, design_method, n_design_test)
+```
+
+# Exact Posterior Samples
+We start by generating samples using standard (exact) MCMC to be used as a 
+baseline for comparison when evaluating the approximation approaches.
+
+```{r}
+# Run exact MCMC.
+mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
+                      sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                      n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood.
+mcmc_list <- run_mcmc(inv_prob$llik_obj, par_prior, mcmc_settings)
+
+# Table storing MCMC samples.
+burn_in_exact <- round(mcmc_settings$n_itr/2)
+samp_dt <- select_mcmc_itr(mcmc_list$samp, itr_start=burn_in_exact)
+mcmc_metadata <- mcmc_list$output_list
+```
+
+```{r}
+# Test points subsampled from true posterior.
+samp_mat <- select_mcmc_samp_mat(samp_dt, test_label="exact", 
+                                 param_type="par")[,par_names]
+test_info_exact <- get_init_design_list(inv_prob, design_method="subsample", 
+                                        N_design=n_design_test,
+                                        design_candidates=samp_mat)
+```
+
+# Comparing EKI vs. GP approach: single round of forward model runs
+We start by creating a "space-filling design" based on the prior distribution.
+We use this as an initial ensemble in the EKI algorithm. We also fit a GP 
+emulator, so that we can compare the EKI and GP approximations after a single 
+round of forward model runs.
+
+## GP emulator
+
+### Fit GP
+```{r}
+# Fit GP for log-likelihood.
+gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
+                         scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
+                          default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                          llik_bounds=llik_bounds)
+```
+
+### Run approximate MCMC
+There are various GP-approximated MCMC algorithms implemented in 
+`gp_mcmc_functions.r`. We keep things simple here and simply use the GP 
+plug-in mean approach; i.e., replace the true log-likelihood with the GP 
+predictive mean.
+
+```{r}
+mcmc_settings_mean <- list(test_label="mean_round1", approx_type="mean",
+                           mcmc_func_name="mcmc_bt_wrapper", 
+                           sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                           n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean <- run_mcmc(llik_em, par_prior, mcmc_settings_mean)
+
+# Store samples.
+burn_in_mean <- round(mcmc_settings_mean$n_itr/2)
+samp_dt_mean <- select_mcmc_itr(mcmc_list_mean$samp, itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean)
+info_dt <- select_mcmc_itr(mcmc_list_mean$info, itr_start=burn_in_mean)
+```
+
+```{r}
+trace_plts_mean <- get_trace_plots(samp_dt, test_label="mean")
+for(plt in trace_plts_mean) plot(plt)
+```
+
+```{r}
+hist_plts_mean <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact")
+for(plt in hist_plts_mean) plot(plt)
+```
+
+## EKI
+```{r}
+# Run single step of EKI.
+Sig <- diag(llik_em$lik_par, nrow=inv_prob$dim_obs)
+eki_output <- run_eki(inv_prob$y, inv_prob$par_to_obs_op, 
+                      Sig, par_prior=par_prior, U0=design_info$input, 
+                      G0=design_info$fwd, n_itr=1)
+
+samp_dt <- append_samples_mat(samp_dt, eki_output$U, param_type="par",
+                              test_label="eki_1_itr")
+```
+
+
+```{r}
+hist_plts_eki <- get_hist_plot_comparisons(samp_dt, test_label_baseline="exact", 
+                                           test_labels="eki_1_itr")
+for(plt in hist_plts_eki) plot(plt)
+```
+
+## Compare the two approximations
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="exact")
+for(plt in kde_plts) plot(plt)
+```
+
+# Fitting GP Emulator using EKI Ensemble as Design
+We now consider fitting a GP emulator, where the approximate EKI samples are 
+used as the initial design for the GP. The idea is that EKI "zooms in" on the 
+important region of parameter space, which allows for a GP fit that is more 
+fine-tuned to approximate the log-likelihood well in the region of significant
+posterior mass. The cost of this is another round of forward model runs, as the 
+forward model needs to be run again at the EKI samples to generate the 
+outputs for fitting the GP. TODO: should really be combining the EKI initial 
+and posterior ensemble as the design for the GP.
+
+## Fit GP
+```{r}
+# Execute forward model runs at EKI points.
+design_info_eki <- get_init_design_list(inv_prob, N_design=n_design, 
+                                        design_method="eki", inputs=eki_output$U)
+
+# Fit GP for log-likelihood.
+gp_obj_eki <- gpWrapperKerGP(design_info_eki$input, matrix(design_info_eki$llik, ncol=1), 
+                             scale_input=TRUE, normalize_output=TRUE)
+gp_obj_eki$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj_eki$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em_eki <- llikEmulatorGP("llik_em_eki", gp_obj_eki, default_conditional=FALSE, 
+                              default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
+                              llik_bounds=llik_bounds)
+```
+
+## Compare the Two GP Fits
+
+### Evaluate on Test Points Sampled from Prior
+```{r}
+em_pred_list <- llik_em$predict_emulator(test_info_prior$input, return_var=TRUE)
+em_pred_list_eki <- llik_em_eki$predict_emulator(test_info_prior$input, return_var=TRUE)
+```
+
+```{r}
+llik_em$plot_pred_validation(test_info_prior$input, test_info_prior$llik,
+                             em_pred_list=em_pred_list, 
+                             plot_title="llik_em predictions: prior test points")
+
+llik_em_eki$plot_pred_validation(test_info_prior$input, test_info_prior$llik,
+                                 em_pred_list=em_pred_list_eki,
+                                 plot_title="llik_em_eki predictions: prior test points")
+```
+
+### Evaluate on Test Points Sampled from True Posterior
+```{r}
+em_pred_list_post <- llik_em$predict_emulator(test_info_exact$input, return_var=TRUE)
+em_pred_list_eki_post <- llik_em_eki$predict_emulator(test_info_exact$input, return_var=TRUE)
+```
+
+```{r}
+# Plotting Gaussian predictions, along with llik bound. 
+
+llik_em$plot_pred_validation(test_info_exact$input, test_info_exact$llik,
+                             em_pred_list=em_pred_list_post, adjustment="none",
+                             plot_title="llik_em predictions: true posterior test points") +
+                             geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_em_eki$plot_pred_validation(test_info_exact$input, test_info_exact$llik,
+                                 em_pred_list=em_pred_list_eki_post, adjustment="none",
+                                 plot_title="llik_em_eki predictions: true posterior test points") + 
+                                 geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+```
+```{r}
+# Plotting truncated Gaussian predictions, upper truncated using llik bound. 
+
+llik_em$plot_pred_validation(test_info_exact$input, test_info_exact$llik,
+                             em_pred_list=em_pred_list_post, adjustment="truncated",
+                             plot_title="llik_em predictions: true posterior test points") +
+                             geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+
+llik_em_eki$plot_pred_validation(test_info_exact$input, test_info_exact$llik,
+                                 em_pred_list=em_pred_list_eki_post, adjustment="truncated",
+                                 plot_title="llik_em_eki predictions: true posterior test points") + 
+                                 geom_hline(yintercept=llik_bounds[2], color="blue", linetype="dashed")
+```
+
+## Run approximate posterior sampling using new GP emulator.
+
+```{r}
+mcmc_settings_mean_eki <- list(test_label="mean_eki", approx_type="mean",
+                           mcmc_func_name="mcmc_bt_wrapper", 
+                           sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                           n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean_eki <- run_mcmc(llik_em_eki, par_prior, mcmc_settings_mean_eki)
+
+# Store samples.
+samp_dt_mean_eki <- select_mcmc_itr(mcmc_list_mean_eki$samp, 
+                                    itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean_eki)
+```
+
+```{r}
+trace_plts_mean_eki <- get_trace_plots(samp_dt, test_label="mean_eki")
+for(plt in trace_plts_mean_eki) plot(plt)
+```
+
+```{r}
+hist_plts_mean_eki <- get_hist_plot_comparisons(samp_dt, test_labels="mean_eki",
+                                                test_label_baseline="exact")
+for(plt in hist_plts_mean_eki) plot(plt)
+```
+
+## Compare theposterior approximations
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="exact")
+for(plt in kde_plts) plot(plt)
+```
+
+# Multi-Step EKI 
+We now consider running multiple steps of EKI to generate a design for the 
+GP. Splitting the EKI update into multiple steps via likelihood tempering tends
+to produce a much better approximation than single-step EKI.
+
+```{r}
+# Run multi-step EKI.
+n_itr_eki <- 3L
+eki_multistep_output <- run_eki(inv_prob$y, inv_prob$par_to_obs_op, 
+                                Sig, par_prior=par_prior, U0=design_info$input, 
+                                G0=design_info$fwd, n_itr=n_itr_eki)
+
+samp_dt <- append_samples_mat(samp_dt, eki_multistep_output$U, param_type="par",
+                              test_label=paste0("eki_", n_itr_eki, "_itr"))
+```
+
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="exact")
+for(plt in kde_plts) plot(plt)
+```
+## Fit GP on samples from Multi-step EKI
+```{r}
+# Execute forward model runs at EKI points.
+design_info_eki_multi <- get_init_design_list(inv_prob, N_design=n_design, 
+                                              design_method=paste0("eki_", n_itr_eki), 
+                                              inputs=eki_multistep_output$U)
+
+# Fit GP for log-likelihood.
+gp_obj_eki_multi <- gpWrapperKerGP(design_info_eki_multi$input, 
+                                   matrix(design_info_eki_multi$llik, ncol=1), 
+                                   scale_input=TRUE, normalize_output=TRUE)
+gp_obj_eki_multi$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
+gp_obj_eki_multi$fit(multistart=10, trace=TRUE)
+
+# Instantiate and save log-likelihood emulator object.
+llik_em_eki_multi <- llikEmulatorGP("llik_em_eki_multi", gp_obj_eki_multi, 
+                                    default_conditional=FALSE, 
+                                    default_normalize=TRUE, 
+                                    lik_par=inv_prob$sig2_model, 
+                                    llik_bounds=llik_bounds)
+```
+
+
+## Approximate Posterior Sampling
+```{r}
+test_label_eki_multi <- paste0("mean_eki_", n_itr_eki)
+mcmc_settings_mean_eki_multi <- list(test_label=test_label_eki_multi, 
+                                     approx_type="mean",
+                                     mcmc_func_name="mcmc_bt_wrapper", 
+                                     sampler="DEzs", n_itr=50000L, 
+                                     try_parallel=FALSE,  
+                                     n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean_eki_multi <- run_mcmc(llik_em_eki_multi, par_prior, 
+                                     mcmc_settings_mean_eki_multi)
+
+# Store samples.
+samp_dt_mean_eki_multi <- select_mcmc_itr(mcmc_list_mean_eki_multi$samp, 
+                                          itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean_eki_multi)
+```
+
+
+```{r}
+trace_plts_mean_eki_multi <- get_trace_plots(samp_dt, test_label=test_label_eki_multi)
+for(plt in trace_plts_mean_eki_multi) plot(plt)
+```
+
+
+```{r}
+hist_plts_mean_eki_multi <- get_hist_plot_comparisons(samp_dt, 
+                                                      test_labels=test_label_eki_multi,
+                                                      test_label_baseline="exact")
+for(plt in hist_plts_mean_eki_multi) plot(plt)
+```
+
+```{r}
+kde_plts <- get_1d_kde_plots(samp_dt, test_label_baseline="exact")
+for(plt in kde_plts) plot(plt)
+```
+
+Thoughts on what happened here: the 3-step EKI posterior samples were quite 
+concentrated in the parameter space, and reflected the true posterior quite 
+well. So the GP emulator probably predicts the posterior density quite well 
+in the region of significant posterior mass, but is quite uncertain elsewhere.
+In this case I'm assuming it is way overpredicting the posterior density in 
+regions where it is insignificant, leading to a very flat approximate posterior.
+Should confirm this is what's happening. It would seem that training the GP 
+on all of the EKI samples (not just the final round) would help a lot here, as 
+this would include samples from regions of insignificant posterior mass.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
