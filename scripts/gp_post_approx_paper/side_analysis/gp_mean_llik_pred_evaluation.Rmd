@@ -235,7 +235,7 @@ gp_obj$fit(multistart=10, trace=TRUE)
 # Instantiate and save log-likelihood emulator object.
 llik_em <- llikEmulatorGP("llik_em", gp_obj, default_conditional=FALSE, 
                           default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
-                          use_fixed_lik_par=TRUE, llik_bounds=llik_bounds)
+                          llik_bounds=llik_bounds)
 ```
 
 
@@ -303,7 +303,7 @@ gp_obj2$fit(multistart=10, trace=TRUE)
 # Instantiate and save log-likelihood emulator object.
 llik_em2 <- llikEmulatorGP("llik_em2", gp_obj2, default_conditional=FALSE, 
                           default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
-                          use_fixed_lik_par=TRUE, llik_bounds=llik_bounds)
+                          llik_bounds=llik_bounds)
 ```
 
 ```{r}
