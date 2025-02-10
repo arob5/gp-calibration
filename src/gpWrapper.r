@@ -660,7 +660,8 @@ gpWrapper$methods(
   
   
   sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1, 
-                    pred_list=NULL, adjustment="none", bounds=c(0,Inf), ...) {
+                    pred_list=NULL, cov_sqrt_method="chol", 
+                    adjustment="none", bounds=c(-Inf,Inf), ...) {
     # If `pred_list` is passed, it should have all the required components. 
     # Returns array of dimension (num input, num samp, Y_dim). The "adjustment"
     # argument can be used to truncate the Gaussian predictive distribution
@@ -668,10 +669,11 @@ gpWrapper$methods(
     # sample from a truncated Gaussian, while `adjustment = "rectified"` will 
     # sample from a rectified Gaussian (i.e., a sample exceeding the upper bound
     # will be set to the upper bound, and likewise for the lower bound).
+    # `cov_sqrt_method` is used in `sample_Gaussian()`.
 
     n_input <- nrow(X_new)
     if(n_input < 2) use_cov <- FALSE
-    assert_that(length(bounds)==2L)
+    adjustment <- .self$get_dist_adjustment(adjustment, bounds)
     
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
@@ -681,40 +683,123 @@ gpWrapper$methods(
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
 
-    # Compute lower Cholesky factors of the predictive covariance matrices. 
-    # If not using predictive cov, Cholesky factors are diagonal with standard 
-    # devs on diag. For truncated normal, `tmvnorm` doesn't accept Cholesky 
-    # factor, so just pass covariance matrix. 
-    if((adjustment=="truncated") && !use_cov) {
-      pred_list$cov <- abind(lapply(1:Y_dim, function(i) diag(pred_list$var[,i],
-                                                              nrow=n_input)), along=3)
-    } else if((adjustment != "truncated") && use_cov) {
-      if(is.null(pred_list$chol_cov)) pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) t(chol(pred_list$cov[,,i]))), along=3)
-    } else if(adjustment != "truncated") {
-      pred_list$chol_cov <- abind(lapply(1:Y_dim, function(i) diag(sqrt(pred_list$var[,i]), nrow=n_input)), along=3)
+    # Produce samples.
+    if(adjustment=="truncated") {
+      samp <- .self$sample_truncated(X_new, use_cov=use_cov, 
+                                     include_noise=include_noise, N_samp=N_samp,
+                                     pred_list=pred_list, bounds=bounds)
+    } else if(adjustment=="rectified") {
+      samp <- .self$sample_rectified(X_new, use_cov=use_cov, 
+                                     include_noise=include_noise, N_samp=N_samp,
+                                     pred_list=pred_list, bounds=bounds)
+    } else if(adjustment=="none") {
+      samp <- .self$sample_Gaussian(X_new, use_cov=use_cov,
+                                    include_noise=include_noise, N_samp=N_samp,
+                                    pred_list=pred_list)
+    } else {
+      stop("`sample` method does not support adjustment `", adjustment, "`.")
+    }
+
+    return(samp)
+  },
+  
+  
+  sample_Gaussian = function(X_new, use_cov=FALSE, include_noise=TRUE, 
+                             N_samp=1L, pred_list=NULL, cov_sqrt_method="chol") {
+    # Samples from the Gaussian predictive distribution for each of the 
+    # independent GPs. If `use_cov = TRUE` then samples are from the 
+    # multivariate Gaussian using the predictive covariance across the 
+    # inputs in `X_new`. Otherwise, the samples are drawn independently input
+    # by input. For the multivariate case, we make use of `mvtnorm::rmvnorm`.
+    # The `cov_sqrt_method` argument is passed to the `method` argument of 
+    # this function. We change the default to be the Cholesky decomposition
+    # ("chol"), but this can also be set to "eigen" or "svd", which may be 
+    # preferable if the covariance matrix is numerically not positive definite.
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
+                                 return_cov=use_cov, include_noise=include_noise)
+    } else {
+      if(use_cov) assert_that(!is.null(pred_list$cov))
     }
     
-    samp <- array(dim=c(nrow(X_new), N_samp, Y_dim))
+    # Generate samples.
+    samp <- array(dim=c(nrow(X_new), N_samp, .self$Y_dim))
     for(i in 1:Y_dim) {
-      if(adjustment=="truncated") { # Zero left-truncated Gaussian. 
-        samp[,,i] <- t(rtmvnorm(N_samp, mean=pred_list$mean[,i], 
-                                sigma=pred_list$cov[,,i], 
-                                lower=rep(bounds[1], nrow(X_new)),
-                                upper=rep(bounds[2], nrow(X_new))))
+      if(use_cov) {
+        samp[,,i] <- t(mvtnorm::rmvnorm(n=N_samp, mean=pred_list$mean[,i],
+                                        sigma=as.matrix(pred_list$cov[,,i]),
+                                        method=cov_sqrt_method))
       } else {
-        samp[,,i] <- sample_Gaussian_chol(pred_list$mean[,i],
-                                          as.matrix(pred_list$chol_cov[,,i]), 
-                                          N_samp)
-        if(adjustment=="rectified") {
-          samp[,,i] <- pmax(samp[,,i], bounds[1])
-          samp[,,i] <- pmin(samp[,,i], bounds[2])
+        for(j in 1:nrow(X_new)) {
+          samp[j,,i] <- rnorm(n=N_samp, mean=pred_list$mean[j,i],
+                              sd=sqrt(pred_list$var[j,i]))
         }
       }
     }
     
     return(samp)
-    
   },
+  
+  
+  sample_truncated = function(X_new, use_cov=FALSE, include_noise=TRUE, 
+                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf)) {
+    # Samples from a truncated version of the Gaussian predictive distribution.
+    # If `use_cov=TRUE` this implies a multivariate truncated Gaussian, 
+    # in which case the package `tmvtnorm` is used for sampling. Otherwise, 
+    # sampling is done independently for each input in `X_new`, and 
+    # the package `truncnorm` is used for sampling. Note that the multivariate 
+    # truncated Gaussian sampling can be much slower, especially if the 
+    # probability of the constraint being satisfied is small. The sampling 
+    # is done via the rejection sampling algorithm implemented by 
+    # `tmvtnorm::rmvtnorm`.
+    
+    # Compute required predictive quantities if not already provided. 
+    if(is.null(pred_list)) {
+      pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
+                                 return_cov=use_cov, include_noise=include_noise)
+    } else {
+      if(use_cov) assert_that(!is.null(pred_list$cov))
+    }
+    
+    samp <- array(dim=c(nrow(X_new), N_samp, .self$Y_dim))
+    for(i in 1:Y_dim) {
+      if(use_cov) {
+        samp[,,i] <- t(tmvtnorm::rtmvnorm(n=N_samp, mean=pred_list$mean[,i],
+                                          sigma=as.matrix(pred_list$cov[,,i]),
+                                          lower=rep(bounds[1], nrow(X_new)),
+                                          upper=rep(bounds[2], nrow(X_new))))
+      } else {
+        for(j in 1:nrow(X_new)) {
+          samp[j,,i] <- truncnorm::rtruncnorm(n=N_samp, a=bounds[1], b=bounds[2],
+                                              mean=pred_list$mean[j,i],
+                                              sd=sqrt(pred_list$var[j,i]))
+        }
+      }
+    }
+    
+    return(samp)
+  },
+  
+  sample_rectified = function(X_new, use_cov=FALSE, include_noise=TRUE, 
+                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf)) {
+    # Samples from a rectified version of the Gaussian predictive distribution.
+    # This is accomplished by drawing samples from the Gaussian predictive 
+    # distribution, and then thresholding the samples based on the bounds.
+    
+    # Produce Gaussian samples, dimension (nrow(X_new), N_samp, .self$Y_dim).
+    samp <- .self$sample_Gaussian(X_new, use_cov=use_cov, 
+                                  include_noise=include_noise, N_samp=N_samp,
+                                  pred_list=pred_list, bounds=bounds)
+    
+    # Rectify the Gaussian samples.
+    samp <- pmax(samp, bounds[1])
+    samp <- pmin(samp, bounds[2])
+    
+    return(samp)
+  },
+  
   
   update = function(X_new, Y_new, update_hyperpar=FALSE, ...) {
     N_design_curr <- nrow(X_train)
@@ -733,6 +818,48 @@ gpWrapper$methods(
                 gpWrapper. gpWrapper does not implement its own update_package() method. The
                 update() method should ultimately call update_package()."
     stop(err_msg)
+  },
+  
+  get_dist_adjustment = function(adjustment="none", bounds=c(-Inf,Inf)) {
+    # This method essentially validates arguments that are used to adjust the 
+    # Gaussian predictive distribution of the GPs. Currently, the allowable 
+    # adjustments are "truncated" and "rectified", which transform the Gaussian
+    # predictive distribution to truncated and rectified Gaussian distributions, 
+    # respectively. Any unrecognized adjustments will be set to "none", and a 
+    # warning will be printed. At present, the lower and upper bounds 
+    # defining the truncation for the rectified and truncated adjustments must 
+    # be the same for each independent GP. Thus, `bounds` must be a vector of 
+    # length two that will be applied to each output dimension. The default, 
+    # `c(-Inf,Inf)` does not cause any truncation; adjusting only one of the 
+    # entries can be done to apply one-sided truncation. 
+    #
+    # Returns:
+    # character, the adjustment. Typically will be the same as the `adjustment`
+    # argument, but may be changed based on argument checking.
+    
+    # Check `adjustment` argument.
+    valid_adjustments <- c("none", "truncated", "rectified")
+    if(!(adjustment %in% valid_adjustments)) {
+      message("Distribution adjustment `", adjustment, "` not supported. ",
+              "Setting `adjustment = 'none'`.")
+      return("none")
+    }
+    
+    # For truncated and rectified adjustments, check the required `bounds`
+    # argument. If `bounds = c(-Inf,Inf)` then set adjustment to "none".
+    if(adjustment %in% c("truncated", "rectified")) {
+      bounds <- drop(bounds)
+      assert_that(length(bounds)==2L, msg=paste0("For truncated/rectified ", 
+                  "adjustments, `bounds` must be vector of length 2. Separate", 
+                  " bounds for each output dimension not yet supported."))
+      assert_that(bounds[1] < bounds[2], 
+                  msg=paste0("Lower bound must be smaller than upper bound in",
+                             "`bounds` argument for distribution adjustment."))
+      if(all(is.infinite(bounds))) return("none")
+    }
+    
+    return(adjustment)
+    
   },
 
   calc_pred_func = function(func, type="pw", X_new=NULL, Y_new=NULL,  
