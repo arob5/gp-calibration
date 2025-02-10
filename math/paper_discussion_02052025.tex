@@ -1,0 +1,163 @@
+\documentclass[12pt]{article}
+\RequirePackage[l2tabu, orthodox]{nag}
+\usepackage[main=english]{babel}
+\usepackage[rm={lining,tabular},sf={lining,tabular},tt={lining,tabular,monowidth}]{cfr-lm}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
+\usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage{algorithm}
+\usepackage{algpseudocode} % Note that this also loads algorithmicx
+\usepackage{cleveref}
+\usepackage{natbib}
+\usepackage{bbm}
+\usepackage{caption, subcaption} % Captions and sub-figures. 
+\usepackage{fancyvrb} % For writing using verbatim font inline. 
+% \usepackage[demo]{graphicx}
+
+% Bibliography
+\bibliographystyle{plainnat}
+
+% Plotting
+\usepackage{pgfplots}
+\usepackage{xinttools} % for the \xintFor***
+\usepgfplotslibrary{fillbetween}
+\pgfplotsset{compat=1.8}
+\usepackage{tikz}
+
+% Tables. 
+\usepackage{multirow}
+
+
+
+% Local custom commands. 
+\include{latex_macros_general}
+\include{latex_macros_gp_inv_prob}
+\newcommand{\bphi}{\boldsymbol{\phi}}
+
+\setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
+\setlist[1]{leftmargin=\parindent}
+\setlist[enumerate,1]{label=\arabic*.,ref=\arabic*}
+\setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
+
+% For embedding images
+\graphicspath{{../output/gp_post_approx_paper/}}
+
+% Specifically for paper formatting 
+\renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
+
+% Formatting definitions, propositions, etc. 
+\newtheorem{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{corollary}{Corollary}
+
+% Title and author
+\title{Meeting 2/5/2025: some discussion related to paper}
+\author{Andrew Roberts}
+
+\begin{document}
+
+\section{Understanding Implications of Emulator Uncertainty Propagation}
+A key quantity to investigate is the likelihood ratio
+\begin{align}
+\likRatio(\Par, \propPar) &= \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}}.
+\end{align}
+Directly comparing two different approximations to the posterior density is difficult, as the normalizing 
+constants will differ across different approximations. To avoid these complications, a reasonable quantity
+to look at is the ratio of likelihood ratios.
+\begin{align}
+\likRatio^\prime(\Par, \propPar) &\Def \frac{\likRatio_1(\Par, \propPar)}{\likRatio_2(\Par, \propPar)}  
+= \frac{\frac{\Exp{\llik_1(\propPar)}}{\Exp{\llik_1(\Par)}}}{\frac{\Exp{\llik_2(\propPar)}}{\Exp{\llik_2(\Par)}}}, \label{ratio_of_ratios}
+\end{align}
+where $\llik_1$ and $\llik_2$ are two different (deterministic) approximations to the log-likelihood. As the baseline approximation, I will 
+consider $\llik_2$ as the plug-in mean approximation $\llik_2(\Par) \Def \llik^{\text{mean}}(\Par) := \gpMean(\Par)$ 
+(assuming a log-likelihood emulator) so that
+\begin{align}
+\likRatio_2(\Par, \propPar) &= \Exp{\gpMean(\propPar) - \gpMean(\Par)}.
+\end{align}
+In this case, the ratio-of-ratios \ref{ratio_of_ratios} will assess how different approximations change the relative weighting between 
+two parameter values relative to the plug-in mean method.
+
+For the numerator, consider an approximation of the form
+\begin{align}
+\Exp{\llik_2(\Par)} = \Exp{\gpMean(\Par) + g(\sqrt{\gpKer(\Par)})},
+\end{align}
+where $g$ is some nondecreasing function of the predictive standard deviation. In this case, the ratio-of-ratios reduces to
+\begin{align}
+\likRatio^\prime(\Par, \propPar) &= \Exp{g(\sqrt{\gpKer(\propPar)}) - g(\sqrt{\gpKer(\Par)})}.
+\end{align}
+If the GP uncertainty is the same at the two points, this means the approximate likelihood ratio agrees with the plug-in mean 
+approximate ratio. If the uncertainty is larger at $\propPar$ than $\Par$, then the approximation places more weight on 
+$\propPar$, relative to the plug-in mean approximation. To compare the influence of the GP uncertainty, suppose the predictive
+standard deviations at the two points are related as
+\begin{align}
+\sqrt{\gpKer(\propPar)} = \beta \sqrt{\gpKer(\Par)}.
+\end{align}
+
+\subsection{Pointwise Approximations}
+
+\noindent
+\textbf{Marginal Approximation.} The marginal approximation corresponds to the choice $g(t) = \frac{1}{\sqrt{2}} t^2$. Thus, we have
+\begin{align}
+\likRatio^\prime(\Par, \propPar) 
+&= \Exp{\frac{1}{2}[\gpKer(\propPar) - \gpKer(\Par)]} = \Exp{\frac{1}{2}\gpKer(\Par)(\beta^2 - 1)} = \BigO(e^{\beta^2}).
+\end{align}
+This growth can be quite extreme. Supposing, $\gpKer(\Par) = 1$, then $\likRatio^\prime(\Par, \propPar) \approx 20$ if 
+$\beta=2$; i.e., the uncertainty is two times larger at $\propPar$ relative to $\Par$. As $\beta$ grows, we quickly reach a point where
+the GP predictive mean plays almost no role, and the likelihood approximation is completely dominated by the GP uncertainty.
+This growth becomes more extreme when $\gpKer(\Par) > 1$. For example, if $\gpKer(\Par) = 20$ and $\beta = 1.05$ (uncertainty
+is five percent larger at $\propPar$) then already $\likRatio^\prime(\Par, \propPar) \approx 10$. If $\beta = 2$ then 
+$\likRatio^\prime(\Par, \propPar)$ is a massive number.
+
+\vspace*{10px}
+
+\noindent
+\textbf{Quantile Approximation.} The $\alpha$-quantile approximation corresponds to the choice $g(t) = \Phi^{-1}(\alpha) t$, where 
+$\Phi^{-1}$ is the standard normal quantile function. Thus,
+\begin{align}
+\likRatio^\prime(\Par, \propPar) 
+&= \Exp{\Phi^{-1}(\alpha)[\sqrt{\gpKer(\propPar)} - \sqrt{\gpKer(\Par)}]} = \Exp{\Phi^{-1}(\alpha)\sqrt{\gpKer(\Par)}(\beta - 1)} = \BigO(e^{\beta}).
+\end{align}
+
+For example, let's take $\alpha=0.7$. If $\gpKer(\Par) = 1$, then $\beta \approx 2$ implies $\likRatio^\prime(\Par, \propPar)  \approx 2$. It 
+still grows very quickly; for $\beta \approx 6.7$, $\likRatio^\prime(\Par, \propPar)  \approx 20$. For $\gpKer(\Par) > 1$ the growth quickly 
+becomes more extreme.
+
+\subsection{Ratio Approximations}
+We now consider methods that directly approximate the likelihood ratio, rather than approximating the density and then taking the ratio 
+of the density approximations. 
+
+\vspace*{10px}
+
+\noindent
+\textbf{Joint Marginal.} We start by considering the approximation
+\begin{align}
+\likRatio_1(\Par, \propPar) &= \E\Exp{\llikEm(\propPar) - \llikEm(\Par)}
+= \Exp{\gpMean(\propPar) - \gpMean(\Par)}\Exp{\frac{1}{2}[\gpKer(\propPar) + \gpKer(\Par) - 2\gpKer(\Par, \propPar)]},
+\end{align} 
+so that
+\begin{align}
+\likRatio^\prime(\Par, \propPar) &= \Exp{\frac{1}{2}[\gpKer(\propPar) + \gpKer(\Par) - 2\gpKer(\Par, \propPar)]}
+= \Exp{\frac{1}{2}\gpKer(\Par)[\beta^2 + 1] - \gpKer(\Par, \propPar)}
+\end{align}
+
+
+\end{document}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

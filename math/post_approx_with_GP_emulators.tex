@@ -530,6 +530,9 @@ by marginalizing the emulator, resulting in the deterministic density
 &\Def \E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par^\prime) \Exp{\llikEm[\Ndesign](\Par^\prime)} d\Par^\prime} \right].
 \label{samp_dens_norm}
 \end{align}
+Such an approximation is briefly noted in \citet{StuartTeck1} and \citet{VehtariParallelGP}.
+We note that \cref{samp_dens_norm} is only well-defined if almost every realization from the likelihood 
+surrogate induces a valid probability density, a property that will depend on the GP emulator.
 This approximation can be understood from a Monte Carlo perspective, 
 as summarized in \Cref{alg:sample-approx} [\todo: subscript notation indexing samples in algorithm might 
 be a bit confusing given subscript on prior density; maybe change this or just define the algorithm as returning 
@@ -550,11 +553,11 @@ a single sample].
     \end{algorithmic}
 \end{algorithm}
 
+
 However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm infeasible in practice. 
 Various discretized approximations might be considered, but face challenges scaling beyond a small number of 
 input dimensions. Owing to the difficulties of working with the sample-based approximation, common approaches in the 
-literature opt for different approaches to derive a deterministic posterior approximation using the random 
-measure $\llikEmRdm[\Ndesign]{\postDensNorm}$. Given that the primary difficulties stem from the normalizing constant
+literature opt for alternative posterior approximations. Given that the primary difficulties stem from the normalizing constant
 \ref{norm_cst_random_llik}, the typical approach is to instead focus on approximations of the \textit{unnormalized}
 random density $\llikEmRdm[\Ndesign]{\postDens}$. We discuss such approaches in the following subsection, and 
 propose a new class of GP-induced posterior approximations in \Cref{post_approx_mcmc}. 
@@ -700,7 +703,7 @@ Before proceeding to the algorithms, we briefly review the MH algorithm and esta
 approximate MCMC schemes outlined in the subsequent sections. 
 We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
 $\propDens(\Par, \cdot)$. If the Markov chain is in the current state $\Par \in \parSpace$ then 
-the next state is defined by sampling a proposal $\propPar \sim \propDens(\Par, \cdot)$ which is 
+the next state is defined by sampling the proposal $\propPar \sim \propDens(\Par, \cdot)$ which is 
 accepted with probability $\accProbMH(\Par, \propPar)$, defined by 
 \begin{align}
 &\accProbMH(\Par, \propPar) = 

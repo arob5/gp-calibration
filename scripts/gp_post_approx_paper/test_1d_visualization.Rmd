@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 
 # TODO: 
+#    - look into censoring. 
 #    - Add a quantile approximation. 
 #    - Estimate observation variance. 
 #    - Exponentiate the integrated variance acquisitions if possible; o/w make clear I'm plotting the log. 
@@ -45,7 +46,7 @@ library(parallel)
 library(gridExtra)
 library(data.table)
 
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+# base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 output_dir <- file.path(base_dir, "output", "gp_post_approx_paper", "test_1d_vis2")
 
@@ -105,6 +106,7 @@ N_std_dev <- 1.64
 inv_prob <- get_vsem_test_1d_vis()
 par_prior <- inv_prob$par_prior
 llik_obj_exact <- inv_prob$llik_obj
+llik_bounds <- llik_obj_exact$get_llik_bounds()
 default_conditional <- llik_obj_exact$default_conditional
 default_normalize <- llik_obj_exact$default_normalize
 ```
@@ -210,6 +212,148 @@ em_fwd <- llikEmulatorGPFwdGaussDiag("em_fwd", em_fwd_gp, inv_prob$y,
 em_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 ```
 
+
+
+
+
+
+```{r}
+#
+# Emulator Distribution plots.  
+#
+
+# (1): Plot the underlying GP emulator predictive distributions.  
+plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
+                                                        interval_method=interval_method, 
+                                                        N_std_dev=N_std_dev,
+                                                        pred_list=em_pred_llik, ylab="L(u)",
+                                                        Y_new=matrix(test_info$llik, ncol=1),
+                                                        line_thickness=line_thickness,
+                                                        design_color=design_color, 
+                                                        design_pt_size=design_pt_size, 
+                                                        xlab="u", plot_title="GP predictions [llik]")[[1]]
+
+
+plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
+                                                      interval_method=interval_method, 
+                                                      N_std_dev=N_std_dev,
+                                                      pred_list=em_pred_fwd, ylab="G(u)",
+                                                      Y_new=matrix(test_info$fwd, ncol=1),
+                                                      line_thickness=line_thickness,
+                                                      design_color=design_color, 
+                                                      design_pt_size=design_pt_size, 
+                                                      xlab="u", plot_title="GP predictions [fwd]")[[1]]
+
+plot(plt_gp_dist_llik)
+plot(plt_gp_dist_fwd)
+
+```
+
+```{r}
+# (2): Plot the log-likelihood emulator predictive distributions. 
+plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
+                                           plot_type="llik", include_interval=TRUE,
+                                           interval_method=interval_method, N_std_dev=N_std_dev,
+                                           true_llik=test_info$llik, CI_prob=CI_prob,
+                                           line_thickness=line_thickness,
+                                           design_color=design_color, 
+                                           design_pt_size=design_pt_size,
+                                           xlab="u", ylab="L(u)",
+                                           plot_title="log-likelihood predictions [llik]") + 
+                      geom_hline(yintercept=llik_bounds[2], color="green", linetype="dashed")
+
+plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fwd,
+                                         plot_type="llik", include_interval=TRUE,  
+                                         interval_method=interval_method, N_std_dev=N_std_dev,
+                                         true_llik=test_info$llik, CI_prob=CI_prob, ylab="L(u)",
+                                         design_color=design_color, design_pt_size=design_pt_size,
+                                         xlab="u", plot_title="log-likelihood predictions [fwd]") + 
+                      geom_hline(yintercept=llik_bounds[2], color="green", linetype="dashed")
+
+plot(plt_llik_dist_llik)
+plot(plt_llik_dist_fwd)
+```
+
+```{r}
+# - Change GP prior for llik emulator to avoid getting a mean function that is increasing 
+# at the right boundary.
+# - Try re-plotting and simply cut off the y-axis at a certain level.
+#
+#
+
+# (3): Plot the likelihood emulator predictive distributions. 
+plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
+                                          plot_type="lik", include_interval=FALSE, 
+                                          true_llik=test_info$llik, CI_prob=CI_prob,
+                                          line_thickness=line_thickness, 
+                                          log_scale=FALSE, design_color=design_color, 
+                                          design_pt_size=design_pt_size, 
+                                          plot_title="likelihood predictions [llik]") + 
+                          geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
+
+
+# plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
+#                                           plot_type="lik", log_scale=TRUE,
+#                                           include_interval=TRUE, 
+#                                           interval_method=interval_method, N_std_dev=N_std_dev,
+#                                           true_llik=test_info$llik, CI_prob=CI_prob,
+#                                           line_thickness=line_thickness,
+#                                           design_color=design_color, design_pt_size=design_pt_size, 
+#                                           ylab="exp L(u)", xlab="u", 
+#                                           plot_title="likelihood predictions [llik]")
+
+# TODO: why does this throw an error when using "CI"?
+plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fwd, 
+                                        plot_type="lik", log_scale=FALSE, 
+                                        include_interval=TRUE, 
+                                        interval_method=interval_method,
+                                        N_std_dev=N_std_dev,
+                                        true_llik=test_info$llik,
+                                        line_thickness=line_thickness,
+                                        design_color=design_color, 
+                                        xlab="u", 
+                                        plot_title="likelihood predictions [fwd]") + 
+                            geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
+
+plot(plt_lik_dist_llik)
+plot(plt_lik_dist_fwd)
+
+```
+
+```{r}
+# Truncated log-normal predictive distribution for likelihood.
+
+lik_pred_trunc <- list()
+
+ln_list <- convert_Gaussian_to_LN(mean_Gaussian=em_pred_llik$mean, 
+                                  var_Gaussian=em_pred_llik$var, log_scale=TRUE)
+z <- drop((llik_bounds[2] - em_pred_llik$mean) / sqrt(em_pred_llik$var))
+lik_pred_trunc$mean <- exp(ln_list$log_mean + 
+                             log(pnorm(z-sqrt(em_pred_llik$var))) - 
+                             log(pnorm(z)))
+lik_pred_trunc$prob_bound_satisfied <- pnorm((llik_bounds[2] - em_pred_llik$mean)/sqrt(em_pred_llik$var))
+
+lik_pred_trunc$mean_rect <- exp(llik_bounds[2])*(1-lik_pred_trunc$prob_bound_satisfied) + 
+  lik_pred_trunc$prob_bound_satisfied*lik_pred_trunc$mean
+
+# Truncated approximation.
+plot_pred_1d_helper(drop(test_info$input), pred_mean=lik_pred_trunc$mean,
+                    y_new=exp(test_info$llik), 
+                    X_design=drop(design_info$input), 
+                    y_design=exp(design_info$llik),
+                    design_color=design_color, design_pt_size=design_pt_size) + 
+  geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
+
+# Rectified approximation.
+plot_pred_1d_helper(drop(test_info$input), pred_mean=lik_pred_trunc$mean_rect,
+                    y_new=exp(test_info$llik), 
+                    X_design=drop(design_info$input), 
+                    y_design=exp(design_info$llik),
+                    design_color=design_color, design_pt_size=design_pt_size) + 
+  geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
+
+```
+
 ```{r}
 # Truncating the log-likelihood predictive distribution.
 
@@ -238,123 +382,150 @@ plot_pred_1d_helper(drop(test_info$input), pred_mean=em_pred_llik_trunc$mean,
 
 ```
 
-```{r}
-#
-# Emulator Distribution plots.  
-#
 
-# (1): Plot the underlying GP emulator predictive distributions.  
-plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
+```{r}
+# Considering multivariate truncation, using smaller number of test points to start.
+n_grid_trunc <- 25
+trunc_test_info <- get_init_design_list(inv_prob, "tensor_product_grid", n_grid_trunc)
+trunc_em_pred_llik <- em_llik$predict_emulator(trunc_test_info$input, return_cov=TRUE)
+
+trunc_pred <- tmvtnorm::mtmvnorm(drop(trunc_em_pred_llik$mean), trunc_em_pred_llik$cov[,,1], 
+                                 upper=rep(llik_bounds[2], n_grid_trunc))
+
+trunc_em_pred_llik$mean <- matrix(trunc_pred$tmean, ncol=1)
+trunc_em_pred_llik$var <- matrix(diag(trunc_pred$tvar), ncol=1)
+trunc_em_pred_llik$cov[,,1] <- trunc_pred$tvar
+
+
+plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(trunc_test_info$input, include_interval=TRUE,
                                                         interval_method=interval_method, 
                                                         N_std_dev=N_std_dev,
-                                                        pred_list=em_pred_llik, ylab="L(u)",
-                                                        Y_new=matrix(test_info$llik, ncol=1),
+                                                        pred_list=trunc_em_pred_llik, ylab="L(u)",
+                                                        Y_new=matrix(trunc_test_info$llik, ncol=1),
                                                         line_thickness=line_thickness,
                                                         design_color=design_color, 
                                                         design_pt_size=design_pt_size, 
                                                         xlab="u", plot_title="GP predictions [llik]")[[1]]
-plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_interval=TRUE,
-                                                      interval_method=interval_method, 
-                                                      N_std_dev=N_std_dev,
-                                                      pred_list=em_pred_fwd, ylab="G(u)",
-                                                      Y_new=matrix(test_info$fwd, ncol=1),
-                                                      line_thickness=line_thickness,
-                                                      design_color=design_color, 
-                                                      design_pt_size=design_pt_size, 
-                                                      xlab="u", plot_title="GP predictions [fwd]")[[1]]
 
-plot(plt_gp_dist_llik)
-plot(plt_gp_dist_fwd)
+# This isn't right; need to use formula for truncated lognormal mean.
 
-```
-
-```{r}
-# (2): Plot the log-likelihood emulator predictive distributions. 
-plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
-                                           plot_type="llik", include_interval=TRUE,
-                                           interval_method=interval_method, N_std_dev=N_std_dev,
-                                           true_llik=test_info$llik, CI_prob=CI_prob,
-                                           line_thickness=line_thickness,
-                                           design_color=design_color, 
-                                           design_pt_size=design_pt_size,
-                                           xlab="u", ylab="L(u)",
-                                           plot_title="log-likelihood predictions [llik]")
-
-plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fwd,
-                                         plot_type="llik", include_interval=TRUE,  
-                                         interval_method=interval_method, N_std_dev=N_std_dev,
-                                         true_llik=test_info$llik, CI_prob=CI_prob, ylab="L(u)",
-                                         design_color=design_color, design_pt_size=design_pt_size,
-                                         xlab="u", plot_title="log-likelihood predictions [fwd]")
-
-plot(plt_llik_dist_llik)
-plot(plt_llik_dist_fwd)
-```
-
-```{r}
-# - Change GP prior for llik emulator to avoid getting a mean function that is increasing 
-# at the right boundary.
-# - Try re-plotting and simply cut off the y-axis at a certain level.
-#
-#
-
-# (3): Plot the likelihood emulator predictive distributions. 
-plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
-                                          plot_type="lik", include_interval=FALSE, 
-                                          true_llik=test_info$llik, CI_prob=CI_prob,
-                                          line_thickness=line_thickness, 
-                                          log_scale=FALSE, design_color=design_color, 
-                                          design_pt_size=design_pt_size, 
-                                          plot_title="likelihood predictions [llik]")
-
-
-# plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
-#                                           plot_type="lik", log_scale=TRUE,
-#                                           include_interval=TRUE, 
-#                                           interval_method=interval_method, N_std_dev=N_std_dev,
-#                                           true_llik=test_info$llik, CI_prob=CI_prob,
-#                                           line_thickness=line_thickness,
-#                                           design_color=design_color, design_pt_size=design_pt_size, 
-#                                           ylab="exp L(u)", xlab="u", 
+# plt_lik_dist_llik <- em_llik$plot_pred_1d(trunc_test_info$input, em_pred_list=trunc_em_pred_llik,
+#                                           plot_type="lik", include_interval=FALSE, 
+#                                           true_llik=trunc_test_info$llik, CI_prob=CI_prob,
+#                                           line_thickness=line_thickness, 
+#                                           log_scale=FALSE, design_color=design_color, 
+#                                           design_pt_size=design_pt_size, 
 #                                           plot_title="likelihood predictions [llik]")
-
-# TODO: why does this throw an error when using "CI"?
-plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fwd, 
-                                        plot_type="lik", log_scale=FALSE, 
-                                        include_interval=TRUE, 
-                                        interval_method=interval_method,
-                                        N_std_dev=N_std_dev,
-                                        true_llik=test_info$llik,
-                                        line_thickness=line_thickness,
-                                        design_color=design_color, 
-                                        xlab="u", 
-                                        plot_title="likelihood predictions [fwd]")
-
+plot(plt_gp_dist_llik)
 plot(plt_lik_dist_llik)
-plot(plt_lik_dist_fwd)
-
 ```
 
 ```{r}
-# Truncated log-normal predictive distribution for likelihood.
+# Multivariate truncation, using "virtual points". 
+n_grid_virtual <- 10
+inputs_virtual <- get_batch_design("tensor_product_grid", N_batch=n_grid_virtual,
+                                   prior_params=par_prior)
+inputs_comb <- rbind(test_info$input, inputs_virtual)
+n_comb <- nrow(inputs_comb)
+em_pred_llik_comb <- em_llik$predict_emulator(inputs_comb, return_cov=TRUE)
+bound_upper <- c(rep(Inf, N_grid), rep(llik_bounds[2], n_grid_virtual))
+eps <- sqrt(.Machine$double.eps)
+cov_comb <- em_pred_llik_comb$cov[,,1] + diag(eps, nrow=n_comb)
 
-lik_pred_trunc <- list()
+trunc_pred_virtual <- tmvtnorm::mtmvnorm(drop(em_pred_llik_comb$mean), 
+                                         cov_comb, 
+                                         upper=bound_upper)
 
-ln_list <- convert_Gaussian_to_LN(mean_Gaussian=em_pred_llik$mean, 
-                                  var_Gaussian=em_pred_llik$var, log_scale=TRUE)
-z <- drop((upper_bound - em_pred_llik$mean) / sqrt(em_pred_llik$var))
-lik_pred_trunc$mean <- exp(ln_list$log_mean + 
-                             log(pnorm(z-sqrt(em_pred_llik$var))) - 
-                             log(pnorm(z)))
-
-plot_pred_1d_helper(drop(test_info$input), pred_mean=lik_pred_trunc$mean,
-                    y_new=exp(test_info$llik), 
-                    X_design=drop(design_info$input), 
-                    y_design=exp(design_info$llik),
-                    design_color=design_color, design_pt_size=design_pt_size)
+trunc_em_pred_llik$mean <- matrix(trunc_pred$tmean, ncol=1)
+trunc_em_pred_llik$var <- matrix(diag(trunc_pred$tvar), ncol=1)
+trunc_em_pred_llik$cov[,,1] <- trunc_pred$tvar
 
 
+plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(trunc_test_info$input, include_interval=TRUE,
+                                                        interval_method=interval_method, 
+                                                        N_std_dev=N_std_dev,
+                                                        pred_list=trunc_em_pred_llik, ylab="L(u)",
+                                                        Y_new=matrix(trunc_test_info$llik, ncol=1),
+                                                        line_thickness=line_thickness,
+                                                        design_color=design_color, 
+                                                        design_pt_size=design_pt_size, 
+                                                        xlab="u", plot_title="GP predictions [llik]")[[1]]
+
+# This isn't right; need to use formula for truncated lognormal mean.
+
+# plt_lik_dist_llik <- em_llik$plot_pred_1d(trunc_test_info$input, em_pred_list=trunc_em_pred_llik,
+#                                           plot_type="lik", include_interval=FALSE, 
+#                                           true_llik=trunc_test_info$llik, CI_prob=CI_prob,
+#                                           line_thickness=line_thickness, 
+#                                           log_scale=FALSE, design_color=design_color, 
+#                                           design_pt_size=design_pt_size, 
+#                                           plot_title="likelihood predictions [llik]")
+plot(plt_gp_dist_llik)
+plot(plt_lik_dist_llik)
 ```
+
+```{r}
+# Multivariate truncation, using "virtual points". 
+n_grid_virtual <- 10
+inputs_virtual <- get_batch_design("tensor_product_grid", N_batch=n_grid_virtual,
+                                   prior_params=par_prior)
+
+# Gaussian predictive distribution at virtual points.
+pred_list_virtual <- em_llik$predict_emulator(inputs_virtual, return_mean=TRUE,
+                                              return_cov=TRUE)
+pred_list_virtual$mean <- drop(pred_list_virtual$mean)
+pred_list_virtual$cov <- pred_list_virtual$cov[,,1]
+
+
+# Truncated Gaussian predictive distribution at virtual points.
+upper_bound <- rep(llik_bounds[2], n_grid_virtual)
+moments_trunc_virtual <- tmvtnorm::mtmvnorm(pred_list_virtual$mean, pred_list_virtual$cov,
+                                            upper=upper_bound, doComputeVariance=TRUE)
+
+# Gaussian predictive distribution at test points, and cross covariance with virtual points.
+pred_list_grid <- em_llik$predict_emulator(test_info$input, return_var=FALSE)
+
+
+
+inputs_comb <- rbind(test_info$input, inputs_virtual)
+n_comb <- nrow(inputs_comb)
+em_pred_llik_comb <- em_llik$predict_emulator(inputs_comb, return_cov=TRUE)
+bound_upper <- c(rep(Inf, N_grid), rep(llik_bounds[2], n_grid_virtual))
+eps <- sqrt(.Machine$double.eps)
+cov_comb <- em_pred_llik_comb$cov[,,1] + diag(eps, nrow=n_comb)
+
+trunc_pred_virtual <- tmvtnorm::mtmvnorm(drop(em_pred_llik_comb$mean), 
+                                         cov_comb, 
+                                         upper=bound_upper)
+
+trunc_em_pred_llik$mean <- matrix(trunc_pred$tmean, ncol=1)
+trunc_em_pred_llik$var <- matrix(diag(trunc_pred$tvar), ncol=1)
+trunc_em_pred_llik$cov[,,1] <- trunc_pred$tvar
+
+
+plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(trunc_test_info$input, include_interval=TRUE,
+                                                        interval_method=interval_method, 
+                                                        N_std_dev=N_std_dev,
+                                                        pred_list=trunc_em_pred_llik, ylab="L(u)",
+                                                        Y_new=matrix(trunc_test_info$llik, ncol=1),
+                                                        line_thickness=line_thickness,
+                                                        design_color=design_color, 
+                                                        design_pt_size=design_pt_size, 
+                                                        xlab="u", plot_title="GP predictions [llik]")[[1]]
+
+# This isn't right; need to use formula for truncated lognormal mean.
+
+# plt_lik_dist_llik <- em_llik$plot_pred_1d(trunc_test_info$input, em_pred_list=trunc_em_pred_llik,
+#                                           plot_type="lik", include_interval=FALSE, 
+#                                           true_llik=trunc_test_info$llik, CI_prob=CI_prob,
+#                                           line_thickness=line_thickness, 
+#                                           log_scale=FALSE, design_color=design_color, 
+#                                           design_pt_size=design_pt_size, 
+#                                           plot_title="likelihood predictions [llik]")
+plot(plt_gp_dist_llik)
+plot(plt_lik_dist_llik)
+```
+
 
 
 ```{r}
