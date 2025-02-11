@@ -690,8 +690,10 @@ llikEmulator$methods(
                           plot_type="llik", conditional=default_conditional, 
                           normalize=default_normalize, true_llik=NULL, 
                           include_design=TRUE, use_cov=TRUE, 
-                          ground_truth_col="black", design_col="black", ...) {
-    # `plot_type` options: "llik", "lik". 
+                          ground_truth_col="black", design_col="black", 
+                          include_bounds=FALSE, ...) {
+    # `plot_type` options: "llik", "lik". If `include_bounds = TRUE`, then the llik/lik
+    # bounds will be plotted as horizontal lines (if there are bounds).
     
     assert_that(dim_input==1, 
                 msg=paste0("plot_llik_samp_1d() requires 1d input space. input_dim = ", dim_input))
@@ -732,9 +734,12 @@ llikEmulator$methods(
       plt <- plt + geom_point(aes(x=x, y=y), design_df, inherit.aes=FALSE, 
                               color=design_col)
     }
-
-    return(plt)
     
+    if(include_bounds) {
+      plt <- .self$plot_llik_bounds(plt, plot_type)
+    }
+    
+    return(plt)
   },
   
   plot_pred_1d = function(input, lik_par_val=NULL, em_pred_list=NULL, 
@@ -743,7 +748,8 @@ llikEmulator$methods(
                           normalize=default_normalize, include_interval=TRUE, 
                           interval_method="pm_std_dev", N_std_dev=1, 
                           CI_prob=0.9, true_llik=NULL, include_design=TRUE, 
-                          xlab=NULL, ylab=NULL, plot_title=NULL, ...) {
+                          xlab=NULL, ylab=NULL, plot_title=NULL, 
+                          include_bounds=FALSE, ...) {
     # `pred_list` can be passed if llik or lik predictions have already been 
     # computed. In this case, it should be a llik prediction list (as returned
     # by `predict()`) if `plot_type = llik` and a likelihood prediction list
@@ -843,6 +849,11 @@ llikEmulator$methods(
                                y_design=design_response_vals, 
                                plot_title=plot_title, xlab=xlab, ylab=ylab, ...)
     
+    # Optionally plot (log) likelihood bounds.\
+    if(include_bounds) {
+      plt <- .self$plot_llik_bounds(plt, plot_type)
+    }
+    
     return(plt)                     
   }, 
   
@@ -918,6 +929,30 @@ llikEmulator$methods(
     
     return(plt)
   }, 
+  
+  plot_llik_bounds = function(plt, plot_type="llik") {
+    # Takes an existing ggplot object `plt` and adds horizontal lines
+    # corresponding to the (log)-likelihood bounds returned by 
+    # `get_llik_bounds()`. Bounds that are -Inf or Inf are not 
+    # plotted. If plot type is "lik" then the bounds are 
+    # exponentiated.
+  
+    bounds <- .self$get_llik_bounds()
+    if(plot_type == "lik") bounds <- exp(bounds)
+      
+    if(is.finite(bounds[1])) {
+      plt <- plt + geom_hline(yintercept=bounds[1], 
+                              color="green", linetype="dashed")
+    }
+      
+    if(is.finite(bounds[2])) {
+      plt <- plt + geom_hline(yintercept=bounds[2], 
+                              color="green", linetype="dashed")
+    }
+    
+    return(plt)
+  }, 
+  
   
   plot_1d_proj_approx_lik = function(input_names_proj=NULL, n_points=100L, 
                                      input_list_proj=NULL, input_fixed=NULL, 
@@ -1375,11 +1410,6 @@ llikEmulatorGP$methods(
     
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     
-    # Determine whether truncated Gaussian predictive distribution should be used.
-    bounds <- .self$get_llik_bounds()
-    truncate <- (adjustment=="truncated") && any(is.finite(bounds))
-    if(truncate) return_mean <- return_var <- TRUE
-    
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$emulator_model$predict(get_input(input), 
                                                    return_mean=return_mean, 
@@ -1387,7 +1417,14 @@ llikEmulatorGP$methods(
                                                    return_cov=return_cov, 
                                                    return_cross_cov=return_cross_cov,
                                                    X_cross=input_cross, 
-                                                   include_noise=include_noise, ...)
+                                                   include_noise=include_noise, 
+                                                   adjustment=adjustment,
+                                                   bounds=.self$get_llik_bounds(), ...)
+    } else {
+      if(adjustment != "none") {
+        message("Warning: `em_pred_list` is assumed to already have adjustment `",
+                adjustment, "` applied.")
+      }
     }
     
     # Flatten predictions.
@@ -1397,26 +1434,6 @@ llikEmulatorGP$methods(
     em_pred_list$cov <- em_pred_list$cov[,,1]
     em_pred_list$cross_cov <- em_pred_list$cross_cov[,,1]
     
-    # Optionally convert to truncated Gaussian. Only mean and variance will 
-    # be converted, does not support adjusting covariances.
-    if(truncate) {
-      mean_Gaussian <- em_pred_list$mean
-      
-      if(return_mean) {
-        em_pred_list$mean <- truncnorm::etruncnorm(a=bounds[1], 
-                                                   b=bounds[2],
-                                                   mean=mean_Gaussian, 
-                                                   sd=sqrt(em_pred_list$var))
-      }
-      
-      if(return_var) {
-        em_pred_list$var <- truncnorm::vtruncnorm(a=bounds[1], 
-                                                  b=bounds[2],
-                                                  mean=mean_Gaussian, 
-                                                  sd=sqrt(em_pred_list$var))
-      }
-    }
- 
     return(em_pred_list)
   }, 
   

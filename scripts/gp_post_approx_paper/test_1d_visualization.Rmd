@@ -191,7 +191,8 @@ em_llik_gp$summarize()
 em_llik <- llikEmulatorGP("em_llik", em_llik_gp, lik_par=inv_prob$sig2_model, 
                           use_fixed_lik_par=TRUE, 
                           default_conditional=default_conditional,
-                          default_normalize=default_normalize)
+                          default_normalize=default_normalize, 
+                          llik_bounds=llik_bounds)
 em_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 ```
 
@@ -212,11 +213,28 @@ em_fwd <- llikEmulatorGPFwdGaussDiag("em_fwd", em_fwd_gp, inv_prob$y,
 em_pred_fwd <- em_fwd$predict_emulator(test_info$input, return_cov=TRUE)
 ```
 
+## Plotting Sample Trajectories
+```{r}
+# Plotting samples from log-likelihood distribution.
 
+# Untruncated.
+em_llik$plot_samp_1d(test_info$input, em_pred_list=em_pred_llik, N_samp=20L, 
+                     true_llik=test_info$llik, include_bounds=TRUE, 
+                     adjustment="none", use_cov=TRUE)
+# Truncated
+# TODO: running into positive definite issues when running this with `use_cov = TRUE`.
+em_llik$plot_samp_1d(test_info$input, em_pred_list=em_pred_llik, N_samp=20L, 
+                     true_llik=test_info$llik, include_bounds=TRUE, 
+                     adjustment="truncated", use_cov=FALSE)
 
+# Rectified.
+em_llik$plot_samp_1d(test_info$input, em_pred_list=em_pred_llik, N_samp=20L, 
+                     true_llik=test_info$llik, include_bounds=TRUE, 
+                     adjustment="rectified", use_cov=TRUE)
 
+```
 
-
+## Emulator Distribution Plots
 ```{r}
 #
 # Emulator Distribution plots.  
@@ -259,20 +277,51 @@ plt_llik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred
                                            design_color=design_color, 
                                            design_pt_size=design_pt_size,
                                            xlab="u", ylab="L(u)",
-                                           plot_title="log-likelihood predictions [llik]") + 
-                      geom_hline(yintercept=llik_bounds[2], color="green", linetype="dashed")
+                                           plot_title="log-likelihood predictions [llik]",
+                                           include_bounds=TRUE)
 
 plt_llik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fwd,
                                          plot_type="llik", include_interval=TRUE,  
                                          interval_method=interval_method, N_std_dev=N_std_dev,
                                          true_llik=test_info$llik, CI_prob=CI_prob, ylab="L(u)",
                                          design_color=design_color, design_pt_size=design_pt_size,
-                                         xlab="u", plot_title="log-likelihood predictions [fwd]") + 
-                      geom_hline(yintercept=llik_bounds[2], color="green", linetype="dashed")
+                                         xlab="u", plot_title="log-likelihood predictions [fwd]",
+                                         include_bounds=TRUE)
 
 plot(plt_llik_dist_llik)
 plot(plt_llik_dist_fwd)
 ```
+
+```{r}
+# Truncated and rectified log-likelihood distribution.
+plt_llik_dist_llik_trunc <- em_llik$plot_pred_1d(test_info$input,
+                                           plot_type="llik", include_interval=TRUE,
+                                           interval_method=interval_method, N_std_dev=N_std_dev,
+                                           true_llik=test_info$llik, CI_prob=CI_prob,
+                                           line_thickness=line_thickness,
+                                           design_color=design_color, 
+                                           design_pt_size=design_pt_size,
+                                           xlab="u", ylab="L(u)",
+                                           plot_title="log-likelihood predictions [llik]",
+                                           adjustment="truncated",
+                                           include_bounds=TRUE)
+
+plt_llik_dist_llik_rect <- em_llik$plot_pred_1d(test_info$input,
+                                           plot_type="llik", include_interval=TRUE,
+                                           interval_method=interval_method, N_std_dev=N_std_dev,
+                                           true_llik=test_info$llik, CI_prob=CI_prob,
+                                           line_thickness=line_thickness,
+                                           design_color=design_color,
+                                           design_pt_size=design_pt_size,
+                                           xlab="u", ylab="L(u)",
+                                           plot_title="log-likelihood predictions [llik]",
+                                           adjustment="rectified",
+                                           include_bounds=TRUE)
+
+plot(plt_llik_dist_llik_trunc)
+plot(plt_llik_dist_llik_rect)
+```
+
 
 ```{r}
 # - Change GP prior for llik emulator to avoid getting a mean function that is increasing 
