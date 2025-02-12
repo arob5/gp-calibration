@@ -321,6 +321,23 @@ plt_llik_dist_llik_rect <- em_llik$plot_pred_1d(test_info$input,
 plot(plt_llik_dist_llik_trunc)
 plot(plt_llik_dist_llik_rect)
 ```
+```{r}
+# Truncated and rectified likelihood distribution (truncated/rectified 
+# log-normal).
+
+test_trunc <- em_llik$calc_lik_marginal_approx(em_pred_list=em_pred_llik, 
+                                               log_scale=FALSE, 
+                                               adjustment="truncated")
+test_rect <- em_llik$calc_lik_marginal_approx(em_pred_list=em_pred_llik, 
+                                              log_scale=FALSE, 
+                                              adjustment="rectified")
+
+plot(drop(test_info$input), exp(test_info$llik), col="black", type="l")
+lines(drop(test_info$input), test_trunc, type="l", col="blue")
+lines(drop(test_info$input), test_rect, col="green")
+lines(drop(test_info$input), exp(em_pred_llik$mean), col="red")
+
+```
 
 
 ```{r}
@@ -337,9 +354,8 @@ plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_
                                           line_thickness=line_thickness, 
                                           log_scale=FALSE, design_color=design_color, 
                                           design_pt_size=design_pt_size, 
-                                          plot_title="likelihood predictions [llik]") + 
-                          geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
-
+                                          plot_title="likelihood predictions [llik]", 
+                                          include_bounds=TRUE)
 
 # plt_lik_dist_llik <- em_llik$plot_pred_1d(test_info$input, em_pred_list=em_pred_llik,
 #                                           plot_type="lik", log_scale=TRUE,
@@ -361,8 +377,8 @@ plt_lik_dist_fwd <- em_fwd$plot_pred_1d(test_info$input, em_pred_list=em_pred_fw
                                         line_thickness=line_thickness,
                                         design_color=design_color, 
                                         xlab="u", 
-                                        plot_title="likelihood predictions [fwd]") + 
-                            geom_hline(yintercept=exp(llik_bounds[2]), color="green", linetype="dashed")
+                                        plot_title="likelihood predictions [fwd]",
+                                        include_bounds=TRUE)
 
 plot(plt_lik_dist_llik)
 plot(plt_lik_dist_fwd)

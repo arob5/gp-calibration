@@ -560,7 +560,8 @@ gpWrapper$methods(
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
                      return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
-                     return_trend=TRUE, adjustment="none", bounds=c(-Inf,Inf), ...) {
+                     return_trend=TRUE, adjustment="none", bounds=c(-Inf,Inf), 
+                     ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers 
     #      to k(X_new, X_cross).
@@ -587,7 +588,7 @@ gpWrapper$methods(
     # Gaussian predictive distribution. Currently supports adjustments "truncated"
     # and "rectified", which transform to truncated and rectified Gaussian 
     # distributions, respectively.
-
+    
     adjustment <- .self$get_dist_adjustment(adjustment, bounds)
     if((adjustment != "none") && return_cross_cov) {
       stop("Currently `adjustment` must be 'none' if cross covariances are to be returned.")
@@ -839,7 +840,7 @@ gpWrapper$methods(
   },
   
   
-  sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1, 
+  sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1L, 
                     pred_list=NULL, cov_sqrt_method="chol", 
                     adjustment="none", bounds=c(-Inf,Inf), ...) {
     # If `pred_list` is passed, it should have all the required components. 
@@ -858,7 +859,8 @@ gpWrapper$methods(
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
-                                 return_cov=use_cov, include_noise=include_noise)
+                                 return_cov=use_cov, 
+                                 include_noise=include_noise, ...)
     } else {
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
@@ -885,7 +887,8 @@ gpWrapper$methods(
   
   
   sample_Gaussian = function(X_new, use_cov=FALSE, include_noise=TRUE, 
-                             N_samp=1L, pred_list=NULL, cov_sqrt_method="chol") {
+                             N_samp=1L, pred_list=NULL, cov_sqrt_method="chol",
+                             ...) {
     # Samples from the Gaussian predictive distribution for each of the 
     # independent GPs. If `use_cov = TRUE` then samples are from the 
     # multivariate Gaussian using the predictive covariance across the 
@@ -899,7 +902,8 @@ gpWrapper$methods(
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
-                                 return_cov=use_cov, include_noise=include_noise)
+                                 return_cov=use_cov, 
+                                 include_noise=include_noise, ...)
     } else {
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
@@ -924,7 +928,8 @@ gpWrapper$methods(
   
   
   sample_truncated = function(X_new, use_cov=FALSE, include_noise=TRUE, 
-                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf)) {
+                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf),
+                              ...) {
     # Samples from a truncated version of the Gaussian predictive distribution.
     # If `use_cov=TRUE` this implies a multivariate truncated Gaussian, 
     # in which case the package `tmvtnorm` is used for sampling. Otherwise, 
@@ -934,11 +939,12 @@ gpWrapper$methods(
     # probability of the constraint being satisfied is small. The sampling 
     # is done via the rejection sampling algorithm implemented by 
     # `tmvtnorm::rmvtnorm`.
-    
+
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
-                                 return_cov=use_cov, include_noise=include_noise)
+                                 return_cov=use_cov, 
+                                 include_noise=include_noise, ...)
     } else {
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
@@ -967,7 +973,7 @@ gpWrapper$methods(
     # Samples from a rectified version of the Gaussian predictive distribution.
     # This is accomplished by drawing samples from the Gaussian predictive 
     # distribution, and then thresholding the samples based on the bounds.
-    
+
     # Produce Gaussian samples, dimension (nrow(X_new), N_samp, .self$Y_dim).
     samp <- .self$sample_Gaussian(X_new, use_cov=use_cov, 
                                   include_noise=include_noise, N_samp=N_samp,

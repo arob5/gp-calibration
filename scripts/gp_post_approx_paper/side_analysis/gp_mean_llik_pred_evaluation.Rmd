@@ -361,6 +361,7 @@ plot(llik_plot_exact)
 ## Using Truncated Predictive Distribution
 ```{r}
 mcmc_settings_mean <- list(test_label="mean", approx_type="mean",
+                           adjustment="truncated",
                            mcmc_func_name="mcmc_bt_wrapper", 
                            sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
                            n_chain=4L, defer_ic=TRUE)
@@ -418,6 +419,345 @@ llik_plot_mean_trunc <- llik_em$plot_pred_validation(input=test_info_mean$input,
 plot(llik_plot_mean)
 plot(llik_plot_mean_trunc)
 ```
+
+## Using Rectified Predictive Distribution
+```{r}
+mcmc_settings_mean_rect <- list(test_label="mean_rect", approx_type="mean",
+                                adjustment="rectified",
+                                mcmc_func_name="mcmc_bt_wrapper", 
+                                sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                                n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_mean_rect <- run_mcmc(llik_em, par_prior, mcmc_settings_mean_rect)
+
+# Store samples.
+samp_dt_mean_rect <- select_mcmc_itr(mcmc_list_mean_rect$samp, 
+                                     itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mean_rect)
+```
+
+```{r}
+trace_plts_mean_rect <- get_trace_plots(samp_dt, test_label="mean_rect")
+for(plt in trace_plts_mean_rect) plot(plt)
+```
+```{r}
+hist_plts_mean_rect <- get_hist_plot_comparisons(samp_dt, 
+                                                 test_label_baseline="exact",
+                                                 test_labels="mean_rect")
+for(plt in hist_plts_mean_rect) plot(plt)
+```
+
+```{r}
+hist_plts_mean_compare <- get_hist_plot_comparisons(samp_dt, 
+                                                    test_label_baseline="mean",
+                                                    test_labels="mean_rect")
+for(plt in hist_plts_mean_compare) plot(plt)
+```
+
+# Marginal Approximations
+
+## Truncated
+```{r}
+mcmc_settings_marg_trunc <- list(test_label="marg_trunc", approx_type="marginal",
+                                adjustment="truncated",
+                                mcmc_func_name="mcmc_bt_wrapper", 
+                                sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                                n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior truncation.
+mcmc_list_marg_trunc <- run_mcmc(llik_em, par_prior, mcmc_settings_marg_trunc)
+
+# Store samples.
+samp_dt_marg_trunc <- select_mcmc_itr(mcmc_list_marg_trunc$samp, 
+                                      itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_marg_trunc)
+```
+
+```{r}
+trace_plts_marg_trunc <- get_trace_plots(samp_dt, test_label="marg_trunc")
+for(plt in trace_plts_marg_trunc) plot(plt)
+```
+```{r}
+trace_plts_marg_trunc_llik <- get_trace_plots(mcmc_list_marg_trunc$info, 
+                                              test_label="marg_trunc", 
+                                              param_name="llik")
+plot(trace_plts_marg_trunc_llik[[1]])
+```
+
+
+```{r}
+hist_plts_marg_trunc <- get_hist_plot_comparisons(samp_dt, 
+                                                  test_label_baseline="exact",
+                                                  test_labels="marg_trunc")
+for(plt in hist_plts_marg_trunc) plot(plt)
+```
+
+
+## Rectified
+```{r}
+mcmc_settings_marg_rect <- list(test_label="marg_rect", approx_type="marginal",
+                                adjustment="rectified",
+                                mcmc_func_name="mcmc_bt_wrapper", 
+                                sampler="DEzs", n_itr=50000L, try_parallel=FALSE,  
+                                n_chain=4L, defer_ic=TRUE)
+
+# MCMC sampling using exact likelihood: with and without prior rectation.
+mcmc_list_marg_rect <- run_mcmc(llik_em, par_prior, mcmc_settings_marg_rect)
+
+# Store samples.
+samp_dt_marg_rect <- select_mcmc_itr(mcmc_list_marg_rect$samp, 
+                                      itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_marg_rect)
+```
+
+```{r}
+trace_plts_marg_rect <- get_trace_plots(samp_dt, test_label="marg_rect")
+for(plt in trace_plts_marg_rect) plot(plt)
+```
+
+```{r}
+hist_plts_marg_rect <- get_hist_plot_comparisons(samp_dt, 
+                                                 test_label_baseline="exact",
+                                                 test_labels="marg_rect")
+for(plt in hist_plts_marg_rect) plot(plt)
+```
+```{r}
+
+llik_trace_marg_rect <- get_trace_plots(mcmc_list_marg_rect$info,
+                                        param_names="llik", 
+                                        itr_start=burn_in_mean)
+
+plot(llik_trace_marg_rect[[1]])
+
+```
+
+
+
+# Noisy MCMC Algorithms
+
+## MCWMH-Joint, Truncated
+```{r}
+mcmc_settings_mcwmh_trunc_joint <- list(test_label="mcwmh_trunc_joint_acc_target", 
+                                      mode="mcwmh",
+                                      use_joint=TRUE,
+                                      adjustment="truncated",
+                                      mcmc_func_name="mcmc_noisy_llik", 
+                                      n_itr=10000L, try_parallel=FALSE, 
+                                      n_chain=4L, accept_rate_target=0.5)
+
+mcmc_list_mcwmh_trunc_joint <- run_mcmc(llik_em, par_prior, 
+                                        mcmc_settings_mcwmh_trunc_joint)
+
+# Store samples.
+samp_dt_mcwmh_trunc_joint <- select_mcmc_itr(mcmc_list_mcwmh_trunc_joint$samp, 
+                                             itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_trunc_joint)
+```
+
+```{r}
+trace_plts_mcwmh_joint_trunc <- get_trace_plots(samp_dt, test_label="mcwmh_trunc_joint")
+for(plt in trace_plts_mcwmh_joint_trunc) plot(plt)
+```
+
+```{r}
+llik_trace_joint_trunc <- get_trace_plots(mcmc_list_mcwmh_trunc_joint$info,
+                                          test_labels="mcwmh_trunc_joint",
+                                          param_names="llik", 
+                                          itr_start=burn_in_mean)
+plot(llik_trace_joint_trunc[[1]])
+```
+
+
+```{r}
+hist_plts_mcwmh_joint_trunc <- get_hist_plot_comparisons(samp_dt,
+                                                         test_label_baseline="exact",
+                                                         test_labels="mcwmh_trunc_joint")
+for(plt in hist_plts_mcwmh_joint_trunc) plot(plt)
+```
+```{r}
+llik_trace_mcwmh_joint_trunc <- get_trace_plots(mcmc_list_mcwmh_trunc_joint$info, 
+                                                test_label="mcwmh_trunc_joint",
+                                                param_names="llik")
+plot(llik_trace_mcwmh_joint_trunc[[1]])
+```
+
+## MCWMH-Joint, Rectified
+```{r}
+mcmc_settings_mcwmh_rect_joint <- list(test_label="mcwmh_rect_joint", 
+                                       mode="mcwmh",
+                                       use_joint=TRUE,
+                                       adjustment="rectified",
+                                       mcmc_func_name="mcmc_noisy_llik", 
+                                       n_itr=50000L, try_parallel=FALSE, 
+                                       n_chain=4L)
+
+# MCMC sampling using exact likelihood: with and without prior rectation.
+mcmc_list_mcwmh_rect_joint <- run_mcmc(llik_em, par_prior, 
+                                       mcmc_settings_mcwmh_rect_joint)
+
+# Store samples.
+samp_dt_mcwmh_rect_joint <- select_mcmc_itr(mcmc_list_mcwmh_rect_joint$samp, 
+                                            itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_rect_joint)
+```
+
+```{r}
+trace_plts_mcwmh_joint_rect <- get_trace_plots(samp_dt, test_label="mcwmh_rect_joint")
+for(plt in trace_plts_mcwmh_joint_rect) plot(plt)
+```
+
+```{r}
+hist_plts_mcwmh_joint_rec <- get_hist_plot_comparisons(samp_dt, 
+                                                       test_label_baseline="exact",
+                                                       test_labels="mcwmh_rect_joint")
+for(plt in hist_plts_mcwmh_joint_rec) plot(plt)
+```
+
+
+```{r}
+llik_trace_joint_rect <- get_trace_plots(mcmc_list_mcwmh_rect_joint$info,
+                                         test_labels="mcwmh_rect_joint",
+                                         param_names="llik", 
+                                         itr_start=burn_in_mean)
+plot(llik_trace_joint_rect[[1]])
+```
+
+```{r}
+test <- get_trace_plots(mcmc_list_mcwmh_rect_joint$info,
+                                         test_labels="mcwmh_rect_joint",
+                                         param_types="prop", itr_start=25000)
+for(plt in test) plot(plt)
+```
+
+
+
+
+
+
+## MCWMH-Ind, Truncated
+```{r}
+mcmc_settings_mcwmh_trunc_ind <- list(test_label="mcwmh_trunc_ind", 
+                                      mode="mcwmh",
+                                      use_joint=FALSE,
+                                      adjustment="truncated",
+                                      mcmc_func_name="mcmc_noisy_llik", 
+                                      n_itr=50000L, try_parallel=FALSE, 
+                                      n_chain=4L)
+
+# MCMC sampling using exact likelihood: with and without prior rectation.
+mcmc_list_mcwmh_trunc_ind <- run_mcmc(llik_em, par_prior, 
+                                      mcmc_settings_mcwmh_trunc_ind)
+
+# Store samples.
+samp_dt_mcwmh_trunc_ind <- select_mcmc_itr(mcmc_list_mcwmh_trunc_ind$samp, 
+                                           itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_trunc_ind)
+```
+
+```{r}
+trace_plts_mcwmh_ind_trunc <- get_trace_plots(samp_dt, test_label="mcwmh_trunc_ind")
+for(plt in trace_plts_mcwmh_ind_trunc) plot(plt)
+```
+
+```{r}
+hist_plts_mcwmh_ind_trunc <- get_hist_plot_comparisons(samp_dt, 
+                                                       test_label_baseline="exact",
+                                                       test_labels="mcwmh_trunc_ind")
+for(plt in hist_plts_mcwmh_ind_trunc) plot(plt)
+```
+
+
+## MCWMH-Ind, Rectified
+```{r}
+mcmc_settings_mcwmh_rect_ind <- list(test_label="mcwmh_rect_ind", 
+                                      mode="mcwmh",
+                                      use_joint=FALSE,
+                                      adjustment="rectified",
+                                      mcmc_func_name="mcmc_noisy_llik", 
+                                      n_itr=50000L, try_parallel=FALSE, 
+                                      n_chain=4L)
+
+# MCMC sampling using exact likelihood: with and without prior rectation.
+mcmc_list_mcwmh_rect_ind <- run_mcmc(llik_em, par_prior, 
+                                     mcmc_settings_mcwmh_rect_ind)
+
+# Store samples.
+samp_dt_mcwmh_rect_ind <- select_mcmc_itr(mcmc_list_mcwmh_rect_ind$samp, 
+                                          itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_rect_ind)
+```
+
+```{r}
+trace_plts_mcwmh_ind_rect <- get_trace_plots(samp_dt, test_label="mcwmh_rect_ind")
+for(plt in trace_plts_mcwmh_ind_rect) plot(plt)
+```
+
+```{r}
+hist_plts_mcwmh_ind_rect <- get_hist_plot_comparisons(samp_dt, 
+                                                      test_label_baseline="exact",
+                                                      test_labels="mcwmh_rect_ind",
+                                                      chain_idcs=4)
+for(plt in hist_plts_mcwmh_ind_rect) plot(plt)
+```
+
+```{r}
+llik_trace_ind_rect <- get_trace_plots(mcmc_list_mcwmh_rect_ind$info,
+                                       test_labels="mcwmh_rect_ind",
+                                       param_names="llik")
+plot(llik_trace_ind_rect[[1]])
+```
+
+
+## MCWMH-Joint, No truncation.
+```{r}
+mcmc_settings_mcwmh_joint <- list(test_label="mcwmh_joint", 
+                                  mode="mcwmh",
+                                  use_joint=TRUE,
+                                  adjustment="none",
+                                  mcmc_func_name="mcmc_noisy_llik", 
+                                  n_itr=50000L, try_parallel=FALSE, 
+                                  n_chain=4L)
+
+mcmc_list_mcwmh_joint <- run_mcmc(llik_em, par_prior, 
+                                  mcmc_settings_mcwmh_joint)
+
+# Store samples.
+samp_dt_mcwmh_joint <- select_mcmc_itr(mcmc_list_mcwmh_joint$samp, 
+                                       itr_start=burn_in_mean)
+samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_joint)
+```
+
+```{r}
+trace_plts_mcwmh_joint <- get_trace_plots(samp_dt, test_label="mcwmh_joint",
+                                          chain_idcs=2)
+for(plt in trace_plts_mcwmh_joint) plot(plt)
+```
+
+```{r}
+hist_plts_mcwmh_joint <- get_hist_plot_comparisons(samp_dt, 
+                                                   test_label_baseline="exact",
+                                                   test_labels="mcwmh_joint")
+for(plt in hist_plts_mcwmh_joint) plot(plt)
+```
+
+```{r}
+llik_trace_joint <- get_trace_plots(mcmc_list_mcwmh_joint$info,
+                                    test_labels="mcwmh_joint",
+                                    param_names="llik")
+plot(llik_trace_joint[[1]])
+```
+
+Things to look into for noisy MCMC performance: 
+- Investigate the trajectory of the acceptance rate.
+- Consider changing the adaptation settings (target acceptance rate, etc.)
+- Look into GP pred mean and variance at the noisy MCMC posterior samples; do the algs tend to sample from regions with high mean? Variance?
+- Return to ratio analysis to better understand the algorithms.
+- Try running noisy MCMC for the 1d vis example
+
+
+
+
 
 
 

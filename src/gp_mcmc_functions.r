@@ -243,7 +243,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
 
   return(list(samp=list(par=par_samp, sig2=sig2_samp),
               info=list(dens=chain_info[,1:2], 
-                        prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
+                        prop_sd=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, par_init=par_init, condition=err))
@@ -386,7 +386,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
   
   return(list(samp=list(par=par_samp, sig2=sig2_samp),
               info=list(dens=chain_info[,1:2], 
-                        prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
+                        prop_sd=chain_info[,3:ncol(chain_info),drop=FALSE]),
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
               itr_curr=itr, par_init=par_init, condition=err))
@@ -520,7 +520,7 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
   
   return(list(samp=list(par=par_samp, sig2=sig2_samp), 
               info=list(dens=chain_info[,1:2], 
-                        prop=chain_info[,3:ncol(chain_info),drop=FALSE]),
+                        prop_sd=chain_info[,3:ncol(chain_info),drop=FALSE]),
               gp_pred=gp_pred,
               log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
               par_curr=par_curr, par_prop=par_prop, sig2_curr=sig2_curr,
@@ -602,7 +602,7 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
 
   # Log-likelihood function. Set up to accept numeric vector `par` as an 
   # argument.
-  llik <- llik_em$get_llik_func(approx_type=approx_type)
+  llik <- llik_em$get_llik_func(approx_type=approx_type, ...)
 
   # Log prior density and sampling function.
   lprior <- get_lprior_dens(par_prior)
