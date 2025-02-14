@@ -922,7 +922,7 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
   # passed to the `mcmc_settings` argument of `run_mcmc()`.
-  
+
   # Store MCMC tags.
   n_algs <- length(mcmc_settings_list)
   tags <- names(mcmc_settings_list)

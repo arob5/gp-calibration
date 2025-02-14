@@ -538,13 +538,13 @@ plot(llik_trace_marg_rect[[1]])
 
 ## MCWMH-Joint, Truncated
 ```{r}
-mcmc_settings_mcwmh_trunc_joint <- list(test_label="mcwmh_trunc_joint_acc_target", 
-                                      mode="mcwmh",
-                                      use_joint=TRUE,
-                                      adjustment="truncated",
-                                      mcmc_func_name="mcmc_noisy_llik", 
-                                      n_itr=10000L, try_parallel=FALSE, 
-                                      n_chain=4L, accept_rate_target=0.5)
+mcmc_settings_mcwmh_trunc_joint <- list(test_label="mcwmh_trunc_joint", 
+                                        mode="mcwmh",
+                                        use_joint=TRUE,
+                                        adjustment="truncated",
+                                        mcmc_func_name="mcmc_noisy_llik", 
+                                        n_itr=50000L, try_parallel=FALSE, 
+                                        n_chain=4L, accept_rate_target=0.5)
 
 mcmc_list_mcwmh_trunc_joint <- run_mcmc(llik_em, par_prior, 
                                         mcmc_settings_mcwmh_trunc_joint)
@@ -556,7 +556,8 @@ samp_dt <- combine_samp_dt(samp_dt, samp_dt_mcwmh_trunc_joint)
 ```
 
 ```{r}
-trace_plts_mcwmh_joint_trunc <- get_trace_plots(samp_dt, test_label="mcwmh_trunc_joint")
+trace_plts_mcwmh_joint_trunc <- get_trace_plots(samp_dt, 
+                                                test_label="mcwmh_trunc_joint")
 for(plt in trace_plts_mcwmh_joint_trunc) plot(plt)
 ```
 
@@ -575,6 +576,8 @@ hist_plts_mcwmh_joint_trunc <- get_hist_plot_comparisons(samp_dt,
                                                          test_labels="mcwmh_trunc_joint")
 for(plt in hist_plts_mcwmh_joint_trunc) plot(plt)
 ```
+
+
 ```{r}
 llik_trace_mcwmh_joint_trunc <- get_trace_plots(mcmc_list_mcwmh_trunc_joint$info, 
                                                 test_label="mcwmh_trunc_joint",

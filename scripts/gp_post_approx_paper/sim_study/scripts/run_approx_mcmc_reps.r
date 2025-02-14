@@ -29,15 +29,19 @@ src_dir <- file.path(base_dir, "src")
 # Set variables controlling filepaths.
 experiment_tag <- "vsem"
 run_id <- "mcmc_round1"
-em_dir <- "init_emulator/LHS_250"
+em_dir <- "init_emulator/LHS_200"
 
 # Specify specific emulator/design IDs. If NULL, will automatically select 
 # all found within directory `<experiment_tag>/<em_dir>`.
 em_ids <- NULL
 
+output_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag, em_dir)
+
 print(paste0("experiment_tag: ", experiment_tag))
 print(paste0("run_id: ", run_id))
 print(paste0("em_dir: ", em_dir))
+print(paste0("output_dir: ", output_dir))
+
 
 # ------------------------------------------------------------------------------
 # Dispatch job for each emulator/design.
