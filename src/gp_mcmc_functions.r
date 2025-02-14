@@ -921,7 +921,7 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
   # passed to the `mcmc_settings` argument of `run_mcmc()`.
-  
+
   if(return) {
     message("run_mcmc_comparison() currently only supports saving data to file.")
     .NotYetImplemented()
@@ -948,9 +948,9 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
         message(conditionMessage(cond))
       }, finally = {
         # Save output.
-        if(!is.null(out_dir)) {
+        if(!is.null(save_dir)) {
           filename <- paste0("mcmc_samp_", tag, ".rds")
-          saveRDS(mcmc_output, file.path(out_dir, filename))
+          saveRDS(mcmc_output, file.path(save_dir, filename))
         }
       }
     )

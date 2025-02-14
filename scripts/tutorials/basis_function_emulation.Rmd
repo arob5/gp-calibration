@@ -194,14 +194,14 @@ design_info <- list(input=U, W=project_orthog_scalar(G, B, m))
 # standard deviation 1.
 gp_w <- gpWrapperKerGP(design_info$input, design_info$W, scale_input=TRUE,
                        normalize_output=TRUE)
-gp_w$set_gp_prior("Gaussian", "quadratic", include_noise=TRUE)
+gp_w$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
 gp_w$fit(multistart=10)
 gp_w$summarize()
 ```
 
 ```{r}
 # Validation points to test GP fit.
-n_test <- 500
+n_test <- 100
 test_info <- list(input=get_batch_design("LHS", N_batch=n_test, 
                                          prior_params=inv_prob$par_prior))
 test_info$W <- eval_basis_weights(test_info$input, g, B, m) 
@@ -280,9 +280,8 @@ em_pred_list <- llik_em$predict_emulator(test_info$input, return_mean=TRUE,
                                          return_var=FALSE,
                                          return_output_cov=TRUE)
 
-
-# llik_pred_list <- llik_em$predict(test_info$input, return_mean=TRUE,
-#                                   return_var=TRUE)
+llik_pred_list <- llik_em$predict(test_info$input, return_mean=TRUE,
+                                  return_var=TRUE, em_pred_list=em_pred_list)
 ```
 
 
@@ -293,13 +292,31 @@ test_info$llik <- inv_prob$llik_obj$assemble_llik(test_info$input)
 plt <- llik_em$plot_pred_validation(test_info$input, true_llik=test_info$llik,
                                     em_pred_list=em_pred_list)
 plot(plt)
-
-# Seems to be off by a negative. 
 ```
 
+```{r}
+# Taking a look at the largest log-likelihood error, and the underlying forward
+# model prediction at this input parameter.
 
+# Largest log-likelihood error. 
+max_llik_err_idx <- which.max(abs(test_info$llik - llik_pred_list$mean))
 
+# Predicted forward model trajectory at this input.
+llik_em$emulator_model$plot_pred(X_new=test_info$input[max_llik_err_idx,,drop=FALSE],
+                                 g_func=g)
+```
 
+```{r}
+# Taking a look at the largest log-likelihood predictive variance, and the 
+# underlying forward model prediction at this input parameter.
+
+# Largest log-likelihood predictive variance.
+max_llik_var_idx <- which.max(llik_pred_list$var)
+
+# Predicted forward model trajectory at this input.
+llik_em$emulator_model$plot_pred(X_new=test_info$input[max_llik_var_idx,,drop=FALSE],
+                                 g_func=g)
+```
 
 
 

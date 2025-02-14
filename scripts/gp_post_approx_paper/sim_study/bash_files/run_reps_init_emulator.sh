@@ -29,7 +29,7 @@ N_NODE=10
 # Settings passed to `run_init_emulator.sh`.
 EXPERIMENT_TAG="vsem"
 N_REP_PER_NODE=10
-N_DESIGN=250
+N_DESIGN=200
 DESIGN_METHOD="LHS"
 
 # Print settings.

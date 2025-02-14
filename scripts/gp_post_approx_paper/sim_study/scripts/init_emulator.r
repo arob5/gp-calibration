@@ -97,6 +97,9 @@ inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
 test_info_prior <- readRDS(file.path(setup_dir, "test_info_prior.rds"))
 test_info_post <- readRDS(file.path(setup_dir, "test_info_post.rds"))
 
+# Log-likelihood bounds.
+llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
+
 # Settings list.
 settings <- list(run_id=run_id, experiment_tag=experiment_tag, 
                  n_design=cmd_args$n_design, 
@@ -112,7 +115,7 @@ construct_init_em <- function(seed) {
   print("-----> Creating output directory")
   set.seed(seed)
   out_dir <- file.path(base_out_dir, seed)
-  dir.create(out_dir)
+  dir.create(out_dir, recursive=TRUE)
   settings_seed <- settings
   settings_seed$seed <- seed
   saveRDS(settings_seed, file=file.path(out_dir, "init_em_settings.rds"))
@@ -132,15 +135,13 @@ construct_init_em <- function(seed) {
   gp_obj <- gpWrapperKerGP(design_info$input, matrix(design_info$llik, ncol=1), 
                            scale_input=TRUE, normalize_output=TRUE)
   gp_obj$set_gp_prior("Gaussian", "quadratic", include_noise=FALSE)
-  
-  # gp_obj$set_gp_prior("Gaussian_plus_Quadratic", "constant", 
-  #                     include_noise=FALSE)
   gp_obj$fit(multistart=10, trace=TRUE)
+  print(gp_obj$summarize())
 
   # Instantiate and save log-likelihood emulator object.
   em_llik <- llikEmulatorGP("em_llik", gp_obj, default_conditional=FALSE, 
                             default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
-                            use_fixed_lik_par=TRUE)
+                            llik_bounds=llik_bounds)
   saveRDS(em_llik, file=file.path(out_dir, "em_llik.rds"))
   
   print("-----> Emulator predictions at test points")
@@ -207,3 +208,6 @@ seeds <- sample.int(n=.Machine$integer.max, size=cmd_args$n_rep)
 
 # Generate replicate designs.
 for(seed in seeds) construct_init_em(seed)
+
+
+

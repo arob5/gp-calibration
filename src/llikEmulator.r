@@ -1894,6 +1894,9 @@ llikEmulatorGPFwdGauss$methods(
   initialize = function(llik_lbl, gp_model, y_obs, Cov=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE, 
                         par_names=NULL, ...) {
+    # `Cov` can be a matrix of shape (N_output, N_output), a vector of length 
+    # N_output (interpreted as diagonal of covariance), or a scalar 
+    # (interpreted as homoscedastic variance parameter).
     
     assert_that(inherits(gp_model, "gpWrapper"), 
                 msg="`gp_model` must inherit from `gpWrapper` class.")
