@@ -320,7 +320,7 @@ llikEmulator$methods(
   
   calc_multi_func = function(func_list, input=NULL, em_pred_list=NULL,  
                              lik_par_val=NULL, conditional=default_conditional, 
-                             normalize=default_normalize, log_scale=FALSE, 
+                             normalize=default_normalize,
                              return_type="list", func_names=NULL, ...) {
     # A wrapper around `calc_func()` that calls the latter method for each 
     # function in `func_list`. `return_type` can either be "list" or "matrix". 
@@ -2321,7 +2321,7 @@ llikEmulatorGPFwdGaussDiag$methods(
     }
     
     # Fetch the variance parameters. 
-    sig2_val <- get_lik_par(lik_par_val)
+    sig2_val <- .self$get_lik_par(lik_par_val)
     
     # Construct log likelihood.
     llik <- vector(mode="numeric", length=nrow(fwd_model_vals))

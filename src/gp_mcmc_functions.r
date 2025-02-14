@@ -808,6 +808,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   
   # Sample initial conditions from prior if not provided and if not deferring 
   # to the underlying MCMC function.
+
   if(!defer_ic) {
     if(is.null(par_init)) {
       ic_settings[c("llik_em","par_prior","n_ic")] <- list(llik_em, par_prior, n_chain)
@@ -922,16 +923,14 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
   # passed to the `mcmc_settings` argument of `run_mcmc()`.
   
-  if(return) {
-    message("run_mcmc_comparison() currently only supports saving data to file.")
-    .NotYetImplemented()
-  }
-  
   # Store MCMC tags.
   n_algs <- length(mcmc_settings_list)
   tags <- names(mcmc_settings_list)
   if(is.null(tags)) tags <- as.character(1:n_algs)
-
+  
+  return_list <- vector(mode="list", length=length(tags))
+  names(return_list) <- tags
+  
   for(i in 1:n_algs) {
     # Tag used to identify the algorithm.
     tag <- tags[i]
@@ -948,14 +947,20 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
         message(conditionMessage(cond))
       }, finally = {
         # Save output.
-        if(!is.null(out_dir)) {
+        if(!is.null(save_dir)) {
           filename <- paste0("mcmc_samp_", tag, ".rds")
-          saveRDS(mcmc_output, file.path(out_dir, filename))
+          saveRDS(mcmc_output, file.path(save_dir, filename))
         }
+        
+        if(return) {
+          return_list[[i]] <- mcmc_output
+        }
+        
       }
     )
-    
   }
+  
+  return(invisible(return_list))
 }
 
 
@@ -1062,7 +1067,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
     llik_design <- llik_em$get_design_llik()
     llik_obs_order <- order(drop(llik_design), decreasing=TRUE)
     input_sel <- llik_obs_order[1:n_ic_by_method["design_max"]]
-    ic_design_max <- inputs_design[input_sel, par_names]
+    ic_design_max <- inputs_design[input_sel, par_names, drop=FALSE]
     ic <- rbind(ic, ic_design_max)
   }
   
@@ -1086,7 +1091,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
     # Extract inputs corresponding to largest predicted log-likelihood values.
     llik_approx_order <- order(drop(llik_approx), decreasing=TRUE)
     input_sel <- llik_approx_order[1:n_ic_by_method["approx_max"]]
-    ic_approx_max <- inputs[input_sel, par_names]
+    ic_approx_max <- inputs[input_sel, par_names, drop=FALSE]
     ic <- rbind(ic, ic_approx_max)
   }
 

@@ -461,7 +461,6 @@ trunc_em_pred_llik$mean <- matrix(trunc_pred$tmean, ncol=1)
 trunc_em_pred_llik$var <- matrix(diag(trunc_pred$tvar), ncol=1)
 trunc_em_pred_llik$cov[,,1] <- trunc_pred$tvar
 
-
 plt_gp_dist_llik <- em_llik$emulator_model$plot_pred_1d(trunc_test_info$input, include_interval=TRUE,
                                                         interval_method=interval_method, 
                                                         N_std_dev=N_std_dev,
@@ -666,25 +665,36 @@ normalize_lik <- function(lik, norm_cst) {
 }
 
 # Log-likelihood emulation. 
-post_approx_llik <- em_llik$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
-                                                       emulator_pred_list=emulator_pred_llik)
+post_approx_llik <- em_llik$calc_lik_approx(approx_type=c("mean","marginal"),
+                                            input=test_info$input,
+                                            adjustment="rectified",
+                                            return_type="matrix",
+                                            log_scale=FALSE)
 
 norm_cst_llik <- apply(post_approx_llik, 2, function(x) approx_norm_cst(x,dx))
 approx_names_llik <- colnames(post_approx_llik)
-post_approx_llik <- sapply(1:ncol(post_approx_llik), function(j) normalize_lik(post_approx_llik[,j], norm_cst_llik[j]))
+post_approx_llik <- sapply(1:ncol(post_approx_llik), 
+                           function(j) normalize_lik(post_approx_llik[,j], norm_cst_llik[j]))
 colnames(post_approx_llik) <- approx_names_llik
 norm_cst_list$llik <- norm_cst_llik
+
 post_approx_llik_plt <- plot_curves_1d_helper(test_info$input, post_approx_llik, y_new=test_info$post,
                                               X_design=design_info$input, y_design=design_info$post,
                                               plot_title="Posterior Approximations [llik]",
                                               line_thickness=line_thickness, design_color=design_color,
                                               design_pt_size=design_pt_size, xlab="u",  ylab="pi(u)") %>%
                                               ggformat_journal(legend_position="none")
-plot(post_approx_llik_plt)
 
+plot(post_approx_llik_plt)
+```
+
+
+```{r}
 # Forward model emulation. 
-post_approx_fwd <- em_fwd$calc_lik_approx_comparison(test_info$input, approx_types=c("mean", "marginal"), 
-                                                     emulator_pred_list=emulator_pred_fwd)
+post_approx_fwd <- em_fwd$calc_lik_approx(approx_type=c("mean","marginal"),
+                                          input=test_info$input,
+                                          return_type="matrix", log_scale=FALSE)
+
 norm_cst_fwd <- apply(post_approx_fwd, 2, function(x) approx_norm_cst(x,dx))
 approx_names_fwd <- colnames(post_approx_fwd)
 post_approx_fwd <- sapply(1:ncol(post_approx_fwd), function(j) normalize_lik(post_approx_fwd[,j], norm_cst_fwd[j]))
@@ -698,6 +708,7 @@ post_approx_fwd_plt <- plot_curves_1d_helper(test_info$input, post_approx_fwd, y
                                              ylab="pi(u)") %>% ggformat_journal(legend_position="none")
 plot(post_approx_fwd_plt)
 ```
+
 
 ```{r}
 # Estimate the sample-based (sb) GP-approximated posterior. We consider this as 
@@ -713,38 +724,60 @@ post_approx_fwd <- cbind(post_approx_fwd, `sample`=dens_sb_fwd)
 
 
 ```{r}
-# MCWMH approaches. 
-
-# Initial condition for all MCMC algorithms. 
-mcmc_par_init <- sample_prior_theta(inv_prob$par_prior)
-
 #
-# Log-likelihood emulator. 
+# MCWMH approaches: Log-likelihood emulator.
 #
 
-# MCWMH-Ind. 
-mcmh_nocov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                      use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- format_mcmc_output(mcmh_nocov_llik_list$samp, test_label="nocov-llik")
+common_settings <- list(mcmc_func_name="mcmc_noisy_llik", n_itr=N_mcmc,
+                        try_parallel=FALSE, n_chain=4L, itr_start=round(N_mcmc/2),
+                        ic_settings=list(approx_type="quantile", 
+                                         n_test_inputs=500L,
+                                         alpha=0.8,
+                                         n_ic_by_method=c(design_max=2, 
+                                                          approx_max=2)))
+ 
+mcmc_settings_llik <- list(
+  c(list(test_label="mcwmh-joint-rect-llik", mode="mcwmh", use_joint=TRUE, adjustment="rectified"),
+    common_settings),
+  c(list(test_label="mcwmh-joint-trunc-llik", mode="mcwmh", use_joint=TRUE, adjustment="truncated"),
+    common_settings),
+  c(list(test_label="mcwmh-joint-llik", mode="mcwmh", use_joint=TRUE, adjustment="none"),
+    common_settings),
+  c(list(test_label="mcwmh-ind-rect-llik", mode="mcwmh", use_joint=FALSE, adjustment="rectified"),
+    common_settings),
+  c(list(test_label="mcwmh-ind-trunc-llik", mode="mcwmh", use_joint=FALSE, adjustment="truncated"),
+    common_settings),
+  c(list(test_label="mcwmh-ind-llik", mode="mcwmh", use_joint=FALSE, adjustment="none"),
+    common_settings),
+  c(list(test_label="pm-joint-rect", mode="pseudo-marginal", use_joint=TRUE, adjustment="rectified"),
+    common_settings),
+  c(list(test_label="pm-ind-rect", mode="pseudo-marginal", use_joint=FALSE, adjustment="rectified"),
+    common_settings)
+)
 
-# MCWMH-Joint. 
-mcmh_cov_llik_list <- mcmc_gp_noisy(em_llik, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                    use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_llik_list$samp, test_label="cov-llik")
+names(mcmc_settings_llik) <- sapply(mcmc_settings_llik, function(x) x$test_label)
 
+```
+
+```{r}
+noisy_mcmc_output_llik <- run_mcmc_comparison(em_llik, par_prior, mcmc_settings_llik, return=TRUE)
+
+
+```
+
+
+```{r}
 #
 # Forward model emulator. 
 #
 
 # MCWMH-Ind. 
-mcmh_nocov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                     use_gp_cov=FALSE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_nocov_fwd_list$samp, test_label="nocov-fwd")
+mcwmh_ind_fwd <- mcmc_noisy_llik(em_fwd, par_prior, n_itr=N_mcmc, 
+                                 mode="mcwmh", use_joint=FALSE, adjustment="none")
 
 # MCWMH-Joint. 
-mcmh_cov_fwd_list <- mcmc_gp_noisy(em_fwd, inv_prob$par_prior, N_itr=N_mcmc, mode="MCMH", 
-                                   use_gp_cov=TRUE, par_init=mcmc_par_init)
-samp_dt <- append_mcmc_output(samp_dt, mcmh_cov_fwd_list$samp, test_label="cov-fwd")
+mcwmh_joint_fwd <- mcmc_noisy_llik(em_fwd, par_prior, n_itr=N_mcmc, 
+                                   mode="mcwmh", use_joint=TRUE, adjustment="none")
 
 ```
 
