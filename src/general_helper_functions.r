@@ -4,6 +4,8 @@
 # Andrew Roberts
 #
 
+library(assertthat)
+
 add_vec_to_mat_rows <- function(v, M) {
   # `v`: numeric vector of length `n`. 
   # `M`: matrix with `n` columns. 
@@ -93,6 +95,3 @@ int_trap <- function(x, dx) {
   
   return(0.5 * dx * (x[1] + x[n_pts]) +  dx * sum(x[2:(n_pts-1)]))
 }
-
-
-

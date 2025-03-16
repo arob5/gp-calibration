@@ -1,24 +1,15 @@
 #!/bin/bash -l
 #$ -N run_rmarkdown
+#$ -l h_rt=12:00:00             # Hard time limit.
 #$ -P dietzelab                 # Specify project. 
 #$ -l buyin                     # Request buyin node. 
 #$ -j y                         # Merge the error and output streams into a single file.
-#$ -m beas                      # Email when job begins/ends/aborted/suspended
 
-# This script is intended to run the R script `init_emulator.r` remotely on the 
-# cluster. This script is intended to be executed from `run_reps_init_emulator.sh`
-# to run replications of `init_emulator.r` across many nodes in parallel. The 
-# following commandline arguments to this script should be provided (in order), 
-# which are in turn passed as commandline arguments to init_emulator.r`.
-#
-# Example call to this script:
-#    bash run_init_emulator.sh "test_run" 100 "LHS" 10
-#
-# Arguments:
-#   1: experiment tag.
-#   2: number of design points.
-#   3: design method. 
-#   4: number of replicate designs created by init_emulator.r`.
+# Runs the R script `init_emulator.r`. Following updates to the R code, the
+# R file no longer accepts command line arguments. Settings are specified
+# directly within the R code. So this file simply calls the R script and 
+# handles the log files. The experiment tag is still specified below in this 
+# file in order to identify the correct output directory for the log files.
 
 # NOTE: 
 # The R library path is not set explicitly in this file. Therefore, if using an 
@@ -27,28 +18,15 @@
 
 # Read commandline arguments.
 EXPERIMENT_TAG=$1
-N_DESIGN=$2
-DESIGN_METHOD=$3
-N_REP=$4
-
-# Print arguments.
-echo "Commandline arguments:"
-echo "Experiment tag: ${EXPERIMENT_TAG}"
-echo "Number of design points: ${N_DESIGN}"
-echo "Design method: ${DESIGN_METHOD}"
-echo "Number of replicate designs: ${N_REP}"
-
-# Define a design ID used to create the directory in which all replicate 
-# designs will be saved (each in their own subdirectory).
-DESIGN_ID="${DESIGN_METHOD}_${N_DESIGN}"
-echo "Created design ID: ${DESIGN_ID}"
+DESIGN_TAG=$2
+DESIGN_ID=$3
 
 # For logging: log file will be moved from its default location.
 LOG_FILENAME="${JOB_NAME}.o${JOB_ID}"
 echo "Log file: ${LOG_FILENAME}"
 
 # Main output directory for this run.
-OUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_inv_prob/${EXPERIMENT_TAG}/init_emulator/${DESIGN_ID}"
+OUT_DIR="/projectnb/dietzelab/arober/gp-calibration/output/gp_inv_prob/${EXPERIMENT_TAG}/init_emulator/${DESIGN_TAG}/${DESIGN_ID}"
 echo "Creating output directory: ${OUT_DIR}"
 mkdir -p ${OUT_DIR};
 
@@ -63,10 +41,9 @@ module load R/4.3.1
 export PATH="$PATH:/share/pkg.8/r/4.3.1/install/lib64/R"
 
 # Execute R script.
-Rscript ${R_SCRIPT_PATH} --run_id=${DESIGN_ID} \
-    --n_design=${N_DESIGN} \
-    --design_method=${DESIGN_METHOD} \
-    --n_rep=${N_REP}
+Rscript ${R_SCRIPT_PATH} --experiment_tag=${EXPERIMENT_TAG} \
+    --design_tag=${DESIGN_TAG} \
+    --design_id=${DESIGN_ID}
 
 # Move output file to the output directory (if it exists). 
 if [ -d ${OUT_DIR} ]; then

@@ -1,5 +1,6 @@
 #
 # run_approx_mcmc.r
+#
 # Given an inverse problem object and llikEmulator object, runs various MCMC
 # algorithms seeking to characterize the approximate posterior. An experiment 
 # tag is passed in as a commandline argument, which is used to locate the 
@@ -7,6 +8,7 @@
 # required to be in this directory, which contains a list of MCMC settings 
 # lists and thus controls which MCMC algorithms are run. Moreover, the
 # file `<experiment_tag>/inv_prob_setup/inv_prob_list.rds` is required.
+#
 # The commandline argument `em_dir` gives the path, relative to 
 # `<experiment_tag>` where the llikEmulator objects are saved. It is assumed 
 # that each subdirectory within `<em_dir>` pertains to a single llikEmulator

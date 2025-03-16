@@ -13,7 +13,6 @@
 library(ggplot2)
 library(data.table)
 library(assertthat)
-library(docopt)
 
 # ------------------------------------------------------------------------------
 # Settings 
@@ -27,20 +26,17 @@ src_dir <- file.path(base_dir, "src")
 
 # Set variables controlling filepaths.
 experiment_tag <- "vsem"
-run_id <- "mcmc_round1"
-em_dir <- "init_emulator/LHS_250"
+round <- 1L
 
 print(paste0("experiment_tag: ", experiment_tag))
-print(paste0("run_id: ", run_id))
-print(paste0("em_dir: ", em_dir))
+print(paste0("round: ", round))
 
-# Define directories and ensure required paths exist.
+# Define directories
+round_tag <- paste0("round", round)
 experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
-base_out_dir <- file.path(experiment_dir, run_id, em_dir)
+mcmc_dir <- file.path(experiment_dir, round_tag, "mcmc")
 
-print(paste0("experiment_dir: ", experiment_dir))
-print(paste0("base_out_dir: ", base_out_dir))
-
+# Ensure required paths exist.
 mcmc_settings_path <- file.path(experiment_dir, "mcmc_approx_settings.rds")
 inv_prob_path <- file.path(experiment_dir, "inv_prob_setup", "inv_prob_list.rds")
 
@@ -71,6 +67,110 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 # ------------------------------------------------------------------------------
 # Define helper function to process a single MCMC run.
 # ------------------------------------------------------------------------------
+
+# TODO: 
+#   write function that iteratively increases the burn-in (on a chain-by-chain)
+#   basis until it is considered "valid". Should stop at a certain point 
+#   so that a lower bound on the number of iterations is enforced (say, we 
+#   shouldn't use a chain with fewer than 500 iterations).
+
+process_mcmc_run <- function(samp_list, rhat_threshold=1.05, 
+                             min_itr_threshold=500L) {
+  # Post-processing for a single MCMC run (with potentially multiple chains).
+  # A chain is defined as "valid" if the within-chain split R-hat values for 
+  # all parameters do not exceed `rhat_threshold`. `n_itr` is the total number  
+  # of iterations with non-NA values across all valid chains. An MCMC run 
+  # (test_label) is marked as valid if it has at least one valid chain and 
+  # at least one valid iteration.
+  #
+  # `samp_list` is a list returned by the MCMC code, with elements "samp", 
+  # "info", and "output_list". `min_itr_threshold` is the minimum number of 
+  # samples we allow for a single chain. 
+  
+  # Check to see if error occurred during run.
+  err_occurred <- !is.null(samp_list$output_list[[1]]$condition)
+  if(err_occurred) {
+    mcmc_summary <- data.table(em_id=em_id, test_label=lbl, n_valid_chains=0L,
+                               max_rhat=NA, n_valid_itr=0L, status="err")
+    return(list(summary=mcmc_summary, rhat=NULL))
+  }
+  
+  # MCMC samples.
+  samp_dt <- samp_list$samp
+  
+  # Within-chain Rhat statistics.
+  id_cols <- c("test_label", "chain_idx", "param_type", "param_name")
+  rhat_dt <- calc_R_hat(samp_dt, within_chain=TRUE)$R_hat_vals
+  rhat_dt <- rhat_dt[, .SD, .SDcols=c(id_cols, "R_hat")]
+  
+  # Maximum within within-chain Rhat over all parameters within the chain.
+  rhat_max_dt <- rhat_dt[, .(rhat=max(R_hat, na.rm=TRUE)), by=.(test_label, chain_idx)]
+  rhat_max_dt[, valid := (rhat <= rhat_threshold)]
+  
+  # Compute MCMC run summary.
+  n_valid_chains <- rhat_max_dt[, sum(valid, na.rm=TRUE)]
+  max_rhat <- rhat_max_dt[, max(rhat)]
+  valid_chains <- rhat_max_dt[valid==TRUE, chain_idx]
+  if(length(valid_chains) > 0) {
+    n_valid_itr <- samp_dt[(chain_idx %in% valid_chains) & !is.na(sample), 
+                           .N, by=.(param_type, param_name)][, unique(N)]
+  } else {
+    n_valid_itr <- 0L
+  }
+  
+  mcmc_summary <- data.table(n_valid_chains = n_valid_chains,
+                             max_rhat = max_rhat, 
+                             n_valid_itr = n_valid_itr,
+                             status = "valid")
+  mcmc_summary[(n_valid_chains < 1) | (n_valid_itr < 1), status := "invalid"]
+  
+  return(list(summary=mcmc_summary, rhat=rhat_dt))
+}
+
+
+process_mcmc_chain <- function(chain_dt, rhat_threshold=1.05, 
+                               min_itr_threshold=500L, itr_start=1L) {
+  # `itr_start` can be used to specify an initial burn-in, before computing 
+  # any Rhat statistics.
+  
+  if(nrow(unique(chain_dt[, .(test_label, chain_idx)])) > 1L) {
+    stop("`process_mcmc_chain` is defined to operate on a single chain and test label.")
+  }
+  
+  chain_dt <- select_mcmc_samp(samp_dt, itr_start=itr_start)
+  
+  itr_min <- chain_dt[, min(itr)]
+  n_itr_by_par <- chain_dt[, .N, by=.(param_type, param_name)]
+  
+  
+  
+  
+}
+
+
+check_chain_min_itr_threshold <- function(chain_dt, ) {
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
   # A chain is defined as "valid" if the within-chain split R-hat values for 
@@ -106,13 +206,13 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
   id_cols <- c("test_label", "chain_idx", "param_type", "param_name")
   rhat_dt <- calc_R_hat(samp_dt, within_chain=TRUE)$R_hat_vals
   rhat_dt <- rhat_dt[, .SD, .SDcols=c(id_cols, "R_hat")]
-  rhat_max_dt <- rhat_dt[, .(rhat=max(R_hat, na.rm=TRUE)), by=.(test_label, chain_idx)]
-  rhat_max_dt[, valid := (rhat <= rhat_threshold)]
+  rhat_by_chain <- rhat_dt[, .(rhat=max(R_hat, na.rm=TRUE)), by=.(test_label, chain_idx)]
+  rhat_by_chain[, valid := (rhat <= rhat_threshold)]
   
   # Compute MCMC run summary.
-  n_valid_chains <- rhat_max_dt[, sum(valid, na.rm=TRUE)]
-  max_rhat <- rhat_max_dt[, max(rhat)]
-  valid_chains <- rhat_max_dt[valid==TRUE, chain_idx]
+  n_valid_chains <- rhat_by_chain[, sum(valid, na.rm=TRUE)]
+  max_rhat <- rhat_by_chain[, max(rhat)]
+  valid_chains <- rhat_by_chain[valid==TRUE, chain_idx]
   if(length(valid_chains) > 0) {
     n_valid_itr <- samp_dt[(chain_idx %in% valid_chains) & !is.na(sample), 
                             .N, by=.(param_type, param_name)][, unique(N)]
@@ -134,7 +234,7 @@ process_test_label <- function(lbl, em_id, rhat_threshold=1.05) {
 
 
 # ------------------------------------------------------------------------------
-# Compute summaries for each MCMC run within `base_out_dir`.
+# Compute summaries for each MCMC tag within the MCMC round directory.
 # ------------------------------------------------------------------------------
 
 em_id_dirs <- setdiff(list.files(base_out_dir), 

@@ -1667,7 +1667,6 @@ gpWrapperSum$methods(
       return_list <- c(return_list, input_covs)
     }
     
-    
     # Compute output covariances and cross covariances.
     if(return_output_cov || return_output_cross_cov) {
       output_covs <- .self$predict_output_cov(X_new, 
@@ -1767,7 +1766,7 @@ gpWrapperSum$methods(
     } else {
       assert_that(isTRUE(!is.null(pred_list$var)), 
                   msg=paste0("Output covariance computation requires predictive ",
-                             "varainces of underlying independent GPs."))
+                             "variances of underlying independent GPs."))
     }
     
     # Loop input-by-input to compute the (cross) covariance matrices.

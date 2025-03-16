@@ -13,6 +13,9 @@
 #   llikEmulatorGPFwdGaussDiag: The same likelihood structure as above, but the
 #                               forward model is emulated by a (potentially 
 #                               multi-output) GP.
+#   llikEmulatorGPFwdGauss: The same likelihood structure as above, but the
+#                           forward model is emulated by a (potentially 
+#                           multi-output) GP.
 # 
 #
 # The following classes are in development/currently not operational.
@@ -23,9 +26,6 @@
 #                           errors).
 #   llikEmulatorExactGauss: Generalization of `llikEmulatorExactGaussDiag` that
 #                           allows arbitrary (non-diagonal) covariance matrix.
-#   llikEmulatorGPFwdGauss: The same likelihood structure as above, but the
-#                           forward model is emulated by a (potentially 
-#                           multi-output) GP.
 #
 # Andrew Roberts
 #
@@ -2026,7 +2026,7 @@ llikEmulatorGPFwdGauss$methods(
     return(llik_samp)
   },
   
-  sample_emulator = function(input, em_pred_list=NULL, N_samp=1, 
+  sample_emulator = function(input, em_pred_list=NULL, N_samp=1L, 
                              use_cov=FALSE, ...) {
     # Sample the forward model emulator at specified inputs. `input` is M x D 
     # (M input vectors). Returns array of dimension (M, N_samp, N_output). 
@@ -2051,8 +2051,10 @@ llikEmulatorGPFwdGauss$methods(
     # Covariance return options "cov" and "cross_cov" not yet supported.
     
     if(return_cross_cov || return_cov) {
-      stop("`return_cross_cov` and/or `return_cov` not yet supported for ",
-           "`llikEmulatorGPFwdGauss$predict()`.")
+      message("`return_cross_cov` and `return_cov` not yet supported for ",
+              "`llikEmulatorGPFwdGauss$predict()`. Will not return these quantities.")
+      return_cross_cov <- FALSE
+      return_cov <- FALSE
     }
     
     input <- .self$get_input(input)
@@ -2120,8 +2122,10 @@ llikEmulatorGPFwdGauss$methods(
                          include_noise=TRUE, ...) {
     
     if(return_cross_cov || return_cov) {
-      stop("`return_cross_cov` and `return_cov` are not yet supported for",
-           "`llikEmulatorGP$predict_lik()`.")
+      message("`return_cross_cov` and `return_cov` not yet supported for ",
+              "`llikEmulatorGPFwdGauss$predict_lik()`. Will not return these quantities.")
+      return_cross_cov <- FALSE
+      return_cov <- FALSE
     }
     
     input <- .self$get_input(input)
