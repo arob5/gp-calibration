@@ -59,18 +59,24 @@ TODO: need to also add check for negative predictive variance in covariance matr
 ```{r}
 # Default fit/predict. 
 gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-gpHet1$fit("Gaussian", "constant")
+gpHet1$set_gp_prior("Gaussian", "constant", include_noise=TRUE)
+gpHet1$fit()
 gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 
 # Fit/predict with fixed small nugget (intended for interpolation). 
 gpHet1 <- gpWrapperHet(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-gpHet1$fit("Gaussian", "constant", estimate_nugget=FALSE)
+gpHet1$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gpHet1$fit()
 gpHet1_pred <- gpHet1$predict(X1_new, return_cov=TRUE)
 gpHet1$plot_pred_1d(X1_new, pred_list=gpHet1_pred, Y_new=Y1_new_noiseless)
 ```
 
 ```{r}
+#
+# TODO: old, need to update.
+#
+
 # Test cross covariance calculation by computing the cross covariances between 
 # the same set of test points. This should equal the covariance returned when 
 # `return_cov` is TRUE and `include_nugget` is FALSE. 
@@ -85,6 +91,10 @@ cat("Cross covariance calculation is correct: ", all.equal(gpHet1_pred_cross$cro
 
 
 ```{r}
+#
+# TODO: old, need to update.
+#
+
 # Sample 
 gpHet1_samp <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred)
 gpHet1_samp_rectified <- gpHet1$sample(X1_new, use_cov=TRUE, N_samp=5, pred_list=gpHet1_pred, adjustment="rectified")
@@ -119,9 +129,11 @@ for(i in 1:gpHet1$Y_dim) {
 N_partial_design1 <- N_design1 - 1
 
 # Fit on partial design. 
-gpHet1_update <- gpWrapperHet(X1[1:N_partial_design1,,drop=FALSE], Y1[1:N_partial_design1,,drop=FALSE], 
+gpHet1_update <- gpWrapperHet(X1[1:N_partial_design1,,drop=FALSE], 
+                              Y1[1:N_partial_design1,,drop=FALSE], 
                               normalize_output=TRUE, scale_input=TRUE)
-gpHet1_update$fit("Gaussian", "constant")
+gpHet1_update$set_gp_prior("Gaussian", "constant")
+gpHet1_update$fit()
 
 # Predictive plot for GPs pre-update. 
 gpHet1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
@@ -153,7 +165,7 @@ for(i in 1:gpHet1_update$Y_dim) {
   
 print("hetGP Y agrees with gpWrapper Y_train")
 for(i in 1:gpHet1_update$Y_dim) {
-  print(all.equal(gpHet1_update$gp_model[[i]]$Z, gpHet1_update$Y_train[,i]))
+  print(all.equal(gpHet1_update$gp_model[[i]]$Z, gpHet1_update$Y_train[,i], check.attributes=FALSE))
 }
 
 # Predictive plot for updated GPs. With so few training points, the fit often yields a 
@@ -165,24 +177,27 @@ gpHet1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
 ```{r}
 
 # TODO: TEMP: gpWrapperKerGP currently only supports fixed nugget. 
+
 # Default fit/predict. 
-# gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-# gpKerGP1$fit("Gaussian", "constant", optimFun="stats::optim")
-# gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
-# gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
+gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
+gpKerGP1$set_gp_prior("Gaussian", "constant")
+gpKerGP1$fit(optimFun="stats::optim")
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
+gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
 
 # Fit/predict with fixed small nugget (intended for interpolation). 
 gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-gpKerGP1$fit("Gaussian", "constant", estimate_nugget=FALSE, trace=TRUE, multistart=5)
-gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE, include_nugget=TRUE)
+gpKerGP1$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gpKerGP1$fit(trace=TRUE, multistart=5)
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
 gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
 
 # Gaussian plus quadratic kernel. 
 gpKerGP1 <- gpWrapperKerGP(X1, Y1, normalize_output=TRUE, scale_input=TRUE)
-gpKerGP1$fit("Gaussian_plus_Quadratic", "constant", estimate_nugget=FALSE, trace=TRUE, multistart=5)
-gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE, include_nugget=TRUE)
+gpKerGP1$set_gp_prior("Gaussian_plus_Quadratic", "constant", include_noise=FALSE)
+gpKerGP1$fit(trace=TRUE, multistart=5)
+gpKerGP1_pred <- gpKerGP1$predict(X_new=X1_new, return_cov=TRUE)
 gpKerGP1$plot_pred_1d(X1_new, pred_list=gpKerGP1_pred, Y_new=Y1_new_noiseless)
-
 ```
 
 ```{r}
@@ -202,7 +217,8 @@ N_partial_design1 <- N_design1 - 1
 gpKerGP1_update <- gpWrapperKerGP(X1[1:N_partial_design1,,drop=FALSE], 
                                   Y1[1:N_partial_design1,,drop=FALSE], 
                                   normalize_output=TRUE, scale_input=TRUE)
-gpKerGP1_update$fit("Gaussian", "constant", estimate_nugget=FALSE)
+gpKerGP1_update$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gpKerGP1_update$fit()
 
 # Predictive plot for GPs pre-update. 
 gpKerGP1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
@@ -245,14 +261,6 @@ for(i in 1:gpKerGP1_update$Y_dim) {
 # function appears not to be interpolating these points, but it really is. 
 gpKerGP1_update$plot_pred_1d(X1_new, Y_new=Y1_new_noiseless)
 ```
-
-
-
-
-
-
-
-
 
 # 2d validation. 
 

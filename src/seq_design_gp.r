@@ -262,7 +262,6 @@ acq_neg_exp_entropy <- function(input, gp, ...) {
                                      return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
   
   -lnp_pred$log_mean - 0.5 * lnp_pred$log_var - 0.5*log(2*pi) - 0.5
-
 }
 
 

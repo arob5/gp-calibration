@@ -60,11 +60,11 @@ update_model <- function(model, input_new, response_new,
   
   if(is_gp(model)) {
     if(!is.matrix(response_new)) response_new <- matrix(response_new, nrow=n_new_inputs)
-    model <- model$update(input_new, response_new, 
-                          update_hyperpar=reoptimize_hyperpar, ...)
+    model$update(input_new, response_new, 
+                 update_hyperpar=reoptimize_hyperpar, ...)
   } else if(is_llik_em(model)) {
-    model <- model$update_emulator(input_new, response_new, 
-                                   update_hyperpar=reoptimize_hyperpar, ...)
+    model$update_emulator(input_new, response_new, 
+                          update_hyperpar=reoptimize_hyperpar, ...)
   } else if(is.null(model)) {
     return(model)
   } else {
@@ -176,7 +176,13 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
 
 run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
                            response_heuristic=NULL, true_func=NULL, 
-                           reoptimize_hyperpar=FALSE, ...) {
+                           reoptimize_hyperpar=FALSE, 
+                           tracking_settings=NULL, ...) {
+  # At each iteration, the minimum value of acquisition function is stored 
+  # in the "tracking list". Optionally, users can provide additional settings
+  # in `tracking_settings` that can compute additionally quantities that will be
+  # tracked. These quantities will be computed every `tracking_settings$interval`
+  # iterations.
 
   # Model must inherit from gpWrapper, llikEmulator, or be NULL.
   identify_model_type(model)
@@ -187,34 +193,46 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
             " not none. It is not recommended to reoptimize hyperparameters ",
             " using pseudo-observations.")
   }
+
+  # List that stores optimal acquisition values and other computed quantities
+  # as the design loop progresses.
+  tracking_list <- list(acq_val=rep(NA_real_, n_batch),
+                        computed_quantities=list())
   
   # Make a copy to avoid modifying the model provided in argument. 
   model_copy <- model$copy(shallow=FALSE)
   
   # Objects to store the acquired inputs and the associated function 
   # (perhaps pseudo) responses. 
-  input_dim <- get_model_input_dim(model)
-  input_names <- get_model_input_names(model)
+  input_dim <- get_model_input_dim(model_copy)
+  input_names <- get_model_input_names(model_copy)
   inputs <- matrix(nrow=n_batch, ncol=input_dim, dimnames=list(NULL, input_names))
   responses <- rep(NA_real_, n_batch)
 
   for(i in 1:n_batch) {
+    print(paste0("Iteration: ", i))
+    
     # Acquire new input point.
-    input_new <- optimize_acq(acq_func_name, model, opt_method, ...)
+    acq_info <- optimize_acq(acq_func_name, model_copy, opt_method, ...)
+    input_new <- acq_info$input
     inputs[i,] <- input_new
     
     # Acquire function response or pseudo response at acquired input.
     response_new <- get_pseudo_response(input_new, response_heuristic,
-                                        model, true_func, ...)
+                                        model_copy, true_func, ...)
     responses[i] <- response_new
 
     # Update model. 
-    model_copy <- update_model(model, input_new, response_new, 
+    model_copy <- update_model(model_copy, input_new, response_new, 
                                reoptimize_hyperpar, ...)
+    
+    # Update tracking list.
+    tracking_list <- update_tracking_info(tracking_list, model_copy, 
+                                          acq_info$acq_val, i, tracking_settings)
   }
   
-  return(list(inputs=inputs, responses=responses, updated_model=model_copy))
-  
+  return(list(inputs=inputs, responses=responses, tracking_list=tracking_list,
+              updated_model=model_copy))
 }
 
 
@@ -233,13 +251,13 @@ optimize_acq <- function(acq_func_name, model, opt_method,
   
   # Dispatch to the correct optimization algorithm. 
   if(opt_method == "grid") {
-    input_new <- minimize_objective_grid(acq_func, model=model, 
-                                         candidate_grid=candidate_grid, ...)
+    acq_info <- minimize_objective_grid(acq_func, model=model, 
+                                        candidate_grid=candidate_grid, ...)
   } else {
     stop("`opt_method` ", opt_method, " not supported.")
   }
   
-  return(input_new)
+  return(acq_info)
 }
 
 
@@ -256,8 +274,10 @@ minimize_objective_grid <- function(acq_func, model, candidate_grid, ...) {
                                                  model=model, ...)
   argmin_idx <- which.min(acq_func_evals)
   
-  return(candidate_grid[argmin_idx,])
+  list(input = candidate_grid[argmin_idx,],
+       acq_val = acq_func_evals[argmin_idx])
 }
+
 
 get_pseudo_response <- function(input, response_heuristic, model=NULL, 
                                 true_func=NULL, ...) {
@@ -266,6 +286,31 @@ get_pseudo_response <- function(input, response_heuristic, model=NULL,
   } else {
     .NotYetImplemented()
   }
+}
+
+
+update_tracking_info <- function(tracking_list, model, acq_val, itr, 
+                                 tracking_settings=NULL) {
+  # Note that when specifying `tracking_settings$interval`, the first iteration
+  # will be tracked. For example, if the interval is 10 then tracking will
+  # occur at iterations 1, 11, 21, etc.
+  
+  # Store acquisition function value for current iteration.
+  tracking_list$acq_val[itr] <- acq_val
+  
+  # If `tracking_settings` is provided, compute additional quantities.
+  if(is.null(tracking_settings)) return(tracking_list)
+  if(is.null(tracking_settings$func_list)) return(tracking_list)
+  
+  interval <- tracking_settings$interval
+  if(is.null(interval)) interval <- 1L
+  
+  if((itr+interval-1) %% interval == 0) {
+    itr_lbl <- paste0("itr_", itr)
+    tracking_list$computed_quantities[[itr_lbl]] <- lapply(tracking_settings$func_list, function(f) f(model))
+  }
+  
+  return(tracking_list)
 }
 
 

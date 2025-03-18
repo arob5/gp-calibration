@@ -598,7 +598,7 @@ gpWrapper$methods(
     if(isTRUE(nrow(X_new)==1)) return_cov <- FALSE
     
     # Scale inputs, if required. 
-    if(scale_input) {
+    if(.self$scale_input) {
       X_new <- .self$scale(X_new)
       if(return_cross_cov && !is.null(X_cross)) X_cross <- .self$scale(X_cross)
     }
@@ -609,7 +609,7 @@ gpWrapper$methods(
     }
       
     # Predict for each independent GP. 
-    pred_list <- vector(mode="list", length=Y_dim)
+    pred_list <- vector(mode="list", length=.self$Y_dim)
     for(i in seq_along(pred_list)) {
       pred_list[[i]] <- .self$predict_package(X_new=X_new, output_idx=i, 
                                               return_mean=return_mean, 
@@ -650,7 +650,7 @@ gpWrapper$methods(
     }
     
     # Return outputs to unnormalized scale. 
-    if(normalize_output) {
+    if(.self$normalize_output) {
       if(return_mean) mean_pred <- .self$normalize(mean_pred, inverse=TRUE)
       if(return_trend && !is.null(trend_pred)) trend_pred <- .self$normalize(trend_pred, inverse=TRUE)
       if(return_var) var_pred <- var_pred %*% diag(Y_std^2, nrow=Y_dim)
@@ -992,10 +992,10 @@ gpWrapper$methods(
     .self$augment_design(X_new, Y_new)
     N_design_new <- nrow(X_train)
     
-    for(i in 1:Y_dim) {
-      gp_model[[i]] <<- update_package(X_train[(N_design_curr+1):N_design_new,,drop=FALSE], 
-                                       Y_train[(N_design_curr+1):N_design_new, i], 
-                                       output_idx=i, update_hyperpar=update_hyperpar, ...)
+    for(i in 1:.self$Y_dim) {
+      gp_model[[i]] <<- .self$update_package(X_train[(N_design_curr+1):N_design_new,,drop=FALSE], 
+                                             Y_train[(N_design_curr+1):N_design_new, i], 
+                                             output_idx=i, update_hyperpar=update_hyperpar, ...)
     }
   },
   
@@ -1111,12 +1111,12 @@ gpWrapper$methods(
                                   include_noise=TRUE, return_mean=TRUE, 
                                   return_var=TRUE, return_cov=FALSE, ...) {
     # A wrapper around `calc_pred_func()` that allows `func` to be a list of 
-    # functions (or method names). Note that `type` should not be a list; 
-    # all of the functions should have the same return shape. If `return_list`
-    # is TRUE, then the return type is a list of length `length(func_list)`. 
-    # Otherwise, the list elements are combined into a single data.table with 
-    # column names "<Y_names>", "func", where `<Y_names>` includes one column 
-    # per output variable.
+    # functions (or method names - e.g., "crps"). Note that `type` 
+    # should not be a list; all of the functions should have the same return shape. 
+    # If `return_list` is TRUE, then the return type is a list of length 
+    # `length(func_list)`. Otherwise, the list elements are combined into a 
+    # single data.table with column names "<Y_names>", "func", where `<Y_names>` 
+    # includes one column per output variable.
     
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
@@ -2543,7 +2543,8 @@ gpWrapperKerGP$methods(
   },
   
 
-  fit_package = function(X_fit, y_fit, output_idx, ...) {
+  fit_package = function(X_fit, y_fit, output_idx, estim=TRUE, beta=NULL,
+                         noise=TRUE, ...) {
     # `kergp` supports a variety of different optimization algorithms, which can 
     # be specified using the `...` arguments. 
     # For kergp, the nugget can be handled more on the prediction side than on 
@@ -2555,15 +2556,20 @@ gpWrapperKerGP$methods(
     # the optimization will be run from `k` different initializations.
     # Bounds on the kernel hyperparameters are included as part of the 
     # `kernel$object` object, which are set when setting the prior.
+    # `estim`, `beta`, and `noise` are kergp::gp arguments. These are added 
+    # as arguments here primarily for use in the `update_package` method.
 
     y_name <- .self$Y_names[output_idx]
     noise_var_bounds <- .self$par_bounds$noise_var[y_name,]
     
     # kergp supports fixing known mean function coefficients `beta`. Will be 
-    # NULL if no fixed beta was provided.
-    beta <- .self$fixed_pars$mean_func[[y_name]]$beta
-
-    # When the noise variance is fixed, we use a hack to fix in during kergp's 
+    # NULL if no fixed beta was provided. User can override by explicitly 
+    # passing `beta` in function argument, but this is generally not recommended.
+    if(is.null(beta)) {
+      beta <- .self$fixed_pars$mean_func[[y_name]]$beta
+    }
+    
+    # When the noise variance is fixed, we use a hack to fix it in during kergp's 
     # optimization: define the upper and lower bounds to be the desired value.
     fixed_noise_var <- .self$fixed_pars$noise_var[y_name]
     if(!.self$noise) fixed_noise_var <- .self$default_jitter
@@ -2578,14 +2584,15 @@ gpWrapperKerGP$methods(
                         data=data.frame(y=drop(y_fit), X_fit), 
                         inputs=.self$X_names, 
                         cov=.self$kernel$object, 
-                        estim=TRUE, beta=beta, noise=TRUE, 
+                        estim=estim, beta=beta, noise=noise,
                         varNoiseIni=noise_var_bounds["init"],
                         varNoiseLower=noise_var_bounds["lower"],
                         varNoiseUpper=noise_var_bounds["upper"],
                         ...)
     
-    # Store noise variance.
+    # Store noise variance and kergp covariance object.
     noise_var[output_idx] <<- gp_fit$varNoise
+    kernel$object <<- gp_fit$covariance
     
     return(gp_fit)
   },
@@ -2633,45 +2640,80 @@ gpWrapperKerGP$methods(
     return(return_list)
   }, 
   
-  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, ...) {
+  update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, 
+                            update_mean_coefs=TRUE, ...) {
     # NOTE: this update is O(N^3), where N is the total number of design points 
     # (including the old design points). This is due to the fact that kergp 
     # stores the Cholesky factor and some other quantities related to the QR 
     # decomposition to form predictions. There is no obvious way to update the 
     # existing quantities other than just re-computing them at the union of the 
     # old and new design points. 
-    if(update_hyperpar) {
-      stop("kergp update with hyperparameter update not yet implemented.")
-    }
-    
+
     gp_obj <- .self$gp_model[[output_idx]]
     
-    # Update design. Note that this assumes that this function is called via the 
-    # `update()` method, meaning that `.self$X_train` and `.self$Y_train` have 
-    # already been updated. 
-    gp_obj$X <- .self$X_train
-    gp_obj$y <- .self$Y_train[,output_idx]
+    # Passing NULL beta will cause mean coefficients to be re-estimated.
+    beta <- gp_obj$betaHat
+    if(update_mean_coefs) beta <- NULL
 
-    # Update basis functions for the GP mean.
-    df <- data.frame(y=gp_obj$y, gp_obj$X)
-    mean_func_formula <- .self$mean_func$formula
-    mf <- model.frame(mean_func_formula, data=df)
-    gp_obj$F <- model.matrix(mean_func_formula, data=mf)
-
-    # Call kergp's generalized least squares method, which computes the betaHat 
-    # estimate conditional on fixed kernel. However, here we pass the current 
-    # value of betaHat so that it will not be re-estimated. The point of calling 
-    # this is thus to simply compute intermediate quantities (e.g., Cholesky 
-    # factor of covariance). 
-    gls_list <- kergp::gls(object=gp_obj$covariance, y=gp_obj$y, X=gp_obj$X, 
-                           F=gp_obj$F, beta=gp_obj$betaHat, 
-                           varNoise=.self$noise_var)
+    # There are three options here:
+    # 1.) Only re-estimate the mean coefficients. This is accomplished by 
+    #     setting `estim=FALSE` and `beta=NULL`
+    # 2.) Re-estimating both mean and kernel parameters. This is done by 
+    #     setting `estim=FALSE` and `beta=NULL`.
+    # 3.) Maintain current values for both mean and covariance coefficients.
+    #     This is done by setting
+    #
+    # Annoyingly, kergp::gp throws an error if passed `varNoise=NULL` when 
+    # `estim=TRUE`. To get around this, we only include varNoise as an argument
+    # when `estim=FALSE`. If not estimating hyperparameters, must pass the 
+    # current `varNoise` value.
+    args <- c(list(X_fit=.self$X_train, y_fit=.self$Y_train[,output_idx], 
+                   output_idx=output_idx, estim=update_hyperpar, beta=beta), 
+              list(...))
+    if(!update_hyperpar) args$varNoise <- gp_obj$varNoise
     
-    # Update quantities computed by the GLS function. 
-    gls_quantities <- c("L","eStar","sseStar","FStar","RStar")
-    gp_obj[gls_quantities] <- gls_list[gls_quantities]
-
+    gp_obj <- do.call(.self$fit_package, args)
+    
+    
+    # gp_obj <- .self$fit_package(.self$X_train, .self$Y_train[,output_idx],
+    #                             output_idx, estim=update_hyperpar,
+    #                             beta=beta, varNoise=varNoise, ...)
+    
     return(gp_obj)
+    
+    
+    # # Update design. Note that this assumes that this function is called via the 
+    # # `update()` method, meaning that `.self$X_train` and `.self$Y_train` have 
+    # # already been updated. 
+    # gp_obj$X <- .self$X_train
+    # gp_obj$y <- .self$Y_train[,output_idx]
+    # 
+    # # Update basis functions for the GP mean.
+    # df <- data.frame(y=gp_obj$y, gp_obj$X)
+    # mean_func_formula <- .self$mean_func$formula
+    # mf <- model.frame(mean_func_formula, data=df)
+    # gp_obj$F <- model.matrix(mean_func_formula, data=mf)
+    # 
+    # # Update variable tracking number of design points.
+    # gp_obj$dim$n <- nrow(gp_obj$X)
+    # 
+    # # Call kergp's generalized least squares method, which computes the betaHat 
+    # # estimate conditional on fixed kernel. If the argument beta is passed 
+    # # explicitly then betaHat will not be re-estimated. Even in this case we 
+    # # must call the GLS function to compute intermediate quantities
+    # # (e.g., Cholesky factor of covariance). 
+    # beta <- gp_obj$betaHat
+    # if(update_mean_coefs) beta <- NULL
+    # 
+    # gls_list <- kergp::gls(object=gp_obj$covariance, y=gp_obj$y, X=gp_obj$X, 
+    #                        F=gp_obj$F, beta=beta, 
+    #                        varNoise=.self$noise_var[output_idx])
+    # 
+    # # Update quantities computed by the GLS function. 
+    # gls_quantities <- c("betaHat","L","eStar","sseStar","FStar","RStar")
+    # gp_obj[gls_quantities] <- gls_list[gls_quantities]
+    # 
+    # return(gp_obj)
   }, 
   
   get_default_hyperpar_bounds = function(mean_func_name, kernel_name, X_fit, y_fit, ...) {
