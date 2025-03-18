@@ -40,8 +40,8 @@ identify_model_type <- function(model) {
   # fact that some acquisition functions may not require a model), 
   # but any other class besides these three throws an exception.
   
-  if(inherits(model, "gpWrapper")) return("gp")
-  else if(inherits(model, "llikEmulator")) return("llik_em")
+  if(is_gp(model)) return("gp")
+  else if(is_llik_em(model)) return("llik_em")
   else if(is.null(model)) return(NULL)
   
   stop("Unrecognized model ", model)
@@ -49,6 +49,54 @@ identify_model_type <- function(model) {
 
 is_gp <- function(model) {
   inherits(model, "gpWrapper")
+}
+
+
+update_model <- function(model, input_new, response_new, 
+                         reoptimize_hyperpar=FALSE, ...) {
+  
+  if(!is.matrix(input_new)) input_new <- matrix(input_new, nrow=1L)
+  n_new_inputs <- nrow(input_new)
+  
+  if(is_gp(model)) {
+    if(!is.matrix(response_new)) response_new <- matrix(response_new, nrow=n_new_inputs)
+    model <- model$update(input_new, response_new, 
+                          update_hyperpar=reoptimize_hyperpar, ...)
+  } else if(is_llik_em(model)) {
+    model <- model$update_emulator(input_new, response_new, 
+                                   update_hyperpar=reoptimize_hyperpar, ...)
+  } else if(is.null(model)) {
+    return(model)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
+  
+  return(model)
+}
+
+
+get_model_input_dim <- function(model) {
+  if(is_gp(model)) {
+    return(model$X_dim)
+  } else if(is_llik_em(model)) {
+    return(model$dim_input)
+  } else if(is.null(model)) {
+    return(NULL)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
+}
+
+get_model_input_names <- function(model) {
+  if(is_gp(model)) {
+    return(model$X_names)
+  } else if(is_llik_em(model)) {
+    return(model$input_names)
+  } else if(is.null(model)) {
+    return(NULL)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
 }
 
 
@@ -123,6 +171,101 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
   
   assert_that(is.list(model_list))
   lapply(model_list, function(model) compare_acq_funcs(input, acq_func_names, model, ...))
+}
+
+
+run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
+                           response_heuristic=NULL, true_func=NULL, 
+                           reoptimize_hyperpar=FALSE, ...) {
+
+  # Model must inherit from gpWrapper, llikEmulator, or be NULL.
+  identify_model_type(model)
+  if(is.null(model)) stop("At present, NULL model is not supported.")
+  
+  if((response_heuristic != "none") && (reoptimize_hyperpar)) {
+    message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is",
+            " not none. It is not recommended to reoptimize hyperparameters ",
+            " using pseudo-observations.")
+  }
+  
+  # Make a copy to avoid modifying the model provided in argument. 
+  model_copy <- model$copy(shallow=FALSE)
+  
+  # Objects to store the acquired inputs and the associated function 
+  # (perhaps pseudo) responses. 
+  input_dim <- get_model_input_dim(model)
+  input_names <- get_model_input_names(model)
+  inputs <- matrix(nrow=n_batch, ncol=input_dim, dimnames=list(NULL, input_names))
+  responses <- rep(NA_real_, n_batch)
+
+  for(i in 1:n_batch) {
+    # Acquire new input point.
+    input_new <- optimize_acq(acq_func_name, model, opt_method, ...)
+    inputs[i,] <- input_new
+    
+    # Acquire function response or pseudo response at acquired input.
+    response_new <- get_pseudo_response(input_new, response_heuristic,
+                                        model, true_func, ...)
+    responses[i] <- response_new
+
+    # Update model. 
+    model_copy <- update_model(model, input_new, response_new, 
+                               reoptimize_hyperpar, ...)
+  }
+  
+  return(list(inputs=inputs, responses=responses, updated_model=model_copy))
+  
+}
+
+
+run_batch_seq_design <- function() {
+  return(.NotYetImplemented())
+}
+
+
+optimize_acq <- function(acq_func_name, model, opt_method, 
+                         candidate_grid=NULL, ...) {
+  # Optimizes an acquisition function. Currently only supports discrete 
+  # optimization over a grid of candidate values.
+  
+  # Define objective function for the optimization. 
+  acq_func <- get(paste0("acq_", acq_func_name))
+  
+  # Dispatch to the correct optimization algorithm. 
+  if(opt_method == "grid") {
+    input_new <- minimize_objective_grid(acq_func, model=model, 
+                                         candidate_grid=candidate_grid, ...)
+  } else {
+    stop("`opt_method` ", opt_method, " not supported.")
+  }
+  
+  return(input_new)
+}
+
+
+minimize_objective_grid <- function(acq_func, model, candidate_grid, ...) {
+  # Evaluates the acquisition function at each input and then returns 
+  # the input with the minimum acquisition function value. 
+  
+  if(!is.matrix(candidate_grid)) {
+    stop("`candidate_grid` must be a matrix, with each row containing an input.")
+  }
+  
+  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, 
+                                                 input_mat=candidate_grid, 
+                                                 model=model, ...)
+  argmin_idx <- which.min(acq_func_evals)
+  
+  return(candidate_grid[argmin_idx,])
+}
+
+get_pseudo_response <- function(input, response_heuristic, model=NULL, 
+                                true_func=NULL, ...) {
+  if(is.null(response_heuristic)) {
+    return(true_func(input))
+  } else {
+    .NotYetImplemented()
+  }
 }
 
 

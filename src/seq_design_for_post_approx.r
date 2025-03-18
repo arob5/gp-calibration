@@ -66,36 +66,47 @@ acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, 
                                                   model_response_heuristic, opt_method, 
                                                   llik_exact=NULL, reoptimize_hyperpar=FALSE, 
                                                   lik_par_val=NULL, ...) {
-  # This function is the analog of `acquire_llik_batch_input_sequentially()` but operates on objects
-  # of class llikEmulator, rather than gpWrapper. It is thus the entrypoint for an acquisition 
-  # optimization-based sequential design loop which targets improvements to likelihood or 
-  # posterior approximation. This function specifically handles the case of one-at-a-time sequential 
-  # acquisition; setting `model_response_heuristic` is "none" implies a true sequential design, in 
-  # which the exact likelihood is evaluated following each design point acquisition. Setting 
-  # `model_response_heuristic` to "KB", "CL_pessimist", or "CL_optimist" alternatively causes 
-  # this function to operate in "heuristic mode", in which the exact likelihood is never evaluated 
-  # within this function. `opt_method` currently only allows "grid". 
+  # This function is the analog of `acquire_batch_input_sequentially()` but 
+  # operates on objects of class llikEmulator, rather than gpWrapper. It is thus 
+  # the entrypoint for an acquisition optimization-based sequential design loop 
+  # which targets improvements to likelihood or posterior approximation. This 
+  # function specifically handles the case of one-at-a-time sequential 
+  # acquisition; setting `model_response_heuristic` is "none" implies a true 
+  # sequential design, in which the exact likelihood is evaluated following 
+  # each design point acquisition. Setting `model_response_heuristic` to "KB", 
+  # "CL_pessimist", or "CL_optimist" alternatively causes this function to 
+  # operate in "heuristic mode", in which the exact likelihood is never  
+  # evaluated within this function. `opt_method` currently only allows "grid". 
   #
   # Args:
   #    llik_emulator: object that inherits from class llikEmulator. 
   #    acq_func_name: character(1), the acquisition function name. 
   #    N_batch: integer(1), the number of design points to acquire. 
-  #    model_response_heuristic: character(1), currently accepts "none" (requires exact llik 
-  #                              evaluations), "KB" (kriging believer), "CL_pessimist" 
-  #                              (constant liar pessimist), "CL_optimist" (constant liar optimist). 
-  #    opt_method: character(1), the optimization method to use to minimize the acquisition function; 
-  #                currently only allows "grid", which selects points from a finite set of candidates. 
-  #    llik_exact: Only required if `model_response_heuristic == "none"`. `llik_exact` can either
-  #                be a function or an object that inherits from `llikEmulator` with `exact_llik == TRUE`. 
-  #                If a function must have two arguments; the first is interpreted as the input parameter
-  #                value and the second optional argument is the likelihood parameter. The function must 
-  #                return exact log-likelihood evaluations evaluated at the parameter/likelihood parameter 
-  #                values (the user should take care that this function uses the same normalization of the 
-  #                likelihood as used by `llik_emulator`).
-  #    reoptimize_hyperpar: If TRUE, re-optimizes emulator hyperparameters after acquiring each new 
-  #                         design point. Otherwise the hyperparameters are not changed at all in this 
-  #                         function. This should only be set to TRUE if `model_response_heuristic == "none"`. 
-  #    lik_par_val: 
+  #    model_response_heuristic: character(1), currently accepts "none" 
+  #                              (requires exact llik evaluations), "KB" 
+  #                              (kriging believer), "CL_pessimist" 
+  #                              (constant liar pessimist), "CL_optimist" 
+  #                              (constant liar optimist). 
+  #    opt_method: character(1), the optimization method to use to minimize 
+  #                the acquisition function; currently only allows "grid", 
+  #                which selects points from a finite set of candidates. 
+  #    llik_exact: Only required if `model_response_heuristic == "none"`. 
+  #                `llik_exact` can either be a function or an object that 
+  #                inherits from `llikEmulator` with `exact_llik == TRUE`. 
+  #                If a function must have two arguments; the first is 
+  #                interpreted as the input parameter value and the second 
+  #                optional argument is the likelihood parameter. The function 
+  #                must return exact log-likelihood evaluations evaluated at 
+  #                the parameter/likelihood parameter values (the user should 
+  #                take care that this function uses the same normalization of 
+  #                the likelihood as used by `llik_emulator`).
+  #    reoptimize_hyperpar: If TRUE, re-optimizes emulator hyperparameters after 
+  #                         acquiring each new design point. Otherwise the 
+  #                         hyperparameters are not changed at all in this 
+  #                         function. This should only be set to TRUE if 
+  #                         `model_response_heuristic == "none"`. 
+  #    lik_par_val: No optimization is currently done over the likelihood 
+  #                 parameter value.
   
   
   # `model_func` is a function with single argument `input` and the output should be the response value
@@ -121,24 +132,29 @@ acquire_llik_batch_input_sequentially <- function(llik_emulator, acq_func_name, 
   # Make a copy to avoid modifying the emulator provided in argument. 
   llik_emulator_copy <- llik_emulator$copy(shallow=FALSE)
   
-  # Objects to store the acquired inputs and the associated model (perhaps pseudo) responses. 
+  # Objects to store the acquired inputs and the associated model 
+  # (perhaps pseudo) responses. 
   input_batch <- matrix(nrow=N_batch, ncol=emulator_obj$dim_input)
-  response_batch <- matrix(nrow=N_batch, ncol=1)
+  response_batch <- matrix(nrow=N_batch, ncol=1L)
   
   for(i in 1:N_batch) {
     # Acquire new input point. 
-    input_new <- optimize_acq_single_input(acq_func_name, llik_emulator_copy, opt_method, ...)
+    input_new <- optimize_acq_single_input(acq_func_name, llik_emulator_copy, 
+                                           opt_method, ...)
     input_batch[i,] <- input_new
     
     # Acquire model response or pseudo model response at acquired input. 
-    response_new <- get_acq_model_response(input_new, model_response_heuristic, llik_emulator, model_func, ...)
+    response_new <- get_acq_model_response(input_new, model_response_heuristic, 
+                                           llik_emulator, model_func, ...)
     response_batch[i,] <- response_new
     
     # Update emulator. 
-    llik_emulator_copy$update(matrix(input_new, nrow=1), response_new, update_hyperpar=reoptimize_hyperpar, ...)
+    llik_emulator_copy$update(matrix(input_new, nrow=1), response_new, 
+                              update_hyperpar=reoptimize_hyperpar, ...)
   }
   
-  return(list(input_batch=input_batch, response_batch=response_batch, llik_emulator_updated=llik_emulator_copy))
+  return(list(input_batch=input_batch, response_batch=response_batch, 
+              llik_emulator_updated=llik_emulator_copy))
   
 }
 
@@ -161,13 +177,14 @@ get_constant_liar_value <- function(lpost_emulator, constant_liar_method) {
 }
 
 
-optimize_acq_single_input <- function(acq_func_name, emulator_obj, opt_method, ...) {
+optimize_acq_single_input <- function(acq_func_name, emulator_obj, 
+                                      opt_method, candidate_grid=NULL, ...) {
   
   # Define objective function for the optimization. 
   objective_func <- function(input) get(paste0("acq_", acq_func_name))(input, emulator_obj=emulator_obj, ...)
   
   # Dispatch to the correct optimization algorithm. 
-  if(opt_method == "grid") input_new <- optimize_objective_grid(objective_func, candidate_grid, ...)
+  if(opt_method == "grid") input_new <- minimize_objective_grid(objective_func, candidate_grid, ...)
   else stop("`opt_method` ", opt_method, " not supported.")
   
   return(input_new)
@@ -186,9 +203,11 @@ minimize_objective_grid <- function(objective_func, candidate_grid, ...) {
 get_acq_model_response <- function(input, model_response_heuristic, 
                                    emulator_obj=NULL, model_func=NULL, ...) {
   
-  if(model_response_heuristic == "none") return(model_func(input))
-  else if(model_response_heuristic == "kriging_believer") return(emulator_obj$predict(input, return_mean=TRUE, return_var=FALSE, ...))
-  
+  if(model_response_heuristic == "none") {
+    return(model_func(input))
+  } else if(model_response_heuristic == "kriging_believer") {
+    return(emulator_obj$predict(input, return_mean=TRUE, return_var=FALSE, ...))
+  }
   
 }
 
@@ -274,18 +293,22 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
   # likelihood emulator (exponential of the log-likelihood emulator) at  
   # inputs `input`. If `log_scale` is TRUE (the default), then the 
   # negative of the log of the variance is returned. 
-  -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, log_scale=log_scale, ...)$log_var  
+  -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, 
+                       log_scale=log_scale, ...)$log_var  
 }
 
 
-acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), ...) {
-  # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
-  # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 
-  # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
-  # with a discrete sum at inputs `grid_points`.
+acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, 
+                                  weights=1/nrow(grid_points), ...) {
+  # Defined for `llik_em` objects that depend on an underlying Gaussian process 
+  # (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates 
+  # the standard integrated variance (i.e., integrated mean squared 
+  # prediction error) GP criterion by approximating the integral with a discrete 
+  # sum at inputs `grid_points`.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_IVAR_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, weights=weights, ...)
+  acq_IVAR_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, 
+                weights=weights, ...)
 }
 
 

@@ -132,7 +132,7 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   # TODO: validate_args_acq_IVAR_grid()
   
   N_grid <- nrow(grid_points)
-  if(length(weights)==1) weights <- rep(weights, N_grid)
+  if(length(weights)==1L) weights <- rep(weights, N_grid)
   gp_copy <- gp$copy(shallow=FALSE)
   
   # Condition the GP on the new batch of inputs `input`. Since the conditional variance 
