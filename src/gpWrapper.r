@@ -1084,7 +1084,8 @@ gpWrapper$methods(
     if(is.null(pred_list)) {
       assert_that(return_mean || return_var || return_cov)
       pred_list <- .self$predict(X_new, return_mean=return_mean, 
-                                 return_var=return_var, 
+                                 return_var=return_var,
+                                 return_cov=return_cov,
                                  include_noise=include_noise)
     }
     
@@ -1185,6 +1186,7 @@ gpWrapper$methods(
   calc_agg_log_score = function(pred_list, output_idx, y, ...) {
     # Note that this function is the multivariate version of 
     # `calc_pw_log_score()`, which does not consider the covariance.
+    
     assert_that(!is.null(y))
     mvtnorm::dmvnorm(y, mean=pred_list$mean[,output_idx], 
                      sigma=pred_list$cov[,,output_idx], log=TRUE)
@@ -2641,7 +2643,7 @@ gpWrapperKerGP$methods(
   }, 
   
   update_package = function(X_new, y_new, output_idx, update_hyperpar=FALSE, 
-                            update_mean_coefs=TRUE, ...) {
+                            update_mean_coefs=FALSE, ...) {
     # NOTE: this update is O(N^3), where N is the total number of design points 
     # (including the old design points). This is due to the fact that kergp 
     # stores the Cholesky factor and some other quantities related to the QR 

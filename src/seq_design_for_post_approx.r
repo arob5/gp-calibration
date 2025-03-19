@@ -191,15 +191,6 @@ optimize_acq_single_input <- function(acq_func_name, emulator_obj,
 }
 
 
-minimize_objective_grid <- function(objective_func, candidate_grid, ...) {
-  # Simply calls `objective_func(input)` (where `input` is a row of the matrix 
-  # `candidate_grid`) for each input, then returns the argmin. 
-  
-  argmin_idx <- which.min(apply(candidate_grid, 1, objective_func))
-  return(candidate_grid[argmin_idx,])
-}
-
-
 get_acq_model_response <- function(input, model_response_heuristic, 
                                    emulator_obj=NULL, model_func=NULL, ...) {
   

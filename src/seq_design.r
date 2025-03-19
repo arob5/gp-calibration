@@ -51,7 +51,6 @@ is_gp <- function(model) {
   inherits(model, "gpWrapper")
 }
 
-
 update_model <- function(model, input_new, response_new, 
                          reoptimize_hyperpar=FALSE, ...) {
   
@@ -264,7 +263,7 @@ optimize_acq <- function(acq_func_name, model, opt_method,
 minimize_objective_grid <- function(acq_func, model, candidate_grid, ...) {
   # Evaluates the acquisition function at each input and then returns 
   # the input with the minimum acquisition function value. 
-  
+
   if(!is.matrix(candidate_grid)) {
     stop("`candidate_grid` must be a matrix, with each row containing an input.")
   }

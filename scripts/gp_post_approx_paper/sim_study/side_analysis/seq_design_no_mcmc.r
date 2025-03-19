@@ -16,6 +16,36 @@ library(data.table)
 library(assertthat)
 library(docopt)
 
+# -----------------------------------------------------------------------------
+# docopt string for parsing command line arguments.  
+# -----------------------------------------------------------------------------
+
+"Usage:
+  test_docopt.r [options]
+  test_docopt.r (-h | --help)
+
+Options:
+  -h --help                                 Show this screen.
+  --experiment_tag=<experiment_tag>         Used to locate the base output directory.
+  --design_tag=<design_tag>                 Design tag.
+  --em_tag=<em_tag>                         Emulator tag.
+  --em_id=<em_id>                           Emulator ID.
+  --n_candidates=<n_candidates>             Number of candidate points for grid-based optimization.
+  --n_batch=<n_batch>                       Number of new design points to acquire.
+" -> doc
+
+# Read command line arguments.
+cmd_args <- docopt(doc)
+experiment_tag <- cmd_args$experiment_tag
+design_tag <- cmd_args$design_tag
+em_tag <- cmd_args$em_tag
+em_id <- cmd_args$em_id
+
+print(paste0("experiment_tag: ", experiment_tag))
+print(paste0("design_tag: ", design_tag))
+print(paste0("em_tag: ", em_tag))
+print(paste0("em_id: ", em_id))
+
 # ------------------------------------------------------------------------------
 # Settings 
 # ------------------------------------------------------------------------------
@@ -26,17 +56,14 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 # Directory to source code.
 src_dir <- file.path(base_dir, "src")
 
-# Settings.
-experiment_tag <- "vsem"
-design_tag <- "LHS_200"
-em_tag <- "llik_quad_mean"
-
 # Define directories and ensure required paths exist.
 experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
 em_dir <- file.path(experiment_dir, "round1", "em", em_tag)
 base_design_dir <- file.path(experiment_dir, "round1", "design")
 inv_prob_dir <- file.path(experiment_dir, "inv_prob_setup")
-out_dir <- file.path(experiment_dir, "side_analysis")
+base_out_dir <- file.path(experiment_dir, "side_analysis", "seq_design_no_mcmc")
+
+print(paste0("base_out_dir: ", base_out_dir))
 
 # Source required scripts.
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -64,6 +91,25 @@ renv::status()
 inv_prob <- readRDS(file.path(inv_prob_dir, "inv_prob_list.rds"))
 test_info_prior <- readRDS(file.path(inv_prob_dir, "test_info_prior.rds"))
 test_info_post <- readRDS(file.path(inv_prob_dir, "test_info_post.rds"))
+llik_func <- inv_prob$llik_obj$get_llik_func()
+
+# ------------------------------------------------------------------------------
+# Load log-likelihood emulator.
+# ------------------------------------------------------------------------------
+
+# Fetch design ID used to train the emulator.
+em_id_curr <- em_id
+em_id_map <- fread(file.path(em_dir, "id_map.csv"))
+design_id <- em_id_map[em_id==em_id_curr, design_id]
+design_tag <- em_id_map[em_id==em_id_curr, design_tag]
+
+out_dir <- file.path(base_out_dir, em_tag, em_id, design_tag, design_id)
+print(paste0("out_dir: ", out_dir))
+
+# Load emulator and design.
+em_llik <- readRDS(file.path(em_dir, em_id, "em_llik.rds"))
+design_info <- readRDS(file.path(base_design_dir, design_tag, paste0(design_id, ".rds")))
+
 
 # ------------------------------------------------------------------------------
 # Set up metrics to track within sequential design loop.
@@ -71,18 +117,32 @@ test_info_post <- readRDS(file.path(inv_prob_dir, "test_info_post.rds"))
 
 tracking_settings <- list(interval=10L, func_list=list())
 
-tracking_settings$func_list$gp_eval_prior <- function(model) {
+tracking_settings$func_list$pw_prior <- function(model) {
   pred <- model$emulator_model$calc_pred_multi_func(list(crps="crps", mse="mse"),
                                                     type="pw", X_new=test_info_prior$input, 
                                                     Y_new=matrix(test_info_prior$llik, ncol=1L))
   pred[, .(mean=mean(y1)), by=func]
 }
 
-tracking_settings$func_list$gp_eval_post <- function(model) {
+tracking_settings$func_list$pw_post <- function(model) {
   pred <- model$emulator_model$calc_pred_multi_func(list(crps="crps", mse="mse"),
                                                          type="pw", X_new=test_info_post$input, 
                                                          Y_new=matrix(test_info_post$llik, ncol=1L))
   pred[, .(mean=mean(y1)), by=func]
+}
+
+tracking_settings$func_list$agg_prior <- function(model) {
+  model$emulator_model$calc_pred_func("log_score", type="agg", 
+                                      X_new=test_info_prior$input, 
+                                      Y_new=matrix(test_info_prior$llik, ncol=1L),
+                                      return_cov=TRUE)
+}
+
+tracking_settings$func_list$agg_post<- function(model) {
+  model$emulator_model$calc_pred_func("log_score", type="agg", 
+                                      X_new=test_info_post$input, 
+                                      Y_new=matrix(test_info_post$llik, ncol=1L),
+                                      return_cov=TRUE)
 }
 
 
@@ -90,38 +150,41 @@ tracking_settings$func_list$gp_eval_post <- function(model) {
 # Sequential Design 
 # ------------------------------------------------------------------------------
 
-# Number of candidate points to optimize over.
-n_candidates <- 1000L
-
-# Number of points to acquire.
-n_batch <- 200L
-
-# An an initial test, just considering a single replicate.
-em_id_curr <- "1008787650"
-
-# Fetch design ID used to train the emulator.
-em_id_map <- fread(file.path(em_dir, "id_map.csv"))
-design_id <- em_id_map[em_id==em_id_curr, design_id]
-design_tag <- em_id_map[em_id==em_id_curr, design_tag]
-
-# Load emulator and design.
-em_llik <- readRDS(file.path(em_dir, em_id_curr, "em_llik.rds"))
-design_info <- readRDS(file.path(base_design_dir, design_tag, paste0(design_id, ".rds")))
-
-
+# Finite set of points that will be optimized over.
 candidate_grid <- get_batch_design("LHS", N_batch=n_candidates, 
                                    prior_params=inv_prob$par_prior)
-acq_func_name <- "llik_neg_var_gp"
-llik_func <- inv_prob$llik_obj$get_llik_func()
 
-# TODO: need to add an "evaluation_function" option that computes some evaluation
-# criterion/criteria every iteration, or every x iterations.
+# Only some acquisition functions require grid points (for approximating an 
+# integral over design space).
+n_grid_points <- acq_func_settings$n_grid_points
+grid_points <- NULL
 
-acq_results <- run_seq_design(em_llik, acq_func_name, n_batch, opt_method="grid",
-                              response_heuristic=NULL, true_func=llik_func, 
-                              reoptimize_hyperpar=FALSE, 
-                              candidate_grid=candidate_grid, 
-                              tracking_settings=tracking_settings)
+if(!is.null(n_grid_points)) {
+  grid_points <- get_batch_design("LHS", N_batch=n_grid_points, 
+                                  prior_params=inv_prob$par_prior)
+}
+
+# Run sequential design algorithm.
+acq_func_settings <- list(acq_func_name="llik_IEVAR_grid", 
+                          response_heuristic=NULL)
+
+args <- list(model=em_llik, n_batch=n_batch, opt_method="grid", 
+             true_func=llik_func, reoptimize_hyperpar=FALSE,
+             canidate_grid=candidate_grid, tracking_settings=tracking_settings,
+             grid_points=grid_points, acq_func_settings)
+
+
+tic()
+acq_results <- do.call(run_seq_design, args)
+tictoc_info <- toc()
+
+acq_results$runtime <- tictoc_info$toc - tictoc_info$tic
+acq_results$candidate_grid <- candidate_grid
+acq_results$grid_points <- grid_points
+
+# Save results to file.
+saveRDS(acq_results, file.path(out_dir, "acq_results.rds"))
+
 
 # ------------------------------------------------------------------------------
 # Plot Results 
@@ -149,7 +212,7 @@ for(i in seq_along(comp_quant)) {
 }
 
 
-plt <- ggplot(dt_results[metric=="mse" & dataset=="gp_eval_post"]) + geom_line(aes(x=itr, y=value))
+plt <- ggplot(dt_results[metric=="crps" & dataset=="gp_eval_post"]) + geom_line(aes(x=itr, y=value))
 
 
 plot(plt)

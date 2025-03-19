@@ -89,19 +89,6 @@ evaluate_gp_acq_func_vectorized <- function(acq_func, input_mat, gp=NULL, ...) {
 }
 
 
-minimize_objective_grid <- function(acq_func, candidate_grid, gp=NULL, ...) {
-  # Evaluates the acquisition function at each input and then returns 
-  # the input with the minimum acquisition function value. 
-  
-  assert_that(is.matrix(candidate_grid))
-  
-  acq_func_evals <- evaluate_gp_acq_func_vectorized(acq_func, candidate_grid, gp=gp, ...)
-  argmin_idx <- which.min(acq_func_evals)
-  
-  return(candidate_grid[argmin_idx,])
-}
-
-
 get_acq_model_response <- function(input, model_response_heuristic, 
                                    gp=NULL, f_exact=NULL, ...) {
   
