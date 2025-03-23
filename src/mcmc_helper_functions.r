@@ -905,30 +905,40 @@ compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NUL
 }
 
 
-compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, burn_in_start=NULL, 
-                                     test_labels=NULL, param_types=NULL, 
-                                     param_names=NULL, subset_samp=TRUE, 
-                                     format_long=FALSE) {
-  # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`.
+compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L, 
+                                     itr_stop=NULL, test_labels=NULL, 
+                                     param_types=NULL, param_names=NULL, 
+                                     subset_samp=TRUE, format_long=FALSE, 
+                                     interval_probs=seq(.1,1,.1)) {
+  # Currently just computes sample meana/variances for the selected 
+  # parameters/variables in `samp_dt`, as well as credible intervals.
   # Note: by default averages across chains. Can be changed by manually setting
   #       `group_cols`.
   #
   # Args:
   #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`.
-  #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to subset `samp_dt` to determine which
-  #                                            parameters and samples will be included in the metric computations.
-  #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired form so do not call `select_mcmc_samp()`. 
-  #   format_long: If FALSE (the default), then one column is created for each statistic computed with column names 
-  #                of the form `stat_<stat_name>`. Otherwise, two columns are added: "stat_name" storing the statistic name,
-  #                and "stat_value" storing the associated value. 
+  #   burn_in_start, param_types, param_names: passed to `select_mcmc_samp()` to 
+  #                                            subset `samp_dt` to determine which
+  #                                            parameters and samples will be 
+  #                                            included in the metric computations.
+  #   subset_samp: If FALSE, indicates that `samp_dt` is already in the desired 
+  #                form so do not call `select_mcmc_samp()`. 
+  #   format_long: If FALSE (the default), then one column is created for each 
+  #                statistic computed with column names of the form 
+  #                `stat_<stat_name>`. Otherwise, two columns are added: 
+  #                "stat_name" storing the statistic name,
+  #                and "stat_value" storing the associated value.
+  #   interval_probs: vector of probabilities determining which credible 
+  #                   intervals will be computed.
   #
   # Returns:
   #    data.table, as returned by `agg_dt_by_func_list()`.
   
   # Select rows and columns `samp_dt` required for computing metrics. 
   if(subset_samp) {
-    samp_dt <- select_mcmc_samp(samp_dt, burn_in_start=burn_in_start, test_labels=test_labels, 
-                                param_types=param_types, param_names=param_names)
+    samp_dt <- select_mcmc_samp(samp_dt, itr_start=itr_start, itr_stop=itr_stop,
+                                test_labels=test_labels, param_types=param_types, 
+                                param_names=param_names)
   }
   
   # Default group cols.
@@ -945,6 +955,20 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, burn_in_start=NUL
   # Aggregate.
   samp_dt_agg <- agg_dt_by_func_list(samp_dt, "sample", group_cols, agg_funcs, 
                                      format_long=format_long)
+  
+  # Add on credible intervals for each parameter.
+  cred_intervals <- compute_cred_intervals(samp_dt, probs=interval_probs,
+                                           group_cols=group_cols,
+                                           format_long=format_long,
+                                           subset_samp=FALSE)
+  
+  if(format_long) {
+    samp_dt_agg <- data.table::rbindlist(list(samp_dt_agg, cred_intervals),
+                                         use.names=TRUE)
+  } else {
+    samp_dt_agg <- data.table::merge.data.table(samp_dt_agg, cred_intervals,
+                                                by=group_cols)
+  }
   
   return(samp_dt_agg)
 }
@@ -992,6 +1016,64 @@ compute_mcmc_param_stats_multivariate <- function(samp_dt, by_chain=FALSE,
   }
   
   return(chain_list)
+}
+
+
+compute_cred_intervals <- function(samp_dt, probs, group_cols=NULL, 
+                                   test_labels=NULL, param_types=NULL, 
+                                   param_names=NULL, chain_idcs=NULL,
+                                   itr_start=1L, itr_stop=NULL,
+                                   format_long=FALSE, subset_samp=TRUE) {
+  # Computes univariate marginal credible intervals, simply defined using 
+  # empirical quantiles; e.g., the 90% interval is taken to be (q5, q95),
+  # where q5, q95 are the 5th and 95th empirical quantiles, respectively.
+  # By default computes an interval for each parameter, pooling iterations across
+  # all chains. Alternative groupings (e.g., by chain) can be specified by
+  # passing `group_cols`. `probs` is a vector of values
+  # in (0,1] determining the probability of the intervals to compute.
+  # Returns data.table with columns including `group_cols`. If `format_long=TRUE` 
+  # then the data.table will instead have columns "variable" and "value". The 
+  # former will contain entries of the form "lower_prob_50", "upper_prob_50", 
+  # etc. (for an interval containing probability 0.5).
+  
+  # Subset samples.
+  if(subset_samp) {
+    samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
+                                param_types=param_types, param_names=param_names,
+                                chain_idcs=chain_idcs, itr_start=itr_start,
+                                itr_stop=itr_stop)
+  }
+  
+  if(is.null(group_cols)) {
+    group_cols <- c("test_label", "param_type", "param_name")
+  }
+  
+  # Construct functions to compute quantiles.
+  probs_lower <- (1 - probs) / 2
+  probs_upper <- (1 + probs) / 2
+  lbls <- paste0("prob_", 100*probs)
+  
+  quantile_funcs_lower <- lapply(probs_lower, function(p) function(x) quantile(x, p))
+  quantile_funcs_upper <- lapply(probs_upper, function(p) function(x) quantile(x, p))
+  names(quantile_funcs_lower) <- paste0("lower_", lbls)
+  names(quantile_funcs_upper) <- paste0("upper_", lbls)
+  quantile_funcs <- c(quantile_funcs_lower, quantile_funcs_upper)
+
+  # Compute quantiles defining the credible intervals.
+  samp_dt_agg <- agg_dt_by_func_list(samp_dt, "sample", group_cols,
+                                     agg_funcs=quantile_funcs,
+                                     format_long=TRUE)
+  
+  # Format to create columns `prob`, `lower`, `upper` to define the credible
+  # interval containing probability `prob`.
+  if(!format_long) {
+    samp_dt_agg[, c("bound_type", "prob") := tstrsplit(variable, "_", fixed=TRUE, keep=c(1,3))]
+    samp_dt_agg[, variable := NULL]
+    dcast_formula <- paste0(paste0(group_cols, collapse="+"), "+prob~bound_type")
+    samp_dt_agg <- data.table::dcast(samp_dt_agg, dcast_formula, value.var="value")
+  }
+  
+  return(samp_dt_agg)
 }
 
 

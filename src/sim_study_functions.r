@@ -8,7 +8,7 @@
 # ------------------------------------------------------------------------------
 # MCMC Processing
 # ------------------------------------------------------------------------------
-
+  
 process_mcmc_run <- function(samp_list, rhat_threshold=1.05, 
                              min_itr_threshold=500L, ...) {
   # Post-processing for a single MCMC run (with potentially multiple chains).
@@ -301,7 +301,7 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
       samp_dt <- select_itr_by_chain(samp_dt, chain_itr_dt)
     }
     
-    # Compute aggregate statistics.
+    # Compute univariate aggregate statistics (mean, variance).
     samp_dt <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
                                         format_long=format_long,
                                         group_cols=group_cols)
