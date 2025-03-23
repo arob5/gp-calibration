@@ -417,7 +417,7 @@ select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
 }
 
 
-select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
+select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
                                  param_names=NULL, itr_start=1L, itr_stop=NULL,
                                  chain_idcs=NULL, return_chain_list=FALSE) {
   # A wrapper around `select_mcmc_samp()` that converts the selected samples 
@@ -430,6 +430,11 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
   # ensures that the ordering is correct. Also allows subsetting by the chain 
   # indices. Can either return a list of matrices (one per chain), or a single 
   # matrix in which all chains have been grouped together.
+  #
+  # If there is more than one test labels in `samp_dt` then the `test_label` 
+  # argument is required to specify exactly one of them. Moreover, if the 
+  # selected test label has multiple param types, then the `param_type`
+  # argument must be provided to specify exactly one of them.
   #
   # Args:
   #    samp_dt: data.table of MCMC samples. 
@@ -464,9 +469,24 @@ select_mcmc_samp_mat <- function(samp_dt, test_label, param_type,
   #    parameter type. The columns are ordered according to `param_names`, if 
   #    this argument is provided. 
   
-  assert_that(length(test_label)==1L)
-  assert_that(length(param_type)==1L)
   assert_is_samp_dt(samp_dt)
+  
+  # If test label is NULL, ensure `samp_dt` only contains a single test label.
+  if(is.null(test_label)) {
+    lbl <- unique(samp_dt$test_label)
+    assert_that(length(lbl) == 1L)
+    test_label <- lbl
+  } else {
+    assert_that(length(test_label)==1L)
+  }
+  
+  # Do the same for param type.
+  if(is.null(param_type)) {
+    param_type <- samp_dt[test_label==lbl, unique(param_type)]
+    assert_that(length(param_type) == 1L)
+  } else {
+    assert_that(length(param_type)==1L)
+  }
 
   # Select specified subset of `samp_dt`. 
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_label, 
@@ -578,6 +598,33 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   }
 
   return(samp_dt_subset)
+}
+
+select_itr_by_chain <- function(samp_dt, chain_itr_dt) {
+  # Subsets the rows of a `samp_dt` object based on lower and upper iteration
+  # thresholds that can vary by chain. This is in contrast to `select_mcmc_itr`,
+  # which applies itr thresholds by test label. This function does not consider 
+  # test label at all; it is typically used in cases where `samp_dt` only 
+  # contains a single test label.
+  #
+  # `chain_itr_dt` is a data.table with columns "chain_idx", "itr_start", and 
+  # "itr_stop". The chain indices in `chain_itr_dt` are used to select 
+  # rows from `samp_dt`; chains in `samp_dt` that are not in `chain_itr_dt`
+  # will not form part of the returned data.table.
+  
+  assert_is_samp_dt(samp_dt)
+  if(nrow(samp_dt)==0L) return(samp_dt)
+  chain_idcs <- unique(chain_itr_dt$chain_idx)
+  
+  chain_list <- list()
+  for(i in chain_idcs) {
+    itr_bounds <- chain_itr_dt[chain_idx==i]
+    chain_list[[i]] <- select_mcmc_samp(samp_dt, chain_idcs=i, 
+                                        itr_start=itr_bounds$itr_start,
+                                        itr_stop=itr_bounds$itr_stop)
+  }
+  
+  rbindlist(chain_list, use.names=TRUE)
 }
 
 
@@ -832,6 +879,8 @@ compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NUL
                                       param_names=NULL, itr_start=1L, 
                                       itr_stop=NULL, chain_idcs=NULL, 
                                       by_chain=TRUE) {
+  # NOTE: currently this function and `compute_mcmc_param_stats` are 
+  #       essentially duplicates of each other. Need to clean this up.
 
   # Select subset of samples.
   samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
@@ -856,9 +905,13 @@ compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NUL
 }
 
 
-compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NULL, param_types=NULL,
-                                     param_names=NULL, subset_samp=TRUE, format_long=FALSE) {
-  # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`. 
+compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, burn_in_start=NULL, 
+                                     test_labels=NULL, param_types=NULL, 
+                                     param_names=NULL, subset_samp=TRUE, 
+                                     format_long=FALSE) {
+  # Currently just computes sample means and variances for the selected parameters/variables in `samp_dt`.
+  # Note: by default averages across chains. Can be changed by manually setting
+  #       `group_cols`.
   #
   # Args:
   #   samp_dt: data.table, must be of the format described in `format_mcmc_output()`.
@@ -870,7 +923,7 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NU
   #                and "stat_value" storing the associated value. 
   #
   # Returns:
-  #    data.table, with columns "samp_mean", "samp_var". 
+  #    data.table, as returned by `agg_dt_by_func_list()`.
   
   # Select rows and columns `samp_dt` required for computing metrics. 
   if(subset_samp) {
@@ -878,19 +931,67 @@ compute_mcmc_param_stats <- function(samp_dt, burn_in_start=NULL, test_labels=NU
                                 param_types=param_types, param_names=param_names)
   }
   
-  # Compute statistics. 
-  mcmc_param_stats <- samp_dt[, .(mean=mean(sample), var=var(sample)), by=.(test_label, param_type, param_name)]
-  
-  # Convert to long format, if requested. 
-  if(format_long) {
-    mcmc_param_stats <- melt.data.table(mcmc_param_stats, id.vars=c("test_label", "param_type", "param_name"), 
-                                        variable.name="stat_name", value.name="stat_value")
-  } else {
-    setnames(mcmc_param_stats, c("mean", "var"), c("stat_mean", "stat_var"))
+  # Default group cols.
+  if(is.null(group_cols)) {
+    group_cols <- c("test_label", "param_type", "param_name")
   }
   
-  return(mcmc_param_stats)
+  # Aggregation functions. 
+  agg_funcs <- list(
+    mean = function(x) mean(x),
+    var = function(x) var(x)
+  )
   
+  # Aggregate.
+  samp_dt_agg <- agg_dt_by_func_list(samp_dt, "sample", group_cols, agg_funcs, 
+                                     format_long=format_long)
+  
+  return(samp_dt_agg)
+}
+
+
+compute_mcmc_param_stats_multivariate <- function(samp_dt, by_chain=FALSE, 
+                                                  burn_in_start=NULL, 
+                                                  test_label=NULL, param_type=NULL, 
+                                                  param_names=NULL) {
+  # Currently this function only allows a single test label. It returns 
+  # the estimated posterior mean and covariance by default. If `by_chain` is 
+  # TRUE, then returns the estimated mean and covariance for each chain 
+  # separately. Note that passing `param_names` is recommended even when not
+  # subsetting parameter names, as this will be used to set the order of the 
+  # variables in the computed statistics.
+  
+  # Ensure only a single test label will be selected.
+  n_test_labels <- length(unique(samp_dt$test_label))
+  if((n_test_labels > 1L) && (is.null(test_label) || length(test_label) > 1L)) {
+    stop("`compute_mcmc_param_stats_multivariate` requires `samp_dt` to have ",
+         " a single test_label. Alternatively, specify a single test_label using ",
+         " the `test_label` argument.")
+  }
+  
+  # Convert to matrix. If `by_chain = TRUE` this returns a list of matrices,
+  # one per chain.
+  samp_mat <- select_mcmc_samp_mat(samp_dt, test_label=test_label, 
+                                   param_type=param_type, 
+                                   param_names=param_names,
+                                   return_chain_list=by_chain)
+  
+  # If `by_chain = FALSE` then compute one covariance and mean, pooling 
+  # samples from all chains.
+  if(!by_chain) {
+    return(list(mean=colMeans(samp_mat), cov=cov(samp_mat)))
+  }
+  
+  # Otherwise compute one covariance/mean per chain.
+  chain_list <- vector(mode="list", length=length(samp_mat))
+  names(chain_list) <- names(samp_mat)
+  
+  for(i in seq_along(chain_list)) {
+    chain_list[[i]] <- list(mean = colMeans(samp_mat[[i]]),
+                            cov = cov(samp_mat[[i]]))
+  }
+  
+  return(chain_list)
 }
 
 

@@ -15,6 +15,12 @@ library(ggplot2)
 library(data.table)
 library(assertthat)
 library(docopt)
+library(tictoc)
+
+# Temporarily putting some settings here. These are used to subset the 
+# acquisition settings data.table so that only the selected settings will 
+# be run.
+acq_ids <- c(1,2)
 
 # -----------------------------------------------------------------------------
 # docopt string for parsing command line arguments.  
@@ -40,11 +46,15 @@ experiment_tag <- cmd_args$experiment_tag
 design_tag <- cmd_args$design_tag
 em_tag <- cmd_args$em_tag
 em_id <- cmd_args$em_id
+n_candidates <- as.integer(cmd_args$n_candidates)
+n_batch <- as.integer(cmd_args$n_batch)
 
 print(paste0("experiment_tag: ", experiment_tag))
 print(paste0("design_tag: ", design_tag))
 print(paste0("em_tag: ", em_tag))
 print(paste0("em_id: ", em_id))
+print(paste0("n_candidates: ", n_candidates))
+print(paste0("n_batch: ", n_batch))
 
 # ------------------------------------------------------------------------------
 # Settings 
@@ -62,6 +72,8 @@ em_dir <- file.path(experiment_dir, "round1", "em", em_tag)
 base_design_dir <- file.path(experiment_dir, "round1", "design")
 inv_prob_dir <- file.path(experiment_dir, "inv_prob_setup")
 base_out_dir <- file.path(experiment_dir, "side_analysis", "seq_design_no_mcmc")
+acq_settings_path <- file.path(base_out_dir, "acq_settings.csv")
+
 
 print(paste0("base_out_dir: ", base_out_dir))
 
@@ -105,11 +117,25 @@ design_tag <- em_id_map[em_id==em_id_curr, design_tag]
 
 out_dir <- file.path(base_out_dir, em_tag, em_id, design_tag, design_id)
 print(paste0("out_dir: ", out_dir))
+dir.create(out_dir, recursive=TRUE, showWarnings=FALSE)
 
 # Load emulator and design.
 em_llik <- readRDS(file.path(em_dir, em_id, "em_llik.rds"))
 design_info <- readRDS(file.path(base_design_dir, design_tag, paste0(design_id, ".rds")))
 
+if(design_info$design_method != "LHS") {
+  stop("Currently this script is set up to augment an existing LHS design.")
+}
+
+# ------------------------------------------------------------------------------
+# Read acquisition function settings.
+# ------------------------------------------------------------------------------
+
+acq_settings <- fread(acq_settings_path)
+acq_settings <- acq_settings[acq_settings_id %in% acq_ids,, drop=FALSE]
+
+print("Running acquisition settings:")
+print(acq_settings)
 
 # ------------------------------------------------------------------------------
 # Set up metrics to track within sequential design loop.
@@ -147,97 +173,80 @@ tracking_settings$func_list$agg_post<- function(model) {
 
 
 # ------------------------------------------------------------------------------
-# Sequential Design 
+# Candidate and Grid Points
 # ------------------------------------------------------------------------------
 
-# Finite set of points that will be optimized over.
-candidate_grid <- get_batch_design("LHS", N_batch=n_candidates, 
-                                   prior_params=inv_prob$par_prior)
-
-# Only some acquisition functions require grid points (for approximating an 
-# integral over design space).
-n_grid_points <- acq_func_settings$n_grid_points
-grid_points <- NULL
-
-if(!is.null(n_grid_points)) {
-  grid_points <- get_batch_design("LHS", N_batch=n_grid_points, 
-                                  prior_params=inv_prob$par_prior)
+# Finite set of points that will be optimized over. For each em ID/design ID
+# we use the same candidate grid for all acquisition functions.
+candidate_grid_path <- file.path(out_dir, "candidate_grid.rds")
+  
+if(file.exists(candidate_grid_path)) {
+  print(paste0("Reading candidate points from: ", candidate_grid_path))
+  candidate_grid <- readRDS(candidate_grid_path)
+} else {
+  candidate_grid <- update_LHS_sample(design_info$input, n_batch=n_candidates,
+                                      prior_dist_info=inv_prob$par_prior)
+  candidate_grid <- candidate_grid[(design_info$N_design+1L):nrow(candidate_grid),,drop=FALSE]
+  print(paste0("Writing candidate points to: ", candidate_grid_path))
+  saveRDS(candidate_grid, candidate_grid_path)
 }
 
-# Run sequential design algorithm.
-acq_func_settings <- list(acq_func_name="llik_IEVAR_grid", 
-                          response_heuristic=NULL)
+# Same for the grid points used for numerical integration over the input space.
+# This is only required for some acquisition functions.
+grid_points_path <- file.path(out_dir, "integration_grid_points.rds")
 
+if(file.exists(grid_points_path)) {
+  print(paste0("Reading grid points from: ", grid_points_path))
+  grid_points <- readRDS(grid_points_path)
+} else {
+  n_grid <- acq_settings[!is.na(n_grid), n_grid]
+  if(length(n_grid) == 0L) { # Acquisition functions do not require grid points.
+    grid_points <- NULL
+  } else {
+    if(!all(n_grid[1] == n_grid)) {
+      stop("For now, we require `n_grid` to be the same for all acq funcs.")
+    }
+    
+    grid_points <- get_batch_design("LHS", N_batch=n_grid[1], 
+                                    prior_params=inv_prob$par_prior)
+    print(paste0("Writing grid points to: ", grid_points_path))
+    saveRDS(grid_points, grid_points_path)
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Sequential Design
+# ------------------------------------------------------------------------------
+
+# Arguments for `run_seq_design`.
 args <- list(model=em_llik, n_batch=n_batch, opt_method="grid", 
              true_func=llik_func, reoptimize_hyperpar=FALSE,
-             canidate_grid=candidate_grid, tracking_settings=tracking_settings,
-             grid_points=grid_points, acq_func_settings)
+             candidate_grid=candidate_grid, tracking_settings=tracking_settings,
+             grid_points=grid_points)
 
-
-tic()
-acq_results <- do.call(run_seq_design, args)
-tictoc_info <- toc()
-
-acq_results$runtime <- tictoc_info$toc - tictoc_info$tic
-acq_results$candidate_grid <- candidate_grid
-acq_results$grid_points <- grid_points
-
-# Save results to file.
-saveRDS(acq_results, file.path(out_dir, "acq_results.rds"))
-
-
-# ------------------------------------------------------------------------------
-# Plot Results 
-# ------------------------------------------------------------------------------
-
-comp_quant <- acq_results$tracking_list$computed_quantities
-
-dt_results <- data.table(itr = integer(),
-                         metric = numeric(),
-                         dataset = character(),
-                         value = numeric())
-
-for(i in seq_along(comp_quant)) {
+for(i in 1:nrow(acq_settings)) {
+  acq_settings_id <- acq_settings[i, acq_settings_id] 
+    
+  print(paste0("-----> ID: ", acq_settings_id, " ; Name: ", acq_settings[i, name]))
   
-  itr <- as.integer(strsplit(names(comp_quant)[i], "_", fixed=TRUE)[[1]][2])
-  for(j in seq_along(comp_quant[[i]])) {
-    comp_quant[[i]][[j]][, dataset := names(comp_quant[[i]])[j]]
-  }
+  # Append acquisition function settings to function arguments list.
+  args$acq_func_name <- acq_settings[i, name]
+  args$response_heuristic <- acq_settings[i, response_heuristic]
+  if(is.na(args$response_heuristic)) args$response_heuristic <- NULL
   
-  dt <- rbindlist(comp_quant[[i]], use.names=TRUE)
-  dt[, itr := itr]
-  setnames(dt, c("func", "mean"), c("metric", "value"))
+  # Run sequential design loop.
+  tic()
+  acq_results <- do.call(run_seq_design, args)
+  tictoc_info <- toc()
   
-  dt_results <- rbindlist(list(dt_results, dt), use.names=TRUE)
+  # Store additional information to save.
+  acq_results$runtime <- tictoc_info$toc - tictoc_info$tic
+  acq_results$acq_settings <- acq_settings[i,]
+  
+  # Save results to file. Files are named by their acquisition ID.
+  filename <- paste0("acq_results_id_", acq_settings_id, ".rds")
+  print(paste0("Saving: ", filename))
+  saveRDS(acq_results, file.path(out_dir, filename))
 }
-
-
-plt <- ggplot(dt_results[metric=="crps" & dataset=="gp_eval_post"]) + geom_line(aes(x=itr, y=value))
-
-
-plot(plt)
-
-
-acq_val <- acq_results$tracking_list$acq_val
-plot(seq_along(acq_val), acq_val, type="l")
-
-#
-# What is going on with these results?
-#
-# Test llik_em update function (see existing gpWrapper tests)
-# issues with numerical stability?
-#
-
-
-
-
-
-
-
-
-
-
-
-
 
 

@@ -134,3 +134,32 @@ test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
                                        design_candidates=exact_mcmc_samp)
 saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))
+
+
+# ------------------------------------------------------------------------------
+# Compute statistics/summaries of exact MCMC output.
+#    - Used to to compare to approximations when evaluating approximate methods.
+# ------------------------------------------------------------------------------
+
+# Restrict to posterior samples and drop burn-in.
+samp_dt <- select_mcmc_samp(samp_dt, test_labels="exact", 
+                            itr_start=burn_in_start)
+
+# Compute univariate (i.e., parameter-by-parameter) statistics.
+stats_univariate <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
+                                             format_long=FALSE,
+                                             group_cols=c("test_label", "param_type", "param_name"))
+fwrite(stats_univariate, file.path(out_dir, "mcmc_exact_stats_univariate.csv"))
+
+# Compute multivariate statistics (posterior mean and covariance).
+stats_multivariate <- compute_mcmc_param_stats_multivariate(samp_dt, 
+                                                            by_chain=FALSE,
+                                                            param_names=inv_prob$par_names)
+saveRDS(stats_multivariate, file.path(out_dir, "mcmc_exact_stats_multivariate.rds"))
+
+
+
+
+
+
+

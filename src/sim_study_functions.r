@@ -161,11 +161,159 @@ chain_meets_min_itr_threshold <- function(chain_dt, min_itr_threshold) {
 # Loading/Assembling Processed MCMC samples
 # ------------------------------------------------------------------------------
 
-get_samp_dt_reps <- function(experiment_dir, round, mcmc_tags=NULL) {
+get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
+                         only_valid=TRUE) {
+  # Assembles an ID map table with columns "mcmc_id", "em_id", "em_tag",
+  # "design_id", and "design_tag" containing the set of MCMC IDs associated
+  # with the specified experiment, round, MCMC tag, emulator tag, and design
+  # tag specified in the function arguments. If `only_valid` is TRUE, then 
+  # the MCMC iterations and chains are subset using the MCMC post-processing
+  # results in the "summary_files" directory. This also implies that MCMC runs
+  # with no valid chains will be dropped entirely. Setting `only_valid=TRUE`
+  # also attaches additional information as columns in the returned data.table,
+  # including Rhat values and chain weights.
+  #
+  # NOTE: 
+  # Currently this function returns a data.table that is unique by `mcmc_id`
+  # if `only_valid=FALSE` and is unique by (`mcmc_id`, `chain_idx`) if 
+  # `only_valid=TRUE`. This is a bit confusing and should probably be changed.
   
+  # Assemble set of MCMC tags that are associated with the specified experiment,
+  # round, MCMC tag, and emulator tag.
+  round_tag <- paste0("round", round)
+  mcmc_dir <- file.path(experiment_dir, round_tag, "mcmc", mcmc_tag)
+  mcmc_id_map <- fread(file.path(mcmc_dir, "id_map.csv"))
+  
+  # Subset MCMC IDs to those associated with specified emulator tag.
+  em_tag_curr <- em_tag
+  mcmc_id_map <- mcmc_id_map[em_tag==em_tag_curr]
+  
+  # Subset MCMC IDs to those associated with specified design tag.
+  design_tag_curr <- design_tag
+  em_id_map <- fread(file.path(experiment_dir, round_tag, "em", em_tag, "id_map.csv"))
+  mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, em_id_map, by="em_id",
+                                              all.x=TRUE, all.y=FALSE)
+  mcmc_id_map <- mcmc_id_map[design_tag==design_tag_curr]
+  
+  # Use MCMC post-processing results to select only valid runs/chains/itrs.
+  if(only_valid) {
+    
+    # Retain only valid runs.
+    mcmc_tag_curr <- mcmc_tag
+    summary_dir <- file.path(experiment_dir, round_tag, "mcmc", "summary_files")
+    run_summary <- fread(file.path(summary_dir, "mcmc_summary.csv"))
+    run_summary <- run_summary[(status=="valid") & (mcmc_tag == mcmc_tag_curr)]
+    mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, run_summary, 
+                                                all=FALSE, by="mcmc_id")
+    
+    # Retain only valid chains, and set burn-ins determined by preprocessing.
+    chain_summary <- fread(file.path(summary_dir, "chain_summary.csv"))
+    chain_summary <- chain_summary[mcmc_tag==mcmc_tag_curr]
+    mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, chain_summary,
+                                                all=FALSE, by=c("mcmc_id", "mcmc_tag"))
+  }
+  
+  return(mcmc_id_map)
 }
 
 
+get_samp_dt_reps <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
+                             only_valid=TRUE) {
+  # Loads all MCMC samples found within the given experiment, round, MCMC tag,
+  # emulator tag, and design tag. If `only_valid = TRUE`, drops invalid 
+  # runs/chains/iterations - see `get_mcmc_ids()` for details. All MCMC runs
+  # within the given set of tags are viewed as random replications of a single
+  # experimental setup (e.g., replications stemming from different initial 
+  # design samples). All of these are compiled into a single data.table, with 
+  # a `rep_id` column added, which is set to the corresponding design_id for
+  # each run.
+
+  mcmc_id_dt <- get_mcmc_ids(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
+                             only_valid=TRUE)
+  
+  mcmc_ids <- unique(mcmc_id_dt$mcmc_id)
+  mcmc_tag_dir <- file.path(experiment_dir, paste0("round", round), "mcmc",
+                            mcmc_tag)
+  
+  # Read MCMC samples, and subset chains/itrs based on `mcmc_ids`.
+  dt_list <- vector(mode="list", length=length(mcmc_ids))
+
+  for(i in seq_along(dt_list)) {
+    id <- mcmc_ids[i]
+    design_id <- mcmc_id_dt[mcmc_id==id, design_id][1]
+    samp_list <- readRDS(file.path(mcmc_tag_dir, id, "samp.rds"))
+    samp_dt <- samp_list$samp
+    
+    # Subset to include only valid iterations.
+    if(only_valid) {
+      chain_itr_dt <- mcmc_id_dt[mcmc_id==id, .(chain_idx, itr_start=itr_min, 
+                                                itr_stop=itr_max)]
+      samp_dt <- select_itr_by_chain(samp_dt, chain_itr_dt)
+    }
+    
+    samp_dt[, rep_id := design_id]
+    dt_list[[i]] <- samp_dt
+  }
+  
+  samp_dt_reps <- rbindlist(dt_list, use.names=TRUE)
+  return(list(samp=samp_dt_reps, ids=mcmc_id_dt))
+}
+
+
+get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag, 
+                                 design_tag, only_valid=TRUE, format_long=FALSE) {
+  # This is similar to `get_samp_dt_reps()`, but here each MCMC run is 
+  # aggregated after it is loaded, producing one-dimensional summaries of each
+  # variable. Currently, this includes mean, variance, and coverage. If such 
+  # summaries are all that is needed, this function is a much more 
+  # space-efficient option compared to `get_samp_dt_reps()`.
+  #
+  # TODO:
+  # 1.) add support for using chain weights.
+  # 2.) add support for computing coverage at different coverage levels.
+  
+  # Define grouping columns for aggregation.
+  group_cols <- c("test_label", "param_type", "param_name")
+  
+  # Determine set of MCMC runs to read.  
+  mcmc_id_dt <- get_mcmc_ids(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
+                             only_valid=TRUE)
+  
+  mcmc_ids <- unique(mcmc_id_dt$mcmc_id)
+  mcmc_tag_dir <- file.path(experiment_dir, paste0("round", round), "mcmc",
+                            mcmc_tag)
+  
+  # Read MCMC samples, and subset chains/itrs based on `mcmc_ids`.
+  dt_list <- vector(mode="list", length=length(mcmc_ids))
+  
+  for(i in seq_along(dt_list)) {
+    
+    # Read samples from run.
+    id <- mcmc_ids[i]
+    design_id <- mcmc_id_dt[mcmc_id==id, design_id][1]
+    samp_list <- readRDS(file.path(mcmc_tag_dir, id, "samp.rds"))
+    samp_dt <- samp_list$samp
+    
+    # Subset to include only valid iterations.
+    if(only_valid) {
+      chain_itr_dt <- mcmc_id_dt[mcmc_id==id, .(chain_idx, itr_start=itr_min, 
+                                                itr_stop=itr_max)]
+      samp_dt <- select_itr_by_chain(samp_dt, chain_itr_dt)
+    }
+    
+    # Compute aggregate statistics.
+    samp_dt <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
+                                        format_long=format_long,
+                                        group_cols=group_cols)
+    
+    # Attach design ID.
+    samp_dt[, rep_id := design_id]
+    dt_list[[i]] <- samp_dt
+  }
+  
+  samp_dt_reps <- rbindlist(dt_list, use.names=TRUE)
+  return(list(samp=samp_dt_reps, ids=mcmc_id_dt))
+}
 
 
 # ------------------------------------------------------------------------------
@@ -174,8 +322,7 @@ get_samp_dt_reps <- function(experiment_dir, round, mcmc_tags=NULL) {
 
 
 get_coverage_plot_reps <- function() {
-  
-  
+  .NotYetImplemented()
 }
 
 

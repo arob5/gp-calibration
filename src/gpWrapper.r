@@ -621,6 +621,14 @@ gpWrapper$methods(
                                               return_trend=return_trend, ...)
     }
 
+    # TODO: TEMP: certain GP packages having some numerical issues so adding 
+    # this for now to ensure the matrix is numerically symmetric.
+    if(return_cov) {
+      for(j in seq_along(pred_list)) {
+        pred_list[[j]]$cov <- 0.5 * (pred_list[[j]]$cov + t(pred_list[[j]]$cov))
+      }
+    }
+    
     names(pred_list) <- .self$Y_names
     mean_pred <- do.call(cbind, lapply(pred_list, function(l) l$mean))
     trend_pred <- do.call(cbind, lapply(pred_list, function(l) l$trend))
