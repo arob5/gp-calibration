@@ -909,7 +909,7 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
                                      itr_stop=NULL, test_labels=NULL, 
                                      param_types=NULL, param_names=NULL, 
                                      subset_samp=TRUE, format_long=FALSE, 
-                                     interval_probs=seq(.1,1,.1)) {
+                                     interval_probs=NULL) {
   # Currently just computes sample meana/variances for the selected 
   # parameters/variables in `samp_dt`, as well as credible intervals.
   # Note: by default averages across chains. Can be changed by manually setting
@@ -932,7 +932,11 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
   #                   intervals will be computed.
   #
   # Returns:
-  #    data.table, as returned by `agg_dt_by_func_list()`.
+  # list, with elements "par_stats" and "cred_intervals". The first contains
+  # means/variances as returned by `agg_dt_by_func_list()` while the second
+  # contains marginal credible intervals, as returned by `compute_cred_intervals`.
+  
+  if(is.null(interval_probs)) interval_probs <- seq(.1,1,.1)
   
   # Select rows and columns `samp_dt` required for computing metrics. 
   if(subset_samp) {
@@ -962,15 +966,7 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
                                            format_long=format_long,
                                            subset_samp=FALSE)
   
-  if(format_long) {
-    samp_dt_agg <- data.table::rbindlist(list(samp_dt_agg, cred_intervals),
-                                         use.names=TRUE)
-  } else {
-    samp_dt_agg <- data.table::merge.data.table(samp_dt_agg, cred_intervals,
-                                                by=group_cols)
-  }
-  
-  return(samp_dt_agg)
+  return(list(par_stats=samp_dt_agg, cred_intervals=cred_intervals))
 }
 
 

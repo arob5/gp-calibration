@@ -261,7 +261,8 @@ get_samp_dt_reps <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag
 
 
 get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag, 
-                                 design_tag, only_valid=TRUE, format_long=FALSE) {
+                                 design_tag, only_valid=TRUE, format_long=FALSE,
+                                 interval_probs=NULL) {
   # This is similar to `get_samp_dt_reps()`, but here each MCMC run is 
   # aggregated after it is loaded, producing one-dimensional summaries of each
   # variable. Currently, this includes mean, variance, and coverage. If such 
@@ -270,7 +271,6 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
   #
   # TODO:
   # 1.) add support for using chain weights.
-  # 2.) add support for computing coverage at different coverage levels.
   
   # Define grouping columns for aggregation.
   group_cols <- c("test_label", "param_type", "param_name")
@@ -283,10 +283,12 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
   mcmc_tag_dir <- file.path(experiment_dir, paste0("round", round), "mcmc",
                             mcmc_tag)
   
-  # Read MCMC samples, and subset chains/itrs based on `mcmc_ids`.
-  dt_list <- vector(mode="list", length=length(mcmc_ids))
+  # Separate data.tables will store means/vars and marginal credible intervals.
+  stats_list <- vector(mode="list", length=length(mcmc_ids))
+  cred_interval_list <- vector(mode="list", length=length(mcmc_ids))
   
-  for(i in seq_along(dt_list)) {
+  # Read MCMC samples, and subset chains/itrs based on `mcmc_ids`.
+  for(i in seq_along(stats_list)) {
     
     # Read samples from run.
     id <- mcmc_ids[i]
@@ -302,17 +304,27 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
     }
     
     # Compute univariate aggregate statistics (mean, variance).
-    samp_dt <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
-                                        format_long=format_long,
-                                        group_cols=group_cols)
+    stat_info <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
+                                          format_long=format_long,
+                                          group_cols=group_cols,
+                                          interval_probs=interval_probs)
     
-    # Attach design ID.
-    samp_dt[, rep_id := design_id]
-    dt_list[[i]] <- samp_dt
+    # Means/variances.
+    par_stats <- stat_info$par_stats
+    par_stats[, rep_id := design_id]
+    stats_list[[i]] <- par_stats
+    
+    # Marginal credible intervals.
+    cred_intervals <- stat_info$cred_intervals
+    cred_intervals[, rep_id := design_id]
+    cred_interval_list[[i]] <- cred_intervals
   }
   
-  samp_dt_reps <- rbindlist(dt_list, use.names=TRUE)
-  return(list(samp=samp_dt_reps, ids=mcmc_id_dt))
+  par_stats_dt <- rbindlist(stats_list, use.names=TRUE)
+  cred_intervals_dt <- rbindlist(cred_interval_list, use.names=TRUE)
+  
+  return(list(par_stats=par_stats_dt, cred_intervals=cred_intervals_dt,
+              ids=mcmc_id_dt))
 }
 
 

@@ -109,14 +109,19 @@ mcmc_list <- run_mcmc(inv_prob$llik_obj, inv_prob$par_prior, mcmc_settings)
 samp_dt <- mcmc_list$samp
 mcmc_metadata <- mcmc_list$output_list
 
-# Attach prior samples.
-prior_samp <- sample_prior(inv_prob$par_prior, n=n_samp_prior)
-samp_dt <- append_samples_mat(samp_dt, prior_samp, param_type="par", 
-                              test_label="prior")
-
 # Save to file.
-fwrite(samp_dt, file=file.path(out_dir, "samp_exact.csv"))
+fwrite(samp_dt, file=file.path(out_dir, "samp_exact_raw.csv"))
 saveRDS(mcmc_metadata, file=file.path(out_dir, "samp_exact_metadata.rds"))
+
+# Drop burn-in and save to file.
+samp_dt <- select_mcmc_itr(samp_dt, itr_start=burn_in_start)
+fwrite(samp_dt, file=file.path(out_dir, "samp_exact.csv"))
+
+# Save prior samples.
+prior_samp <- sample_prior(inv_prob$par_prior, n=n_samp_prior)
+prior_samp_dt <- format_samples_mat(prior_samp, param_type="par", 
+                                    test_label="prior", chain_idx=1L)
+fwrite(prior_samp_dt, file=file.path(out_dir, "prior_samp.csv"))
 
 # ------------------------------------------------------------------------------
 # Construct validation test points.
@@ -127,12 +132,9 @@ test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_pri
 saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.rds"))
 
 # Validation inputs sub-sampled from true posterior.
-exact_mcmc_samp <- select_mcmc_samp_mat(samp_dt, test_label="exact",
-                                        param_type="par", itr_start=burn_in_start)
-
 test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
-                                       design_candidates=exact_mcmc_samp)
+                                       design_candidates=samp_dt)
 saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))
 
 
@@ -141,25 +143,17 @@ saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))
 #    - Used to to compare to approximations when evaluating approximate methods.
 # ------------------------------------------------------------------------------
 
-# Restrict to posterior samples and drop burn-in.
-samp_dt <- select_mcmc_samp(samp_dt, test_labels="exact", 
-                            itr_start=burn_in_start)
-
 # Compute univariate (i.e., parameter-by-parameter) statistics.
 stats_univariate <- compute_mcmc_param_stats(samp_dt, subset_samp=FALSE, 
                                              format_long=FALSE,
                                              group_cols=c("test_label", "param_type", "param_name"))
-fwrite(stats_univariate, file.path(out_dir, "mcmc_exact_stats_univariate.csv"))
+saveRDS(stats_univariate, file.path(out_dir, "mcmc_exact_stats_univariate.rds"))
 
 # Compute multivariate statistics (posterior mean and covariance).
 stats_multivariate <- compute_mcmc_param_stats_multivariate(samp_dt, 
                                                             by_chain=FALSE,
                                                             param_names=inv_prob$par_names)
 saveRDS(stats_multivariate, file.path(out_dir, "mcmc_exact_stats_multivariate.rds"))
-
-
-
-
 
 
 
