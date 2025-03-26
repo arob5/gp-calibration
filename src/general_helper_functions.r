@@ -64,14 +64,14 @@ log_exp_minus_1 <- function(x, threshold=100) {
 
 
 log_diff_exp <- function(x, y, threshold=100) {
-  # A numerically stable implementation of log{e^x - e^y}. The expression
-  # is computed using:
-  # log{e^x - e^y} = log{e^y * [e^{x-y} - 1]} = b + log{e^{x-y} - 1} = b + log_exp_minus_1(x-y).
+  # A numerically stable implementation of log{e^x - e^y}, where x >= y.
+  # The expression is computed using:
+  # log{e^x - e^y} = log{e^y * [e^{x-y} - 1]} = y + log{e^{x-y} - 1} = y + log_exp_minus_1(x-y).
   # When `x`, `y` are numeric vectors of length greater than 1, or matrices, then the computation 
   # is vectorized (computed elementwise).
   #
-  # NOTE: currently this is only valid if `x - y > 0`, otherwise the second
-  #       term in the above formula will involve a log of a negative number.
+  # NOTE: This is only valid if `x - y > 0`; otherwise will be trying to take
+  #       the log of a negative.
   #
   # Args:
   #    x,y: numeric vectors or matrices, of equal length/dimensions. 
@@ -86,7 +86,7 @@ log_diff_exp <- function(x, y, threshold=100) {
   else if(is.matrix(x)) assert_that(all(dim(x) == dim(y)))
   else stop("Unsupported class for `x` or `y`.")
   
-  x + log_exp_minus_1(x-y, threshold=threshold)
+  y + log_exp_minus_1(x-y, threshold=threshold)
 }
 
 
