@@ -68,7 +68,10 @@ log_diff_exp <- function(x, y, threshold=100) {
   # is computed using:
   # log{e^x - e^y} = log{e^y * [e^{x-y} - 1]} = b + log{e^{x-y} - 1} = b + log_exp_minus_1(x-y).
   # When `x`, `y` are numeric vectors of length greater than 1, or matrices, then the computation 
-  # is vectorized (computed elementwise). 
+  # is vectorized (computed elementwise).
+  #
+  # NOTE: currently this is only valid if `x - y > 0`, otherwise the second
+  #       term in the above formula will involve a log of a negative number.
   #
   # Args:
   #    x,y: numeric vectors or matrices, of equal length/dimensions. 

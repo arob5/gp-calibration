@@ -1450,13 +1450,19 @@ llikEmulatorGP$methods(
                          return_cov=FALSE, return_cross_cov=FALSE, 
                          input_cross=NULL, conditional=default_conditional, 
                          normalize=default_normalize, include_noise=TRUE, 
-                         log_scale=FALSE, ...) {
+                         log_scale=FALSE, adjustment="truncated", ...) {
     # Likelihood emulator mean/var/cov predictions. For this class (under direct 
     # GP emulation of the log-likelihood), the likelihood emulator is a 
     # log-normal process. Thus, the GP log-likelihood predictions can simply be 
     # transformed to obtain log-normal likelihood predictions. Currently 
     # `return_cross_cov` is not supported. Note that both the GP mean and 
     # variance are required to compute the log-normal mean and/or variance. 
+    
+    if(!is.null(adjustment)) {
+      stop("Adjustments to `llikEmulatorGP$predict_lik()` lognormal distribution ",
+           " are not currently supported for predictive covariances. Truncated and ",
+           " rectified lognormal adjustments are supported on a pointwise basis.")
+    }
     
     if(return_cross_cov) {
       stop("`return_cross_cov` is not yet supported for `llikEmulatorGP$predict_lik()`.")
@@ -1478,7 +1484,8 @@ llikEmulatorGP$methods(
                            var_Gaussian=llik_pred_list$var, 
                            cov_Gaussian=llik_pred_list$cov, 
                            return_mean=return_mean, return_var=return_var, 
-                           return_cov=return_cov, log_scale=log_scale)
+                           return_cov=return_cov, log_scale=log_scale,
+                           adjustment=adjustment)
   }, 
   
   
@@ -1514,7 +1521,7 @@ llikEmulatorGP$methods(
     # defined to be exp(b1) when l(u) < b1, exp(b2) when l(u) > b2, and 
     # exp(l(u)) when b1 <= l(u) <= b2. Computing the rectified expectation 
     # first requires computing the truncated expectation. Note that these 
-    # expectations are not the same as first computed the truncated/rectified
+    # expectations are not the same as first computing the truncated/rectified
     # expectations and then exponentiating. 
     
     if(!(adjustment %in% c("truncated", "rectified", "none"))) {

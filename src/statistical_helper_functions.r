@@ -4,6 +4,8 @@
 #
 # Andrew Roberts
 # 
+# Depends: general_helper_functions.r
+
 # ------------------------------------------------------------------------------
 # Prior Distribution object:
 # At present, prior distributions are encoded by data.frames in which each 
@@ -108,7 +110,7 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   
   if(nrow(Truncated_Gaussian_priors) > 0) {
     lprior <- lprior + sum(sapply(seq(1, nrow(Truncated_Gaussian_priors)), 
-                                  function(i) log(dtruncnorm(Truncated_Gaussian_priors$val[i],                                                                                                    sd = Truncated_Gaussian_priors$param2[i]))))
+                                  function(i) log(dtruncnorm(Truncated_Gaussian_priors$val[i], sd = Truncated_Gaussian_priors$param2[i]))))
   }
   
   return(lprior)  
@@ -249,7 +251,8 @@ truncate_prior <- function(par_prior, input_bounds) {
 convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL, 
                                    cov_Gaussian=NULL, return_mean=TRUE, 
                                    return_var=TRUE, return_cov=FALSE, 
-                                   log_scale=FALSE) {
+                                   log_scale=FALSE, adjustment=NULL,
+                                   bounds=NULL) {
   # Given the mean and either variance or covariance matrix of a Gaussian random 
   # vector X, computes the mean, variance, and covariance of Y := exp(X), which 
   # is log-normally (LN) distributed. Optionally, returns the log of these 
@@ -274,6 +277,24 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
   #    list with the LN computations. Potential list arguments include "mean", 
   #    "var", "cov",  "log_mean", and "log_var". 
                                    
+  if(!is.null(adjustment) && !(adjustment %in% c("truncated", "rectified"))) {
+    stop("`convert_Gaussian_to_LN` only supported truncated or rectified adjustments.")
+  }
+  
+  if(!any(is.finite(bounds))) adjustment <- "none"
+  
+  # Truncated or rectified log-normal. Does not support multivariate - only
+  # pointwise means/variances.
+  if(adjustment == "truncated") {
+    return(convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
+                                        return_var=return_var, bounds=bounds,
+                                        log_scale=log_scale))
+  } else if(adjustment == "rectified") {
+    return(convert_Gaussian_to_rect_LN(mean_Gaussian, var_Gaussian,
+                                       return_var=return_var, bounds=bounds,
+                                       log_scale=log_scale))
+  }
+  
   assert_that(!is.null(var_Gaussian) || !is.null(cov_Gaussian), 
               msg=paste0("Gaussian variance or covariance matrix required to",
                          "compute log-normal moments."))
@@ -304,6 +325,166 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
   
   return(return_list)
                                 
+}
+
+
+convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
+                                         return_var=TRUE, 
+                                         bounds=c(-Inf, Inf), 
+                                         log_scale=FALSE,
+                                         return_intermediate_calcs=FALSE) {
+  # Converts (univariate) Gaussian means and variances to rectified log-normal 
+  # means and  variances. If x ~ N(m, v) then y ~ rect-LN(m, v; b1, b2) with
+  # respect to bounds (b1, b2) if y = exp(b1) when x < b1, y = exp(b2) when 
+  # y = exp(b2) when x > b2, and y = exp(x) when b1 <= x <= b2. Computing the 
+  # rectified  moments first requires computing the truncated log-normal moments. 
+  # Note that these moments are not the same as first computing the 
+  # rectified Gaussian expectations and then exponentiating. Also supports
+  # one-sided bounds, by setting one of the elements in `bounds` to -Inf
+  # of Inf. Vectorized so that `mean_Gaussian` and `var_Gaussian` can be
+  # vectors of equal length; the same bounds will be applied to all entries.
+  # `return_intermediate_calcs` returns intermediate computations that are
+  # used when computing the rectified LN moments; see 
+  # `convert_Gaussian_to_rect_LN`.
+  
+  mean_Gaussian <- drop(mean_Gaussian)
+  var_Gaussian <- drop(var_Gaussian)
+  assert_that(length(mean_Gaussian) == length(var_Gaussian))
+  
+  return_list <- list()
+  
+  # First compute the (untruncated) log-normal mean.
+  ln_moments <- convert_Gaussian_to_LN(mean_Gaussian, var_Gaussian, 
+                                       adjustment=NULL, log_scale=TRUE,
+                                       return_mean=TRUE, return_var=FALSE)
+  
+  # Upper and lower bounds.
+  assert_that(length(bounds) == 2L)
+  b1 <- bounds[1]
+  b2 <- bounds[2]
+  constrain_lower <- is.finite(b1)
+  constrain_upper <- is.finite(b2)
+  
+  if(return_intermediate_calcs) {
+    return_list$constrain_lower <- constrain_lower
+    return_list$constrain_upper <- constrain_upper
+  }
+  
+  # Probabilities involved in moment expressions.
+  prob_leq_upper <- prob_num_upper <- 1
+  if(constrain_upper) {
+    prob_leq_upper <- pnorm(b2, mean_Gaussian, sqrt(var_Gaussian))
+    prob_num_upper <- pnorm(b2, mean_Gaussian + var_Gaussian, sqrt(var_Gaussian))
+  }
+  
+  prob_leq_lower <- prob_num_lower <- 0
+  if(constrain_lower) {
+    prob_leq_lower <- pnorm(b1, mean_Gaussian, sqrt(var_Gaussian))
+    prob_num_lower <- pnorm(b1, mean_Gaussian + var_Gaussian, 
+                            sqrt(var_Gaussian))
+  }
+  
+  if(return_intermediate_calcs) {
+    return_list$prob_leq_upper <- prob_leq_upper
+    return_list$prob_leq_lower <- prob_leq_lower
+  }
+  
+  # Compute truncated LN mean.
+  ln_trunc_mean <- ln_moments$log_mean + log(prob_num_upper-prob_num_lower) -
+                   log(prob_leq_upper - prob_leq_lower)
+  
+  if(log_scale) return_list$log_mean <- ln_trunc_mean
+  else return_list$mean <- exp(ln_trunc_mean)
+  
+  if(!return_var) return(return_list)
+  
+  # Computing (log of) truncated LN second moment: E[y^2].
+  prob_num_upper_y2 <- 1
+  if(constrain_upper) {
+    prob_num_upper_y2 <- pnorm(b2, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian))
+  }
+  
+  prob_num_lower_y2 <- 0
+  if(constrain_lower) {
+    prob_num_lower_y2 <- pnorm(b1, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian))
+  }
+
+  log_Ey2 <- log(prob_num_upper_y2 - prob_num_lower_y2) + 
+             2 * (mean_Gaussian + var_Gaussian) -
+             log(prob_leq_upper - prob_leq_lower)
+    
+  if(return_intermediate_calcs) return_list$log_Ey2 <- log_Ey2
+  
+  # Use mean and second moment to compute variance.
+  ln_trunc_var <- log_diff_exp(log_Ey2, 2*ln_trunc_mean)
+
+  if(log_scale) return_list$log_var <- ln_trunc_var
+  else return_list$var <- exp(ln_trunc_var)
+  
+  return(return_list)
+}
+
+
+convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
+                                        return_var=TRUE,
+                                        bounds=c(-Inf, Inf),
+                                        log_scale=FALSE) {
+  # Converts Gaussian means and variances to truncated log-normal means and 
+  # variances. If x ~ N(m, v) then y ~ trunc-LN(m, v; b1, b2) with respect to
+  # bounds (b1, b2) is the random variable equal in distribution to
+  # exp(x) | b1 <= x <= b2. Note that the truncated LN moments are not the same 
+  # as exponentiating the truncated Gaussian moments. Also supports
+  # one-sided bounds, by setting one of the elements in `bounds` to -Inf
+  # of Inf. Vectorized so that `mean_Gaussian` and `var_Gaussian` can be
+  # vectors of equal length; the same bounds will be applied to all entries.
+  
+  return_list <- list()
+  
+  # First compute truncated moments.
+  ln_trunc <- convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
+                                           return_var=return_var, bounds=bounds, 
+                                           log_scale=TRUE,
+                                           return_intermediate_calcs=TRUE)
+  
+  # Lower and upper bounds (potentially infinite).
+  b1 <- bounds[1]
+  b2 <- bounds[2]
+  
+  # Probabilities for the three pieces of the rectified random variable.
+  prob_upper <- 1 - ln_trunc$prob_leq_upper
+  prob_middle <- 1 - (ln_trunc$prob_leq_lower + prob_upper)
+  
+  # Compute rectified LN mean.
+  log_summands <- cbind(ln_trunc$log_mean + log(prob_middle))
+  if(ln_trunc$constrain_lower) {
+    log_summands <- cbind(log_summands, b1+log(ln_trunc$prob_leq_lower))
+  }
+  if(ln_trunc$constrain_upper) {
+    log_summands <- cbind(log_summands, b2+log(prob_upper))
+  }
+  
+  log_rect_ln_mean <- matrixStats::rowLogSumExps(log_summands)
+  if(log_scale) return_list$log_mean <- log_rect_ln_mean
+  else return_list$mean <- exp(log_rect_ln_mean)
+  
+  if(!return_var) return(return_list)
+  
+  # Computing rectified LN second moment.
+  log_summands_y2 <- cbind(ln_trunc$log_Ey2 + log(prob_middle))
+  if(ln_trunc$constrain_lower) {
+    log_summands_y2 <- cbind(log_summands_y2, 2*b1+log(ln_trunc$prob_leq_lower))
+  }
+  if(ln_trunc$constrain_upper) {
+    log_summands_y2 <- cbind(log_summands_y2, 2*b2+log(prob_upper))
+  }
+  
+  log_rect_Ey2 <- matrixStats::rowLogSumExps(log_summands_y2)
+  log_rect_ln_var <- log_diff_exp(log_rect_Ey2, 2*log_rect_ln_mean)
+
+  if(log_scale) return_list$log_var <- log_rect_ln_var
+  else return_list$var <- exp(log_rect_ln_var)
+
+  return(return_list)
 }
 
 

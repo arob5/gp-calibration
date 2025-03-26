@@ -135,6 +135,7 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   return(sum(drop(pred_cond$var) * weights))
 }
 
+
 acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
   # This function targets exploration for an exponentiated GP. It can be thought 
   # of as an integrated mean squared prediction error criterion for 
