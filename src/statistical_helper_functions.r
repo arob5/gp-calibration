@@ -281,18 +281,20 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
     stop("`convert_Gaussian_to_LN` only supported truncated or rectified adjustments.")
   }
   
-  if(!any(is.finite(bounds))) adjustment <- "none"
+  if(!any(is.finite(bounds))) adjustment <- NULL
   
   # Truncated or rectified log-normal. Does not support multivariate - only
   # pointwise means/variances.
-  if(adjustment == "truncated") {
-    return(convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
-                                        return_var=return_var, bounds=bounds,
-                                        log_scale=log_scale))
-  } else if(adjustment == "rectified") {
-    return(convert_Gaussian_to_rect_LN(mean_Gaussian, var_Gaussian,
-                                       return_var=return_var, bounds=bounds,
-                                       log_scale=log_scale))
+  if(!is.null(adjustment)) {
+    if(adjustment == "truncated") {
+      return(convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
+                                          return_var=return_var, bounds=bounds,
+                                          log_scale=log_scale))
+    } else if(adjustment == "rectified") {
+      return(convert_Gaussian_to_rect_LN(mean_Gaussian, var_Gaussian,
+                                         return_var=return_var, bounds=bounds,
+                                         log_scale=log_scale))
+    }
   }
   
   assert_that(!is.null(var_Gaussian) || !is.null(cov_Gaussian), 

@@ -560,7 +560,7 @@ gpWrapper$methods(
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
                      return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
-                     return_trend=TRUE, adjustment="none", bounds=c(-Inf,Inf), 
+                     return_trend=TRUE, adjustment=NULL, bounds=c(-Inf,Inf), 
                      ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers 
@@ -588,9 +588,9 @@ gpWrapper$methods(
     # Gaussian predictive distribution. Currently supports adjustments "truncated"
     # and "rectified", which transform to truncated and rectified Gaussian 
     # distributions, respectively.
-    
+
     adjustment <- .self$get_dist_adjustment(adjustment, bounds)
-    if((adjustment != "none") && return_cross_cov) {
+    if(!is.null(adjustment) && return_cross_cov) {
       stop("Currently `adjustment` must be 'none' if cross covariances are to be returned.")
     }
     
@@ -850,7 +850,7 @@ gpWrapper$methods(
   
   sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1L, 
                     pred_list=NULL, cov_sqrt_method="chol", 
-                    adjustment="none", bounds=c(-Inf,Inf), ...) {
+                    adjustment=NULL, bounds=c(-Inf,Inf), ...) {
     # If `pred_list` is passed, it should have all the required components. 
     # Returns array of dimension (num input, num samp, Y_dim). The "adjustment"
     # argument can be used to truncate the Gaussian predictive distribution
@@ -882,7 +882,7 @@ gpWrapper$methods(
       samp <- .self$sample_rectified(X_new, use_cov=use_cov, 
                                      include_noise=include_noise, N_samp=N_samp,
                                      pred_list=pred_list, bounds=bounds)
-    } else if(adjustment=="none") {
+    } else if(is.null(adjustment)) {
       samp <- .self$sample_Gaussian(X_new, use_cov=use_cov,
                                     include_noise=include_noise, N_samp=N_samp,
                                     pred_list=pred_list)
@@ -1014,7 +1014,7 @@ gpWrapper$methods(
     stop(err_msg)
   },
   
-  get_dist_adjustment = function(adjustment="none", bounds=c(-Inf,Inf)) {
+  get_dist_adjustment = function(adjustment=NULL, bounds=c(-Inf,Inf)) {
     # This method essentially validates arguments that are used to adjust the 
     # Gaussian predictive distribution of the GPs. Currently, the allowable 
     # adjustments are "truncated" and "rectified", which transform the Gaussian
@@ -1031,16 +1031,19 @@ gpWrapper$methods(
     # character, the adjustment. Typically will be the same as the `adjustment`
     # argument, but may be changed based on argument checking.
     
+    # Currently, both "none" and NULL interpreted as no adjustment.
+    if(is.null(adjustment) || (adjustment == "none")) return(NULL)
+    
     # Check `adjustment` argument.
-    valid_adjustments <- c("none", "truncated", "rectified")
+    valid_adjustments <- c("truncated", "rectified")
     if(!(adjustment %in% valid_adjustments)) {
       message("Distribution adjustment `", adjustment, "` not supported. ",
-              "Setting `adjustment = 'none'`.")
-      return("none")
+              "Setting `adjustment = NULL`.")
+      return(NULL)
     }
     
     # For truncated and rectified adjustments, check the required `bounds`
-    # argument. If `bounds = c(-Inf,Inf)` then set adjustment to "none".
+    # argument. If `bounds = c(-Inf,Inf)` then set adjustment to NULL.
     if(adjustment %in% c("truncated", "rectified")) {
       bounds <- drop(bounds)
       assert_that(length(bounds)==2L, msg=paste0("For truncated/rectified ", 
@@ -1049,11 +1052,10 @@ gpWrapper$methods(
       assert_that(bounds[1] < bounds[2], 
                   msg=paste0("Lower bound must be smaller than upper bound in",
                              "`bounds` argument for distribution adjustment."))
-      if(all(is.infinite(bounds))) return("none")
+      if(all(is.infinite(bounds))) return(NULL)
     }
     
     return(adjustment)
-    
   },
 
   calc_pred_func = function(func, type="pw", X_new=NULL, Y_new=NULL,  

@@ -26,8 +26,11 @@ n_grid <- 500L
 candidate_settings <- list(n_prior=500L, n_mcmc=500L)
 
 # These are additional arguments that will be passed directly to the acquisition
-# functions when they are called.
-acq_args <- list(adjustment="rectified")
+# functions when they are called. We construct a list of such arg lists here,
+# meaning that each "base settings" will be duplicated once per element in this
+# list. This is stemming from the fact that I want to try all acquisitions
+# with no adjustment vs. rectified adjustment.
+acq_args_list <- list(list(adjustment="rectified"), list(adjustment=NULL))
 
 # Create table of settings, one row per a particular acquisition function 
 # setup. The flag `integrated` indicates whether or not evaluation of the 
@@ -61,32 +64,32 @@ l[[3]] <- list(name="llik_IVAR_grid_gp", response_heuristic=NA,
                int_grid_settings=list(n_prior=100L, n_mcmc=400L))
 
 # IVAR, cl-min batch heuristic, prior weights.
-l[[4]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-min",
+l[[4]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_pessimist",
                integrated=TRUE, goal_oriented=FALSE, 
                int_grid_settings=list(n_prior=500L, n_mcmc=0L))
 
 # IVAR, cl-max batch heuristic, prior weights.
-l[[5]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-max",
+l[[5]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_optimist",
                integrated=TRUE, goal_oriented=FALSE, 
                int_grid_settings=list(n_prior=500L, n_mcmc=0L))
 
 # IVAR, cl-min batch heuristic, posterior weights.
-l[[6]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-min",
+l[[6]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_pessimist",
                integrated=TRUE, goal_oriented=TRUE, 
                int_grid_settings=list(n_prior=0L, n_mcmc=500L))
 
 # IVAR, cl-max batch heuristic, posterior weights.
-l[[7]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-max",
+l[[7]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_optimist",
                integrated=TRUE, goal_oriented=TRUE, 
                int_grid_settings=list(n_prior=0L, n_mcmc=500L))
 
 # IVAR, cl-min batch heuristic, prior-posterior mixture weights.
-l[[8]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-min",
+l[[8]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_pessimist",
                integrated=TRUE, goal_oriented=TRUE, 
                int_grid_settings=list(n_prior=100L, n_mcmc=400L))
 
 # IVAR, cl-max batch heuristic, prior-posterior mixture weights.
-l[[9]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl-max",
+l[[9]] <- list(name="llik_IVAR_grid_gp", response_heuristic="cl_optimist",
                integrated=TRUE, goal_oriented=TRUE, 
                int_grid_settings=list(n_prior=100L, n_mcmc=400L))
 
@@ -107,14 +110,22 @@ l[[12]] <- list(name="llik_neg_var_lik", response_heuristic=NA,
 # Add settings applied to all acquisitions.
 #
 
-for(i in seq_along(l)) {
-  l[[i]]$candidate_settings <- candidate_settings
-  l[[i]]$acq_args <- acq_args
+settings_list <- list()
+idx <- 1L
+
+for(acq_args in acq_args_list) {
+  for(i in seq_along(l)) {
+    current_settings <- l[[i]]
+    current_settings$candidate_settings <- candidate_settings
+    current_settings$acq_args <- acq_args
+    settings_list[[idx]] <- current_settings
+    idx <- idx + 1L
+  }
 }
 
 # Save to file.
 dir.create(out_dir, recursive=TRUE)
-saveRDS(l, file.path(out_dir, "acq_settings_list.rds"))
+saveRDS(settings_list, file.path(out_dir, "acq_settings_list.rds"))
 
 
 

@@ -1263,6 +1263,7 @@ llikEmulator$methods(
   } 
 )
 
+
 is_llik_em <- function(model) {
   inherits(model, "llikEmulator")
 }
@@ -1377,7 +1378,7 @@ llikEmulatorGP$methods(
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_noise=TRUE, adjustment="truncated", ...) {
+                             include_noise=TRUE, adjustment="rectified", ...) {
     # Default behavior is to sample from a truncated Gaussian to satisfy 
     # the likelihood bounds.
     
@@ -1396,7 +1397,7 @@ llikEmulatorGP$methods(
   },
   
   sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1L, 
-                    use_cov=FALSE, include_noise=TRUE, adjustment="truncated",
+                    use_cov=FALSE, include_noise=TRUE, adjustment="rectified",
                     conditional=default_conditional, 
                     normalize=default_normalize, ...) {
     # Directly returns the emulator samples, since these are llik samples. 
@@ -1409,7 +1410,7 @@ llikEmulatorGP$methods(
                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
                      input_cross=NULL, conditional=default_conditional, 
                      normalize=default_normalize, include_noise=TRUE, 
-                     adjustment="truncated", ...) {
+                     adjustment="rectified", ...) {
     # Log-likelihood emulator mean/var/cov predictions. Since the GP directly  
     # emulates the log-likelihood, then simply return the GP predictions 
     # directly. The only modification is to flatten the mean/var/cov predictions
@@ -1421,6 +1422,12 @@ llikEmulatorGP$methods(
     #       not applied to the existing predictions. This behavior may change.
     
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
+    
+    # Supports the same adjustments as the underlying GP object. In this case,
+    # rectified/truncated refer to rectified/truncated log-normal, as opposed
+    # to rectified/truncated Gaussian in the GP case.
+    adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
+                                                           bounds=.self$get_llik_bounds())
     
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(.self$get_input(input), 
@@ -1450,7 +1457,7 @@ llikEmulatorGP$methods(
                          return_cov=FALSE, return_cross_cov=FALSE, 
                          input_cross=NULL, conditional=default_conditional, 
                          normalize=default_normalize, include_noise=TRUE, 
-                         log_scale=FALSE, adjustment="truncated", ...) {
+                         log_scale=FALSE, adjustment="rectified", ...) {
     # Likelihood emulator mean/var/cov predictions. For this class (under direct 
     # GP emulation of the log-likelihood), the likelihood emulator is a 
     # log-normal process. Thus, the GP log-likelihood predictions can simply be 
@@ -1458,7 +1465,13 @@ llikEmulatorGP$methods(
     # `return_cross_cov` is not supported. Note that both the GP mean and 
     # variance are required to compute the log-normal mean and/or variance. 
     
-    if(!is.null(adjustment)) {
+    # Supports the same adjustments as the underlying GP object. In this case,
+    # rectified/truncated refer to rectified/truncated log-normal, as opposed
+    # to rectified/truncated Gaussian in the GP case.
+    adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
+                                                           bounds=.self$get_llik_bounds())
+
+    if(!is.null(adjustment) && return_cov) {
       stop("Adjustments to `llikEmulatorGP$predict_lik()` lognormal distribution ",
            " are not currently supported for predictive covariances. Truncated and ",
            " rectified lognormal adjustments are supported on a pointwise basis.")
@@ -1477,7 +1490,8 @@ llikEmulatorGP$methods(
                                       input_cross=input_cross, 
                                       conditional=conditional, 
                                       normalize=normalize, 
-                                      include_noise=include_noise, ...)
+                                      include_noise=include_noise,
+                                      adjustment=NULL, ...)
     }
                                
     convert_Gaussian_to_LN(mean_Gaussian=llik_pred_list$mean, 
@@ -1485,7 +1499,7 @@ llikEmulatorGP$methods(
                            cov_Gaussian=llik_pred_list$cov, 
                            return_mean=return_mean, return_var=return_var, 
                            return_cov=return_cov, log_scale=log_scale,
-                           adjustment=adjustment)
+                           adjustment=adjustment, bounds=.self$get_llik_bounds())
   }, 
   
   
@@ -1494,14 +1508,20 @@ llikEmulatorGP$methods(
                                   conditional=default_conditional,
                                   normalize=default_normalize, 
                                   include_noise=TRUE, log_scale=TRUE, 
-                                  adjustment="truncated", ...) {
+                                  adjustment="rectified", ...) {
     # This method overrides the llikEmulator default for the sole purpose of 
-    # allowing for the predictive mean to be truncated.
+    # allowing for the predictive mean to be truncated/rectified. The plug-in
+    # mean truncated/rectified method means that the GP predictive dist 
+    # is first truncated rectified, and the mean of this dist is then 
+    # exponentiated to obtain the likelihood approximation.
+    
+    adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
+                                                           bounds=.self$get_llik_bounds())
     
     llik_pred_list <- .self$predict(input, em_pred_list=em_pred_list,
                                     return_mean=TRUE, conditional=conditional,
                                     normalize=normalize, adjustment=adjustment,
-                                    ...)
+                                    bounds=.self$get_llik_bounds(), ...)
     
     if(log_scale) return(llik_pred_list$mean)
     return(exp(llik_pred_list$mean))
@@ -1513,7 +1533,7 @@ llikEmulatorGP$methods(
                                       conditional=default_conditional, 
                                       normalize=default_normalize,
                                       include_noise=TRUE, log_scale=TRUE, 
-                                      adjustment="truncated", ...) {
+                                      adjustment="rectified", ...) {
     # For log-likelihood distribution l(u) ~ N(m(u), k(u)) the marginal 
     # approximation is E[exp{l(u)}]. The truncated adjustment is 
     # E[exp{l(u)} | b1 <= l(u) <= b2], where (b1, b2) are the bounds provided 
@@ -1522,75 +1542,19 @@ llikEmulatorGP$methods(
     # exp(l(u)) when b1 <= l(u) <= b2. Computing the rectified expectation 
     # first requires computing the truncated expectation. Note that these 
     # expectations are not the same as first computing the truncated/rectified
-    # expectations and then exponentiating. 
+    # expectations and then exponentiating.
     
-    if(!(adjustment %in% c("truncated", "rectified", "none"))) {
-      message("Unrecognized `adjustment` ", adjustment, ". Setting ",
-              "`adjustment` to 'none'.")
-      adjustment <- "none"
-    }
+    log_mean <- .self$predict_lik(input, lik_par_val=lik_par_val, 
+                                  em_pred_list=em_pred_list, 
+                                  return_mean=TRUE, return_var=FALSE, 
+                                  conditional=default_conditional, 
+                                  normalize=default_normalize, 
+                                  include_noise=include_noise, 
+                                  log_scale=TRUE, 
+                                  adjustment=adjustment, ...)$log_mean
     
-    if(adjustment != "none") {
-      bounds <- .self$get_llik_bounds()
-      if(!any(is.finite(bounds))) adjustment <- "none"
-    }
-    
-    # Start by computing llik predictive moments.
-    pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
-                               em_pred_list=em_pred_list, return_mean=TRUE, 
-                               return_var=TRUE, conditional=default_conditional, 
-                               normalize=default_normalize, 
-                               include_noise=include_noise, 
-                               adjustment="none", ...) 
-
-    # Compute (log) unadjusted marginal approximation. 
-    marg_approx <- .self$predict_lik(input, lik_par_val=lik_par_val, 
-                                     llik_pred_list=pred_list, 
-                                     return_mean=TRUE, return_var=FALSE, 
-                                     conditional=conditional, 
-                                     normalize=normalize, log_scale=TRUE, 
-                                     include_noise=include_noise, 
-                                     adjustment="none", ...)$log_mean
-    
-    # If truncating or rectifying, first compute truncated adjustment.
-    if(adjustment != "none") {
-      b1 <- bounds[1]
-      b2 <- bounds[2]
-      constrain_lower <- is.finite(b1)
-      constrain_upper <- is.finite(b2)
-      
-      prob_leq_upper <- prob_num_upper <- 1
-      if(constrain_upper) {
-        prob_leq_upper <- pnorm(b2, pred_list$mean, sqrt(pred_list$var))
-        prob_num_upper <- pnorm(b2, pred_list$mean+pred_list$var, 
-                                sqrt(pred_list$var))
-      }
-      
-      prob_leq_lower <- prob_num_lower <- 0
-      if(constrain_lower) {
-        prob_leq_lower <- pnorm(b1, pred_list$mean, sqrt(pred_list$var))
-        prob_num_lower <- pnorm(b1, pred_list$mean+pred_list$var, 
-                                sqrt(pred_list$var))
-      }
-        
-      marg_approx <- marg_approx + log(prob_num_upper-prob_num_lower) - 
-                     log(prob_leq_upper - prob_leq_lower)
-    }
-    
-    # If rectifying, make final adjustment.
-    if(adjustment == "rectified") {
-      prob_upper <- 1 - prob_leq_upper
-      prob_middle <- 1 - (prob_leq_lower + prob_upper)
-
-      log_summands <- cbind(marg_approx + log(prob_middle))
-      if(constrain_lower) log_summands <- cbind(log_summands, b1+log(prob_leq_lower))
-      if(constrain_upper) log_summands <- cbind(log_summands, b2+log(prob_upper))
-      
-      marg_approx <- matrixStats::rowLogSumExps(log_summands)
-    }
-    
-    if(log_scale) return(marg_approx)
-    return(exp(marg_approx))
+    if(log_scale) return(log_mean)
+    return(exp(log_mean))
   },
   
   
@@ -1598,14 +1562,27 @@ llikEmulatorGP$methods(
                                       lik_par_val=NULL,
                                       conditional=default_conditional, 
                                       normalize=default_normalize,
-                                      include_noise=TRUE, log_scale=TRUE, ...) {
+                                      include_noise=TRUE, log_scale=TRUE,
+                                      adjustment=NULL, ...) {
     # Deterministic likelihood approximation that is given by the alpha
     # quantile of the likelihood surrogate. Since the likelihood surrogate is 
     # log-normally distributed in this case, this function simply computes the 
     # known expression for a log-normal quantile.
+    #
+    # NOTE: not truncation/rectification currently supported for quantile approx.
+    
+    bounds <- .self$get_llik_bounds()
+    adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
+                                                           bounds=bounds)
+    if(adjustment == "rectified") {
+      stop("`llikEmulatorGP$calc_lik_quantile_approx()` currently only supports ",
+           "truncated adjustment of the log-normal predictive distribution, not ",
+           "the rectified adjustment.")
+    }
     
     assert_that((alpha > 0) && (alpha <=1))
     
+    # First compute mean/variance of GP emulator predictive distribution.
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 
                                              return_var=TRUE, ...)
@@ -1614,10 +1591,25 @@ llikEmulatorGP$methods(
       assert_that(!is.null(em_pred_list$var))
     }
     
-    q <- qnorm(alpha)
-    log_lik_approx <- em_pred_list$mean + q * sqrt(em_pred_list$var)
-    if(log_scale) return(log_lik_approx)
-    return(exp(log_lik_approx))
+    # Compute log-normal or truncated log-normal quantile.
+    if(is.null(adjustment)) {
+      q <- qnorm(alpha)
+      ln_quantiles <- em_pred_list$mean + q * sqrt(em_pred_list$var)
+      if(!log_scale) ln_quantiles <- exp(ln_quantiles)
+    } else if(adjustment == "truncated") {
+      # Note that the bounds in EnvStats::qlnormTrunc are defined on the 
+      # exponentiated scale.
+      ln_quantiles <- EnvStats::qlnormTrunc(alpha, meanlog=em_pred_list$mean,
+                                            sdlog=sqrt(em_pred_list$var),
+                                            min=exp(bounds[1]),
+                                            max=exp(bounds[2]))
+      if(log_scale) ln_quantiles <- log(ln_quantiles)
+    } else {
+      stop("Adjustment `", adjustment, 
+           "` unsupported by llikEmulatorGP$calc_lik_quantile_approx().")
+    }
+    
+    return(ln_quantiles)
   },
   
   

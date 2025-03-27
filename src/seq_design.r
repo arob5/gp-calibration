@@ -194,6 +194,15 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
             " not none. It is not recommended to reoptimize hyperparameters ",
             " using pseudo-observations.")
   }
+  
+  # If using a constant liar heuristic, then the "lie" is set here and will
+  # be constant throughout the whole batch selection process.
+  response_lie <- NULL
+  if(response_heuristic %in% c("cl_optimist", "cl_pessimist")) {
+    response_lie <- get_pseudo_response(input=NA, 
+                                        response_heuristic=response_heuristic, 
+                                        model=model, ...)
+  }
 
   # List that stores optimal acquisition values and other computed quantities
   # as the design loop progresses.
@@ -222,7 +231,8 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
     
     # Acquire function response or pseudo response at acquired input.
     response_new <- get_pseudo_response(input_new, response_heuristic,
-                                        model_copy, true_func, ...)
+                                        model_copy, true_func, 
+                                        response_lie=response_lie, ...)
     responses[i] <- response_new
 
     # Update model. 
@@ -236,7 +246,7 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
   }
   
   return(list(inputs=inputs, responses=responses, tracking_list=tracking_list,
-              updated_model=model_copy))
+              updated_model=model_copy, response_lie=response_lie))
 }
 
 
@@ -302,12 +312,69 @@ minimize_objective_grid <- function(acq_func, model, candidate_grid,
 
 
 get_pseudo_response <- function(input, response_heuristic, model=NULL, 
-                                true_func=NULL, ...) {
+                                true_func=NULL, response_lie=NULL, ...) {
+  # This function is used to either evaluate the true function 
+  # `true_func(input)`, or to return a "lie"; that is, a pseudo-response
+  # instead of the true response. The latter option is used in greedy algorithms
+  # for batch design, where the true function is not evaluated until the whole
+  # batch has been selected. Note that in greedy batch design, the
+  # `response_heuristic` values of NULL and "kb" (kriging believer) imply
+  # that the response value should be updated every iteration. On the other
+  # hand, the constant liar ("cl") methods maintain a constant lie throughout
+  # the batch selection process, in which case this function should only be
+  # called once at the beginning of the process. This is handled by the 
+  # `response_lie` argument; if non-NULL, then this value will be used instead
+  # of computing a new lie.
+  
   if(is.null(response_heuristic)) {
     return(true_func(input))
-  } else {
+  } else if(response_heuristic == "kb") {
     .NotYetImplemented()
+  } else if(response_heuristic %in% c("cl_optimist", "cl_pessimist")) {
+    return(get_constant_liar_response(input, response_heuristic, model, 
+                                      response_lie=response_lie, ...))
   }
+}
+
+
+get_constant_liar_response <- function(input, response_heuristic, model, 
+                                       response_lie=NULL, ...) {
+  # Given a gpWrapper or llikEmulator model, either returns the maximum or 
+  # minimum value of the response found in the current design used by the model.
+  # This is controlled by the value of `response_heuristic`:
+  #   "cl_pessimist": returns the minimum value.
+  #   "cl_optimist": returns the maximum value.
+  # The use of "optimist" and "pessimist" align with the convention of 
+  # maximizing functions, and the fact that larger log-likelihood values are 
+  # considered better. Note that in greedy batch sequential design, the "lie" 
+  # used by the constant liar methods is intended to remain constant throughout
+  # the whole batch selection process; i.e., the lie should be based on current
+  # true responses, not pseudoresponses that are added throughout the batch
+  # selection. This is handled by the `response_lie` argument; if non-NULL, 
+  # then this value will be used instead of computing a new lie.
+  
+  # Non-NULL value is interpreted as a previously fixed lie which should not
+  # be updated.
+  if(!is.null(response_lie)) return(response_lie)
+  
+  # Responses in the current design.
+  if(is_gp(model)) {
+    current_responses <- drop(model$Y)
+  } else if(is_llik_em(model)) {
+    current_responses <- model$get_design_llik(...)
+  } else {
+    stop("`get_constant_liar_response` requires `model` to be gpWrapper or llikEmulator object.")
+  }
+  
+  # Select the "lie". 
+  if(response_heuristic == "cl_optimist") {
+    return(max(current_responses))
+  } else if(response_heuristic == "cl_pessimist") {
+    return(min(current_responses))
+  } else {
+    stop("Invalid constant liar heuristic: ", response_heuristic)
+  }
+  
 }
 
 

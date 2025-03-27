@@ -107,14 +107,28 @@ get_acq_model_response <- function(input, model_response_heuristic,
 #
 # -----------------------------------------------------------------------------
 
-acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), ...) {
+acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
+                          adjustment=NULL, bounds=NULL, ...) {
   # A grid-based (sample sum approximation) of the integrated variance criterion 
   # for GPs (also known as integrated mean squared prediction error). When `input` 
   # is a matrix with more than 1 row, then the acquisition will be computed
   # in batch mode, meaning that it considers conditioning on the entire 
   # batch of inputs. Note that this is different from the function simply 
   # being vectorized across multiple inputs. For the latter, use 
-  # `evaluate_acq_func_vectorized()`. 
+  # `evaluate_acq_func_vectorized()`.
+  #
+  # The `adjustment` argument is passed to `gp$predict()` to perform adjustments
+  # (e.g., truncation, rectification) to the GP predictive distribution. This
+  # typically implies that the variance of the adjusted distribution no longer
+  # has the nice property that it doesn't depend on the model response. Since 
+  # the dependence on the unknown response is through the GP mean,
+  # in these cases a "kriging believer" approximation is made by fixing the 
+  # unknown mean to the current predictive mean. A better approach would be 
+  # marginalizing the unknown mean with respect to current GP predictive
+  # distribution, but this would typically require a Monte Carlo approximation;
+  # for now we use this simple approximation for convenience.
+  # NOTE: we are actually currently setting the pseudoresponse to the mean 
+  # prediction under the adjusted distribution, not the current GP distribution.
   
   # TODO: validate_args_acq_IVAR_grid()
   
@@ -122,14 +136,23 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   if(length(weights)==1L) weights <- rep(weights, N_grid)
   gp_copy <- gp$copy(shallow=FALSE)
   
-  # Condition the GP on the new batch of inputs `input`. Since the conditional variance 
-  # does not depend on the response, the associated batch response is just set to a 
-  # vector of zeros. 
-  pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
+  # Condition the GP on the new batch of inputs `input`. Since the conditional 
+  # variance does not depend on the response, the associated batch response is 
+  # just set to a vector of zeros. If an adjustment is being made, then we 
+  # approximate the response with the GP predictive mean.
+  adjustment <- gp_copy$get_dist_adjustment(adjustment, bounds)
+  if(is.null(adjustment)) {
+    pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
+  } else {
+    pseudo_response <- gp_copy$predict(input, return_var=FALSE, return_trend=FALSE,
+                                       adjustment=adjustment, bounds=bounds, ...)$mean
+  }
+  
   gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
   
   # Evaluate conditional variance at grid points. 
-  pred_cond <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, ...)
+  pred_cond <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, 
+                               adjustment=adjustment, bounds=bounds, ...)
   
   # Return the weighted sum of conditional variances. 
   return(sum(drop(pred_cond$var) * weights))
