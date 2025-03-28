@@ -1,6 +1,9 @@
 #
 # save_acq_func_settings.r
-# Saves acquisition settings list, as used in `emulator_seq_design.r`
+# Saves acquisition settings list, as used in `emulator_seq_design.r`. This 
+# list is saved once per experiment, and is saved in the base experiment 
+# directory. The index of the list serves to define the acquisition function
+# IDs that are used throughout the experiment.
 #
 # Andrew Roberts
 #
@@ -8,12 +11,11 @@
 library(data.table)
 
 experiment_tag <- "vsem"
-round <- 2L
 
 # Specify where settings will be saved.
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
-out_dir <- file.path(experiment_dir, paste0("round", round), "design")
+out_dir <- experiment_dir
 
 # Number of grid points for all integrated uncertainty criteria (grid points
 # used to approximate integral over design space). This is not actually stored

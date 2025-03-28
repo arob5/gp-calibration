@@ -217,6 +217,48 @@ get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag,
 }
 
 
+load_samp_mat <- function(experiment_dir, round, mcmc_tag, mcmc_id, 
+                          only_valid=TRUE, n_subsamp=NULL, ...) {
+  # Loads MCMC samples from a single run, which is uniquely identified 
+  # by (roumd, mcmc_tag, mcmc_id) within the given experiment directory.
+  # If `only_valid = TRUE` drops invalid runs/chains/iterations based on the
+  # MCMC preprocessing step. If `n_subsamp` is an integer less than the 
+  # number of valid samples, will return a subsample of the (valid) MCMC
+  # output of size `n_subsamp`.
+  #
+  # NOTE: call to `select_mcmc_samp_mat()` assumes that the samp_dt contains
+  #       only a single param type. 
+  #
+  # TODO: take into account weights when subsampling.
+  
+  mcmc_dir <- file.path(experiment_dir, paste0("round", round), "mcmc")
+  
+  # Load samples.
+  samp_dt <- readRDS(file.path(mcmc_dir, mcmc_tag, mcmc_id, "samp.rds"))$samp
+  
+  # Extract valid samples.
+  if(only_valid) {
+    chain_summary <- fread(file.path(mcmc_dir, "summary_files", "chain_summary.csv"))
+    mcmc_id_curr <- mcmc_id
+    mcmc_tag_curr <- mcmc_tag
+    chain_summary <- chain_summary[(mcmc_id==mcmc_id_curr) & (mcmc_tag==mcmc_tag_curr),
+                                   .(chain_idx, itr_min, itr_max)]
+    samp_dt <- select_itr_by_chain(samp_dt, chain_summary)
+  }
+  
+  # Convert to matrix.
+  samp_mat <- select_mcmc_samp_mat(samp_dt, ...)
+  
+  # Sub-sample.
+  if(!is.null(n_subsamp) && isTRUE(n_subsamp < nrow(samp_mat))) {
+    idcs <- sample(1:nrow(samp_mat), size=n_subsamp, replace=FALSE)
+    samp_mat <- samp_mat[idcs,]
+  }
+  
+  return(samp_mat)
+}
+
+
 get_samp_dt_reps <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
                              only_valid=TRUE) {
   # Loads all MCMC samples found within the given experiment, round, MCMC tag,
@@ -331,15 +373,6 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
 # ------------------------------------------------------------------------------
 # Plotting
 # ------------------------------------------------------------------------------
-
-
-get_coverage_plot_reps <- function() {
-  .NotYetImplemented()
-}
-
-
-
-
 
 
 
