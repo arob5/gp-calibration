@@ -64,30 +64,72 @@
 
 % Introduction 
 \section{Introduction}
-Owing to increases in computing resources [\todo: change this], there is growing interest in performing Bayesian inference 
-in settings where evaluation of the likelihood function incurs significant computational expense. This situation commonly 
-arises across various disciplines in the physical and engineering sciences, whereby evaluating the likelihood 
-implies performing a complex computer simulation; e.g., \citep{ESM_modeling_2pt0}. Such computer models often derive from 
-systems of differential equations, with the goal being to calibrate (i.e., estimate) unknown parameters characterizing the physical model.
+In the modern era, data-driven and mechanistic modeling have become closely intertwined, with hybrid modeling strategies 
+increasingly used to understand and predict the behavior of complex systems. Statistical techniques have become 
+the standard for uncertainty quantification in such contexts, but challenges persist in adapting statistical inference techniques
+to handle the computational burden imposed by expensive computer simulations. 
+Within the Bayesian paradigm, there is thus growing interest in methods of Bayesian computation tailored to settings 
+where evaluation of the likelihood function incurs significant computational expense. 
+This situation commonly arises across various disciplines in the physical and engineering sciences, whereby evaluating 
+the likelihood implies performing a complex computer simulation; e.g., \citep{ESM_modeling_2pt0}. 
+Such computer models often derive from systems of differential equations, with the goal being to calibrate (i.e., estimate) 
+unknown parameters characterizing the physical model.
 To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
 posterior distribution over model parameters while minimizing the number of required likelihood evaluations. 
 A popular class of methods involves replacing either the computer model or the likelihood function with a statistical 
 surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
-The emulator can be trained offline \citep{modularization} using a small set of expensive model runs, which can often be 
-performed in parallel. The exact likelihood is then replaced by the fit surrogate in order to facilitate the application of 
-standard inference schemes such as Markov chain Monte Carlo (MCMC). 
+The surrogate can be trained offline \citep{modularization} using a small set of expensive model runs (often performed in 
+parallel), which can then replace the exact likelihood to facilitate the application of 
+standard inference schemes such as Markov chain Monte Carlo (MCMC).
 
-In the present work we focus on the use of Gaussian processes (GPs; \citet{gpML}) for this task, which have been widely used as 
-emulators in calibrating complex computer codes 
-\citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}. 
-GP predictions come in the form of a probability distribution, implying that 
-the emulator induces a stochastic approximation of the likelihood function. The fact that the surrogate likelihood is a random 
+The present work is focused on the use of \textit{stochastic} emulators to facilitate Bayesian inversion for parameters of interest.
+A probabilistic representation of a surrogate model acknowledges the additional uncertainty introduced by the likelihood 
+approximation. We focus on the questions of how to leverage this uncertainty in (i.) constructing posterior approximations 
+that meaningfully propagate the surrogate uncertainty, and (ii.) designing goal-oriented sequential design (i.e., active learning) 
+algorithms that iteratively refine the surrogate in order to yield maximal improvement in the induced posterior approximation. 
+Probabilistic surrogates may arise when a parametric emulator model is fit using Bayesian methods; in this case the 
+emulator uncertainty may be encoded by a collection of samples summarizing the posterior over the (finite) set of 
+emulator parameters. In an alternative non-parametric approach, the emulator may explicitly model the true likelihood 
+as a random function. Gaussian processes (GPs; \citet{gpML}) are the canonical example of the latter method, and
+have been widely used as emulators in calibrating complex computer codes 
+\citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}. A growing body of research 
+has begun to focus on the use of GP emulators in constructing posterior approximations for Bayesian inverse problems
+\citep{KOH,StuartTeck1,StuartTeck2,VehtariParallelGP,gp_surrogates_random_exploration,quantileApprox,FerEmulation,
+KandasamyActiveLearning2015,CES,Kandasamy_2017,SinsbeckNowak,Surer2023sequential,llikRBF,
+ranjan2016inverse,weightedIVAR,hydrologicalModel,VillaniAdaptiveGP,GP_PDE_priors,random_fwd_models,ActiveLearningMCMC,
+MCMC_GP_proposal,trainDynamics}. 
+The focus on GPs facilitates analytical computations 
+in both the tasks of surrogate-induced posterior approximation and sequential design. Beyond this convenience, the availability of 
+closed-form expressions also allows for improved interpretability. On the other hand, the desire for analytical tractability
+severely limits modeling flexibility. For example, the approaches in many of the references cited above are limited to 
+GP surrogates with fixed hyperparameters, Gaussian likelihoods, or both. Any deviation from these assumptions breaks 
+the analytical tractability enjoyed in this limited setting.
+
+We begin by reviewing the literature focused on GP-induced posterior approximation. A variety of approximations have been 
+proposed across several disciplines; we collect these results here, presenting streamlined derivations aimed at clarifying the 
+assumptions underlying the various approaches. 
+
+\citep{BurknerSurrogate}
+
+
+GP predictions come in the 
+form of a probability distribution, implying that the emulator induces a stochastic approximation of the likelihood function. 
+The fact that the surrogate likelihood is a random 
 function presents both opportunities and challenges. As opposed to a deterministic surrogate, GPs offer the potential to 
 propagate the additional uncertainty introduced due to the likelihood approximation. However, this presents the question
 of defining an adequate posterior approximation that reflects the full GP distribution. This question has gained recent 
 attention, and a wide variety of (mostly ad hoc) approaches have been proposed. We provide a comprehensive review of 
 existing methods and their implications with regards to uncertainty quantification. We then propose a new class of 
-approximate inference algorithms based on noisy modifications of Metropolis-Hastings MCMC schemes.
+approximate inference algorithms based on noisy modifications of Metropolis-Hastings MCMC schemes. Restricting the 
+focus to GP emulators allows for many analytical calculations, which allows for interpretable methods for surrogate 
+uncertainty propagation and sequential design. However, our noisy MCMC framework is well-suited to handle 
+surrogate models with non-Gaussian predictive distributions. 
+
+[\todo: it is probably worth stressing somewhere that the analytical GP results are quite restrictive; e.g., imposing bound 
+constraints, Bayesian treatment of hyperparameters, or the use of more flexible models (e.g., deep GPs) all result
+in the loss of closed-form computations. Motivation to develop methods that only require sampling from the emulator
+predictive distribution. Maybe even worth re-framing the paper in terms of "probabilistic surrogate models" instead of 
+specifically GPs]
 
 As we will demonstrate, the propagation of GP uncertainty depends heavily on which component of the likelihood function 
 is emulated. Existing literature tends to focus on one of two approaches: (i.) emulation of the underlying forward model; and 
@@ -103,8 +145,8 @@ with a focus on proving theoretical posterior consistency results. In \citet{GP_
 for developing emulators for inverse problems derived from PDE models.
 
 The second portion of this article focuses on improving an existing GP surrogate by augmenting the training data 
-with another set of input-output pairs derived from running the expensive simulation at a new set of parameter 
-values. Choosing this new set of parameter values is a question of sequential design, also referred to as active learning.
+using a new set of exact simulation evaluations. Choosing the new set of parameter values at which to evaluate
+the simulator is a question of sequential design, also referred to as active learning.
 Given that the GP is ultimately used to approximate a posterior distribution, various papers have noted the benefit of 
 focusing the model evaluation locations in regions of significant posterior probability 
 \citep{CES,idealizedGCM}. Casting the selection of 
@@ -113,8 +155,7 @@ to target high probability regions, while also acknowledging uncertainty in the 
 (an exploration vs. exploitation tradeoff) \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}. 
 This sequential optimization framework bears close resemblance to related 
 topics such as Bayesian optimization \citep{reviewBayesOpt} and Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios},
- but in this case the goal is to estimate a posterior density.
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, but in this case the goal is to estimate a posterior density.
 We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
 facilitate improved interpretation of the resulting criteria. We also demonstrate that our noisy approximate MCMC 
 schemes pair naturally with a class of acquisition functions derived from Monte Carlo approximations of integrals over the 
@@ -125,6 +166,52 @@ parallel computations.
 While much of the discussion here is agnostic to the specifics of the underlying simulation model, we present applications 
 to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
 using dynamic ecological models of the carbon cycle.
+
+% An Overview of Surrogate modeling in Bayesian inference 
+\section{An Overview of Surrogate Modeling in Bayesian Inference}
+[\todo: note that I drafted the above introduction with a single paper in mind that is part review paper, part our new proposed
+methods. I'm sticking in this section here to provide a more in depth review of past work, with no mention of our proposed
+methods. There is overlap with the intro, but just sticking this here for now.]
+
+\vspace \vspace
+
+In this section, we provide an overview of the typical workflow for Bayesian inference using surrogate models. We note 
+that surrogate models are widely used for tasks other than Bayesian inversion, including optimization, sensitivity analysis, 
+and contour estimation [\todo: add citations]. This review is restricted to settings in which the surrogate is utilized to induce
+an approximation of a Bayesian posterior distribution. 
+
+\subsection{Initial Design}
+We focus on the typical modular \citep{modularization} surrogate modeling workflow, whereby the surrogate model is trained 
+using only a set of forward model input-output pairs. The alternative approach of jointly learning the surrogate and the 
+calibration parameters in a single probabilistic model was considered in the seminal work of Kennedy and O'Hagan \citep{KOH},
+but has generally fallen out of favor owing to the fact that allowing the emulator to be informed by $\obs$ can lead to unintuitive 
+results, and problematic behavior under model misspecification. The first step in the surrogate modeling pipeline is to generate
+a set of input-output pairs by running the forward model at a set of parameter values. We refer to this initial training set as the 
+\textit{initial design}. Crucially, these initial forward model runs can be performed in parallel.
+The initial design inputs are commonly sampled from the prior, often with adjustments to encourage ``space-filling'' 
+behavior (\todo: cite; LHS, Sobol). While such space-filling designs may perform well when one is interested in the behavior of 
+forward model over the entire parameter space, this approach can be problematic given the goal of constructing a surrogate-induced
+posterior approximation. In particular, the posterior distribution may be highly concentrated relative to the posterior
+support, so that designs sampled from the prior may completely miss the region of significant posterior mass. This can result 
+in very poor posterior approximations. The typical remedy is to refine the approximation using multiple rounds of exact model 
+simulations. We discuss such questions of sequential design for surrogate modeling below. Alternatively, one can consider using 
+the initial rounds of computation to construct an initial posterior approximation by other means. Samples from this initial coarse 
+approximation can then be used as part of the initial design to train a likelihood surrogate. 
+
+LHS, EKI/CES, difficulty of posterior concentration.
+
+\subsection{Surrogate Model}
+llik vs fwd model emulation (mention that latter can be viewed as generically as emulating any function of the parameter, on 
+which the likelihood depends). Different model choices (neural network, GP). 
+
+\subsection{Posterior Approximation}
+Different approaches. Large amount of work focused on approximating the likelihood/posterior density. Closed-from expressions for 
+GP llik emulators/closed form expressions for forward model emulators in the context of a additive Gaussian likelihood, common setup
+in the inverse problems literature. Cite new paper on Monte Carlo approximations that are model agnostic.
+
+\subsection{Sequential Design}
+Calibration vs. consistency. Consistency: SUR framework, Youssef MCMC work, Teckentrup work, Sanz-Alonso paper
+
 
 % Setting and Background 
 \section{Setting and Background}
@@ -516,27 +603,38 @@ underlying GP induces a different posterior.
 \footnote{In general, \ref{norm_cst_random_llik} can be defined as a random probability measure. We simplify the 
 discussion by considering the case where almost all sample paths of the log-likelihood emulator induce probability 
 distributions that admit a Lebesgue density.}
+\citet{StuartTeck1} refers to this random representation of the posterior as the \textit{sample-based} approximation. 
 It is worth noting that $\llikEmRdmDens[\Ndesign](\Par)$,
 the unnormalized random density evaluated at an input $\Par$, inherits its randomness only from the scalar random 
 variable $\llikEm(\Par)$. However, its normalized counterpart $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$ depends 
 on the entire (infinite-dimensional) GP distribution through the normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$.
-Given that \ref{post_dens_random_llik} fully incorporates the GP predictive distribution, we consider 
-$\llikEmRdm[\Ndesign]{\postDensNorm}$ to be the baseline posterior approximation to which other methods will
-be compared. Following \citet{StuartTeck1}, we refer to $\llikEmRdm[\Ndesign]{\postDensNorm}$ as the 
-\textit{sample-based} approximation. In theory, inference for the parameters $\Par$ can then be performed 
-by marginalizing the emulator, resulting in the deterministic density
+In theory, inference for the parameters $\Par$ can then be performed by marginalizing the emulator, resulting in the 
+deterministic density
 \begin{align}
 \llikEmSampDensNorm[\Ndesign](\Par)
 &\Def \E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par^\prime) \Exp{\llikEm[\Ndesign](\Par^\prime)} d\Par^\prime} \right].
 \label{samp_dens_norm}
 \end{align}
-Such an approximation is briefly noted in \citet{StuartTeck1} and \citet{VehtariParallelGP}.
-We note that \cref{samp_dens_norm} is only well-defined if almost every realization from the likelihood 
-surrogate induces a valid probability density, a property that will depend on the GP emulator.
-This approximation can be understood from a Monte Carlo perspective, 
-as summarized in \Cref{alg:sample-approx} [\todo: subscript notation indexing samples in algorithm might 
+Given that \ref{samp_dens_norm} fully incorporates the GP predictive distribution, we consider 
+$\llikEmSampDensNorm[\Ndesign]$ to be the baseline posterior approximation to which other methods will
+be compared. Theoretically, this posterior can be sampled via the Monte Carlo procedure summarized in
+\Cref{alg:sample-approx} [\todo: subscript notation indexing samples in algorithm might 
 be a bit confusing given subscript on prior density; maybe change this or just define the algorithm as returning 
-a single sample]. 
+a single sample]. However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm 
+infeasible in practice. Various discretized approximations might be considered, but face challenges scaling beyond a 
+small number of input dimensions. In \citet{trainDynamics}, the authors circumvent this difficulty by sampling the GP
+only at a finite grid of points, and then approximating the trajectory as GP mean, conditional on the sampled values.
+This approach introduces the challenge of choosing the conditioning locations; the authors' suggest sampling the 
+points via a space-filling algorithm confined within the region of parameter space where the GP expects the posterior
+density to be larger. Owing to these difficulties, other work has noted the challenges of implementing \cref{alg:sample-approx}
+in passing, opting to focus on alternative posterior approximation methods \citep{StuartTeck1,VehtariParallelGP}.
+A Monte Carlo approximation of the form \cref{alg:sample-approx} is also proposed in \citet{BurknerSurrogate}, 
+and we borrow their terminology by referring to \cref{samp_dens_norm} as the
+\textit{expected posterior (EP)} approximation. However, the generic framework in \citet{BurknerSurrogate}
+(not specifically tailored to GPs) is focused mainly on marginalizing a finite-dimensional parameter, and therefore 
+offers no solution to difficulty posed by infinite-dimensional likelihood trajectories.
+We note that \cref{samp_dens_norm} is only well-defined if almost every realization from the likelihood 
+surrogate induces a valid probability density, a property that will depend on the GP emulator [\todo: maybe get rid of this sentence or move elsewhere].
 
 \begin{algorithm}
     \caption{Monte Carlo Representation of the Sample-Based Approximation}
@@ -553,11 +651,7 @@ a single sample].
     \end{algorithmic}
 \end{algorithm}
 
-
-However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm infeasible in practice. 
-Various discretized approximations might be considered, but face challenges scaling beyond a small number of 
-input dimensions. Owing to the difficulties of working with the sample-based approximation, common approaches in the 
-literature opt for alternative posterior approximations. Given that the primary difficulties stem from the normalizing constant
+Given that the primary difficulties stem from the normalizing constant
 \ref{norm_cst_random_llik}, the typical approach is to instead focus on approximations of the \textit{unnormalized}
 random density $\llikEmRdm[\Ndesign]{\postDens}$. We discuss such approaches in the following subsection, and 
 propose a new class of GP-induced posterior approximations in \Cref{post_approx_mcmc}. 
@@ -638,7 +732,9 @@ the approximation \ref{post_dens_mean_llik} is also considered but is instead re
 \textit{median approximation}, owing to the fact that the median formula for a log-normal random variable 
 gives $\text{median}(\Exp{\llikEm[\Ndesign](\Par)}) = \Exp{\emMean[\Ndesign]{\fwd}(\Par)}$; 
 i.e., the median of the likelihood emulator yields the same estimator as plugging in the mean of the 
-\textit{log}-likelihood emulator. The approximate posterior $\llikEmMeanDens[\Ndesign]$ can be 
+\textit{log}-likelihood emulator. The same approximation is also discussed in \citet{trainDynamics}, where
+it is called the ``kriging predictor'' method.
+The approximate posterior $\llikEmMeanDens[\Ndesign]$ can be 
 shown to be optimal in an $L^1$ sense \citep{VehtariParallelGP, StuartTeck2}, with the caveat that 
 optimality is only guaranteed with respect to the \textit{unnormalized} density.
 
@@ -936,7 +1032,7 @@ approximation, and thus are agnostic to the particular choice of likelihood.
 [\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
 of distance from $\obs$ to the GP mean prediction].  
 The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
-\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR}.
+\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR, trainDynamics}.
 
 
 % Perspectives on Posteriors Induced by Gaussian Process Surrogates 
@@ -1258,7 +1354,7 @@ The $\maxexpvarLabel$ criterion is numerically studied in \cite{KandasamyActiveL
 It strikes a balance between $\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, 
 rather than only considering $\emKer[\Ndesign]{\llik}(\Par)$. However, it still suffers from the drawbacks associated with
  local uncertainty criteria, as discussed previously. 
- 
+  
  \begin{figure}
      \centering
      \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [fwd]
@@ -1409,6 +1505,7 @@ The analogous integrated conditional variance criterion is then defined by
 \labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
 \int_{\parSpace} \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd})]\weightDens(\Par) d\Par. \label{fwd-int-exp-var}
 \end{equation}
+
 To our knowledge, the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the 
 form \ref{fwd-int-exp-var}. In their presentation, a general perspective is adopted for a generic likelihood and 
 potentially non-Gaussian random field emulator, though the authors briefly note that analytical simplifications 
@@ -1435,13 +1532,12 @@ Then for $\Par \in \parSpace$,
 where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$. 
 \end{prop}
 
-
 \todo: Old, but keeping around for now 
 The problem of GP-based sequential design for Bayesian inverse problems  
 has gained recent attention, and is addressed in 
 \cite{SinsbeckNowak, Surer2023sequential, VehtariParallelGP, briol2017sampling, ranjan2016inverse, 
 	landslideCalibration, KandasamyActiveLearning2015, Kandasamy_2017, wang2018adaptive,   
-	weightedIVAR, quantileApprox, hydrologicalModel, briol2017sampling}. 
+	weightedIVAR, quantileApprox, hydrologicalModel}. 
 [\todo: need to look at the method used in \cite{quantileApprox, hydrologicalModel} more closely.]
 
 The $\maxexpvarLabel$ acquisition is considered in 
