@@ -105,25 +105,28 @@ severely limits modeling flexibility. For example, the approaches in many of the
 GP surrogates with fixed hyperparameters, Gaussian likelihoods, or both. Any deviation from these assumptions breaks 
 the analytical tractability enjoyed in this limited setting.
 
-We begin by reviewing the literature focused on GP-induced posterior approximation. A variety of approximations have been 
-proposed across several disciplines; we collect these results here, presenting streamlined derivations aimed at clarifying the 
-assumptions underlying the various approaches. 
+We begin by reviewing the literature focused on solving Bayesian inverse problems with surrogate models,
+drawing a distinction between two general strategies that are common in the literature: (i.) forward model emulation, whereby
+(some function of) the expensive computer model is approximated by an emulator, and (ii.) log-likelihood emulation, whereby
+the log-likelihood is emulated directly. The latter is a special case of the former, and both approaches ultimately induce an 
+approximation of the likelihood function, and thus the posterior distribution as well. However, it is still useful to make this distinction, 
+as the selection of the target function for emulation has implications for propagating surrogate uncertainty. Moreover, the 
+availability of analytical computations differs across the two strategies. We discuss the relative merits and downsides of each 
+approach, as well as typical use cases.
 
-\citep{BurknerSurrogate}
+We next proceed to review methods of posterior approximation using probabilistic surrogate models. We begin with a thorough 
+review of the GP setting, where a variety of approximations have been proposed across several different literatures; 
+we collect these results here, presenting streamlined derivations aimed at clarifying the assumptions underlying the various 
+approaches. We then proceed to describe generalizations to non-Gaussian stochastic emulators, as well as recent work
+that seeks to develop a framework for posterior approximation that is applicable to generic probabilistic surrogate models.
+Of particular note is the work \citet{BurknerSurrogate}, which investigates several methods that can be viewed as 
+Monte Carlo approximations of approaches that have been utilized in the GP emulation literature. 
+We also discuss [our work], which provides an alternative approach to generate approximate posterior samples using a 
+stochastic surrogate, with the additional benefit of handling the infinite-dimensional non-parametric case.
 
+Finally, we turn to the problem of sequential design for surrogate models with respect to the goal of improving the 
+current posterior approximation.
 
-GP predictions come in the 
-form of a probability distribution, implying that the emulator induces a stochastic approximation of the likelihood function. 
-The fact that the surrogate likelihood is a random 
-function presents both opportunities and challenges. As opposed to a deterministic surrogate, GPs offer the potential to 
-propagate the additional uncertainty introduced due to the likelihood approximation. However, this presents the question
-of defining an adequate posterior approximation that reflects the full GP distribution. This question has gained recent 
-attention, and a wide variety of (mostly ad hoc) approaches have been proposed. We provide a comprehensive review of 
-existing methods and their implications with regards to uncertainty quantification. We then propose a new class of 
-approximate inference algorithms based on noisy modifications of Metropolis-Hastings MCMC schemes. Restricting the 
-focus to GP emulators allows for many analytical calculations, which allows for interpretable methods for surrogate 
-uncertainty propagation and sequential design. However, our noisy MCMC framework is well-suited to handle 
-surrogate models with non-Gaussian predictive distributions. 
 
 [\todo: it is probably worth stressing somewhere that the analytical GP results are quite restrictive; e.g., imposing bound 
 constraints, Bayesian treatment of hyperparameters, or the use of more flexible models (e.g., deep GPs) all result
