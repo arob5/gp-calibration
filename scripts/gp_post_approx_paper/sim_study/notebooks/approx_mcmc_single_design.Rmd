@@ -17,9 +17,10 @@ knitr::opts_chunk$set(echo=FALSE)
 
 # Settings
 experiment_tag <- "vsem"
-design_tag <- file.path("init_emulator", "LHS_250")
-run_id <- "mcmc_round1"
-design_id <- "1035720143"
+mcmc_tag <- "mcmc_round1"
+design_tag <- "LHS_200"
+design_id <- "1008787650"
+em_tag <- "em_llik_quad_mean"
 
 # Burn-in for exact MCMC samples.
 itr_start <- c(exact=150000L)
@@ -30,7 +31,8 @@ itr_start <- c(exact=150000L)
 print(paste0("Experiment tag: ", experiment_tag))
 print(paste0("Design tag: ", design_tag))
 print(paste0("Design ID: ", design_id))
-print(paste0("MCMC Run ID: ", run_id))
+print(paste0("MCMC tag: ", mcmc_tag))
+print(paste0("Emulator tag: ", em_tag))
 ```
 ```{r, echo = FALSE, include = FALSE}
 library(ggplot2)
@@ -42,8 +44,8 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(base_dir, "src")
 experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
 setup_dir <- file.path(experiment_dir, "inv_prob_setup")
-em_dir <- file.path(experiment_dir, "init_emulator")
-mcmc_dir <- file.path(experiment_dir, run_id, design_tag, design_id)
+em_dir <- file.path(experiment_dir, "init_emulator", design_tag, design_id, em_tag)
+mcmc_dir <- file.path(experiment_dir, mcmc_tag, "init_emulator", design_tag, design_id)
 
 # Source files.
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -72,23 +74,15 @@ test_info_prior <- readRDS(file.path(setup_dir, "test_info_prior.rds"))
 test_info_post <- readRDS(file.path(setup_dir, "test_info_post.rds"))
 
 # Read approximate llikEmulator object.
-llik_em <- readRDS(file.path(experiment_dir, design_tag, design_id, "em_llik.rds"))
+llik_em <- readRDS(file.path(em_dir, "em_llik.rds"))
 
 # Read llikEmulator design information.
-design_info <- readRDS(file.path(experiment_dir, design_tag, 
-                                 design_id, "design_info.rds"))
+design_info <- readRDS(file.path(experiment_dir, "init_design", design_tag,
+                                 paste0(design_id, ".rds")))
 
 # Read llikEmulator prediction lists.
-em_pred_list_post <- readRDS(file.path(experiment_dir, design_tag, design_id,
-                                       "em_pred_list_post.rds"))
-em_pred_list_prior <- readRDS(file.path(experiment_dir, design_tag, design_id,
-                                       "em_pred_list_prior.rds"))
-
-# Read llikEmulator validation results.
-em_llik_errs_post <- readRDS(file.path(experiment_dir, design_tag, design_id,
-                                       "em_llik_errs_post.rds"))
-em_llik_errs_prior <- readRDS(file.path(experiment_dir, design_tag, design_id,
-                                       "em_llik_errs_prior.rds"))
+em_pred_list_post <- readRDS(file.path(em_dir, "llik_pred_list_prior.rds"))
+em_pred_list_prior <- readRDS(file.path(em_dir, "llik_pred_list_post.rds"))
 
 # Read exact MCMC samples.
 samp_dt_exact <- fread(file.path(setup_dir, "samp_exact.csv"))
@@ -100,6 +94,8 @@ mcmc_approx_settings <- readRDS(file.path(experiment_dir, "mcmc_approx_settings.
 
 
 ```{r}
+# Burn-in settings for approximate MCMC runs. 
+
 itr_start_approx <- sapply(mcmc_approx_settings, function(l) l$itr_start)
 
 # Burn-ins for each algorithm.
@@ -107,7 +103,6 @@ print("----- Burn-ins -----")
 print(paste0("Exact: ", itr_start))
 print(itr_start_approx)
 ```
-
 
 # Exact MCMC
 ```{r}
@@ -132,7 +127,7 @@ summarize_approx_mcmc <- function(test_label, itr_start=1L, chain_idcs=NULL) {
   print("-----> Initial conditions:")
   print(mcmc_ic)
   print("-----> Number of chains:")
-  print(samp_dt_approx[, .N, by=.(test_label, chain_idx)])
+  print(length(unique(samp_dt_approx$chain_idx)))
   
   # Most algorithms return llik evaluations (or samples), but marginal 
   # acceptance prob chains only return acceptance probability evaluations.
@@ -175,13 +170,13 @@ We start by looking at the approximate posterior defined by plugging in the
 GP mean, ignoring the GP variance.
 
 ```{r}
-summarize_approx_mcmc("mean", itr_start=itr_start_approx)
+summarize_approx_mcmc("mean-rect", itr_start=itr_start_approx)
 ```
 
 # Marginal Posterior
 
 ```{r}
-summarize_approx_mcmc("marginal", itr_start=itr_start_approx)
+summarize_approx_mcmc("marginal-rect", itr_start=itr_start_approx)
 ```
 
 # Quantile Posterior
@@ -213,20 +208,34 @@ summarize_approx_mcmc("quantile9", itr_start=itr_start_approx)
 #                                                       include_interval=FALSE)
 ```
 
-# mcwmh-joint Posterior
+# mcwmh-joint-rect Posterior
 ```{r}
-summarize_approx_mcmc("mcwmh-joint", itr_start=itr_start_approx)
+summarize_approx_mcmc("mcwmh-joint-rect", itr_start=itr_start_approx)
 ```
+
+
+# mcwmh-joint-trunc Posterior
+```{r}
+summarize_approx_mcmc("mcwmh-joint-trunc", itr_start=itr_start_approx)
+```
+
+
 
 # marg-acc-prob-joint Posterior
 ```{r}
 summarize_approx_mcmc("marg-acc-prob-joint", itr_start=itr_start_approx)
 ```
 
-# mcwmh-ind Posterior
+# mcwmh-ind-rect Posterior
 ```{r}
-summarize_approx_mcmc("mcwmh-ind", itr_start=itr_start_approx)
+summarize_approx_mcmc("mcwmh-ind-rect", itr_start=itr_start_approx)
 ```
+
+# mcwmh-ind-trunc Posterior
+```{r}
+summarize_approx_mcmc("mcwmh-ind-trunc", itr_start=itr_start_approx)
+```
+
 
 # marg-acc-prob-ind Posterior
 ```{r}
@@ -237,19 +246,22 @@ summarize_approx_mcmc("marg-acc-prob-ind", itr_start=itr_start_approx)
 # Pseudo-Marginal-independent Posterior
 
 ```{r}
-summarize_approx_mcmc("pm-ind", itr_start=itr_start_approx)
+summarize_approx_mcmc("pm-ind-rect", itr_start=itr_start_approx)
 ```
 
 # Pseudo-Marginal-joint Posterior
 
 ```{r}
-summarize_approx_mcmc("pm-joint", itr_start=itr_start_approx, chain_idcs=2)
+summarize_approx_mcmc("pm-joint-rect", itr_start=itr_start_approx)
 ```
 
+# Pseudo-Marginal-joint Posterior
+
 ```{r}
-test <- run_mcmc_chains("mcmc_gp_acc_prob_approx", llik_em, n_chain=1L,
-                        par_prior=par_prior, par_init=par_init)
+summarize_approx_mcmc("pm-joint-rect", itr_start=itr_start_approx)
 ```
+
+
 
 
 

@@ -40,8 +40,8 @@ identify_model_type <- function(model) {
   # fact that some acquisition functions may not require a model), 
   # but any other class besides these three throws an exception.
   
-  if(inherits(model, "gpWrapper")) return("gp")
-  else if(inherits(model, "llikEmulator")) return("llik_em")
+  if(is_gp(model)) return("gp")
+  else if(is_llik_em(model)) return("llik_em")
   else if(is.null(model)) return(NULL)
   
   stop("Unrecognized model ", model)
@@ -49,6 +49,53 @@ identify_model_type <- function(model) {
 
 is_gp <- function(model) {
   inherits(model, "gpWrapper")
+}
+
+update_model <- function(model, input_new, response_new, 
+                         reoptimize_hyperpar=FALSE, ...) {
+  
+  if(!is.matrix(input_new)) input_new <- matrix(input_new, nrow=1L)
+  n_new_inputs <- nrow(input_new)
+  
+  if(is_gp(model)) {
+    if(!is.matrix(response_new)) response_new <- matrix(response_new, nrow=n_new_inputs)
+    model$update(input_new, response_new, 
+                 update_hyperpar=reoptimize_hyperpar, ...)
+  } else if(is_llik_em(model)) {
+    model$update_emulator(input_new, response_new, 
+                          update_hyperpar=reoptimize_hyperpar, ...)
+  } else if(is.null(model)) {
+    return(model)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
+  
+  return(model)
+}
+
+
+get_model_input_dim <- function(model) {
+  if(is_gp(model)) {
+    return(model$X_dim)
+  } else if(is_llik_em(model)) {
+    return(model$dim_input)
+  } else if(is.null(model)) {
+    return(NULL)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
+}
+
+get_model_input_names <- function(model) {
+  if(is_gp(model)) {
+    return(model$X_names)
+  } else if(is_llik_em(model)) {
+    return(model$input_names)
+  } else if(is.null(model)) {
+    return(NULL)
+  } else {
+    stop("Unrecognized `model`; currently only supports gpWrapper, llikEmulator, and NULL.")
+  }
 }
 
 
@@ -123,6 +170,236 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
   
   assert_that(is.list(model_list))
   lapply(model_list, function(model) compare_acq_funcs(input, acq_func_names, model, ...))
+}
+
+
+run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
+                           response_heuristic=NULL, true_func=NULL, 
+                           reoptimize_hyperpar=FALSE, tracking_settings=NULL, 
+                           candidate_grid=NULL, ...) {
+  # At each iteration, the minimum value of acquisition function is stored 
+  # in the "tracking list". Optionally, users can provide additional settings
+  # in `tracking_settings` that can compute additionally quantities that will be
+  # tracked. These quantities will be computed every `tracking_settings$interval`
+  # iterations. `candidate_grid` is only used when `opt_method = "grid"`; it is 
+  # a matrix containing the finite set of inputs over which the discrete 
+  # optimization is performed.
+ 
+  # Model must inherit from gpWrapper, llikEmulator, or be NULL.
+  identify_model_type(model)
+  if(is.null(model)) stop("At present, NULL model is not supported.")
+  
+  if((response_heuristic != "none") && (reoptimize_hyperpar)) {
+    message("`reoptimize_hyperpar` is TRUE but `model_response_heuristic` is",
+            " not none. It is not recommended to reoptimize hyperparameters ",
+            " using pseudo-observations.")
+  }
+  
+  # If using a constant liar heuristic, then the "lie" is set here and will
+  # be constant throughout the whole batch selection process.
+  response_lie <- NULL
+  if(response_heuristic %in% c("cl_optimist", "cl_pessimist")) {
+    response_lie <- get_pseudo_response(input=NA, 
+                                        response_heuristic=response_heuristic, 
+                                        model=model, ...)
+  }
+
+  # List that stores optimal acquisition values and other computed quantities
+  # as the design loop progresses.
+  tracking_list <- list(acq_val=rep(NA_real_, n_batch),
+                        computed_quantities=list())
+  
+  # Make a copy to avoid modifying the model provided in argument. 
+  model_copy <- model$copy(shallow=FALSE)
+  
+  # Objects to store the acquired inputs and the associated function 
+  # (perhaps pseudo) responses. 
+  input_dim <- get_model_input_dim(model_copy)
+  input_names <- get_model_input_names(model_copy)
+  inputs <- matrix(nrow=n_batch, ncol=input_dim, dimnames=list(NULL, input_names))
+  responses <- rep(NA_real_, n_batch)
+
+  for(i in 1:n_batch) {
+    print(paste0("Iteration: ", i))
+
+    # Acquire new input point.
+    acq_info <- optimize_acq(acq_func_name, model_copy, opt_method, 
+                             candidate_grid=candidate_grid, ...)
+    input_new <- acq_info$input
+    candidate_grid <- acq_info$candidate_grid # NULL if not using grid-based opt.
+    inputs[i,] <- input_new
+    
+    # Acquire function response or pseudo response at acquired input.
+    response_new <- get_pseudo_response(input_new, response_heuristic,
+                                        model_copy, true_func, 
+                                        response_lie=response_lie, ...)
+    responses[i] <- response_new
+
+    # Update model. 
+    model_copy <- update_model(model_copy, input_new, response_new, 
+                               reoptimize_hyperpar, ...)
+    
+    # Update tracking list.
+    tracking_list <- update_tracking_info(tracking_list, model_copy, 
+                                          acq_info$acq_val, i, tracking_settings,
+                                          ...)
+  }
+  
+  return(list(inputs=inputs, responses=responses, tracking_list=tracking_list,
+              updated_model=model_copy, response_lie=response_lie))
+}
+
+
+run_batch_seq_design <- function() {
+  return(.NotYetImplemented())
+}
+
+
+optimize_acq <- function(acq_func_name, model, opt_method, 
+                         candidate_grid=NULL, ...) {
+  # Optimizes an acquisition function. Currently only supports discrete 
+  # optimization over a grid of candidate values.
+  
+  # Define objective function for the optimization. 
+  acq_func <- get(paste0("acq_", acq_func_name))
+  
+  # Dispatch to the correct optimization algorithm. 
+  if(opt_method == "grid") {
+    acq_info <- minimize_objective_grid(acq_func, model=model, 
+                                        candidate_grid=candidate_grid, ...)
+  } else {
+    stop("`opt_method` ", opt_method, " not supported.")
+  }
+  
+  return(acq_info)
+}
+
+
+minimize_objective_grid <- function(acq_func, model, candidate_grid, 
+                                    remove_acquired_point=TRUE, ...) {
+  # Evaluates the acquisition function at each input and then returns 
+  # the input with the minimum acquisition function value. If 
+  # `remove_acquired_point` is TRUE, then the optimal input is removed from 
+  # the candidate set and the updated candidate set is returned. This is 
+  # not strictly necessary for most GP acquisition criteria, as the criteria
+  # will naturally not favor points that the GP is already conditioning on.
+  # However, it is often useful for a couple reasons:
+  #  - It reduces computation in future rounds, as the acquisition function 
+  #    will be evaluated at a smaller candidate set.
+  #  - In the case that an acquisition function does not penalize already 
+  #    acquired points, then this prevents acquiring the same input again.
+
+  if(!is.matrix(candidate_grid)) {
+    stop("`candidate_grid` must be a matrix, with each row containing an input.")
+  }
+  
+  acq_func_evals <- evaluate_acq_func_vectorized(acq_func, 
+                                                 input_mat=candidate_grid, 
+                                                 model=model, ...)
+  argmin_idx <- which.min(acq_func_evals)
+  
+  return_list <- list(input = candidate_grid[argmin_idx,],
+                      acq_val = acq_func_evals[argmin_idx])
+  
+  if(remove_acquired_point) {
+    candidate_grid <- candidate_grid[-argmin_idx,, drop=FALSE]
+  }
+  
+  return_list$candidate_grid <- candidate_grid
+  
+  return(return_list)
+}
+
+
+get_pseudo_response <- function(input, response_heuristic, model=NULL, 
+                                true_func=NULL, response_lie=NULL, ...) {
+  # This function is used to either evaluate the true function 
+  # `true_func(input)`, or to return a "lie"; that is, a pseudo-response
+  # instead of the true response. The latter option is used in greedy algorithms
+  # for batch design, where the true function is not evaluated until the whole
+  # batch has been selected. Note that in greedy batch design, the
+  # `response_heuristic` values of NULL and "kb" (kriging believer) imply
+  # that the response value should be updated every iteration. On the other
+  # hand, the constant liar ("cl") methods maintain a constant lie throughout
+  # the batch selection process, in which case this function should only be
+  # called once at the beginning of the process. This is handled by the 
+  # `response_lie` argument; if non-NULL, then this value will be used instead
+  # of computing a new lie.
+  
+  if(is.null(response_heuristic)) {
+    return(true_func(input))
+  } else if(response_heuristic == "kb") {
+    .NotYetImplemented()
+  } else if(response_heuristic %in% c("cl_optimist", "cl_pessimist")) {
+    return(get_constant_liar_response(input, response_heuristic, model, 
+                                      response_lie=response_lie, ...))
+  }
+}
+
+
+get_constant_liar_response <- function(input, response_heuristic, model, 
+                                       response_lie=NULL, ...) {
+  # Given a gpWrapper or llikEmulator model, either returns the maximum or 
+  # minimum value of the response found in the current design used by the model.
+  # This is controlled by the value of `response_heuristic`:
+  #   "cl_pessimist": returns the minimum value.
+  #   "cl_optimist": returns the maximum value.
+  # The use of "optimist" and "pessimist" align with the convention of 
+  # maximizing functions, and the fact that larger log-likelihood values are 
+  # considered better. Note that in greedy batch sequential design, the "lie" 
+  # used by the constant liar methods is intended to remain constant throughout
+  # the whole batch selection process; i.e., the lie should be based on current
+  # true responses, not pseudoresponses that are added throughout the batch
+  # selection. This is handled by the `response_lie` argument; if non-NULL, 
+  # then this value will be used instead of computing a new lie.
+  
+  # Non-NULL value is interpreted as a previously fixed lie which should not
+  # be updated.
+  if(!is.null(response_lie)) return(response_lie)
+  
+  # Responses in the current design.
+  if(is_gp(model)) {
+    current_responses <- drop(model$Y)
+  } else if(is_llik_em(model)) {
+    current_responses <- model$get_design_llik(...)
+  } else {
+    stop("`get_constant_liar_response` requires `model` to be gpWrapper or llikEmulator object.")
+  }
+  
+  # Select the "lie". 
+  if(response_heuristic == "cl_optimist") {
+    return(max(current_responses))
+  } else if(response_heuristic == "cl_pessimist") {
+    return(min(current_responses))
+  } else {
+    stop("Invalid constant liar heuristic: ", response_heuristic)
+  }
+  
+}
+
+
+update_tracking_info <- function(tracking_list, model, acq_val, itr, 
+                                 tracking_settings=NULL, ...) {
+  # Note that when specifying `tracking_settings$interval`, the first iteration
+  # will be tracked. For example, if the interval is 10 then tracking will
+  # occur at iterations 1, 11, 21, etc.
+  
+  # Store acquisition function value for current iteration.
+  tracking_list$acq_val[itr] <- acq_val
+  
+  # If `tracking_settings` is provided, compute additional quantities.
+  if(is.null(tracking_settings)) return(tracking_list)
+  if(is.null(tracking_settings$func_list)) return(tracking_list)
+  
+  interval <- tracking_settings$interval
+  if(is.null(interval)) interval <- 1L
+  
+  if((itr+interval-1) %% interval == 0) {
+    itr_lbl <- paste0("itr_", itr)
+    tracking_list$computed_quantities[[itr_lbl]] <- lapply(tracking_settings$func_list, function(f) f(model))
+  }
+  
+  return(tracking_list)
 }
 
 
@@ -237,9 +514,54 @@ get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=
 
   # Either `prior_dist_info` or `bounds` must be provided. 
   assert_that(!is.null(prior_dist_info) || !is.null(bounds))
+  if(!is.null(prior_dist_info)) dim_input <- nrow(prior_dist_info)
+  else if(!is.null(bounds)) dim_input <- ncol(bounds)
 
-  # If `prior_dist_info` is NULL, samples points uniformly in the region 
-  # defined by `bounds`.
+  # Generate LHS design on unit hypercube. 
+  X_lhs <- lhs::randomLHS(N_batch, dim_input)
+  
+  # Apply inverse CDF transform using prior distributions.
+  X_lhs <- map_from_uniform(X_lhs, prior_dist_info, bounds)
+  
+  # For 1 dimensional data, optionally order samples in increasing order. 
+  if(order_1d && (dim_input == 1)) X_lhs <- X_lhs[order(X_lhs),,drop=FALSE]
+    
+  colnames(X_lhs) <- rownames(prior_dist_info)
+  return(X_lhs)
+}
+
+
+update_LHS_sample <- function(X, n_batch, prior_dist_info=NULL, bounds=NULL) {
+  # The function lhs::augmentLHS updates an LHS sample in the unit hypercube.
+  # This wrapper function assumes that `X` is a transformed LHS sample, where
+  # the marginals have been transformed to align with the priors in 
+  # `prior_dist_info`. So this function simply undoes this transform, then 
+  # uses lhs::augmentLHS to augment the design, then transforms back. This 
+  # will return a matrix with number of rows equal to `nrow(X) + n_batch`. The
+  # first `nrow(X)` rows of the returned matrix will correspond to `X`, while
+  # the remainder of the rows will constitute the newly sampled points.
+  
+  # First map so that marginals are U(0,1).
+  X_unif <- map_to_uniform(X, prior_dist_info, bounds)
+  
+  # Augment uniform Latin hypercube design.
+  X_unif_new <- lhs::augmentLHS(X_unif, m=n_batch)
+  
+  # Map back to desired marginals.
+  map_from_uniform(X_unif_new, prior_dist_info, bounds)
+}
+
+
+map_from_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
+  # Note that this function relies on the ordering of the columns of X, while
+  # `map_to_uniform` requires the parameter names to be set to the column 
+  # names of `X`.
+
+  # Either `prior_dist_info` or `bounds` must be provided. 
+  assert_that(!is.null(prior_dist_info) || !is.null(bounds))
+  
+  # If `prior_dist_info` is NULL, assumes uniform priors with support determined
+  # by `bounds`.
   if(is.null(prior_dist_info)) {
     prior_dist_info <- data.frame(dist="Uniform", param1=bounds[1,], param2=bounds[2,])
   }
@@ -251,9 +573,6 @@ get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=
   # implied by the prior distributions. For distributions with unbounded support. 
   if(is.null(bounds)) bounds <- matrix(NA, nrow=2, ncol=dim_input)
   
-  # Generate LHS design on unit hypercube. 
-  X_lhs <- lhs::randomLHS(N_batch, dim_input)
-  
   # Apply inverse CDF transform using prior distributions.
   for(j in seq_len(dim_input)) {
     dist_name <- prior_dist_info[j,"dist"]
@@ -262,22 +581,68 @@ get_LHS_sample <- function(N_batch, prior_dist_info=NULL, bounds=NULL, order_1d=
                             max(bounds[1,j], prior_dist_info[j,"param1"]))
       upper_bound <- ifelse(is.na(bounds[2,j]), prior_dist_info[j,"param2"], 
                             min(bounds[2,j], prior_dist_info[j,"param2"]))
-      X_lhs[,j] <- qunif(X_lhs[,j], lower_bound, upper_bound)
+      X[,j] <- qunif(X[,j], lower_bound, upper_bound)
     } else if(dist_name == "Gaussian") {
       lower_bound <- ifelse(is.na(bounds[1,j]), -Inf, bounds[1,j])
       upper_bound <- ifelse(is.na(bounds[2,j]), Inf, bounds[2,j])
-      X_lhs[,j] <- truncnorm::qtruncnorm(X_lhs[,j], a=lower_bound, b=upper_bound, 
-                                         mean=prior_dist_info[j,"param1"], sd=prior_dist_info[j, "param2"])
+      X[,j] <- truncnorm::qtruncnorm(X[,j], a=lower_bound, b=upper_bound, 
+                                     mean=prior_dist_info[j,"param1"], 
+                                     sd=prior_dist_info[j, "param2"])
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }
   }
   
-  # For 1 dimensional data, optionally order samples in increasing order. 
-  if(order_1d && (dim_input == 1)) X_lhs <- X_lhs[order(X_lhs),,drop=FALSE]
-    
-  colnames(X_lhs) <- rownames(prior_dist_info)
-  return(X_lhs)
+  return(X)
+}
+
+
+map_to_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
+  # Given a matrix with rows corresponding to samples, and columns to 
+  # parameters, maps the samples so that each transformed samples has 
+  # uniform(0,1) marginals. The original samples are assumed to be independent
+  # across dimensions. See `get_LHS_sample` for description of how `bounds` is
+  # used. These functions are essentially all defunct, and will be replaced
+  # by a more robust class for encoding probability distributions.
+
+  # Either `prior_dist_info` or `bounds` must be provided. 
+  assert_that(!is.null(prior_dist_info) || !is.null(bounds))
+  
+  # If `prior_dist_info` is NULL, assumes uniform priors with support determined
+  # by `bounds`.
+  if(is.null(prior_dist_info)) {
+    prior_dist_info <- data.frame(dist="Uniform", param1=bounds[1,], param2=bounds[2,])
+  }
+  
+  # The dimension of the input space.
+  dim_input <- ncol(X)
+  
+  # If `bounds` is NULL, set to NA. No bounds will be enforced beyond those
+  # implied by the prior distributions. For distributions with unbounded support. 
+  if(is.null(bounds)) bounds <- matrix(NA, nrow=2, ncol=dim_input)
+  
+  # Apply CDF transform to map to uniform.
+  for(j in seq_len(dim_input)) {
+    par_name <- rownames(prior_dist_info)[j]
+    dist_name <- prior_dist_info[j,"dist"]
+    if(dist_name == "Uniform") {
+      lower_bound <- ifelse(is.na(bounds[1,j]), prior_dist_info[j,"param1"], 
+                            max(bounds[1,j], prior_dist_info[j,"param1"]))
+      upper_bound <- ifelse(is.na(bounds[2,j]), prior_dist_info[j,"param2"], 
+                            min(bounds[2,j], prior_dist_info[j,"param2"]))
+      X[,par_name] <- punif(X[,par_name], lower_bound, upper_bound)
+    } else if(dist_name == "Gaussian") {
+      lower_bound <- ifelse(is.na(bounds[1,j]), -Inf, bounds[1,j])
+      upper_bound <- ifelse(is.na(bounds[2,j]), Inf, bounds[2,j])
+      X[,par_name] <- truncnorm::qtruncnorm(X[,par_name], a=lower_bound, b=upper_bound, 
+                                            mean=prior_dist_info[j,"param1"], 
+                                            sd=prior_dist_info[j, "param2"])
+    } else {
+      stop("Unsupported prior distribution: ", dist_name)
+    }
+  }
+  
+  return(X)
 }
 
 

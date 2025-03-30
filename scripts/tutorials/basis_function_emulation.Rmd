@@ -317,6 +317,3 @@ max_llik_var_idx <- which.max(llik_pred_list$var)
 llik_em$emulator_model$plot_pred(X_new=test_info$input[max_llik_var_idx,,drop=FALSE],
                                  g_func=g)
 ```
-
-
-
