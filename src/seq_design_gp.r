@@ -107,7 +107,7 @@ get_acq_model_response <- function(input, model_response_heuristic,
 #
 # -----------------------------------------------------------------------------
 
-acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
+acq_IVAR_grid <- function(input, gp, grid_points, weights=NULL, 
                           adjustment=NULL, bounds=NULL, ...) {
   # A grid-based (sample sum approximation) of the integrated variance criterion 
   # for GPs (also known as integrated mean squared prediction error). When `input` 
@@ -132,6 +132,10 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points),
   
   # TODO: validate_args_acq_IVAR_grid()
   
+  if(is.null(weights)) {
+    weights <- 1/nrow(grid_points)
+  }
+  
   N_grid <- nrow(grid_points)
   if(length(weights)==1L) weights <- rep(weights, N_grid)
   gp_copy <- gp$copy(shallow=FALSE)
@@ -139,7 +143,8 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points),
   # Condition the GP on the new batch of inputs `input`. Since the conditional 
   # variance does not depend on the response, the associated batch response is 
   # just set to a vector of zeros. If an adjustment is being made, then we 
-  # approximate the response with the GP predictive mean.
+  # approximate the response with the GP predictive mean - a "kriging believer"
+  # type approximation.
   adjustment <- gp_copy$get_dist_adjustment(adjustment, bounds)
   if(is.null(adjustment)) {
     pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
@@ -149,17 +154,17 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points),
   }
   
   gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
-  
+
   # Evaluate conditional variance at grid points. 
-  pred_cond <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, 
-                               adjustment=adjustment, bounds=bounds, ...)
+  pred_var <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, 
+                              adjustment=adjustment, bounds=bounds, ...)$var
   
   # Return the weighted sum of conditional variances. 
-  return(sum(drop(pred_cond$var) * weights))
+  return(sum(drop(pred_var) * weights))
 }
 
 
-acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), log_scale=TRUE, ...) {
+acq_IEVAR_grid <- function(input, gp, grid_points, weights=NULL, log_scale=TRUE, ...) {
   # This function targets exploration for an exponentiated GP. It can be thought 
   # of as an integrated mean squared prediction error criterion for 
   # log-normal processes. The outer integral over the design space is 
@@ -171,9 +176,17 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
   # `evaluate_acq_func_vectorized()`
   
   assert_that(gp$Y_dim==1L)
-  
   log_evar <- gp$calc_expected_exp_cond_var(grid_points, input, log_scale=TRUE, ...)[,1]
-  log_summands <- log_evar + log(weights)
+  
+  if(is.null(weights)) {
+    log_weights <- 0
+  } else {
+    log_weights <- log(weights)
+    if(length(log_weights) == 1L) log_weights <- rep(log_weights, length(log_evar))
+  }
+  
+  
+  log_summands <- log_evar + log_weights
   log_IEVAR <- matrixStats::logSumExp(log_summands)
   
   if(log_scale) return(log_IEVAR)
@@ -181,7 +194,7 @@ acq_IEVAR_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), 
 }
 
 
-acq_IENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), ...) {
+acq_IENT_grid <- function(input, gp, grid_points, weights=NULL, ...) {
   # A grid-based (sample sum approximation) of the integrated conditional entropy 
   # criterion for GPs. When `input` is a matrix with more than 1 row, 
   # then the acquisition will be computed in batch mode,
@@ -189,6 +202,10 @@ acq_IENT_grid <- function(input, gp, grid_points, weights=1/nrow(grid_points), .
   # batch of inputs. Note that this is different from the function simply 
   # being vectorized across multiple inputs. For the latter, use 
   # `evaluate_acq_func_vectorized()`. 
+  
+  if(is.null(weights)) {
+    weights <- 1/nrow(grid_points)
+  }
   
   N_grid <- nrow(grid_points)
   if(length(weights)==1) weights <- rep(weights, N_grid)

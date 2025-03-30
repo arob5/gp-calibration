@@ -1,5 +1,5 @@
 #
-# seq_design.r
+# emulator_seq_design.r
 #
 # This script runs one round of sequential acquisition of design points. It 
 # therefore should only be run for rounds >= 2 (i.e., not the initial design
@@ -65,9 +65,9 @@ library(assertthat)
 library(docopt)
 library(tictoc)
 
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # docopt string for parsing command line arguments.  
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 "Usage:
   test_docopt.r [options]
@@ -82,20 +82,6 @@ Options:
   --n_batch=<n_batch>                       Integer number of points to acquire.
   --acq_id=<acq_id>                         Integer acquisition function ID.
 " -> doc
-
-# ------------------------------------------------------------------------------
-# Settings 
-# ------------------------------------------------------------------------------
-
-seed <- 7534742
-print(paste0("Setting seed: ", seed))
-set.seed(seed)
-
-# Base directory: all paths are relative to this directory.
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
-
-# Directory to source code.
-src_dir <- file.path(base_dir, "src")
 
 # Read command line arguments.
 cmd_args <- docopt(doc)
@@ -112,6 +98,20 @@ print(paste0("mcmc_tag: ", mcmc_tag))
 print(paste0("mcmc_id: ", mcmc_id))
 print(paste0("n_batch: ", n_batch))
 print(paste0("acq_id: ", acq_id))
+
+# ------------------------------------------------------------------------------
+# Settings 
+# ------------------------------------------------------------------------------
+
+seed <- sample.int(.Machine$integer.max, size=1L)
+print(paste0("Setting seed: ", seed))
+set.seed(seed)
+
+# Base directory: all paths are relative to this directory.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+
+# Directory to source code.
+src_dir <- file.path(base_dir, "src")
 
 # Define directories.
 prev_round <- round - 1L
@@ -151,10 +151,10 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design_for_post_approx.r"))
+source(file.path(src_dir, "sim_study_functions.r"))
 
 # Create output directory.
 dir.create(out_dir, recursive=TRUE)
-
 
 # ------------------------------------------------------------------------------
 # Load inverse problem setup and exact MCMC samples.
@@ -205,7 +205,7 @@ print(paste0("Emulator ID: ", em_id))
  
 # Load the emulator.
 base_em_dir <- file.path(experiment_dir, paste0("round", prev_round), "em", em_tag)
-em_path<- file.path(base_em_dir, em_id, "em_llik.rds")
+em_path <- file.path(base_em_dir, em_id, "em_llik.rds")
 print(paste0("Loading emulator from path: ", em_path))
 em_llik <- readRDS(em_path)
 
@@ -345,6 +345,7 @@ args <- list(model=em_llik, n_batch=n_batch, opt_method="grid",
 
 # Append acquisition function settings to function arguments list.
 args$acq_func_name <- acq_settings$name
+args <- c(args, acq_settings$acq_args)
 args$response_heuristic <- acq_settings$response_heuristic
 if(is.na(args$response_heuristic)) args$response_heuristic <- NULL
 
@@ -356,6 +357,7 @@ tictoc_info <- toc()
 # Store additional information to save.
 acq_results$runtime <- tictoc_info$toc - tictoc_info$tic
 acq_results$acq_settings <- acq_settings
+acq_results$seed <- seed
 
 # Save results to file. Files are named by their acquisition ID.
 out_path <- file.path(out_dir, "acq_results.rds")

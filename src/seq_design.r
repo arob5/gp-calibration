@@ -198,7 +198,7 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
   # If using a constant liar heuristic, then the "lie" is set here and will
   # be constant throughout the whole batch selection process.
   response_lie <- NULL
-  if(response_heuristic %in% c("cl_optimist", "cl_pessimist")) {
+  if(isTRUE(response_heuristic %in% c("cl_optimist", "cl_pessimist"))) {
     response_lie <- get_pseudo_response(input=NA, 
                                         response_heuristic=response_heuristic, 
                                         model=model, ...)
@@ -291,6 +291,10 @@ minimize_objective_grid <- function(acq_func, model, candidate_grid,
 
   if(!is.matrix(candidate_grid)) {
     stop("`candidate_grid` must be a matrix, with each row containing an input.")
+  }
+  
+  if(nrow(candidate_grid) < 1L) {
+    stop("No points in `candidate_grid`.")
   }
   
   acq_func_evals <- evaluate_acq_func_vectorized(acq_func, 

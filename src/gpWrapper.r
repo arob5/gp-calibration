@@ -527,6 +527,10 @@ gpWrapper$methods(
                 msg=paste("GP prior not defined. ",
                           "Call `set_gp_prior()` method prior to `fit()`.")) 
     
+    if(.self$gp_is_fit()) {
+      message("GP already fit. Re-fitting using existing training data.")
+    }
+    
     fits_list <- vector(mode="list", length=.self$Y_dim)
     for(i in seq_along(fits_list)) {
       fits_list[[i]] <- .self$fit_package(X_fit=X_train, y_fit=Y_train[,i],
@@ -592,6 +596,11 @@ gpWrapper$methods(
     adjustment <- .self$get_dist_adjustment(adjustment, bounds)
     if(!is.null(adjustment) && return_cross_cov) {
       stop("Currently `adjustment` must be 'none' if cross covariances are to be returned.")
+    }
+    
+    # Adjustments (rectified/truncated) require both mean and variance.
+    if(!is.null(adjustment)) {
+      return_mean <- return_var <- TRUE
     }
     
     # If there is only one input, no covariance computation required.
@@ -670,10 +679,10 @@ gpWrapper$methods(
                       cross_cov=cross_cov_pred, trend=trend_pred)
     
     # Optionally apply transformation to Gaussian predictive distribution.
-    if(adjustment=="truncated") {
+    if(isTRUE(adjustment=="truncated")) {
       pred_list <- .self$convert_Gaussian_to_truncated(pred_list, bounds,
                                                        use_cov=return_cov)
-    } else if(adjustment=="rectified") {
+    } else if(isTRUE(adjustment=="rectified")) {
       pred_list <- .self$convert_Gaussian_to_rectified(pred_list, bounds)
     }
     
@@ -735,16 +744,32 @@ gpWrapper$methods(
                                                             sd=sqrt(pred_list$var[,i]))
         }
       }
-      
+
       # Compute variance.
       if(return_var) {
         if(use_cov) {
           trunc_pred_list$var[,i] <- diag(moments$tvar)
         } else {
-          trunc_pred_list$var[,i] <- truncnorm::vtruncnorm(a=rep(bounds[1], n_input),
-                                                           b=rep(bounds[2], n_input),
-                                                           mean=pred_list$mean[,i],
-                                                           sd=sqrt(pred_list$var[,i]))
+          # Issues can occur when the probability of the Gaussian satisfying 
+          # the bound is near zero. In this case, the truncated Gaussian will
+          # essentially be a point mass on the bound, so we set the truncated
+          # variance to a near-zero value.
+          eps <- sqrt(.Machine$double.eps)
+          prob_upper_satsfied <- pnorm(bounds[2], mean=pred_list$mean[,i],
+                                       sd=sqrt(pred_list$var[,i]))
+          prob_lower_satisfied <- pnorm(bounds[1], mean=pred_list$mean[,i],
+                                        sd=sqrt(pred_list$var[,i]), lower.tail=FALSE)
+          prob_bounds_satisfied <- prob_upper_satsfied - prob_lower_satisfied
+          
+          prob_threshold <- eps
+          small_prob_sel <- (prob_bounds_satisfied < prob_threshold)
+          trunc_pred_list$var[small_prob_sel,i] <- eps
+          
+          # Now compute variance for the remaining inputs.
+          trunc_pred_list$var[!small_prob_sel,i] <- truncnorm::vtruncnorm(a=rep(bounds[1], n_input),
+                                                                          b=rep(bounds[2], n_input),
+                                                                          mean=pred_list$mean[!small_prob_sel,i],
+                                                                          sd=sqrt(pred_list$var[!small_prob_sel,i]))
         }
       }
       
