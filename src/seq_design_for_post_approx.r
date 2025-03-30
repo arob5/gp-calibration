@@ -245,7 +245,12 @@ acq_llik_neg_var_gp <- function(input, llik_em, ...) {
   # negated here.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_var(input, llik_em$emulator_model, ...)
+
+  args <- c(list(...), 
+            list(input=input, gp=llik_em$emulator_model, 
+                 bounds=llik_em$get_llik_bounds()))
+  
+  do.call(acq_neg_var, args)
 }
 
 
@@ -259,21 +264,11 @@ acq_llik_neg_entropy_gp <- function(input, llik_em, ...) {
   # negated here.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_entropy(input, llik_em$emulator_model, ...)
-}
-
-
-acq_llik_neg_var_gp <- function(input, llik_em, ...) {
-  # Defined for `llik_em` objects that depend on an underlying Gaussian 
-  # process (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. 
-  # Simply returns the negative predictive variance of this underlying 
-  # GP at the input point `input`. The negative is due to the fact that 
-  # the framework assumes that acquisition functions are always minimized,  
-  # so to implement the "maximum variance" acquisition it must be 
-  # negated here.
   
-  assert_that(is_gp(llik_em$emulator_model))
-  acq_neg_var(input, llik_em$emulator_model, ...)
+  args <- c(list(...), 
+            list(input=input, gp=llik_em$emulator_model, 
+                 bounds=llik_em$get_llik_bounds()))
+  do.call(acq_neg_entropy, args)
 }
 
 
@@ -289,8 +284,7 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
 }
 
 
-acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, 
-                                  weights=1/nrow(grid_points), ...) {
+acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=NULL, ...) {
   # Defined for `llik_em` objects that depend on an underlying Gaussian process 
   # (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates 
   # the standard integrated variance (i.e., integrated mean squared 
@@ -298,22 +292,29 @@ acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points,
   # sum at inputs `grid_points`.
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_IVAR_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, 
-                weights=weights, ...)
+  
+  args <- c(list(...), 
+            list(input=input, gp=llik_em$emulator_model, grid_points=grid_points, 
+                 weights=weights, bounds=llik_em$get_llik_bounds()))
+  do.call(acq_IVAR_grid, args)
 }
 
 
-acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), ...) {
+acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=NULL, ...) {
   # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); 
   # i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the integrated 
   # entropy criterion by approximating the integral with a descrete sum at inouts `grid_points`. 
   
   assert_that(is_gp(llik_em$emulator_model))
-  acq_IENT_grid(input, gp=llik_em$emulator_model, grid_points=grid_points, weights=weights, ...)
+  
+  args <- c(list(...), 
+            list(input=input, gp=llik_em$emulator_model, grid_points=grid_points, 
+                 weights=weights, bounds=llik_em$get_llik_bounds()))
+  do.call(acq_IENT_grid, args)
 }
 
 
-acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=1/nrow(grid_points), 
+acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL, 
                                 log_scale=TRUE, plugin=FALSE, ...) {
   # Approximates the integrated expected variance criterion for a random likelihood induced 
   # by a log-likelihood emulator. The integral approximation is obtained via a discretization
@@ -328,8 +329,17 @@ acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=1/nrow(grid
   # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
   # with a discrete sum at inputs `grid_points`.
 
-  log_evar <- llik_em$calc_expected_lik_cond_var(grid_points, input, log_scale=TRUE, plugin=plugin, ...)
-  log_summands <- log_evar + log(weights)
+  log_evar <- llik_em$calc_expected_lik_cond_var(grid_points, input, log_scale=TRUE, 
+                                                 plugin=plugin, ...)
+  
+  if(is.null(weights)) {
+    log_weights <- 0
+  } else {
+    log_weights <- log(weights)
+    if(length(log_weights) == 1L) log_weights <- rep(log_weights, length(log_evar))
+  }
+  
+  log_summands <- log_evar + log_weights
   log_IEVAR <- matrixStats::logSumExp(log_summands)
   
   if(log_scale) return(log_IEVAR)
