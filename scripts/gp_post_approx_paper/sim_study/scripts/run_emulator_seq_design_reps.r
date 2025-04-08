@@ -59,28 +59,13 @@ em_dir_prev <- file.path(prev_round_dir, "em")
 # Extract set of MCMC Tag/ID combinations.
 # ------------------------------------------------------------------------------
 
-# Restrict to specified em tag and design tag.
-em_id_map <- fread(file.path(em_dir_prev, em_tag_prev, "id_map.csv"))
-em_id_map <- em_id_map[design_tag==design_tag_prev]
-
-id_map <- NULL
-
-for(mcmc_tag in mcmc_tags_prev) {
-  print(mcmc_tag)
-  
-  mcmc_id_map <- fread(file.path(mcmc_dir_prev, mcmc_tag, "id_map.csv"))
-  mcmc_id_map <- mcmc_id_map[em_tag==em_tag_prev]
-  mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, em_id_map, by="em_id",
-                                              all=FALSE)
-  mcmc_id_map[, mcmc_tag := mcmc_tag]
-  
-  if(is.null(id_map)) id_map <- copy(mcmc_id_map)
-  else id_map <- rbindlist(list(id_map, mcmc_id_map), use.names=TRUE)
-}
+id_map <- get_mcmc_rep_ids(experiment_dir, round, mcmc_tags_prev, 
+                           design_tag_prev, em_tag_prev)
 
 print(paste0("Number of MCMC runs selected: ", nrow(id_map)))
 print(paste0("Number of acquisitions specified: ", length(unlist(acq_ids))))
-print(paste0("Total number of job submissions required: ", nrow(id_map) * length(unlist(acq_ids))))
+print(paste0("Total number of job submissions required: ", 
+             nrow(id_map) * length(unlist(acq_ids))))
 
 
 # ------------------------------------------------------------------------------

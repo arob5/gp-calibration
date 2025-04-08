@@ -272,7 +272,7 @@ acq_llik_neg_entropy_gp <- function(input, llik_em, ...) {
 }
 
 
-acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
+acq_llik_neg_var_lik <- function(input, llik_em, ...) {
   # Defined for `llik_em` objects that have the method `predict_lik()` 
   # implemented with  the option to return the variance of the likelihood
   # emulator. This function returns the negative variance of the induced 
@@ -280,7 +280,7 @@ acq_llik_neg_var_lik <- function(input, llik_em, log_scale=TRUE, ...) {
   # inputs `input`. If `log_scale` is TRUE (the default), then the 
   # negative of the log of the variance is returned. 
   -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, 
-                       log_scale=log_scale, ...)$log_var  
+                       log_scale=TRUE, ...)$log_var  
 }
 
 

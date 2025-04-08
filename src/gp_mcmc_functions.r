@@ -749,7 +749,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
                             lik_par_init=NULL, lik_par_prior=NULL, 
                             estimate_cov=FALSE, n_samp_cov_est=100L, 
                             try_parallel=TRUE, n_cores=NULL, package_list=NULL, 
-                            dll_list=NULL, obj_list=NULL, test_label="default_lbl", 
+                            dll_list=NULL, test_label="default_lbl", 
                             ic_settings=list(), n_itr=50000L, itr_start=1L, ...) {
   # Provides the main interface/entrypoint for running MCMC with llikEmulator
   # objects. This wrapper function runs multiple MCMC chains in parallel. There
@@ -822,30 +822,49 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
     par_init_list <- lapply(1:n_chain, function(i) NULL)
   }
   
+  
+  # Set up MCMC function as a function of the initial condition.
+  mcmc_func <- get(mcmc_func_name)
+  dots_list <- list(...)
+
+  mcmc_func_ic <- function(ic) {
+    do.call(mcmc_func, c(list(llik_em=llik_em, par_prior=par_prior,
+                              par_init=ic, n_itr=n_itr), dots_list))
+  }
+  
+  # Prepare for parallel run. 
+  if(try_parallel) {
+    if(is.null(n_cores)) {
+      n_cores <- parallel::detectCores()
+    } else {
+      n_cores <- min(n_cores, parallel::detectCores())
+    }
+    n_cores <- min(n_chain, n_cores)
+    cl <- parallel::makeCluster(n_cores)
+
+    # Need to ensure that these functions are available to parallel workers.
+    # Extra care needs to be taken given that the function being executed
+    # is a closure.
+    parallel::clusterExport(cl, varlist=c("mcmc_func_ic", "mcmc_func"), 
+                            envir=environment())
+
+    # TODO: this is a temporary hack. Reference class methods will not be 
+    # available to parallel workers unless the class definitions are explicitly
+    # exported to each worker. The `llik_em` object must be re-exported after
+    # this is done. For now I'm just hardcoding the paths here for a speedy fix;
+    # ultimately, there should either be an option for users to pass in these
+    # paths or, better yet, re-implement these classes as R6 classes.
+    parallel::clusterEvalQ(cl, source("/projectnb/dietzelab/arober/gp-calibration/src/llikEmulator.r"))
+    parallel::clusterEvalQ(cl, source("/projectnb/dietzelab/arober/gp-calibration/src/gpWrapper.r"))
+    parallel::clusterExport(cl, varlist="llik_em", envir=environment())
+  }
+  
   mcmc_chain_list <- tryCatch({
-    # Set up MCMC function as a function of the initial condition.
-    mcmc_func <- get(mcmc_func_name)
-    mcmc_func_ic <- function(ic) mcmc_func(llik_em=llik_em,
-                                           par_prior=par_prior,
-                                           par_init=ic, n_itr=n_itr, ...)
-    
     if(try_parallel) {
-      # Prepare for parallel run. 
-      if(is.null(n_cores)) {
-        n_cores <- parallel::detectCores()
-      } else {
-        n_cores <- min(n_cores, parallel::detectCores())
-      }
-      n_cores <- min(n_chain, n_cores)
-      cl <- parallel::makeCluster(n_cores)
-      
-      # Ensure required packages, objects, and DLLs will be available during the 
-      # parallel execution.
-      export_list <- get_parallel_exports(package_list, dll_list, obj_list)
-      parallel::clusterCall(cl, export_list$load_func, export_list$packages, 
-                            export_list$dlls)
-      parallel::clusterExport(cl, varlist=export_list$objects)
-      mcmc_chain_list <- parallel::parLapply(cl=cl, X=par_init_list, fun=mcmc_func_ic)
+      mcmc_chain_list <- run_parlapply(cl, par_init_list, mcmc_func_ic,
+                                       package_list=package_list,
+                                       dll_list=dll_list, include_global=TRUE)
+      parallel::stopCluster(cl)
     } else {
       mcmc_chain_list <- lapply(par_init_list, mcmc_func_ic)
     }
@@ -855,8 +874,6 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
     err_list <- list(err=cond)
     if(exists("mcmc_chain_list")) err_list$partial_output <- mcmc_chain_list
     return(err_list)
-  }, finally = {
-    if(try_parallel) try(parallel::stopCluster(cl))
   })
   
   if(isTRUE("err" %in% names(mcmc_chain_list))) return(mcmc_chain_list)
@@ -964,7 +981,47 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
 }
 
 
-get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL) {
+run_parlapply <- function(cl, X, fun, package_list=NULL, dll_list=NULL, 
+                          envir=parent.frame(), include_global=TRUE) {
+  # A wrapper around `parallel::parLapply()` that automates the exporting 
+  # of packages, dynamically linked libraries (DLLs), and objects so that they
+  # are available to the parallel workers. By default, exports objects from the
+  # calling environment, and also objects in the global environment if
+  # `include_global = TRUE`.
+  #
+  # At present, loads all objects in both calling scope and global environment.
+  # This is very inefficient in cases where the function being executed only
+  # depends on a small subset of the total objects. Should eventually 
+  # add a `obj_list` argument that allows the user to manually pass in the 
+  # required objects.
+
+  # Export required packages, dynamically-linked libraries, and objects.
+  export_list <- get_parallel_exports(package_list, dll_list, envir=envir)
+
+  # Export packages/DLLs.
+  parallel::clusterCall(cl, export_list$load_func, export_list$packages,
+                        export_list$dlls)
+  
+  # Export objects in local and global environments.
+  local_objects <-  export_list$objects$local
+  global_objects <- export_list$objects$global
+  
+  if(!is.null(local_objects)) {
+    parallel::clusterExport(cl, varlist=local_objects, envir=envir)
+  }
+  if(!is.null(global_objects)) {
+    parallel::clusterExport(cl, varlist=export_list$objects$global,
+                            envir=.GlobalEnv)
+  }
+  parallel::clusterExport(cl, varlist="fun", envir=environment())
+
+  # Run parallel lappy.
+  parallel::parLapply(cl=cl, X=X, fun=fun)
+}
+
+
+get_parallel_exports <- function(package_list=NULL, dll_list=NULL,
+                                 envir=parent.frame(), include_global=TRUE) {
   # In using `parallel` apply functions, objects and packages must explicitly 
   # be made available in the cluster environment. This function returns lists 
   # containing R objects, packages, and dynamic-linked libraries (DLLs) that 
@@ -976,8 +1033,15 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
   # global environment. This can be wasteful when the function being executed 
   # in parallel only relies on a small subset of these. The arguments of this 
   # function can thus explicitly pass the objects to include when the 
-  # dependencies of the function are explicitly known. 
+  # dependencies of the function are explicitly known.
   #
+  # `envir` should typically be a "local" environment (calling scope). To 
+  # include objects from the global environment, use `include_global=TRUE`.
+  # At present, loads all objects in both calling scope and global environment.
+  # This is very inefficient in cases where the function being executed only
+  # depends on a small subset of the total objects. Should eventually 
+  # add a `obj_list` argument that allows the user to manually pass in the 
+  # required objects.
 
   # Select all loaded packages if not explicitly passed.
   if(is.null(package_list)) package_list <- .packages()
@@ -989,9 +1053,17 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL, obj_list=NULL
     dll_list <- sapply(dll_list, function(x) x[[2]])
   }
   
-  # Select all objects in global environment if not explicitly passed.
-  if(is.null(obj_list)) obj_list <- ls(envir=.GlobalEnv)
-
+  # Select all objects in global environment and environment `envir`
+  # if not explicitly passed. Note that `envir` defaults to the calling scope
+  # from where `get_parallel_exports` was called. 
+  obj_list <- list(local=NULL, global=NULL)
+  exclude <- c("cl", "obj_list", "dll_list", "package_list")
+  obj_list$local <- setdiff(ls(envir=envir), exclude)
+  
+  if(include_global) {
+    obj_list$global <- ls(envir=.GlobalEnv)
+  }
+  
   # Helper function to load packages and DLLs in the parallel cluster.
   load_package_dll <- function(package_list=NULL, dll_list=NULL) {
     # Load packages. 

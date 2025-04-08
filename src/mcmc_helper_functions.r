@@ -419,7 +419,8 @@ select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
 
 select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
                                  param_names=NULL, itr_start=1L, itr_stop=NULL,
-                                 chain_idcs=NULL, return_chain_list=FALSE) {
+                                 chain_idcs=NULL, return_chain_list=FALSE,
+                                 thin=NULL) {
   # A wrapper around `select_mcmc_samp()` that converts the selected samples 
   # to a matrix format, where each row is a sample. Unlike `select_mcmc_samp()`,
   # a single value of `test_label` and `param_type` must be specified. However,
@@ -457,6 +458,10 @@ select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
   #                       containing a matrix storing the samples for a specific
   #                       chain. Otherwise, all samples are put in a single 
   #                       matrix. See "Returns" for details.
+  #    thin: integer used to thin MCMC samples; e.g., `thin = 2L` implies 
+  #          every other iteration will be dropped. Note that thinning is the 
+  #          final operation applied to the sample before returning; all other
+  #          selection operations are computed prior to thinning.
   #
   # Returns:
   #    If `return_chain_list` is TRUE, a list with each element containing a 
@@ -500,7 +505,8 @@ select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
   # Create one matrix per chain.
   chain_idcs <- samp_dt_subset[,unique(chain_idx)]
   mat_chain_list <- lapply(chain_idcs, 
-                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i]))
+                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i],
+                                                           thin=thin))
   
   # If `param_names` is provided, sort columns based on this order.
   if(!is.null(param_names)) {
@@ -628,14 +634,16 @@ select_itr_by_chain <- function(samp_dt, chain_itr_dt) {
 }
 
 
-convert_samp_to_mat <- function(samp_dt) {
+convert_samp_to_mat <- function(samp_dt, thin=NULL) {
   # A helper function used by `select_mcmc_samp_mat()` to convert sample output
   # in data.table form for a single test label/parameter type combination to 
-  # a matrix format.
+  # a matrix format. Also optionally thins MCMC samples.
   #
   # Args:
   #    samp_dt: data.table in the typical form. Only columns "itr", "param_name", 
   #             and "sample" are used here.
+  #    thin: integer used to thin MCMC samples; e.g., `thin = 2L` implies 
+  #          every other iteration will be dropped.
   #
   # Returns:
   #    matrix, with samples in the rows and columns corresponding to the 
@@ -648,6 +656,15 @@ convert_samp_to_mat <- function(samp_dt) {
   itrs <- samp_wide$itr
   samp_wide <- as.matrix(samp_wide[, .SD, .SDcols=!"itr"])
   rownames(samp_wide) <- itrs
+  
+  if(!is.null(thin)) {
+    thin <- round(thin)
+    assert_that(thin >= 1)
+    idcs <- seq(1, nrow(samp_wide))
+    idcs <- idcs[which(idcs %% thin == 0)]
+    samp_wide <- samp_wide[idcs,, drop=FALSE]
+  }
+  
   return(samp_wide)
 }
 
