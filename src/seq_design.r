@@ -425,8 +425,11 @@ get_batch_design <- function(method, N_batch, prior_params=NULL,
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
   else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else if(method == "tensor_product_grid") return(get_tensor_product_grid(N_batch, prior_dist_info=prior_params, ...))
-  else if(method == "simple") return(sample_prior(prior_params, n=N_batch))
-  else if(method == "subsample") return(subsample_design(design_candidates, n=N_batch, 
+  else if(method == "simple") {
+    samp <- sample_prior(prior_params, n=N_batch)
+    colnames(samp) <- rownames(prior_params)
+    return(samp)
+  } else if(method == "subsample") return(subsample_design(design_candidates, n=N_batch, 
                                                          design_candidate_weights, ...))
   else stop("Design method ", method, " not supported.")
 }

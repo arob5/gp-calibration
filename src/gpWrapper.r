@@ -888,7 +888,7 @@ gpWrapper$methods(
     n_input <- nrow(X_new)
     if(n_input < 2) use_cov <- FALSE
     adjustment <- .self$get_dist_adjustment(adjustment, bounds)
-    
+
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
@@ -899,11 +899,11 @@ gpWrapper$methods(
     }
 
     # Produce samples.
-    if(adjustment=="truncated") {
+    if(isTRUE(adjustment=="truncated")) {
       samp <- .self$sample_truncated(X_new, use_cov=use_cov, 
                                      include_noise=include_noise, N_samp=N_samp,
                                      pred_list=pred_list, bounds=bounds)
-    } else if(adjustment=="rectified") {
+    } else if(isTRUE(adjustment=="rectified")) {
       samp <- .self$sample_rectified(X_new, use_cov=use_cov, 
                                      include_noise=include_noise, N_samp=N_samp,
                                      pred_list=pred_list, bounds=bounds)

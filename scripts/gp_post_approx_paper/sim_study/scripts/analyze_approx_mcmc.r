@@ -19,7 +19,7 @@ library(patchwork)
 library(scales)
 library(grid)
 
-# Settings: for now targetting a specific emulator/design tag pair.
+# Settings: for now targeting a specific emulator/design tag pair.
 experiment_tag <- "vsem"
 round <- 1L
 em_tag <- "llik_quad_mean"

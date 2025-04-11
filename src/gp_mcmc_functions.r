@@ -805,7 +805,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   # If only considering one chain, avoid extra overhead of setting up 
   # cluster for parallel execution.
   if(n_chain==1L) try_parallel <- FALSE
-  
+
   # Sample initial conditions from prior if not provided and if not deferring 
   # to the underlying MCMC function.
 
@@ -821,7 +821,6 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   } else {
     par_init_list <- lapply(1:n_chain, function(i) NULL)
   }
-  
   
   # Set up MCMC function as a function of the initial condition.
   mcmc_func <- get(mcmc_func_name)
@@ -864,7 +863,6 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
       mcmc_chain_list <- run_parlapply(cl, par_init_list, mcmc_func_ic,
                                        package_list=package_list,
                                        dll_list=dll_list, include_global=TRUE)
-      parallel::stopCluster(cl)
     } else {
       mcmc_chain_list <- lapply(par_init_list, mcmc_func_ic)
     }
@@ -874,6 +872,8 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
     err_list <- list(err=cond)
     if(exists("mcmc_chain_list")) err_list$partial_output <- mcmc_chain_list
     return(err_list)
+  }, finally = {
+    if(try_parallel) try(parallel::stopCluster(cl))
   })
   
   if(isTRUE("err" %in% names(mcmc_chain_list))) return(mcmc_chain_list)
@@ -917,7 +917,7 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
   #
   # Returns:
   # The return value of the call to `run_mcmc_chains()`.
-  
+
   # Ensure MCMC tag and MCMC function name are included in settings.
   required_settings <- "mcmc_func_name"
   missing_settings <- setdiff(required_settings, names(mcmc_settings))
@@ -935,15 +935,21 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
 
 
 run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list, 
-                                save_dir=NULL, return=FALSE, ...) {
+                                save_dirs=NULL, return=TRUE, ...) {
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
   # passed to the `mcmc_settings` argument of `run_mcmc()`.
+  # `save_dirs` is a vector of paths to which the "mcmc_samp.rds" files will be 
+  # saved. Should be of the same length as `mcmc_settings_list`.
 
   # Store MCMC tags.
   n_algs <- length(mcmc_settings_list)
   tags <- names(mcmc_settings_list)
   if(is.null(tags)) tags <- as.character(1:n_algs)
+  
+  if(!is.null(save_dirs)) {
+    assert_that(length(save_dirs) == n_algs)
+  }
   
   return_list <- vector(mode="list", length=length(tags))
   names(return_list) <- tags
@@ -958,15 +964,15 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
         # Run MCMC using the ith algorithm.
         mcmc_settings_list[[i]]$test_label <- tag
         mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_settings_list[[i]])
-        
       }, error=function(cond) {
         message("Error with MCMC run: ", tag)
         message(conditionMessage(cond))
       }, finally = {
         # Save output.
-        if(!is.null(save_dir)) {
-          filename <- paste0("mcmc_samp_", tag, ".rds")
-          saveRDS(mcmc_output, file.path(save_dir, filename))
+        if(!is.null(save_dirs)) {
+          dir.create(save_dirs[i], recursive=TRUE)
+          out_path <- file.path(save_dirs[i], "mcmc_samp.rds")
+          saveRDS(mcmc_output, out_path)
         }
         
         if(return) {
@@ -1084,8 +1090,8 @@ get_parallel_exports <- function(package_list=NULL, dll_list=NULL,
 
 
 get_mcmc_ic <- function(llik_em, par_prior, n_ic, 
-                        n_ic_by_method=setNames(n_ic,"prior"),
-                        design_method="LHS", approx_type="mean",  
+                        n_ic_by_method=NULL,
+                        design_method="simple", approx_type=NULL,  
                         test_info=NULL, n_test_inputs=200L, ...) {
   # Generates a matrix of parameter values intended to be used as initial 
   # conditions for a set of MCMC chains. `n_ic` is the total number of 
@@ -1123,6 +1129,9 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   # space. Column names are set to the corresponding parameter names, as given
   # by `llik_em$input_names`.
   
+  if(is.null(n_ic_by_method)) n_ic_by_method <- setNames(n_ic, "prior")
+  if(is.null(approx_type)) approx_type <- "mean"
+  
   assert_that(sum(n_ic_by_method)==n_ic)
   methods <- names(n_ic_by_method[n_ic_by_method >= 1])
   par_names <- llik_em$input_names
@@ -1154,7 +1163,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
     } else {
       # Otherwise sample set of test inputs and compute log-likelihood 
       # predictions.
-      inputs <- get_batch_design("LHS", N_batch=n_test_inputs, 
+      inputs <- get_batch_design(design_method, N_batch=n_test_inputs, 
                                  prior_params=par_prior)
       llik_approx <- llik_em$calc_lik_approx(approx_type, input=inputs,
                                              simplify=TRUE, log_scale=TRUE, ...)
