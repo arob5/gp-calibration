@@ -490,6 +490,33 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
 }
 
 
+weighted_quantile_logw <- function(x, log_w, probs = c(0.25, 0.5, 0.75)) {
+  # Computes weighted empirical quantiles, where the weights are potentially
+  # unnormalized, and on the log scale. It is assumed that the weights may
+  # have a large range, so the LogSumExp trick is used to exponentiate and 
+  # normalize them in a numerically stable fashion.
+
+  stopifnot(length(x) == length(log_w))
+  
+  # Use log-sum-exp trick for stability
+  log_w_max <- max(log_w)
+  w <- exp(log_w - log_w_max)
+  w <- w / sum(w)  # now normalized
+  
+  # Sort x and weights
+  ord <- order(x)
+  x_sorted <- x[ord]
+  w_sorted <- w[ord]
+  cum_w <- cumsum(w_sorted)
+  
+  # Find quantiles
+  sapply(probs, function(p) {
+    x_sorted[which(cum_w >= p)[1]]
+  })
+}
+
+
+
 gen_lin_Gaus_NIW_test_data <- function(G_list, Sig_eps=NULL, mu0=NULL, Sig0=NULL, 
                                        IW_scale=NULL, IW_dof=NULL, N_missing_obs=NULL) {
   # TODO: write up blog post on Normal Inverse Wishart model and then write this function.  

@@ -839,7 +839,7 @@ unsplit_chains <- function(samp_dt, chain_map, copy=TRUE) {
 
 
 calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL, 
-                               itr_start=1L, itr_stop=NULL) {
+                               itr_start=1L, itr_stop=NULL, group_col="chain_idx") {
   # Computes log (unnormalized) weights for each MCMC chain via a simple 
   # heuristic method. This function is intended for use with multimodal 
   # posteriors where individual chains are not expected to mix. Weights are 
@@ -854,14 +854,17 @@ calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL,
   #    info_dt: the info_dt table following the typical format returned by 
   #             `run_mcmc_chains()`. Must have `param_type` "dens" with 
   #             `param_name` "llik".
+  #    group_col: the column in `info_dt` that defines the different groups
+  #               to which weights will be assigned. Defaults to assigning
+  #               weights by chain.
   #    Remaining arguments are fed to `select_mcmc_samp()`, which subsets 
   #    `info_dt` prior to computing the weights.
   #
   # Returns:
   # data.table, with columns `test_label`, `chain_idx`, `llik_mean`, `llik_var`, 
-  # `n_itr`, and `log_weight`. `n_itr` is the number of samples that is used 
-  # to compute the sample mean and variance for that chain. NA log-likelihood 
-  # values are dropped and not included in this count.
+  # `n_itr`, `<group_col>` and `log_weight`. `n_itr` is the number of samples 
+  # that is used to compute the sample mean and variance for that chain. NA 
+  # log-likelihood values are dropped and not included in this count.
   
   # Restrict to log-likelihood evaluations, and specified labels/chains/itrs.
   info_dt <- select_mcmc_samp(info_dt, test_labels=test_labels, 
@@ -927,7 +930,7 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
                                      param_types=NULL, param_names=NULL, 
                                      subset_samp=TRUE, format_long=FALSE, 
                                      interval_probs=NULL) {
-  # Currently just computes sample meana/variances for the selected 
+  # Currently just computes sample means/variances for the selected 
   # parameters/variables in `samp_dt`, as well as credible intervals.
   # Note: by default averages across chains. Can be changed by manually setting
   #       `group_cols`.

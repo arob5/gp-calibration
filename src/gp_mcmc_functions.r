@@ -835,10 +835,18 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
   if(try_parallel) {
     if(is.null(n_cores)) {
       n_cores <- parallel::detectCores()
+      # Note that this returns the number of cores available to the job, whereas
+      # `parallel::detectCores()` returns the number of cores on the entire 
+      # node (which can run into issues when the job wasn't allocated to use
+      # all those cores).
+      n_cores <- as.integer(Sys.getenv("NSLOTS", "1"))
     } else {
-      n_cores <- min(n_cores, parallel::detectCores())
+      n_cores <- min(n_cores, as.integer(Sys.getenv("NSLOTS", "1")))
     }
     n_cores <- min(n_chain, n_cores)
+    
+    # Randomize to avoid port collisions when running lots of concurrent jobs on cluster.
+    options(R_PARALLEL_PORT=sample(11000:65535, 1))
     cl <- parallel::makeCluster(n_cores)
 
     # Need to ensure that these functions are available to parallel workers.
@@ -870,7 +878,7 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
     message("run_mcmc_chains() error:")
     message(conditionMessage(cond))
     err_list <- list(err=cond)
-    if(exists("mcmc_chain_list")) err_list$partial_output <- mcmc_chain_list
+    try(err_list$partial_output <- mcmc_chain_list)
     return(err_list)
   }, finally = {
     if(try_parallel) try(parallel::stopCluster(cl))
@@ -935,7 +943,7 @@ run_mcmc <- function(llik_em, par_prior, mcmc_settings) {
 
 
 run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list, 
-                                save_dirs=NULL, return=TRUE, ...) {
+                                save_dirs=NULL, seeds=NULL, return=TRUE, ...) {
   # A wrapper around `run_mcmc()` that runs multiple MCMC algorithms targeting 
   # the same posterior distribution. Each element of `mcmc_settings_list` is 
   # passed to the `mcmc_settings` argument of `run_mcmc()`.
@@ -946,9 +954,12 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
   n_algs <- length(mcmc_settings_list)
   tags <- names(mcmc_settings_list)
   if(is.null(tags)) tags <- as.character(1:n_algs)
-  
+
   if(!is.null(save_dirs)) {
     assert_that(length(save_dirs) == n_algs)
+  }
+  if(!is.null(seeds)) {
+    assert_that(length(seeds) == n_algs)
   }
   
   return_list <- vector(mode="list", length=length(tags))
@@ -963,6 +974,7 @@ run_mcmc_comparison <- function(llik_em, par_prior, mcmc_settings_list,
       {
         # Run MCMC using the ith algorithm.
         mcmc_settings_list[[i]]$test_label <- tag
+        if(!is.null(seeds)) set.seed(seeds[i])
         mcmc_output <- run_mcmc(llik_em, par_prior, mcmc_settings_list[[i]])
       }, error=function(cond) {
         message("Error with MCMC run: ", tag)
@@ -1128,7 +1140,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   # matrix, of dimension (n_ic, d), where d is the dimension of the parameter 
   # space. Column names are set to the corresponding parameter names, as given
   # by `llik_em$input_names`.
-  
+
   if(is.null(n_ic_by_method)) n_ic_by_method <- setNames(n_ic, "prior")
   if(is.null(approx_type)) approx_type <- "mean"
   
