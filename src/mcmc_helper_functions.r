@@ -687,7 +687,7 @@ convert_samp_to_mat <- function(samp_dt, thin=NULL) {
 
 calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL, 
                        param_types=NULL, param_names=NULL, itr_start=1L, 
-                       itr_stop=NULL, chain_idcs=NULL) {
+                       itr_stop=NULL, chain_idcs=NULL, group_col="chain_idx") {
   # Computes the (split) R-hat diagnostic as defined in section 3.1 of 
   # Vehtari et al (2021), "Rank Normalization, Folding, ...". For now, this 
   # function only supports computing R-hat on a parameter-by-parameter basis, 
@@ -698,6 +698,12 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
   # function arguments. Note that this function by default does not drop 
   # burn-in; so either `samp_dt` should already have the burn-in dropped or the 
   # burn-in can be specified by the `itr_start` argument.
+  #
+  # NOTE: This function is in a transition phase of generalizing the `within_chain`
+  #       argument to allow calculating R-hat by groups that are specified by
+  #       the user. The default behavior of `within_chain = TRUE` is still to 
+  #       compute R-hat by chain, but one can use the `group_col` argument to 
+  #       override this default behavior in order to group in other ways.
   #
   # TODO: improve numerical stability here by using logsumexp.
   #
@@ -714,6 +720,9 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
   #                  one R-hat value is computed per parameter per test label, 
   #                  such that all chains within that test label contribute to 
   #                  the calculation.
+  #    group_col: character, vector of column names used to define groups. Only
+  #            used if `within_chain` is TRUE (note that this argument should
+  #            really be called `within_group`).
   #    Remaining arguments are passed to `select_mcmc_samp()` to extract the 
   #    subset of samples used in the R-hat calculations. 
   #    
@@ -745,23 +754,26 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
   }
   
   # Compute means and variances.
-  scalar_stats <- compute_mcmc_scalar_stats(samp_dt, by_chain=TRUE)
+  scalar_stats <- compute_mcmc_scalar_stats(samp_dt, 
+                                            group_cols=c("test_label", "param_type", 
+                                                         "param_name", "chain_idx", "group"))
   
-  # For standard R hat, average across all chains for each parameter in each run.
-  # Otherwise compute on a per-chain basis. 
+  # Number of chains used to compute R-hat in each run. Note that if chains have
+  # already been split this will be twice the original number of chains.
+  by_cols_chain_count <- "test_label"
+  if(within_chain) by_cols_chain_count <- c(by_cols_chain_count, group_col)
+  scalar_stats[, n_chain := length(unique(chain_idx)), by=by_cols_chain_count]
+  
+  # Compute the combined-chain mean. For standard R hat, average across all 
+  # chains for each parameter in each run. Otherwise compute on a per-group
+  # basis (effectively treating each group as its own MCMC run).
   if(within_chain) {
+    by_cols <- c("test_label", group_col, "param_type", "param_name")
     unsplit_chains(scalar_stats, chain_map, copy=FALSE)
-    scalar_stats[, mean_comb := mean(mean), 
-                 by=.(test_label, chain_idx, param_type, param_name)]
-    scalar_stats[, n_chain := 2]
-    by_cols <- c("test_label", "chain_idx", "param_type", "param_name")
+    scalar_stats[, mean_comb := mean(mean), by=by_cols]
   } else {
-    scalar_stats[, mean_comb := mean(mean), 
-                 by=.(test_label, param_type, param_name)]
-    
-    # Number of chains used to compute R-hat in each run.
-    scalar_stats[, n_chain := length(unique(chain_idx)), by=test_label]
     by_cols <- c("test_label", "param_type", "param_name")
+    scalar_stats[, mean_comb := mean(mean), by=by_cols]
   }
 
   # Compute between-chain variance B. i.e., the variability in the chain means.
@@ -913,10 +925,15 @@ calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL,
 compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NULL,
                                       param_names=NULL, itr_start=1L, 
                                       itr_stop=NULL, chain_idcs=NULL, 
-                                      by_chain=TRUE) {
+                                      by_chain=TRUE, group_cols=NULL) {
   # NOTE: currently this function and `compute_mcmc_param_stats` are 
   #       essentially duplicates of each other. Need to clean this up.
 
+  if(is.null(group_cols)) {
+    group_cols <- c("test_label", "param_type", "param_name")
+    if(by_chain) group_cols <- c(group_cols, "chain_idx")
+  }
+  
   # Select subset of samples.
   samp_dt <- select_mcmc_samp(samp_dt, test_labels=test_labels, 
                               param_types=param_types, itr_start=itr_start,
@@ -925,11 +942,7 @@ compute_mcmc_scalar_stats <- function(samp_dt, test_labels=NULL, param_types=NUL
   # Define functions to compute.
   func_names <- c("mean", "var", "n_itr")
   funcs <- function(x) setNames(list(mean(x), var(x), length(x)), func_names)
-  
-  # Specify grouping columns.
-  group_cols <- c("test_label", "param_type", "param_name")
-  if(by_chain) group_cols <- c(group_cols, "chain_idx")
-  
+
   # Evaluate functions by group.
   sample_col <- "sample"
   samp_stats <- samp_dt[, unlist(lapply(.SD, funcs), recursive=FALSE), 
