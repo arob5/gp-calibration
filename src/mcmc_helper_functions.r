@@ -43,7 +43,8 @@ library(kde1d)
 
 assert_is_samp_dt <- function(samp_dt) {
   # Checks that the argument `samp_dt` satisfies the requirements for the 
-  # data.table storing MCMC output.
+  # data.table storing MCMC output. `samp_dt` is allowed to have extra columns,
+  # but must have at least the required columns.
   # TODO: add checks for the uniqueness requirements. Unique by test_label, 
   # param_type, param_name, chain_idx, itr. The same set of iteration indices 
   # should exist for every parameter within a given (test_label, chain_idx)
@@ -55,13 +56,25 @@ assert_is_samp_dt <- function(samp_dt) {
   # Returns:
   #  None, will throw exception if `samp_dt` fails any of the tests.
   
+  assert_that(is.data.table(samp_dt))
+  
   required_cols <- c("test_label"="character", "chain_idx"="integer", 
                      "param_type"="character", "param_name"="character", 
                      "itr"="integer", "sample"="numeric")
   
-  assert_that(is.data.table(samp_dt))
-  assert_that(setequal(colnames(samp_dt), names(required_cols)))
-  assert_that(all(sapply(samp_dt, class)[names(required_cols)] == required_cols))
+  # Ensure required columns are present.
+  missing_cols <- setdiff(names(required_cols), colnames(samp_dt))
+  if(length(missing_cols) > 0L) {
+    stop("`samp_dt` missing required column(s): ", paste0(missing_cols, collapse=", "))
+  }
+  
+  # Ensure required columns are correct types.
+  col_types <- sapply(samp_dt, class)[names(required_cols)]
+  wrong_type <- (col_types != required_cols)
+  if(any(wrong_type)) {
+    stop("`samp_dt` column(s) have incorrect type: ", 
+         paste0(required_cols[wrong_type], collapse=", "))
+  }
 }
 
 
@@ -866,6 +879,8 @@ calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL,
   # that is used to compute the sample mean and variance for that chain. NA 
   # log-likelihood values are dropped and not included in this count.
   
+  if(is.null(group_col)) group_col <- "chain_idx"
+  
   # Restrict to log-likelihood evaluations, and specified labels/chains/itrs.
   info_dt <- select_mcmc_samp(info_dt, test_labels=test_labels, 
                               param_types="dens", param_names="llik", 
@@ -877,17 +892,17 @@ calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL,
   funcs <- function(x) setNames(list(mean(x, na.rm=TRUE), 
                                      var(x, na.rm=TRUE), 
                                      sum(!is.na(x))), func_names)
-  group_cols <- c("test_label", "param_type", "param_name", "chain_idx")
+  group_cols <- c("test_label", "param_type", "param_name", group_col)
   sample_col <- "sample"
-  chain_stats <- info_dt[, unlist(lapply(.SD, funcs), recursive=FALSE),
+  group_stats <- info_dt[, unlist(lapply(.SD, funcs), recursive=FALSE),
                          .SDcols=sample_col, by=group_cols]
-  setnames(chain_stats, paste(sample_col, func_names, sep="."), func_names)
+  setnames(group_stats, paste(sample_col, func_names, sep="."), func_names)
   
   # Compute log weights via lognormal mean formula.
-  chain_stats[, log_weight := llik_mean + 0.5*llik_var]
+  group_stats[, log_weight := llik_mean + 0.5*llik_var]
   
-  return(chain_stats[, .(test_label, chain_idx, llik_mean, llik_var, 
-                         n_itr, log_weight)])
+  cols <- c("test_label", group_col, "llik_mean", "llik_var", "n_itr", "log_weight")
+  return(group_stats[, ..cols])
 }
 
 
