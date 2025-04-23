@@ -308,9 +308,11 @@ llikEmulator$methods(
       func <- .self[[func]]
     }
     
-    # Compute emulator predictions, if not provided. 
+    # Compute emulator predictions, if not provided. No adjustments are made
+    # here. Methods assume that passed in emulator predictions are unadjusted.
     if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, ...)
+      em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 
+                                             adjustment=NULL, ...)
     }
     
     # Evaluate the function at the inputs.
@@ -1478,7 +1480,7 @@ llikEmulatorGP$methods(
     # transformed to obtain log-normal likelihood predictions. Currently 
     # `return_cross_cov` is not supported. Note that both the GP mean and 
     # variance are required to compute the log-normal mean and/or variance. 
-    
+
     # Supports the same adjustments as the underlying GP object. In this case,
     # rectified/truncated refer to rectified/truncated log-normal, as opposed
     # to rectified/truncated Gaussian in the GP case.
@@ -1557,14 +1559,16 @@ llikEmulatorGP$methods(
     # first requires computing the truncated expectation. Note that these 
     # expectations are not the same as first computing the truncated/rectified
     # expectations and then exponentiating.
-    
+
+    # Note that the bounds for the adjustment are dealt with within `predict_lik`,
+    # so no need to deal with them here.
     log_mean <- .self$predict_lik(input, lik_par_val=lik_par_val, 
                                   em_pred_list=em_pred_list, 
                                   return_mean=TRUE, return_var=FALSE, 
                                   conditional=default_conditional, 
                                   normalize=default_normalize, 
                                   include_noise=include_noise, 
-                                  log_scale=TRUE, 
+                                  log_scale=TRUE,
                                   adjustment=adjustment, ...)$log_mean
     
     if(log_scale) return(log_mean)

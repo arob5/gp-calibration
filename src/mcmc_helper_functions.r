@@ -737,7 +737,7 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
   # by 1 (i.e., if the original chain has an odd number of iterations). 
   # "R_hat" is the (split) R-hat value, which is on a per-chain basis if 
   # `within_chain = TRUE`.
-
+  
   if(within_chain) assert_that(split, 
                                msg="`split` must be TRUE if `within_chain=TRUE`")
   
@@ -756,7 +756,7 @@ calc_R_hat <- function(samp_dt, split=TRUE, within_chain=FALSE, test_labels=NULL
   # Compute means and variances.
   scalar_stats <- compute_mcmc_scalar_stats(samp_dt, 
                                             group_cols=c("test_label", "param_type", 
-                                                         "param_name", "chain_idx", "group"))
+                                                         "param_name", "chain_idx", group_col))
   
   # Number of chains used to compute R-hat in each run. Note that if chains have
   # already been split this will be twice the original number of chains.
@@ -917,6 +917,29 @@ calc_chain_weights <- function(info_dt, test_labels=NULL, chain_idcs=NULL,
   return(group_stats[, ..cols])
 }
 
+get_n_itr_by_run <- function(samp_dt) {
+  # Returns the number of iterations per test_label (i.e., MCMC
+  # run) by summing the number of iterations for all chains within that
+  # test label. A check is made to ensure the number
+  # of iterations does not differ across parameters within a single chain.
+
+  n_itr_by_par <- samp_dt[, .N, by=.(test_label, param_type, param_name, chain_idx)]
+
+  # Ensure iteration consistency across parameters within each chain.
+  n_itr_test <- n_itr_by_par[, .(n_unique=uniqueN(N)), 
+                             by=.(test_label, chain_idx)]
+  n_itr_inconsistency <- n_itr_test[, n_unique > 1L] 
+  if(any(n_itr_inconsistency)) {
+    stop("`get_n_itr_by_run()`: Chain(s) have parameters with different ",
+         "number of iterations\n", n_itr_test[n_itr_inconsistency==TRUE])
+  }
+  
+  # Now safe to extract unique value per group.
+  n_itr_by_par <- n_itr_by_par[, .(N=N[1]), by=.(test_label, chain_idx)]
+  
+  # Sum by test_label.
+  n_itr_by_par[, .(N=sum(N)), by=test_label]
+}
 
 # ------------------------------------------------------------------------------
 # Computing statistics and errors from MCMC samples. 
@@ -957,7 +980,7 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
                                      itr_stop=NULL, test_labels=NULL, 
                                      param_types=NULL, param_names=NULL, 
                                      subset_samp=TRUE, format_long=FALSE, 
-                                     interval_probs=NULL) {
+                                     interval_probs=NULL, info_dt=NULL) {
   # Currently just computes sample means/variances for the selected 
   # parameters/variables in `samp_dt`, as well as credible intervals.
   # Note: by default averages across chains. Can be changed by manually setting
@@ -1012,7 +1035,8 @@ compute_mcmc_param_stats <- function(samp_dt, group_cols=NULL, itr_start=1L,
   cred_intervals <- compute_cred_intervals(samp_dt, probs=interval_probs,
                                            group_cols=group_cols,
                                            format_long=format_long,
-                                           subset_samp=FALSE)
+                                           subset_samp=FALSE,
+                                           info_dt=info_dt)
   
   return(list(par_stats=samp_dt_agg, cred_intervals=cred_intervals))
 }
@@ -1067,7 +1091,8 @@ compute_cred_intervals <- function(samp_dt, probs, group_cols=NULL,
                                    test_labels=NULL, param_types=NULL, 
                                    param_names=NULL, chain_idcs=NULL,
                                    itr_start=1L, itr_stop=NULL,
-                                   format_long=FALSE, subset_samp=TRUE) {
+                                   format_long=FALSE, subset_samp=TRUE,
+                                   info_dt=NULL) {
   # Computes univariate marginal credible intervals, simply defined using 
   # empirical quantiles; e.g., the 90% interval is taken to be (q5, q95),
   # where q5, q95 are the 5th and 95th empirical quantiles, respectively.

@@ -276,7 +276,8 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
   # Returns: 
   #    list with the LN computations. Potential list arguments include "mean", 
   #    "var", "cov",  "log_mean", and "log_var". 
-                                   
+                         
+
   if(!is.null(adjustment) && !(adjustment %in% c("truncated", "rectified"))) {
     stop("`convert_Gaussian_to_LN` only supported truncated or rectified adjustments.")
   }
@@ -348,7 +349,7 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   # `return_intermediate_calcs` returns intermediate computations that are
   # used when computing the rectified LN moments; see 
   # `convert_Gaussian_to_rect_LN`.
-  
+
   mean_Gaussian <- drop(mean_Gaussian)
   var_Gaussian <- drop(var_Gaussian)
   assert_that(length(mean_Gaussian) == length(var_Gaussian))
@@ -373,27 +374,33 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   }
   
   # Probabilities involved in moment expressions.
-  prob_leq_upper <- prob_num_upper <- 1
+  lprob_leq_upper <- lprob_num_upper <- 0
   if(constrain_upper) {
-    prob_leq_upper <- pnorm(b2, mean_Gaussian, sqrt(var_Gaussian))
-    prob_num_upper <- pnorm(b2, mean_Gaussian + var_Gaussian, sqrt(var_Gaussian))
+    lprob_leq_upper <- pnorm(b2, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
+    lprob_num_upper <- pnorm(b2, mean_Gaussian + var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
   
-  prob_leq_lower <- prob_num_lower <- 0
+  lprob_leq_lower <- lprob_num_lower <- -Inf
   if(constrain_lower) {
-    prob_leq_lower <- pnorm(b1, mean_Gaussian, sqrt(var_Gaussian))
-    prob_num_lower <- pnorm(b1, mean_Gaussian + var_Gaussian, 
-                            sqrt(var_Gaussian))
+    lprob_leq_lower <- pnorm(b1, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
+    lprob_num_lower <- pnorm(b1, mean_Gaussian + var_Gaussian, 
+                            sqrt(var_Gaussian), log.p=TRUE)
   }
   
   if(return_intermediate_calcs) {
-    return_list$prob_leq_upper <- prob_leq_upper
-    return_list$prob_leq_lower <- prob_leq_lower
+    return_list$lprob_leq_upper <- lprob_leq_upper
+    return_list$lprob_leq_lower <- lprob_leq_lower
   }
   
   # Compute truncated LN mean.
-  ln_trunc_mean <- ln_moments$log_mean + log(prob_num_upper-prob_num_lower) -
-                   log(prob_leq_upper - prob_leq_lower)
+  if(is.infinite(lprob_num_lower)) log_diff_num <- lprob_num_upper
+  else log_diff_num <- log_diff_exp(lprob_num_upper, lprob_num_lower)
+  
+  if(is.infinite(lprob_leq_lower)) log_diff_denom <- lprob_leq_upper
+  else log_diff_denom <- log_diff_exp(lprob_leq_upper, lprob_leq_lower)
+  
+  ln_trunc_mean <- ln_moments$log_mean + log_diff_num - log_diff_denom
+                   
   
   if(log_scale) return_list$log_mean <- ln_trunc_mean
   else return_list$mean <- exp(ln_trunc_mean)
@@ -401,20 +408,21 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   if(!return_var) return(return_list)
   
   # Computing (log of) truncated LN second moment: E[y^2].
-  prob_num_upper_y2 <- 1
+  lprob_num_upper_y2 <- 0
   if(constrain_upper) {
-    prob_num_upper_y2 <- pnorm(b2, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian))
+    lprob_num_upper_y2 <- pnorm(b2, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
   
-  prob_num_lower_y2 <- 0
+  lprob_num_lower_y2 <- -Inf
   if(constrain_lower) {
-    prob_num_lower_y2 <- pnorm(b1, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian))
+    lprob_num_lower_y2 <- pnorm(b1, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
 
-  log_Ey2 <- log(prob_num_upper_y2 - prob_num_lower_y2) + 
-             2 * (mean_Gaussian + var_Gaussian) -
-             log(prob_leq_upper - prob_leq_lower)
-    
+  if(is.infinite(lprob_num_lower_y2)) log_diff_num_y2 <- lprob_num_upper_y2
+  else log_diff_num_y2 <- log_diff_exp(lprob_num_upper_y2, lprob_num_lower_y2)
+  
+  log_Ey2 <- log_diff_num_y2 + 2 * (mean_Gaussian + var_Gaussian) - log_diff_denom
+  
   if(return_intermediate_calcs) return_list$log_Ey2 <- log_Ey2
   
   # Use mean and second moment to compute variance.
@@ -439,6 +447,8 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # one-sided bounds, by setting one of the elements in `bounds` to -Inf
   # of Inf. Vectorized so that `mean_Gaussian` and `var_Gaussian` can be
   # vectors of equal length; the same bounds will be applied to all entries.
+  #
+  # TODO: this function needs more testing.
   
   return_list <- list()
   
@@ -451,20 +461,35 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # Lower and upper bounds (potentially infinite).
   b1 <- bounds[1]
   b2 <- bounds[2]
-  
-  # Probabilities for the three pieces of the rectified random variable.
-  prob_upper <- 1 - ln_trunc$prob_leq_upper
-  prob_middle <- 1 - (ln_trunc$prob_leq_lower + prob_upper)
+  n <- length(ln_trunc$log_mean)
+
+  # Probabilities for the three pieces of the rectified random variable. Some
+  # values may be -Inf here, which will imply zero probability.
+  # prob_upper = 1 - prob_leq_upper
+  # prob_middle = 1 - prob_leq_upper - prob_leq_lower
+  lprob_upper <- log_1_minus_exp(ln_trunc$lprob_leq_upper)
+  idx_zero_upper_prob <- is.infinite(lprob_upper)
+  lprob_middle <- rep(NA_real_, n)
+  if(is.infinite(ln_trunc$lprob_leq_lower)) {
+    lprob_middle[idx_zero_upper_prob] <- 0 # All mass satisfies bounds
+    lprob_middle[!idx_zero_upper_prob] <- log_1_minus_exp(lprob_upper[!idx_zero_upper_prob])
+  } else {
+    lprob_middle[idx_zero_upper_prob] <- log_1_minus_exp(ln_trunc$lprob_leq_lower)
+    lprob_middle[!idx_zero_upper_prob] <- log_1_minus_exp(matrixStats::logSumExp(ln_trunc$lprob_leq_lower, lprob_upper[!idx_zero_upper_prob]))
+  }
   
   # Compute rectified LN mean.
-  log_summands <- cbind(ln_trunc$log_mean + log(prob_middle))
+  log_summands <- cbind(ln_trunc$log_mean + lprob_middle)
   if(ln_trunc$constrain_lower) {
-    log_summands <- cbind(log_summands, b1+log(ln_trunc$prob_leq_lower))
+    log_summands <- cbind(log_summands, b1+ln_trunc$lprob_leq_lower)
   }
   if(ln_trunc$constrain_upper) {
-    log_summands <- cbind(log_summands, b2+log(prob_upper))
+    log_summands <- cbind(log_summands, b2+lprob_upper)
   }
   
+  # Note: there may be some infinite values in the second column of `log_summands`
+  # due to infinite values in `lprob_upper`. `matrixStats::rowLogSumExps` can 
+  # handle this.
   log_rect_ln_mean <- matrixStats::rowLogSumExps(log_summands)
   if(log_scale) return_list$log_mean <- log_rect_ln_mean
   else return_list$mean <- exp(log_rect_ln_mean)
@@ -472,12 +497,12 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   if(!return_var) return(return_list)
   
   # Computing rectified LN second moment.
-  log_summands_y2 <- cbind(ln_trunc$log_Ey2 + log(prob_middle))
+  log_summands_y2 <- cbind(ln_trunc$log_Ey2 + lprob_middle)
   if(ln_trunc$constrain_lower) {
-    log_summands_y2 <- cbind(log_summands_y2, 2*b1+log(ln_trunc$prob_leq_lower))
+    log_summands_y2 <- cbind(log_summands_y2, 2*b1 + ln_trunc$lprob_leq_lower)
   }
   if(ln_trunc$constrain_upper) {
-    log_summands_y2 <- cbind(log_summands_y2, 2*b2+log(prob_upper))
+    log_summands_y2 <- cbind(log_summands_y2, 2*b2 + lprob_upper)
   }
   
   log_rect_Ey2 <- matrixStats::rowLogSumExps(log_summands_y2)
