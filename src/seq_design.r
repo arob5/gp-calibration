@@ -430,7 +430,7 @@ get_batch_design <- function(method, N_batch, prior_params=NULL,
     colnames(samp) <- rownames(prior_params)
     return(samp)
   } else if(method == "subsample") return(subsample_design(design_candidates, n=N_batch, 
-                                                         design_candidate_weights, ...))
+                                                           design_candidate_weights, ...))
   else stop("Design method ", method, " not supported.")
 }
 

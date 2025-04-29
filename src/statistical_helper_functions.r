@@ -353,6 +353,7 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   mean_Gaussian <- drop(mean_Gaussian)
   var_Gaussian <- drop(var_Gaussian)
   assert_that(length(mean_Gaussian) == length(var_Gaussian))
+  n <- length(mean_Gaussian)
   
   return_list <- list()
   
@@ -374,13 +375,13 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   }
   
   # Probabilities involved in moment expressions.
-  lprob_leq_upper <- lprob_num_upper <- 0
+  lprob_leq_upper <- lprob_num_upper <- rep(0, n)
   if(constrain_upper) {
     lprob_leq_upper <- pnorm(b2, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
     lprob_num_upper <- pnorm(b2, mean_Gaussian + var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
   
-  lprob_leq_lower <- lprob_num_lower <- -Inf
+  lprob_leq_lower <- lprob_num_lower <- rep(-Inf, n)
   if(constrain_lower) {
     lprob_leq_lower <- pnorm(b1, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
     lprob_num_lower <- pnorm(b1, mean_Gaussian + var_Gaussian, 
@@ -393,34 +394,42 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   }
   
   # Compute truncated LN mean.
-  if(is.infinite(lprob_num_lower)) log_diff_num <- lprob_num_upper
-  else log_diff_num <- log_diff_exp(lprob_num_upper, lprob_num_lower)
-  
-  if(is.infinite(lprob_leq_lower)) log_diff_denom <- lprob_leq_upper
-  else log_diff_denom <- log_diff_exp(lprob_leq_upper, lprob_leq_lower)
+  log_diff_num <- rep(NA_real_, n)
+  lprob_num_lower_inf <- is.infinite(lprob_num_lower)
+  log_diff_num[lprob_num_lower_inf] <- lprob_num_upper[lprob_num_lower_inf]
+  log_diff_num[!lprob_num_lower_inf] <- log_diff_exp(lprob_num_upper[!lprob_num_lower_inf], 
+                                                     lprob_num_lower[!lprob_num_lower_inf])
+
+  log_diff_denom <- rep(NA_real_, n)
+  lprob_leq_lower_inf <- is.infinite(lprob_leq_lower)
+  log_diff_denom[lprob_leq_lower_inf] <- lprob_leq_upper[lprob_leq_lower_inf]
+  log_diff_denom[!lprob_leq_lower_inf] <- log_diff_exp(lprob_leq_upper[!lprob_leq_lower_inf], 
+                                                       lprob_leq_lower[!lprob_leq_lower_inf])
   
   ln_trunc_mean <- ln_moments$log_mean + log_diff_num - log_diff_denom
                    
-  
   if(log_scale) return_list$log_mean <- ln_trunc_mean
   else return_list$mean <- exp(ln_trunc_mean)
   
   if(!return_var) return(return_list)
   
   # Computing (log of) truncated LN second moment: E[y^2].
-  lprob_num_upper_y2 <- 0
+  lprob_num_upper_y2 <- rep(0, n)
   if(constrain_upper) {
     lprob_num_upper_y2 <- pnorm(b2, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
   
-  lprob_num_lower_y2 <- -Inf
+  lprob_num_lower_y2 <- rep(-Inf, n)
   if(constrain_lower) {
     lprob_num_lower_y2 <- pnorm(b1, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
   }
 
-  if(is.infinite(lprob_num_lower_y2)) log_diff_num_y2 <- lprob_num_upper_y2
-  else log_diff_num_y2 <- log_diff_exp(lprob_num_upper_y2, lprob_num_lower_y2)
-  
+  log_diff_num_y2 <- rep(NA_real_, n)
+  lprob_num_lower_y2_inf <- is.infinite(lprob_num_lower_y2)
+  log_diff_num_y2[lprob_num_lower_y2_inf] <- lprob_num_upper_y2[lprob_num_lower_y2_inf]
+  log_diff_num_y2[!lprob_num_lower_y2_inf] <- log_diff_exp(lprob_num_upper_y2[!lprob_num_lower_y2_inf], 
+                                                           lprob_num_lower_y2[!lprob_num_lower_y2_inf])
+
   log_Ey2 <- log_diff_num_y2 + 2 * (mean_Gaussian + var_Gaussian) - log_diff_denom
   
   if(return_intermediate_calcs) return_list$log_Ey2 <- log_Ey2
@@ -449,7 +458,7 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # vectors of equal length; the same bounds will be applied to all entries.
   #
   # TODO: this function needs more testing.
-  
+
   return_list <- list()
   
   # First compute truncated moments.
@@ -467,29 +476,41 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # values may be -Inf here, which will imply zero probability.
   # prob_upper = 1 - prob_leq_upper
   # prob_middle = 1 - prob_leq_upper - prob_leq_lower
-  lprob_upper <- log_1_minus_exp(ln_trunc$lprob_leq_upper)
-  idx_zero_upper_prob <- is.infinite(lprob_upper)
-  lprob_middle <- rep(NA_real_, n)
-  if(is.infinite(ln_trunc$lprob_leq_lower)) {
-    lprob_middle[idx_zero_upper_prob] <- 0 # All mass satisfies bounds
-    lprob_middle[!idx_zero_upper_prob] <- log_1_minus_exp(lprob_upper[!idx_zero_upper_prob])
-  } else {
-    lprob_middle[idx_zero_upper_prob] <- log_1_minus_exp(ln_trunc$lprob_leq_lower)
-    lprob_middle[!idx_zero_upper_prob] <- log_1_minus_exp(matrixStats::logSumExp(ln_trunc$lprob_leq_lower, lprob_upper[!idx_zero_upper_prob]))
-  }
+  upper_prob_zero <- (ln_trunc$lprob_leq_upper == 0)
+  upper_prob_one <- is.infinite(ln_trunc$lprob_leq_upper)
+  upper_prob_not_zero_one <- !(upper_prob_zero | upper_prob_one)
+
+  # log P(y > b2)
+  lprob_upper <- rep(NA_real_, n)
+  lprob_upper[upper_prob_zero] <- -Inf
+  lprob_upper[upper_prob_one] <- 0
+  lprob_upper[upper_prob_not_zero_one] <- log_1_minus_exp(ln_trunc$lprob_leq_upper[upper_prob_not_zero_one])
+    
+  # log P(y < b1)
+  lprob_lower <- ln_trunc$lprob_leq_lower
+  lower_prob_zero <- is.infinite(lprob_lower)
+  lower_prob_one <- (lprob_lower == 0)
+  lower_prob_not_zero_one <- !(lower_prob_zero | lower_prob_one)
   
-  # Compute rectified LN mean.
+  # log P(b1 <= y <= b2)
+  lprob_middle <- rep(NA_real_, n)
+  lprob_middle[lower_prob_one | upper_prob_one] <- -Inf
+  lprob_middle[lower_prob_zero & upper_prob_zero] <- 0
+  lprob_middle[lower_prob_zero & upper_prob_not_zero_one] <- log_1_minus_exp(lprob_upper[lower_prob_zero & upper_prob_not_zero_one])
+  lprob_middle[upper_prob_zero & lower_prob_not_zero_one] <- log_1_minus_exp(lprob_lower[upper_prob_zero & lower_prob_not_zero_one])
+  idx_temp <- (lower_prob_not_zero_one & upper_prob_not_zero_one)
+  lprob_middle[idx_temp] <- log_1_minus_exp(matrixStats::logSumExp(lprob_lower[idx_temp], lprob_upper[idx_temp]))
+
+  # Compute rectified LN mean. Note lprob_middle can contain -Inf.
   log_summands <- cbind(ln_trunc$log_mean + lprob_middle)
   if(ln_trunc$constrain_lower) {
-    log_summands <- cbind(log_summands, b1+ln_trunc$lprob_leq_lower)
+    log_summands <- cbind(log_summands, b1+lprob_lower)
   }
   if(ln_trunc$constrain_upper) {
     log_summands <- cbind(log_summands, b2+lprob_upper)
   }
   
-  # Note: there may be some infinite values in the second column of `log_summands`
-  # due to infinite values in `lprob_upper`. `matrixStats::rowLogSumExps` can 
-  # handle this.
+  # Note: `matrixStats::rowLogSumExps` can handle the presnece of -Inf values.
   log_rect_ln_mean <- matrixStats::rowLogSumExps(log_summands)
   if(log_scale) return_list$log_mean <- log_rect_ln_mean
   else return_list$mean <- exp(log_rect_ln_mean)
@@ -499,7 +520,7 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # Computing rectified LN second moment.
   log_summands_y2 <- cbind(ln_trunc$log_Ey2 + lprob_middle)
   if(ln_trunc$constrain_lower) {
-    log_summands_y2 <- cbind(log_summands_y2, 2*b1 + ln_trunc$lprob_leq_lower)
+    log_summands_y2 <- cbind(log_summands_y2, 2*b1 + lprob_lower)
   }
   if(ln_trunc$constrain_upper) {
     log_summands_y2 <- cbind(log_summands_y2, 2*b2 + lprob_upper)
