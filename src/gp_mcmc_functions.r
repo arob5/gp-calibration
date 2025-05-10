@@ -61,7 +61,7 @@ library(parallel)
 
 # Need to check that the llik_em is correct for this function. 
 # Infer which sig2 need to be learned by the `lik_par_fixed` attribute.
-# How to map `sig2_prior+_params` onto the proper parameters? 
+# How to map `sig2_prior_params` onto the proper parameters? 
 # TODO: need to have checking in llikSumEmulator to make sure the same input 
 # parameters are used for each term. 
 

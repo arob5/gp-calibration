@@ -147,7 +147,7 @@ llikEmulator <- setRefClass(
                 default_conditional="logical", default_normalize="logical", 
                 lik_par="ANY", input_names="character", dim_input="integer", 
                 llik_pred_dist="character", exact_llik="logical", 
-                llik_bounds="numeric")
+                llik_bounds="numeric", shift_func="function")
 )
 
 llikEmulator$lock("llik_label")
@@ -160,7 +160,8 @@ llikEmulator$methods(
                         emulator_description, dim_input,  emulator_model=NULL, 
                         default_conditional=FALSE, default_normalize=FALSE,
                         lik_par=NULL, llik_bounds=c(-Inf, Inf), 
-                        llik_pred_dist="unspecified", exact_llik=FALSE, ...) {
+                        llik_pred_dist="unspecified", exact_llik=FALSE, 
+                        shift_func=NULL, ...) {
 
     assert_that(length(llik_bounds)==2L)
     assert_that(llik_bounds[2] >= llik_bounds[1])
@@ -173,7 +174,7 @@ llikEmulator$methods(
                default_normalize=default_normalize, 
                llik_bounds=llik_bounds,
                lik_par=lik_par, llik_pred_dist=llik_pred_dist, 
-               exact_llik=exact_llik)  
+               exact_llik=exact_llik, shift_func=shift_func)  
   }, 
   
   get_lik_par = function(lik_par_val=NULL, ...) {
@@ -193,6 +194,26 @@ llikEmulator$methods(
     # overwritten by inheriting classes that may have more complicated bounds.
     
     .self$llik_bounds
+  },
+  
+  get_shift_func = function(shift_func_new=NULL, add_shifts=TRUE) {
+    # Returns the deterministic shift function. The default behavior is to
+    # use the sum of the shift function provided in the argument 
+    # `shift_func_new` and the default `.self$shift_func`. If
+    # exactly one of these is non-NULL, then the non-NULL shift function is
+    # used. If both are non-NULL but `add_shifts = FALSE`, then only
+    # `shift_func_new` is used (i.e., it overwrites the default).
+    # The function returns NULL if both are NULL.
+    
+    if(is.null(shift_func_new)) {
+      f <- .self$shift_func
+    } else {
+      if(add_shifts && !is.null(.self$shift_func)) {
+        f <- function(input) shift_func_new(input) + .self$shift_func(input)
+      }
+    }
+
+    return(f)
   },
   
   get_input = function(input, ...) {
@@ -249,36 +270,210 @@ llikEmulator$methods(
                            conditional=default_conditional, 
                            normalize=default_normalize, ...) {
     # Since a log-likelihood is scalar-valued, this should always return a 
-    # numeric vector of length equal to the number of rows in `input`. 
-    .NotYetImplemented()
+    # numeric vector of length equal to the number of rows in `input`. This
+    # method provides the main interface for computing the log-likelihood as
+    # a function of the output quantity which the emulator predicts. It 
+    # calls the child class internal method to do the bulk of the work, but
+    # this parent method adds processing of the likelihood parameters and 
+    # applies the constant shift function to the outputs. Note that the 
+    # deterministic shift is not applied here, as this function is generally
+    # not a function of the inputs and hence the shift cannot be computed.
+    
+    # Fetch the likelihood parameters. 
+    lik_par_val <- .self$get_lik_par(lik_par_val)
+    
+    # Run child method.
+    llik_vals <- .self$.assemble_llik(em_val, lik_par_val=lik_par_val,
+                                      conditional=conditional,
+                                      normalize=normalize)
+
+    return(llik_vals)
   },
   
-  sample = function(input, lik_par_val=NULL, N_samp=1, 
+  sample = function(input, lik_par_val=NULL, N_samp=1L,
+                    em_pred_list=NULL, llik_pred_list=NULL,
                     conditional=default_conditional,
-                    normalize=default_normalize, ...) {
-    .NotYetImplemented()
+                    normalize=default_normalize, apply_shift=NULL, 
+                    shift_func_new=NULL, add_shifts=TRUE, ...) {
+    # Returns samples from the log-likelihood at `M` different inputs, where
+    # `M = ncol(input)`. Returns (M, N_samp) matrix of samples.
+    # `apply_shift` default to TRUE if `llik_pred_list` is NULL and FALSE
+    # otherwise. This is because it is assumed that `llik_pred_list` has 
+    # already been shifted.
+    
+    # Setup.
+    input <- .self$get_input(input)
+    lik_par_val <- .self$get_lik_par(lik_par_val)
+    if(is.null(apply_shift)) apply_shift <- is.null(llik_pred_list)
+    
+    # Run child method.
+    llik_samp <- .self$.sample(input, lik_par_val=lik_par_val, N_samp=N_samp,
+                               em_pred_list=em_pred_list, 
+                               llik_pred_list=llik_pred_list,
+                               conditional=default_conditional,
+                               normalize=default_normalize)
+    
+    # Apply shift.
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) llik_samp <- add_vec_to_mat_rows(s(input), llik_samp)
+    }
+    
+    return(llik_samp)
   },
   
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
+                     return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
+                     conditional=default_conditional, normalize=default_normalize, 
+                     em_pred_list=NULL, apply_shift=TRUE, shift_func_new=NULL,
+                     add_shifts=TRUE, ...) {
+    # Setup.
+    input <- .self$get_input(input)
+    lik_par_val <- .self$get_lik_par(lik_par_val)
+
+    # Run child method.
+    llik_pred_list <- .self$.predict(input, lik_par_val=lik_par_val, 
+                                     return_mean=return_mean, return_var=return_var,
+                                     return_cov=return_cov, 
+                                     return_cross_cov=return_cross_cov,
+                                     input_cross=input_cross, conditional=conditional,
+                                     normalize=normalize, em_pred_list=em_pred_list)
+    
+    # Apply deterministic shift (only affects mean).
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) llik_pred_list$mean <- llik_pred_list$mean + s(input)
+    }
+    
+    return(llik_pred_list)
+  },
+  
+  
+  predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, 
+                         llik_pred_list=NULL, return_mean=TRUE, return_var=TRUE, 
+                         return_cov=FALSE, return_cross_cov=FALSE, 
+                         input_cross=NULL, conditional=default_conditional,  
+                         normalize=default_normalize, log_scale=TRUE,
+                         apply_shift=NULL, shift_func_new=NULL, add_shifts=TRUE,
+                         ...) {
+    # Returns a list of moments/predictive quantities that summarize the 
+    # likelihood predictive distribution at inputs `input`. By default,
+    # the quantities are returned on the log-scale and can be accessed
+    # like `l$log_mean` and `l$log_var`. If `log_scale = FALSE` then the
+    # quantities are on the likelihood scale, and can be accessed as
+    # `l$mean` and `l$var`. `apply_shift` default to TRUE if `llik_pred_list` 
+    # is NULL and FALSE otherwise. This is because it is assumed that 
+    # `llik_pred_list` has already been shifted.
+
+    # Setup.
+    input <- .self$get_input(input)
+    lik_par_val <- .self$get_lik_par(lik_par_val)
+    if(is.null(apply_shift)) apply_shift <- is.null(llik_pred_list)
+    
+    # Run child method.
+    lik_pred_list <- .self$.predict_lik(input, lik_par_val=lik_par_val, 
+                                        return_mean=return_mean, return_var=return_var,
+                                        return_cov=return_cov, log_scale=log_scale,
+                                        return_cross_cov=return_cross_cov,
+                                        input_cross=input_cross, conditional=conditional,
+                                        normalize=normalize, em_pred_list=em_pred_list,
+                                        llik_pred_list=llik_pred_list)
+    
+    # Apply deterministic shift (only affects mean).
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) {
+        if(log_scale) lik_pred_list$log_mean <- lik_pred_list$log_mean + s(input)
+        else lik_pred_list$mean <- lik_pred_list$mean * exp(s(input))
+      }
+    }
+    
+    return(lik_pred_list)
+  },
+  
+  calc_quantiles = function(input, p, lik_par_val=NULL, 
+                            conditional=default_conditional, 
+                            normalize=default_normalize, em_pred_list=NULL,
+                            lower_tail=TRUE, apply_shift=TRUE,
+                            shift_func_new=NULL, add_shifts=TRUE, ...) {
+    # Computes quantiles of the log-likelihood predictive distribution pointwise
+    # over a set of inputs. `p` is the probability defining the quantile.
+    
+    input <- .self$get_input(input)
+    
+    # Call child method.
+    q <- .self$.calc_quantiles(input, p, lik_par_val=lik_par_val, 
+                               em_pred_list=em_pred_list,
+                               conditional=conditional, normalize=normalize, 
+                               lower_tail=lower_tail, ...)
+    
+    # Apply deterministic shift. 
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) q <- q + s(input) 
+    }
+    
+    return(q)
+  },
+  
+  calc_lik_quantiles <- function(input, p, lik_par_val=NULL, 
+                                 em_pred_list=NULL, log_scale=TRUE, 
+                                 conditional=default_conditional, 
+                                 normalize=default_normalize, 
+                                 lower_tail=TRUE, apply_shift=TRUE,
+                                 shift_func_new=NULL, add_shifts=TRUE, ...) {
+    # Computes quantiles of the likelihood predictive distribution pointwise
+    # over a set of inputs. `p` is the probability defining the quantile.
+    
+    input <- .self$get_input(input)
+    
+    # Call child method.
+    q <- .self$.calc_lik_quantiles(input, p, lik_par_val=lik_par_val, 
+                                   em_pred_list=em_pred_list, log_scale=log_scale, 
+                                   conditional=conditional, 
+                                   normalize=normalize, 
+                                   lower_tail=lower_tail, ...)
+    
+    # Apply deterministic shift. 
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) {
+        if(log_scale) q <- q + s(input)
+        else q <- q * exp(s(input))
+      }
+    }
+    
+    return(q)
+  },
+  
+  
+  .assemble_llik = function(em_val, lik_par_val=NULL, 
+                           conditional=default_conditional, 
+                           normalize=default_normalize, ...) {
+    .NotYetImplemented()
+  },
+  
+  .sample = function(input, lik_par_val=NULL, N_samp=1L,
+                     em_pred_list=NULL, llik_pred_list=NULL,
+                     conditional=default_conditional,
+                     normalize=default_normalize, ...) {
+    .NotYetImplemented()  
+  },
+  
+  .predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
                      return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
                      conditional=default_conditional, normalize=default_normalize, 
                      em_pred_list=NULL, ...) {
     .NotYetImplemented()
   },
   
-  predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  
-                         return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
-                         input_cross=NULL, conditional=default_conditional,  
-                         normalize=default_normalize, log_scale=FALSE, ...) {
+  .predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE,  
+                          return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                          input_cross=NULL, conditional=default_conditional,  
+                          normalize=default_normalize, log_scale=FALSE, ...) {
     .NotYetImplemented()
   },
   
-  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, 
-                            conditional=default_conditional, 
-                            normalize=default_normalize, llik_pred_list=NULL,
-                            lower_tail=TRUE, ...) {
-    .NotYetImplemented()
-  },
   
   calc_func = function(func, input=NULL, em_pred_list=NULL, lik_par_val=NULL,
                        conditional=default_conditional, 
@@ -407,6 +602,36 @@ llikEmulator$methods(
     return(func_evals)
   },
   
+  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, 
+                             normalize=default_normalize, apply_shift=TRUE,
+                             shift_func_new=NULL, add_shifts=TRUE, ...) {
+    # Calls child class method `.get_design_llik()`, and then adds the shift
+    # function. Note that it is possible that `.get_design_llik()` returns
+    # NULL, since some log-likelihood emulators won't have design points.
+    # Applying the shift requires access to the design inputs, so that the
+    # shift can be computed at those inputs.
+    
+    lik_par_val <- .self$get_lik_par(lik_par_val)
+    llik_vals <- .self$.get_design_llik(lik_par_val=lik_par_val, 
+                                        conditional=conditional, 
+                                        normalize=normalize)
+    if(is.null(llik_vals)) return(NULL)
+    
+    # Applying the shift requires fetching design inputs.
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) {
+        design_inputs <- .self$get_design_inputs()
+        if(is.null(design_inputs)) {
+          stop("`design_inputs` is NULL, so `get_design_llik()` cannot computed shift function.")
+        }
+        
+        llik_vals <- llik_vals + s(design_inputs)
+      }
+    }
+    
+    return(llik_vals)
+  },
   
   calc_lik_approx_pw_err = function(llik_true, approx_type="mean", err_type="mse",  
                                     em_pred_list=NULL, input=NULL, lik_par_val=NULL, 
@@ -513,7 +738,7 @@ llikEmulator$methods(
   
   
   calc_lik_marginal_approx = function(em_pred_list=NULL, input=NULL, 
-                                      lik_par_val=NULL, 
+                                      lik_par_val=NULL, llik_pred_list=NULL,
                                       conditional=default_conditional,
                                       normalize=default_normalize, 
                                       include_noise=TRUE, log_scale=TRUE, ...) {
@@ -525,9 +750,9 @@ llikEmulator$methods(
 
     sel <- ifelse(log_scale, "log_mean", "mean")
     .self$predict_lik(input, lik_par_val=lik_par_val, em_pred_list=em_pred_list, 
-                      return_mean=TRUE, return_var=FALSE, conditional=conditional,  
-                      normalize=normalize, log_scale=log_scale, 
-                      include_noise=include_noise, ...)[[sel]]
+                      llik_pred_list=llik_pred_list, return_mean=TRUE, 
+                      return_var=FALSE, conditional=conditional,  
+                      normalize=normalize, log_scale=log_scale, ...)[[sel]]
   },
   
   calc_lik_sample_approx = function(em_pred_list=NULL, input=NULL, 
@@ -538,31 +763,39 @@ llikEmulator$methods(
     .NotYetImplemented()  
   },
   
-  calc_lik_quantile_approx = function(em_pred_list=NULL, input=NULL, 
-                                      lik_par_val=NULL, alpha=0.9,
-                                      conditional=default_conditional,
-                                      normalize=default_normalize, 
-                                      include_noise=TRUE, log_scale=TRUE, ...) {
-    .NotYetImplemented()
+  calc_lik_quantile_approx = function(em_pred_list=NULL, input=NULL, alpha=0.9,  
+                                      lik_par_val=NULL,
+                                      conditional=default_conditional, 
+                                      normalize=default_normalize,
+                                      log_scale=TRUE, ...) {
+    # Deterministic likelihood approximation that is given by the alpha
+    # quantile of the likelihood surrogate.
+    
+    .self$calc_lik_quantiles(alpha, input=input, lik_par_val=lik_par_val, 
+                             em_pred_list=em_pred_list, log_scale=log_scale, 
+                             conditional=conditional, 
+                             normalize=normalize, 
+                             lower_tail=TRUE, include_noise=include_noise, ...)
   },
   
   calc_lik_mean_approx = function(em_pred_list=NULL, input=NULL, 
-                                  lik_par_val=NULL, 
+                                  lik_par_val=NULL,
                                   conditional=default_conditional,
-                                  normalize=default_normalize, 
-                                  include_noise=TRUE, log_scale=TRUE, ...) {
+                                  normalize=default_normalize, log_scale=TRUE, 
+                                  apply_shift=TRUE, shift_func_new=NULL,
+                                  add_shifts=TRUE, ...) {
     # `Mean approx` means that the `emulator_model` predictive mean is computed
     # at inputs `input`, then the predictive mean is passed to `assemble_llik()` 
     # and the result is exponentiated (if `log_scale` is FALSE). This implements 
     # the "plug-in emulator mean" approximation. This default method can be 
     # written for llikEmulator classes with special structure that differs 
-    # from this. 
+    # from this. `input` is required to apply the shift, even if `em_pred_list`
+    # is passed.
     
     # Compute emulator predictions, if not provided.
     if(is.null(em_pred_list)) {
       em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 
-                                             return_var=FALSE, 
-                                             include_noise=include_noise, ...)
+                                             return_var=FALSE, ...)
     } else {
       assert_that(!is.null(em_pred_list$mean))
     }
@@ -571,9 +804,17 @@ llikEmulator$methods(
     llik_pred <- .self$assemble_llik(em_pred_list$mean, lik_par_val=lik_par_val, 
                                      conditional=conditional, 
                                      normalize=normalize, ...)
+    
+    # Apply shift.
+    if(apply_shift) {
+      s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
+      if(!is.null(s)) llik_pred <- llik_pred + s(input)
+    }
+    
     if(log_scale) return(llik_pred)
     return(exp(llik_pred))
   },
+  
   
   calc_expected_lik_cond_var = function(input_eval, input_cond, 
                                         include_noise=TRUE, log_scale=TRUE, 
@@ -698,12 +939,11 @@ llikEmulator$methods(
   },
   
   
-  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, 
-                             normalize=default_normalize, ...) {
-    # By default returns NULL, since not all log-likelihood emulators may have 
-    # design points. When desinging classes that inherit from `llikEmulator`, 
-    # this method should be overwritten if the log-likelihood emulator has 
-    # design points.
+  .get_design_llik = function(lik_par_val=NULL, conditional=default_conditional, 
+                              normalize=default_normalize, ...) {
+    # Child class method defaults to returning NULL since not all log-likelihood
+    # emulators have design points. Use `get_design_llik()`, which calls
+    # `.get_design_llik()`.
     return(NULL)
   },
   
@@ -974,7 +1214,6 @@ llikEmulator$methods(
     return(plt)
   }, 
   
-  
   plot_1d_proj_approx_lik = function(input_names_proj=NULL, n_points=100L, 
                                      input_list_proj=NULL, input_fixed=NULL, 
                                      lik_par_val=NULL, llik_func_true=NULL,
@@ -995,7 +1234,7 @@ llikEmulator$methods(
     # also apply to `lik`.
     
     if(length(approx_type) > 1) .NotYetImplemented()
-    
+
     # If provided, `llik_func_true` must either be a function (representing the 
     # true log-likelihood) or a `llikEmulator` class representing an exact 
     # log-likelihood.
@@ -1024,7 +1263,7 @@ llikEmulator$methods(
       input_names_proj <- unique(input_names_proj)
       assert_that(all(is.element(input_names_proj, .self$input_names)))
     }
-    
+
     # Constructing input grids for varied parameters.
     input_grids <- get_input_grid_1d_projection(.self$input_names, 
                                                 x_vary=input_names_proj, 
@@ -1033,7 +1272,7 @@ llikEmulator$methods(
                                                 X_bounds=input_bounds, 
                                                 n_points_default=n_points)
     
-    # Helper function sfor computing response values at the input points given
+    # Helper function for computing response values at the input points given
     # in `input_grids[[i]]`, which is a list containing one set of input 
     # points per set of fixed values.
     f <- function(i,j) {
@@ -1044,7 +1283,7 @@ llikEmulator$methods(
     }
     
     compute_response <- function(i) {
-      l <- lapply(seq_along(input_grids[[i]]), f(i,j))
+      l <- lapply(seq_along(input_grids[[i]]), function(j) f(i,j))
       do.call(cbind, l)
     }
     
@@ -1052,10 +1291,11 @@ llikEmulator$methods(
     plts <- list()
     n_fixed <- .self$dim_input - 1L
     for(i in seq_along(input_grids)) {
-      input_name <- names(input_grids[[i]])
+      input_name <- names(input_grids)[i]
       
       # Compute response values to be plotted, one per set of fixed values.
       vals <- compute_response(i)
+      colnames(vals) <- paste0("fixed", 1:ncol(vals))
 
       # Optionally compute true baseline values.
       true_response <- NULL
@@ -1065,8 +1305,8 @@ llikEmulator$methods(
       }
       
       # Construct plot.
-      input_1d <- drop(input_grids[[input_name]][,input_name])
-      plts[[input_name]] <- plot_curves_1d_helper(input_1d, vals, 
+      input_1d <- drop(input_grids[[input_name]][[1]][,input_name])
+      plts[[input_name]] <- plot_curves_1d_helper(input_1d, pred=vals, 
                                                   y_new=true_response,
                                                   xlab=input_name, ylab=ylab)
     }
@@ -1368,9 +1608,9 @@ llikEmulatorGP$methods(
     .self$llik_bounds
   },
   
-  assemble_llik = function(llik, lik_par_val=NULL, 
-                           conditional=default_conditional, 
-                           normalize=default_normalize, ...) {
+  .assemble_llik = function(llik, lik_par_val=NULL, 
+                            conditional=default_conditional, 
+                            normalize=default_normalize, ...) {
     # llik should be N_input x 1. Since the llik is emulated directly, then this 
     # function simply returns the argument `llik` (flattened to a vector) after 
     # performing argument validation. 
@@ -1382,16 +1622,16 @@ llikEmulatorGP$methods(
     .self$emulator_model$X
   }, 
   
-  get_design_llik = function(lik_par_val=NULL, conditional=default_conditional,
-                             normalize=default_normalize, ...) {
+  .get_design_llik = function(lik_par_val=NULL, conditional=default_conditional,
+                              normalize=default_normalize, ...) {
     # Returns the response values in the design of the GP, since the response 
     # is the llik in this case. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
-    return(emulator_model$Y)
+    return(drop(emulator_model$Y))
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, use_cov=FALSE, 
-                             include_noise=TRUE, adjustment="rectified", ...) {
+                              include_noise=TRUE, adjustment="rectified", ...) {
     # Default behavior is to sample from a truncated Gaussian to satisfy 
     # the likelihood bounds.
     
@@ -1405,28 +1645,26 @@ llikEmulatorGP$methods(
   
   update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
     # Condition the GP emulator on the new input pair (input_new, llik_new).
-    .self$emulator_model$update(get_input(input_new), matrix(llik_new, ncol=1), 
+    .self$emulator_model$update(.self$get_input(input_new), matrix(llik_new, ncol=1), 
                                 update_hyperpar=update_hyperpar, ...)
   },
   
-  sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1L, 
-                    use_cov=FALSE, include_noise=TRUE, adjustment="rectified",
-                    conditional=default_conditional, 
-                    normalize=default_normalize, ...) {
-    
-    input <- .self$get_input(input)
-    
+  .sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1L, 
+                     use_cov=FALSE, include_noise=TRUE, adjustment="rectified",
+                     conditional=default_conditional, 
+                     normalize=default_normalize, ...) {
+
     # Directly returns the emulator samples, since these are llik samples. 
     .self$check_fixed_quantities(conditional, normalize, lik_par_val)
     .self$sample_emulator(input, em_pred_list, N_samp, use_cov, 
                           include_noise, adjustment=adjustment, ...)[,,1]
   }, 
   
-  predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
-                     return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
-                     input_cross=NULL, conditional=default_conditional, 
-                     normalize=default_normalize, include_noise=TRUE, 
-                     adjustment="rectified", ...) {
+  .predict = function(input, lik_par_val=NULL, em_pred_list=NULL, return_mean=TRUE, 
+                      return_var=TRUE, return_cov=FALSE, return_cross_cov=FALSE, 
+                      input_cross=NULL, conditional=default_conditional, 
+                      normalize=default_normalize, include_noise=TRUE, 
+                      adjustment="rectified", ...) {
     # Log-likelihood emulator mean/var/cov predictions. Since the GP directly  
     # emulates the log-likelihood, then simply return the GP predictions 
     # directly. The only modification is to flatten the mean/var/cov predictions
@@ -1446,7 +1684,7 @@ llikEmulatorGP$methods(
                                                            bounds=.self$get_llik_bounds())
     
     if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(.self$get_input(input), 
+      em_pred_list <- .self$predict_emulator(input, 
                                              return_mean=return_mean, 
                                              return_var=return_var,
                                              return_cov=return_cov, 
@@ -1468,12 +1706,12 @@ llikEmulatorGP$methods(
   }, 
   
   
-  predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, 
-                         llik_pred_list=NULL, return_mean=TRUE, return_var=TRUE, 
-                         return_cov=FALSE, return_cross_cov=FALSE, 
-                         input_cross=NULL, conditional=default_conditional, 
-                         normalize=default_normalize, include_noise=TRUE, 
-                         log_scale=FALSE, adjustment="rectified", ...) {
+  .predict_lik = function(input, lik_par_val=NULL, em_pred_list=NULL, 
+                          llik_pred_list=NULL, return_mean=TRUE, return_var=TRUE, 
+                          return_cov=FALSE, return_cross_cov=FALSE, 
+                          input_cross=NULL, conditional=default_conditional, 
+                          normalize=default_normalize, include_noise=TRUE, 
+                          log_scale=FALSE, adjustment="rectified", ...) {
     # Likelihood emulator mean/var/cov predictions. For this class (under direct 
     # GP emulation of the log-likelihood), the likelihood emulator is a 
     # log-normal process. Thus, the GP log-likelihood predictions can simply be 
@@ -1520,7 +1758,7 @@ llikEmulatorGP$methods(
   
   
   calc_lik_mean_approx = function(em_pred_list=NULL, input=NULL, 
-                                  lik_par_val=NULL, 
+                                  lik_par_val=NULL,
                                   conditional=default_conditional,
                                   normalize=default_normalize, 
                                   include_noise=TRUE, log_scale=TRUE, 
@@ -1545,7 +1783,7 @@ llikEmulatorGP$methods(
   
 
   calc_lik_marginal_approx = function(em_pred_list=NULL, input=NULL, 
-                                      lik_par_val=NULL, 
+                                      lik_par_val=NULL, llik_pred_list=NULL,
                                       conditional=default_conditional, 
                                       normalize=default_normalize,
                                       include_noise=TRUE, log_scale=TRUE, 
@@ -1563,7 +1801,8 @@ llikEmulatorGP$methods(
     # Note that the bounds for the adjustment are dealt with within `predict_lik`,
     # so no need to deal with them here.
     log_mean <- .self$predict_lik(input, lik_par_val=lik_par_val, 
-                                  em_pred_list=em_pred_list, 
+                                  em_pred_list=em_pred_list,
+                                  llik_pred_list=llik_pred_list,
                                   return_mean=TRUE, return_var=FALSE, 
                                   conditional=default_conditional, 
                                   normalize=default_normalize, 
@@ -1575,7 +1814,6 @@ llikEmulatorGP$methods(
     return(exp(log_mean))
   },
   
-  
   calc_lik_quantile_approx = function(em_pred_list=NULL, input=NULL, alpha=0.9,  
                                       lik_par_val=NULL,
                                       conditional=default_conditional, 
@@ -1583,42 +1821,78 @@ llikEmulatorGP$methods(
                                       include_noise=TRUE, log_scale=TRUE,
                                       adjustment=NULL, ...) {
     # Deterministic likelihood approximation that is given by the alpha
-    # quantile of the likelihood surrogate. Since the likelihood surrogate is 
-    # log-normally distributed in this case, this function simply computes the 
-    # known expression for a log-normal quantile.
-    #
-    # NOTE: not truncation/rectification currently supported for quantile approx.
+    # quantile of the likelihood surrogate.
+    
+    .self$calc_lik_quantiles(input=input, p=alpha, lik_par_val=lik_par_val, 
+                             em_pred_list=em_pred_list, log_scale=log_scale, 
+                             conditional=conditional, normalize=normalize, 
+                             lower_tail=TRUE, include_noise=include_noise, ...)
+  },
+  
+  .calc_quantiles = function(input, p, lik_par_val=NULL, em_pred_list=NULL,
+                             conditional=default_conditional, 
+                             normalize=default_normalize, 
+                             lower_tail=TRUE, include_noise=TRUE, 
+                             adjustment=NULL, ...) {
+    # The log-likelihood emulator distribution is Gaussian, so computes
+    # Gaussian quantiles. Also supports rectified and truncated Gaussian quantiles.
     
     bounds <- .self$get_llik_bounds()
     adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
                                                            bounds=bounds)
-    if(isTRUE(adjustment == "rectified")) {
-      stop("`llikEmulatorGP$calc_lik_quantile_approx()` currently only supports ",
-           "truncated adjustment of the log-normal predictive distribution, not ",
-           "the rectified adjustment.")
-    }
+    if(!lower_tail) p <- 1 - p
     
-    assert_that((alpha > 0) && (alpha <=1))
-    
-    # First compute mean/variance of GP emulator predictive distribution.
-    if(is.null(em_pred_list)) {
-      em_pred_list <- .self$predict_emulator(input, lik_par_val=lik_par_val, 
-                                             return_var=TRUE, ...)
+    # First compute mean/variance of GP llik predictive distribution.
+    llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
+                                    return_mean=TRUE, return_var=TRUE,
+                                    apply_shift=FALSE, adjustment=NULL,
+                                    em_pred_list=em_pred_list)
+
+    # Compute quantiles.
+    if(is.null(adjustment)) { # Gaussian quantiles.
+      q <- qnorm(p, llik_pred_list$mean, sqrt(llik_pred_list$var))
+    } else if(isTRUE(adjustment == "truncated")) {
+      q <- truncnorm::qtruncnorm(p, a=bounds[1], b=bounds[2], 
+                                 mean=llik_pred_list$mean, sd=sqrt(llik_pred_list$var))
+    } else if(isTRUE(adjustment == "rectified")) {
+      q <- rect_norm_quantile(p, mean=llik_pred_list$mean, sd=sqrt(llik_pred_list$var), 
+                              lower=bounds[1], upper=bounds[2])
     } else {
-      assert_that(!is.null(em_pred_list$mean))
-      assert_that(!is.null(em_pred_list$var))
+      stop("Quantile calculation unsupported with `adjustment` ", adjustment)
     }
+    
+    return(q)
+  },
+  
+  .calc_lik_quantiles = function(input, p, lik_par_val=NULL, em_pred_list=NULL,
+                                 log_scale=TRUE, conditional=default_conditional, 
+                                 normalize=default_normalize, 
+                                 lower_tail=TRUE, include_noise=TRUE, ...) {
+    # The log-likelihood emulator distribution is log-normal, so computes
+    # log-normal quantiles. Also supports truncated log-normal quantiles,
+    # but does not yet support rectified log-normal quantiles.
+    
+    bounds <- .self$get_llik_bounds()
+    adjustment <- .self$emulator_model$get_dist_adjustment(adjustment, 
+                                                           bounds=bounds)
+    if(!lower_tail) p <- 1 - p
+    
+    # First compute mean/variance of GP llik predictive distribution.
+    llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
+                                    return_mean=TRUE, return_var=TRUE,
+                                    apply_shift=FALSE, adjustment=NULL,
+                                    em_pred_list=em_pred_list)
     
     # Compute log-normal or truncated log-normal quantile.
     if(is.null(adjustment)) {
-      q <- qnorm(alpha)
-      ln_quantiles <- em_pred_list$mean + q * sqrt(em_pred_list$var)
+      q <- qnorm(p)
+      ln_quantiles <- llik_pred_list$mean + q * sqrt(llik_pred_list$var)
       if(!log_scale) ln_quantiles <- exp(ln_quantiles)
     } else if(adjustment == "truncated") {
       # Note that the bounds in EnvStats::qlnormTrunc are defined on the 
       # exponentiated scale.
-      ln_quantiles <- EnvStats::qlnormTrunc(alpha, meanlog=em_pred_list$mean,
-                                            sdlog=sqrt(em_pred_list$var),
+      ln_quantiles <- EnvStats::qlnormTrunc(p, meanlog=llik_pred_list$mean,
+                                            sdlog=sqrt(llik_pred_list$var),
                                             min=exp(bounds[1]),
                                             max=exp(bounds[2]))
       if(log_scale) ln_quantiles <- log(ln_quantiles)
@@ -1629,44 +1903,6 @@ llikEmulatorGP$methods(
     
     return(ln_quantiles)
   },
-  
-  
-  calc_quantiles = function(p, input=NULL, lik_par_val=NULL, em_pred_list=NULL,
-                            llik_pred_list=NULL, target="llik", 
-                            conditional=default_conditional, 
-                            normalize=default_normalize, 
-                            lower_tail=TRUE, include_noise=TRUE, ...) {
-    # The log-likelihood emulator distribution is Gaussian, and the likelihood 
-    # emulator is log-normal. Both the Gaussian and Log-normal quantile functions 
-    # are parameterized in terms of the underlying Gaussian mean/variance, so 
-    # only `llik_pred_list` is required, regardless of whether `target` is
-    # "llik" or "lik". 
-    
-    assert_that(target %in% c("llik", "lik"))
-    
-    # Log-likelihood or likelihood predictions. 
-    if(is.null(llik_pred_list)) {
-      llik_pred_list <- .self$predict(input, lik_par_val=lik_par_val, 
-                                      em_pred_list=em_pred_list, 
-                                      return_mean=TRUE, return_var=TRUE, 
-                                      conditional=conditional,
-                                      normalize=normalize, log_scale=FALSE, ...)
-    } else {
-      assert_that(!is.null(llik_pred_list$mean) && !is.null(llik_pred_list$var))
-    }
-    
-    # Log-likelihood emulator distribution is Gaussian. Likelihood emulator is log-normal. 
-    if(target == "llik") {
-      q <- qnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)),
-                 lower.tail=lower_tail)
-    } else { 
-      q <- qlnorm(p, drop(llik_pred_list$mean), sqrt(drop(llik_pred_list$var)), 
-                  lower.tail=lower_tail)
-    }
-    
-    return(q)
-  }, 
-  
   
   calc_expected_lik_cond_var = function(input_eval, input_cond, include_noise=TRUE, 
                                         log_scale=TRUE, plugin=FALSE, ...) {
@@ -1827,6 +2063,13 @@ llikEmulatorExactGaussDiag$methods(
   get_llik_bounds = function(lik_par_val=NULL, ...) {
     upper <- .self$compute_log_det(lik_par_val)
     c(-Inf,upper)
+  },
+  
+  predict_emulator = function(input, em_pred_list=NULL, ...) {
+    # No emulator to predict with, just returns the inputs as the mean 
+    # prediction.
+
+    list(mean=.self$get_input(input))
   },
   
   sample_emulator = function(input, em_pred_list=NULL, N_samp=1, ...) {

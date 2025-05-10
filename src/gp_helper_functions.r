@@ -274,7 +274,7 @@ scale_inputs <- function(X, source_bounds=NULL, target_bounds=NULL, invert=FALSE
   #                   hypercube [0,1]^d. If a vector of length 2, then treated 
   #                   as bounds that will be applied to all dimensions, hence 
   #                   defining a hypercube. 
-  #    invert: if TRUE, the roles of source and targert bounds are reversed; i.e., 
+  #    invert: if TRUE, the roles of source and target bounds are reversed; i.e., 
   #            the inverse map is computed. 
   #
   # Returns:

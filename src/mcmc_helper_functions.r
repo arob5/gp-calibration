@@ -77,6 +77,22 @@ assert_is_samp_dt <- function(samp_dt) {
   }
 }
 
+ensure_itr_consistency <- function(samp_dt) {
+  # Ensures that each parameter has the same number of iterations (within
+  # each chain).
+  # TODO: should probably also check that the actual iteration numbers
+  # (values in the `itr` column) are also consistent.
+  
+  n_itr_by_par <- samp_dt[, .N, by=.(test_label, param_type, param_name, chain_idx)]
+  
+  n_itr_by_par <- n_itr_by_par[, .(n_unique=uniqueN(N)), 
+                               by=.(test_label, chain_idx)]
+
+  if(any(n_itr_by_par$n_unique > 1L)) {
+    stop("`samp_dt` contains parameters with different numbers of iterations.")
+  }
+}
+
 
 get_empty_samp_dt <- function() {
   # Returns a data.table with zero rpows with the column names and types 
@@ -383,7 +399,7 @@ append_mcmc_output_multi_chain <- function(samp_dt, chain_samp_list, test_label)
 
 select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
                              param_names=NULL, itr_start=1L, itr_stop=NULL, 
-                             chain_idcs=NULL) {
+                             chain_idcs=NULL, thin=NULL) {
   # Selects rows from `samp_dt` corresponding to valid combinations of 
   # `test_labels`, `param_types`, and `param_names`. Also restricts the output
   # to the iteration range specified by `itr_start` and `itr_stop`.
@@ -397,12 +413,16 @@ select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
   #    The remaining arguments are vectors of values used to subset `samp_dt`
   #    by selecting values from the columns "test_label", "param_type", 
   #    "param_name", and "chain_idx". NULL value will include all values found 
-  #    in the respective column in `samp_dt`. 
+  #    in the respective column in `samp_dt`.
+  #    thin: integer used to thin MCMC samples; e.g., `thin = 2L` implies 
+  #          every other iteration will be dropped. Note that thinning is done
+  #          with respect to row index, not the values in the "itr" column.
   #
   # Returns:
   #    data.table, containing subset of rows from `samp_dt`. 
   
   assert_is_samp_dt(samp_dt)
+  ensure_itr_consistency(samp_dt)
   samp_dt_subset <- copy(samp_dt)
   
   # If no subsetting is required, save time by skipping this step.
@@ -424,7 +444,7 @@ select_mcmc_samp <- function(samp_dt, test_labels=NULL, param_types=NULL,
   
   # Restrict to specified iteration bounds.
   samp_dt_subset <- select_mcmc_itr(samp_dt_subset, itr_start=itr_start, 
-                                    itr_stop=itr_stop)
+                                    itr_stop=itr_stop, thin=thin)
 
   return(samp_dt_subset)
 }
@@ -510,7 +530,8 @@ select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_label, 
                                      param_types=param_type, 
                                      param_names=param_names, itr_start=itr_start,
-                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs,
+                                     thin=thin)
   if(nrow(samp_dt_subset)==0L) {
     stop("Cant convert zero length data.table to wide matrix format.")
   }
@@ -518,8 +539,7 @@ select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
   # Create one matrix per chain.
   chain_idcs <- samp_dt_subset[,unique(chain_idx)]
   mat_chain_list <- lapply(chain_idcs, 
-                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i],
-                                                           thin=thin))
+                           function(i) convert_samp_to_mat(samp_dt_subset[chain_idx==i]))
   
   # If `param_names` is provided, sort columns based on this order.
   if(!is.null(param_names)) {
@@ -543,7 +563,7 @@ select_mcmc_samp_mat <- function(samp_dt, test_label=NULL, param_type=NULL,
 }
 
 
-select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
+select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL, thin=NULL) {
   # Returns a subset of the rows of `samp_dt` obtained by restricting the 
   # iteration column `itr` to rows with values falling in the interval 
   # [itr_start, itr_stop]. Alternatively, such intervals can be specified 
@@ -562,6 +582,9 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   #               will not be affected. 
   #    itr_stop: same as `itr_start` but defining the upper cutoff. A NULL value
   #              implies that no upper cutoff should be enforced.
+  #    thin: integer used to thin MCMC samples; e.g., `thin = 2L` implies 
+  #          every other iteration will be dropped. Note that thinning is done
+  #          with respect to row index, not the values in the "itr" column.
   #
   # Returns:
   #    data.table, a copy of `samp_dt` which is row subsetted to select the 
@@ -570,54 +593,67 @@ select_mcmc_itr <- function(samp_dt, itr_start=1L, itr_stop=NULL) {
   assert_is_samp_dt(samp_dt)
   if(nrow(samp_dt)==0L) return(samp_dt)
 
-  # If no row subsetting is required just return the data.table.
-  if(all(itr_start==1L) && is.null(itr_stop)) return(samp_dt)
+  if(!(all(itr_start==1L) && is.null(itr_stop))) {
+    # Argument checking. Ensure iteration numbers are integers. Using 
+    # `storage.mode()` to avoid stripping names attribute from these vectors, 
+    # as would happen with `as.integer()`.
+    if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
+    storage.mode(itr_start) <- "integer"
+    storage.mode(itr_stop) <- "integer"
+    assert_that(all(itr_start >= 1L))
   
-  # Argument checking. Ensure iteration numbers are integers. Using 
-  # `storage.mode()` to avoid stripping names attribute from these vectors, 
-  # as would happen with `as.integer()`.
-  if(is.null(itr_stop)) itr_stop <- samp_dt[, max(itr)]
-  storage.mode(itr_start) <- "integer"
-  storage.mode(itr_stop) <- "integer"
-  assert_that(all(itr_start >= 1L))
-
-  # Get set of unique test labels.
-  test_labels <- samp_dt[,unique(test_label)]
-  n_labels <- length(test_labels)
-  
-  # Helper function for processing the arguments `itr_start` and `itr_stop`.
-  get_itr_bound <- function(itr_arg) {
-    # If `itr_start` and/or `itr_stop` are unnamed vectors of length 1, then 
-    # the iteration cutoff will be applied to all test labels.
-    if((length(itr_arg)==1L) && is.null(names(itr_arg))) {
-      return(setNames(rep(itr_arg,n_labels), test_labels))
+    # Get set of unique test labels.
+    test_labels <- samp_dt[,unique(test_label)]
+    n_labels <- length(test_labels)
+    
+    # Helper function for processing the arguments `itr_start` and `itr_stop`.
+    get_itr_bound <- function(itr_arg) {
+      # If `itr_start` and/or `itr_stop` are unnamed vectors of length 1, then 
+      # the iteration cutoff will be applied to all test labels.
+      if((length(itr_arg)==1L) && is.null(names(itr_arg))) {
+        return(setNames(rep(itr_arg,n_labels), test_labels))
+      }
+      
+      # If `itr_start` and/or `itr_stop` are named vectors, apply values separately 
+      # for each test label.
+      extra_labels <- setdiff(names(itr_arg), test_labels)
+      missing_labels <- setdiff(test_labels, names(itr_arg))
+      if(length(extra_labels) > 0) message("Extra labels not used: ", 
+                                           paste(extra_labels, collapse=", "))
+      if(length(missing_labels) > 0) message("Labels not affected: ", 
+                                             paste(missing_labels, collapse=", "))
+      return(itr_arg[intersect(test_labels,names(itr_arg))])
     }
     
-    # If `itr_start` and/or `itr_stop` are named vectors, apply values separately 
-    # for each test label.
-    extra_labels <- setdiff(names(itr_arg), test_labels)
-    missing_labels <- setdiff(test_labels, names(itr_arg))
-    if(length(extra_labels) > 0) message("Extra labels not used: ", 
-                                         paste(extra_labels, collapse=", "))
-    if(length(missing_labels) > 0) message("Labels not affected: ", 
-                                           paste(missing_labels, collapse=", "))
-    return(itr_arg[intersect(test_labels,names(itr_arg))])
+    itr_start <- get_itr_bound(itr_start)
+    itr_stop <- get_itr_bound(itr_stop)
+  
+    # Subset `samp_dt` by selecting iteration ranges by test label.
+    samp_dt_subset <- copy(samp_dt)
+    for(lbl in names(itr_start)) {
+      samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= itr_start[lbl])]
+    }
+    for(lbl in names(itr_stop)) {
+      samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr <= itr_stop[lbl])]
+    }
+  } else {
+    samp_dt_subset <- copy(samp_dt)
+  }
+
+  # Optionally thin samples.
+  if(!is.null(thin)) {
+    # Ensure iterations are ordered the same way for each parameter.
+    ensure_itr_consistency(samp_dt_subset)
+    setorder(samp_dt_subset, test_label, chain_idx, param_type, param_name, itr)
+
+    # Now safe to thin by row index.
+    samp_dt_subset <- samp_dt_subset[, .SD[seq(1, .N, by=thin)], 
+                                     by=.(test_label, chain_idx, param_type, param_name)]
   }
   
-  itr_start <- get_itr_bound(itr_start)
-  itr_stop <- get_itr_bound(itr_stop)
-
-  # Subset `samp_dt` by selecting iteration ranges by test label.
-  samp_dt_subset <- copy(samp_dt)
-  for(lbl in names(itr_start)) {
-    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr >= itr_start[lbl])]
-  }
-  for(lbl in names(itr_stop)) {
-    samp_dt_subset <- samp_dt_subset[(test_label != lbl) | (itr <= itr_stop[lbl])]
-  }
-
   return(samp_dt_subset)
 }
+
 
 select_itr_by_chain <- function(samp_dt, chain_itr_dt) {
   # Subsets the rows of a `samp_dt` object based on lower and upper iteration
@@ -647,16 +683,14 @@ select_itr_by_chain <- function(samp_dt, chain_itr_dt) {
 }
 
 
-convert_samp_to_mat <- function(samp_dt, thin=NULL) {
+convert_samp_to_mat <- function(samp_dt) {
   # A helper function used by `select_mcmc_samp_mat()` to convert sample output
   # in data.table form for a single test label/parameter type combination to 
-  # a matrix format. Also optionally thins MCMC samples.
+  # a matrix format.
   #
   # Args:
   #    samp_dt: data.table in the typical form. Only columns "itr", "param_name", 
   #             and "sample" are used here.
-  #    thin: integer used to thin MCMC samples; e.g., `thin = 2L` implies 
-  #          every other iteration will be dropped.
   #
   # Returns:
   #    matrix, with samples in the rows and columns corresponding to the 
@@ -669,14 +703,6 @@ convert_samp_to_mat <- function(samp_dt, thin=NULL) {
   itrs <- samp_wide$itr
   samp_wide <- as.matrix(samp_wide[, .SD, .SDcols=!"itr"])
   rownames(samp_wide) <- itrs
-  
-  if(!is.null(thin)) {
-    thin <- round(thin)
-    assert_that(thin >= 1)
-    idcs <- seq(1, nrow(samp_wide))
-    idcs <- idcs[which(idcs %% thin == 0)]
-    samp_wide <- samp_wide[idcs,, drop=FALSE]
-  }
   
   return(samp_wide)
 }
@@ -1413,7 +1439,7 @@ compute_samp_running_err_multivariate <- function(samp, mean_true, cov_true, mea
 # ------------------------------------------------------------------------------
 
 get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
-                            param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                            param_names=NULL, itr_start=1L, itr_stop=NULL, thin=NULL,
                             chain_idcs=NULL, save_dir=NULL, overlay_chains=TRUE) {
   # Extracts the specified subset of `samp_dt` then generates one trace plot per
   # valid `param_name`-`param_type`-`test_label`-`chain_idx` combination. If 
@@ -1437,7 +1463,8 @@ get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
                                      param_types=param_types, 
                                      param_names=param_names, itr_start=itr_start,
-                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs,
+                                     thin=thin)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {
@@ -1491,7 +1518,7 @@ get_trace_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
 
 
 get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,  
-                           param_names=NULL, itr_start=1L, itr_stop=NULL, 
+                           param_names=NULL, itr_start=1L, itr_stop=NULL, thin=NULL,
                            chain_idcs=NULL, save_dir=NULL, combine_chains=TRUE,
                            plot_type="hist", bins=30) {
   # Plots one histogram plot per unique `param_type`-`param_name` combination.
@@ -1525,7 +1552,8 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
                                      param_types=param_types, 
                                      param_names=param_names, itr_start=itr_start,
-                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs,
+                                     thin=thin)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {
@@ -1586,7 +1614,7 @@ get_hist_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
 
 get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL, 
                                       test_labels=NULL, param_types=NULL,  
-                                      param_names=NULL, itr_start=1L, 
+                                      param_names=NULL, itr_start=1L, thin=NULL,
                                       itr_stop=NULL, chain_idcs=NULL, 
                                       save_dir=NULL, combine_chains=TRUE,
                                       plot_type="hist", bins=30) {
@@ -1627,7 +1655,7 @@ get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL,
                                      param_types=param_types, 
                                      param_names=param_names, 
                                      itr_start=itr_start, itr_stop=itr_stop,
-                                     chain_idcs=chain_idcs)
+                                     chain_idcs=chain_idcs, thin=thin)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {
@@ -1666,11 +1694,11 @@ get_hist_plot_comparisons <- function(samp_dt, test_label_baseline=NULL,
 
 get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL, 
                              test_labels=NULL, param_types=NULL,  
-                             param_names=NULL, itr_start=1L, 
+                             param_names=NULL, itr_start=1L, thin=NULL,
                              itr_stop=NULL, chain_idcs=NULL, 
                              save_dir=NULL, combine_chains=TRUE,
                              N_kde_pts=100, min_q=0.001, max_q=.999,
-                             bandwidth_mult=1.0) {
+                             bandwidth_mult=1.0, ...) {
   # Returns plots with kernel density estimates (KDE) for 1-dimensional marginal
   # distributions. Produces one plot per unique param type-param name combination.
   # Each plot contains one line per `test_label` that has samples for that 
@@ -1715,7 +1743,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
                                      param_types=param_types, 
                                      param_names=param_names, 
                                      itr_start=itr_start, itr_stop=itr_stop,
-                                     chain_idcs=chain_idcs)
+                                     chain_idcs=chain_idcs, thin=thin)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {
@@ -1779,7 +1807,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
     # Construct KDE comparison plot for the current parameter. 
     plt_curr <- plot_curves_1d_helper(kde_pts, kde_mat, y_new=kde_baseline,
                                       plot_title=plt_title, xlab=param_name, 
-                                      ylab="kde")
+                                      ylab="kde", ...)
     plts[[plt_label]] <- plt_curr
   }
   
@@ -1791,7 +1819,7 @@ get_1d_kde_plots <- function(samp_dt, test_label_baseline=NULL,
 
 get_2d_density_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
                                  param_names=NULL, itr_start=1L, itr_stop=NULL,
-                                 chain_idcs=NULL, save_dir=NULL, 
+                                 thin=NULL, chain_idcs=NULL, save_dir=NULL, 
                                  combine_chains=TRUE) {
   # Uses ggplot2::geom_density_2d() to plot estimated densities between pairs of 
   # parameters from samples. Will produce one plot per pair of parameters within 
@@ -1819,7 +1847,8 @@ get_2d_density_plots <- function(samp_dt, test_labels=NULL, param_types=NULL,
   samp_dt_subset <- select_mcmc_samp(samp_dt, test_labels=test_labels,
                                      param_types=param_types, 
                                      param_names=param_names, itr_start=itr_start,
-                                     itr_stop=itr_stop, chain_idcs=chain_idcs)
+                                     itr_stop=itr_stop, chain_idcs=chain_idcs,
+                                     thin=thin)
   
   # Case that no rows are selected.
   if(nrow(samp_dt_subset)==0L) {

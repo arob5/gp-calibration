@@ -595,6 +595,16 @@ map_from_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
       X[,j] <- truncnorm::qtruncnorm(X[,j], a=lower_bound, b=upper_bound, 
                                      mean=prior_dist_info[j,"param1"], 
                                      sd=prior_dist_info[j, "param2"])
+    } else if(dist_name == "Gamma") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Gamma dist.")
+      }
+      X[,j] <- qgamma(X[,j], shape=prior_dist_info[j,"param1"], rate=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Beta") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Beta dist.")
+      }
+      X[,j] <- qbeta(X[,j], shape1=prior_dist_info[j,"param1"], shape2=prior_dist_info[j,"param2"])
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }
@@ -606,7 +616,7 @@ map_from_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
 
 map_to_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
   # Given a matrix with rows corresponding to samples, and columns to 
-  # parameters, maps the samples so that each transformed samples has 
+  # parameters, maps the samples so that each transformed sample has 
   # uniform(0,1) marginals. The original samples are assumed to be independent
   # across dimensions. See `get_LHS_sample` for description of how `bounds` is
   # used. These functions are essentially all defunct, and will be replaced
@@ -641,9 +651,19 @@ map_to_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
     } else if(dist_name == "Gaussian") {
       lower_bound <- ifelse(is.na(bounds[1,j]), -Inf, bounds[1,j])
       upper_bound <- ifelse(is.na(bounds[2,j]), Inf, bounds[2,j])
-      X[,par_name] <- truncnorm::qtruncnorm(X[,par_name], a=lower_bound, b=upper_bound, 
+      X[,par_name] <- truncnorm::ptruncnorm(X[,par_name], a=lower_bound, b=upper_bound, 
                                             mean=prior_dist_info[j,"param1"], 
                                             sd=prior_dist_info[j, "param2"])
+    } else if(dist_name == "Gamma") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Gamma dist.")
+      }
+      X[,par_name] <- pgamma(X[,par_name], shape=prior_dist_info[j,"param1"], rate=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Beta") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Beta dist.")
+      }
+      X[,par_name] <- pbeta(X[,par_name], shape1=prior_dist_info[j,"param1"], shape2=prior_dist_info[j,"param2"])
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }
@@ -682,24 +702,8 @@ get_tensor_product_grid <- function(N_batch, prior_dist_info=NULL, bounds=NULL,
   
   # If `prior_dist_info` is provided, use it to compute bounds.
   if(is.null(bounds)) {
-    bounds <- matrix(NA, nrow=2, ncol=nrow(prior_dist_info))
-    for(j in 1:ncol(bounds)) {
-      dist_name <- prior_dist_info[j, "dist"]
-      if(dist_name == "Uniform") {
-        bounds[1,j] <- prior_dist_info[j, "param1"]
-        bounds[2,j] <- prior_dist_info[j, "param2"]
-      } else if(dist_name == "Gaussian") {
-        bounds[1,j] <- qnorm(tail_prob_excluded/2, prior_dist_info[j,"param1"], 
-                             prior_dist_info[j,"param2"])
-        bounds[2,j] <- qnorm(tail_prob_excluded/2, prior_dist_info[j,"param1"], 
-                             prior_dist_info[j,"param2"], lower.tail=FALSE)
-      } else if(dist_name == "Truncated_Gaussian") {
-        bounds[1,j] <- prior_dist_info[j,"bound_lower"]
-        bounds[2,j] <- prior_dist_info[j,"bound_upper"]
-      } else {
-        stop("Unsupported prior distribution: ", dist_name)
-      }
-    }
+    bounds <- get_prior_bounds(prior_dist_info, 
+                               tail_prob_excluded=tail_prob_excluded)
   }
   
   # The dimension of the input space.

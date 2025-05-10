@@ -412,6 +412,73 @@ get_vsem_test_1 <- function(default_conditional=FALSE, default_normalize=TRUE) {
 }
 
 
+get_vsem_test_1_unbounded <- function(default_conditional=FALSE, default_normalize=TRUE) {
+  # A variation of `get_vsem_test_1` that changes the default prior distribution.
+  # In this case, prior support is unbounded.
+  
+  # Random seeds. 
+  driver_seed <- 623434
+  par_true_seed <- 7854332
+  obs_seed <- 5632
+  
+  # Observation operator (map from model outputs to observable): daily LAI observations. 
+  output_names <- get_vsem_output_names()
+  observed_output <- "LAI"
+  lai_idx <- match(observed_output, output_names)
+  obs_op <- function(model_outputs) {
+    single_run <- (dim(model_outputs)[1]==1L)
+    lai_trajectory <- model_outputs[,,lai_idx]
+    if(single_run) lai_trajectory <- matrix(lai_trajectory, nrow=1L)
+    lai_trajectory
+  }
+  
+  # Ground truth parameters (differ from VSEM defaults). 
+  par_true <- c(KEXT=0.42, LAR=1.6, LUE=0.006, GAMMA=0.2, tauV=1000, tauS=30000,
+                tauR=1000, Av=0.3, Cv=3.4, Cs=14.0, Cr=2.6)
+  
+  # Parameters to calibrate. 
+  par_cal_names <- c("KEXT", "GAMMA", "LUE", "tauV", "Cv")
+  
+  # Priors: modifying defaults. Note that Gamma uses shape-rate parameterization.
+  par_prior <- as.data.table(get_vsem_default_priors())
+  par_prior[par_name=="KEXT", `:=`(dist="Beta", param1=2, param2=2, bound_lower=0, bound_upper=1)]
+  par_prior[par_name=="LAR", `:=`(dist="Gamma", param1=4, param2=2, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="LUE", `:=`(dist="Gamma", param1=2, param2=400, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="GAMMA", `:=`(dist="Beta", param1=1.5, param2=3, bound_lower=0, bound_upper=1)]
+  par_prior[par_name=="tauV", `:=`(dist="Gamma", param1=3.0, param2=0.003, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="tauS", `:=`(dist="Gamma", param1=3.0, param2=0.00015, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="tauR", `:=`(dist="Gamma", param1=3.0, param2=0.00015, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="Av", `:=`(dist="Beta", param1=2, param2=2, bound_lower=0, bound_upper=1)]
+  par_prior[par_name=="Cv", `:=`(dist="Gamma", param1=10, param2=2, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="Cs", `:=`(dist="Gamma", param1=17, param2=1, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="Cr", `:=`(dist="Gamma", param1=10, param2=2, bound_lower=0, bound_upper=Inf)]
+  par_prior <- as.data.frame(par_prior)
+  rownames(par_prior) <- par_prior$par_name
+  
+  
+  # Set up inverse problem. 
+  inv_prob <- get_vsem_inv_prob(par_cal_names, obs_op, par_true=par_true, 
+                                par_prior=par_prior, sig2_method="fixed", 
+                                sig2_fixed=(0.7)^2, signal_to_noise_ratio=20, 
+                                driver_seed=driver_seed, 
+                                par_true_seed=par_true_seed, obs_seed=obs_seed)
+  
+  # Define exact log-likelihood object. 
+  llik_exact <- llikEmulatorExactGaussDiag(llik_lbl="exact", 
+                                           fwd_model=inv_prob$par_to_obs_op, 
+                                           fwd_model_vectorized=inv_prob$par_to_obs_op,
+                                           y_obs=inv_prob$y, 
+                                           dim_par=as.integer(inv_prob$dim_par),
+                                           sig2=inv_prob$sig2_model,
+                                           par_names=inv_prob$par_names, 
+                                           default_conditional=default_conditional, 
+                                           default_normalize=default_normalize)
+  inv_prob$llik_obj <- llik_exact
+  
+  return(inv_prob)
+}
+
+
 get_vsem_test_1_time_avg <- function(default_conditional=FALSE, default_normalize=TRUE, period=30) {
   # A slight variation on the inverse problem defined by `get_vsem_test_1()`
   # whereby the observation operator has been defined to construct averages 

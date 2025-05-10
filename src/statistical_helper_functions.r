@@ -6,6 +6,8 @@
 # 
 # Depends: general_helper_functions.r
 
+library(truncnorm)
+
 # ------------------------------------------------------------------------------
 # Prior Distribution object:
 # At present, prior distributions are encoded by data.frames in which each 
@@ -53,6 +55,9 @@ calc_lprior_dens <- function(par, par_prior) {
   # vector corresponding to a single input vector. See 
   # `calc_lprior_dens_single_input()` for requirements on `par_prior`.  
 
+  # Special case: flat prior.
+  if(isTRUE(par_prior == "flat")) return(0)
+  
   # If single input is passed as a numeric vector. 
   if(is.null(nrow(par))) par <- matrix(par, nrow=1)
   
@@ -67,6 +72,8 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   # data.frame `par_prior`. Currently accepted distributions:
   #    "Gaussian", param1=mean, param2=standard deviation
   #    "Uniform", param1=lower, param2=upper
+  #    "Gamma", param1=shape, param2=rate
+  #    "Beta", param1=shape1, param2=shape2
   #    "Truncated_Gaussian", param1=mean, param2=standard deviation (the moments
   #     of the Gaussian distribution inducing the truncated Gaussian), 
   #     bound_lower=lower truncation value, bound_upper=upper truncation value.
@@ -86,6 +93,9 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   #    is not contained within the upper and lower bound, or if `par` falls 
   #    outside of the parameter bounds.
   
+  # Special case: flat prior.
+  if(isTRUE(par_prior == "flat")) return(0)
+  
   # Return -infinity if parameter falls outside parameter bounds.
   if(any(par < par_prior[["bound_lower"]], na.rm=TRUE) ||
      any(par > par_prior[["bound_upper"]], na.rm=TRUE)) {
@@ -96,6 +106,8 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   par_prior[, "val"] <- par
   Gaussian_priors <- par_prior[par_prior$dist == "Gaussian",]
   Uniform_priors <- par_prior[par_prior$dist == "Uniform",]
+  Gamma_priors <- par_prior[par_prior$dist == "Gamma",]
+  Beta_priors <- par_prior[par_prior$dist == "Beta",]
   Truncated_Gaussian_priors <- par_prior[par_prior$dist == "Truncated_Gaussian",]
   
   if(nrow(Gaussian_priors) > 0) {
@@ -106,6 +118,16 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   if(nrow(Uniform_priors) > 0) {
     lprior <- lprior + sum(dunif(Uniform_priors$val, Uniform_priors$param1, 
                                  Uniform_priors$param2, log=TRUE))
+  }
+  
+  if(nrow(Gamma_priors) > 0) {
+    lprior <- lprior + sum(dgamma(Gamma_priors$val, shape=Gamma_priors$param1, 
+                                  rate=Gamma_priors$param2, log=TRUE))
+  }
+  
+  if(nrow(Beta_priors) > 0) {
+    lprior <- lprior + sum(dbeta(Beta_priors$val, shape1=Beta_priors$param1, 
+                                 shape2=Beta_priors$param2, log=TRUE))
   }
   
   if(nrow(Truncated_Gaussian_priors) > 0) {
@@ -148,6 +170,10 @@ sample_prior <- function(par_prior, n=1L) {
       par_samp[,j] <- rnorm(n, par_prior[j, "param1"], par_prior[j, "param2"])
     } else if(par_prior[j, "dist"]=="Uniform") {
       par_samp[,j] <- runif(n, par_prior[j, "param1"], par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"] =="Gamma") {
+      par_samp[,j] <- rgamma(n, shape=par_prior[j, "param1"], rate=par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"] == "Beta") {
+      par_samp[,j] <- rbeta(n, shape1=par_prior[j, "param1"], shape2=par_prior[j, "param2"])
     } else if(par_prior[j, "dist"]=="Truncated_Gaussian") {
       par_samp[,j] <- truncnorm::rtruncnorm(n, a=par_prior[j, "bound_lower"], 
                                             b=par_prior[j, "bound_upper"], 
@@ -160,6 +186,48 @@ sample_prior <- function(par_prior, n=1L) {
   
   colnames(par_samp) <- par_prior$par_name
   return(par_samp)  
+}
+
+get_prior_bounds <- function(par_prior, tail_prob_excluded=0.01) {
+  # Assembles a matrix of bounds based on the prior on a parameter-by-parameter
+  # basis. For parameters with hard lower or upper bounds, then the bound
+  # will simply be set to the hard bound. For parameters with unbounded 
+  # prior support, a quantile of the distribution will be used as the bound.
+  # This is determined by `tail_prob_excluded`, which is defined so that 
+  # `1 - tail_prob_excluded` is the prior mass (for the univariate parameter)
+  # that is contained within the returned bounds. The returned matrix
+  # is 2 x d, where d is the number of parameters. The first and second
+  # rows correspond to the lower and upper bounds, respectively.
+  
+  bounds <- matrix(NA, nrow=2, ncol=nrow(par_prior))
+  for(j in 1:ncol(bounds)) {
+    dist_name <- par_prior[j, "dist"]
+    if(dist_name == "Uniform") {
+      bounds[1,j] <- par_prior[j, "param1"]
+      bounds[2,j] <- par_prior[j, "param2"]
+    } else if(dist_name == "Gaussian") {
+      bounds[1,j] <- qnorm(tail_prob_excluded/2, par_prior[j,"param1"], 
+                           par_prior[j,"param2"])
+      bounds[2,j] <- qnorm(tail_prob_excluded/2, par_prior[j,"param1"], 
+                           par_prior[j,"param2"], lower.tail=FALSE)
+    } else if(dist_name == "Gamma") {
+      bounds[1,j] <- qgamma(tail_prob_excluded/2, shape=par_prior[j,"param1"], 
+                            rate=par_prior[j,"param2"])
+      bounds[2,j] <- qgamma(tail_prob_excluded/2, shape=par_prior[j,"param1"], 
+                            rate=par_prior[j,"param2"], lower.tail=FALSE)
+    } else if(dist_name == "Beta") {
+      bounds[1,j] <- 0
+      bounds[2,j] <- 1
+    } else if(dist_name == "Truncated_Gaussian") {
+      bounds[1,j] <- par_prior[j,"bound_lower"]
+      bounds[2,j] <- par_prior[j,"bound_upper"]
+    } else {
+      stop("Unsupported prior distribution: ", dist_name)
+    }
+  }
+  
+  colnames(bounds) <- par_prior$par_name
+  return(bounds)
 }
 
 
@@ -536,6 +604,71 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
 }
 
 
+rect_norm_quantile <- function(q, mean=0, sd=1, lower=-Inf, upper=Inf, lower.tail=TRUE) {
+  # NOTE: this function was written with assistance from ChatGPT. It has been
+  # numerically tested for correctness.
+  #
+  # Computes a quantile of a rectified normal distribution; i.e., a Gaussian
+  # that has been "clipped" at potentially lower and upper bounds, thus
+  # creating point masses at the bound(s) (not to be confused with the truncated
+  # Gaussian). `mean`, `sd` are the moments of the underlying Gaussian.
+  # `mean`, `sd`, `lower`, `upper` can be vectors of the same length, or 
+  # a mixture of vectors and scalars. `q` is a probability in [0,1].
+  
+  # Ensure q is a vector
+  q <- as.numeric(q)
+  if(!lower.tail) lower.tail <- 1 - q
+  
+  # Determine target length
+  arg_lengths <- c(length(mean), length(sd), length(lower), length(upper))
+  target_len <- max(arg_lengths)
+  
+  # Recycle scalars
+  recycle_if_scalar <- function(x) {
+    if (length(x) == 1) rep(x, target_len)
+    else if (length(x) == target_len) x
+    else stop("mean, sd, lower, and upper meanst be scalars or vectors of the same length.")
+  }
+  
+  mean    <- recycle_if_scalar(mean)
+  sd <- recycle_if_scalar(sd)
+  lower <- recycle_if_scalar(lower)
+  upper <- recycle_if_scalar(upper)
+  
+  if (length(q) != target_len) {
+    if (length(q) == 1) {
+      q <- rep(q, target_len)
+    } else if (length(q) != target_len) {
+      stop("q meanst be a scalar or have the same length as other vector arguments.")
+    }
+  }
+  
+  # Compute cumeanlative probabilities
+  p_lower <- pnorm(lower, mean=mean, sd=sd)
+  p_upper <- pnorm(upper, mean=mean, sd=sd)
+  
+  mass_lower <- p_lower
+  mass_upper <- 1 - p_upper
+  mass_middle <- p_upper - p_lower
+  
+  result <- numeric(target_len)
+  
+  # Case 1: q <= mass_lower → return lower
+  result[q <= mass_lower] <- lower[q <= mass_lower]
+  
+  # Case 2: q >= 1 - mass_upper → return upper
+  result[q >= 1 - mass_upper] <- upper[q >= 1 - mass_upper]
+  
+  # Case 3: middle region → inverse CDF
+  in_middle <- (q > mass_lower) & (q < 1 - mass_upper)
+  q_adj <- (q[in_middle] - mass_lower[in_middle]) / mass_middle[in_middle]
+  target_p <- p_lower[in_middle] + q_adj * mass_middle[in_middle]
+  result[in_middle] <- qnorm(target_p, mean=mean[in_middle], sd=sd[in_middle])
+  
+  return(result)
+}
+
+
 weighted_quantile_logw <- function(x, log_w, probs = c(0.25, 0.5, 0.75)) {
   # Computes weighted empirical quantiles, where the weights are potentially
   # unnormalized, and on the log scale. It is assumed that the weights may
@@ -560,7 +693,6 @@ weighted_quantile_logw <- function(x, log_w, probs = c(0.25, 0.5, 0.75)) {
     x_sorted[which(cum_w >= p)[1]]
   })
 }
-
 
 
 gen_lin_Gaus_NIW_test_data <- function(G_list, Sig_eps=NULL, mu0=NULL, Sig0=NULL, 

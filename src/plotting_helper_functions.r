@@ -404,7 +404,7 @@ get_input_grid_1d_projection = function(x_names, x_vary=x_names, X_list=NULL,
   #            be constructed using `X_bounds`.
   #    X_fixed: matrix, of shape (m,d). Each row is a value at which to fix the 
   #             non-varying parameters. Column names must correspond to 
-  #             `x_names`.Technically, if a variable is never varied then it 
+  #             `x_names`. Technically, if a variable is never varied then it 
   #             need not be in the matrix, but it is typically easiest to 
   #             include all parameters as columns.
   #    X_bounds: matrix, of shape (2,d) with the two rows specifying lower and 
@@ -721,25 +721,29 @@ plot_fwd_model_output <- function(fwd_ens=NULL, output_ens=NULL, fwd_true=NULL,
 }
 
 
-
 # -----------------------------------------------------------------------------
 # ggplot themes and formatting functions. 
 # -----------------------------------------------------------------------------
 
-ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), title_size=35, 
-                            legend_size=20, ...) {
+ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), 
+                            title_size=35, legend_size=30, x_lab_size=30,
+                            y_lab_size=30, x_text_size=24, y_text_size=24, ...) {
   
   theme_journal <- theme(legend.position=legend_position, 
                          legend.title=legend_title,
                          legend.text=element_text(size=legend_size),
                          panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
                          panel.background=element_blank(), panel.border=element_blank(), 
-                         axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
-                         axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
+                         axis.line.x = element_line(linewidth=0.5, linetype="solid", colour="black"),
+                         axis.line.y = element_line(linewidth=0.5, linetype="solid", colour="black"),
                          plot.background=element_blank(), 
                          axis.title=element_text(size=22), 
-                         plot.title=element_text(size=title_size), ...)
-  
+                         plot.title=element_text(size=title_size), 
+                         axis.title.x = element_text(size=x_lab_size),
+                         axis.title.y = element_text(size=y_lab_size),
+                         axis.text.x = element_text(size=x_text_size),
+                         axis.text.y = element_text(size=y_text_size), ...)
+
   return(theme_journal)
 }
 
