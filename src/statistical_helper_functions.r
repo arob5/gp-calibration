@@ -188,39 +188,64 @@ sample_prior <- function(par_prior, n=1L) {
   return(par_samp)  
 }
 
-get_prior_bounds <- function(par_prior, tail_prob_excluded=0.01) {
+get_prior_bounds <- function(par_prior, tail_prob_excluded=0.01, 
+                             set_hard_bounds=FALSE) {
   # Assembles a matrix of bounds based on the prior on a parameter-by-parameter
-  # basis. For parameters with hard lower or upper bounds, then the bound
-  # will simply be set to the hard bound. For parameters with unbounded 
-  # prior support, a quantile of the distribution will be used as the bound.
-  # This is determined by `tail_prob_excluded`, which is defined so that 
-  # `1 - tail_prob_excluded` is the prior mass (for the univariate parameter)
-  # that is contained within the returned bounds. The returned matrix
-  # is 2 x d, where d is the number of parameters. The first and second
-  # rows correspond to the lower and upper bounds, respectively.
+  # basis. In general, the bounds are set to lower and upper quantiles of the 
+  # distribution. If `set_hard_bounds = TRUE`, then the bounds will be
+  # set to "hard bounds" of the distribution when relevant; e.g., the lower
+  # bound will be set to 0 for distributions supported on the non-negative reals.
+  # For the quantile case, the quantiles are determined by `tail_prob_excluded`, 
+  # which is defined so that `1 - tail_prob_excluded` is the prior mass 
+  # (for the univariate parameter) that is contained within the returned bounds. 
+  # The returned matrix is 2 x d, where d is the number of parameters. The 
+  # first and second rows correspond to the lower and upper bounds, respectively.
   
   bounds <- matrix(NA, nrow=2, ncol=nrow(par_prior))
+  p <- 0.5 * tail_prob_excluded
+  
   for(j in 1:ncol(bounds)) {
     dist_name <- par_prior[j, "dist"]
     if(dist_name == "Uniform") {
-      bounds[1,j] <- par_prior[j, "param1"]
-      bounds[2,j] <- par_prior[j, "param2"]
+      if(set_hard_bounds) {
+        bounds[1,j] <- par_prior[j, "param1"]
+        bounds[2,j] <- par_prior[j, "param2"]
+      } else {
+        bounds[1,j] <- qunif(p, par_prior[j,"param1"], par_prior[j,"param2"])
+        bounds[2,j] <- qunif(p, par_prior[j,"param1"], par_prior[j,"param2"], lower.tail=FALSE)
+      }
     } else if(dist_name == "Gaussian") {
-      bounds[1,j] <- qnorm(tail_prob_excluded/2, par_prior[j,"param1"], 
-                           par_prior[j,"param2"])
-      bounds[2,j] <- qnorm(tail_prob_excluded/2, par_prior[j,"param1"], 
-                           par_prior[j,"param2"], lower.tail=FALSE)
+      bounds[1,j] <- qnorm(p, par_prior[j,"param1"], par_prior[j,"param2"])
+      bounds[2,j] <- qnorm(p, par_prior[j,"param1"], par_prior[j,"param2"], lower.tail=FALSE)
     } else if(dist_name == "Gamma") {
-      bounds[1,j] <- qgamma(tail_prob_excluded/2, shape=par_prior[j,"param1"], 
-                            rate=par_prior[j,"param2"])
-      bounds[2,j] <- qgamma(tail_prob_excluded/2, shape=par_prior[j,"param1"], 
-                            rate=par_prior[j,"param2"], lower.tail=FALSE)
+      if(set_hard_bounds) {
+        bounds[1,j] <- 0
+      } else {
+        bounds[1,j] <- qgamma(p, shape=par_prior[j,"param1"], rate=par_prior[j,"param2"])
+      }
+      bounds[2,j] <- qgamma(p, shape=par_prior[j,"param1"], rate=par_prior[j,"param2"], lower.tail=FALSE)
     } else if(dist_name == "Beta") {
-      bounds[1,j] <- 0
-      bounds[2,j] <- 1
+      if(set_hard_bounds) {
+        bounds[1,j] <- 0
+        bounds[2,j] <- 1
+      } else {
+        bounds[1,j] <- qbeta(p, par_prior[j,"param1"], par_prior[j,"param2"])
+        bounds[2,j] <- qbeta(p, par_prior[j,"param1"], par_prior[j,"param2"], lower.tail=FALSE)
+      }
     } else if(dist_name == "Truncated_Gaussian") {
-      bounds[1,j] <- par_prior[j,"bound_lower"]
-      bounds[2,j] <- par_prior[j,"bound_upper"]
+      if(set_hard_bounds) {
+        bounds[1,j] <- par_prior[j,"bound_lower"]
+        bounds[2,j] <- par_prior[j,"bound_upper"]
+      } else {
+        bounds[1,j] <- truncnorm::qtruncnorm(p, mean=par_prior[j,"param1"], 
+                                             sd=par_prior[j,"param2"],
+                                             a=par_prior[j,"bound_lower"],
+                                             b=par_prior[j,"bound_upper"])
+        bounds[2,j] <- truncnorm::qtruncnorm(1-p, mean=par_prior[j,"param1"], 
+                                             sd=par_prior[j,"param2"],
+                                             a=par_prior[j,"bound_lower"],
+                                             b=par_prior[j,"bound_upper"])
+      }
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }
@@ -320,7 +345,7 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
                                    cov_Gaussian=NULL, return_mean=TRUE, 
                                    return_var=TRUE, return_cov=FALSE, 
                                    log_scale=FALSE, adjustment=NULL,
-                                   bounds=NULL) {
+                                   lower=-Inf, upper=Inf) {
   # Given the mean and either variance or covariance matrix of a Gaussian random 
   # vector X, computes the mean, variance, and covariance of Y := exp(X), which 
   # is log-normally (LN) distributed. Optionally, returns the log of these 
@@ -339,7 +364,9 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
   #    return_var: logical(1), whether or not to return the (log) variances of Y.
   #    return_cov: logical(1), whether or not to return the covariance matrix of Y. 
   #    log_scale: logical(1), whether to return the log of the mean/variance of  
-  #               Y. Must be FALSE if `return_cov` is TRUE. 
+  #               Y. Must be FALSE if `return_cov` is TRUE.
+  #    lower: vector of lower bounds (scalar assumed to mean constant bound).
+  #    upper: vector of upper bounds (scalar assumed to mean constant bound).
   #
   # Returns: 
   #    list with the LN computations. Potential list arguments include "mean", 
@@ -350,22 +377,23 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
     stop("`convert_Gaussian_to_LN` only supported truncated or rectified adjustments.")
   }
   
-  if(!any(is.finite(bounds))) adjustment <- NULL
-  
+  if(all(is.infinite(lower)) && all(is.infinite(upper))) adjustment <- NULL
+
   # Truncated or rectified log-normal. Does not support multivariate - only
   # pointwise means/variances.
   if(!is.null(adjustment)) {
     if(adjustment == "truncated") {
       return(convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
-                                          return_var=return_var, bounds=bounds,
-                                          log_scale=log_scale))
+                                          return_var=return_var, lower=lower,
+                                          upper=upper, log_scale=log_scale))
     } else if(adjustment == "rectified") {
       return(convert_Gaussian_to_rect_LN(mean_Gaussian, var_Gaussian,
-                                         return_var=return_var, bounds=bounds,
-                                         log_scale=log_scale))
+                                         return_var=return_var, lower=lower,
+                                         upper=upper, log_scale=log_scale))
     }
   }
   
+  # Otherwise compute log-normal moments.
   assert_that(!is.null(var_Gaussian) || !is.null(cov_Gaussian), 
               msg=paste0("Gaussian variance or covariance matrix required to",
                          "compute log-normal moments."))
@@ -395,13 +423,12 @@ convert_Gaussian_to_LN <- function(mean_Gaussian, var_Gaussian=NULL,
   }
   
   return(return_list)
-                                
 }
 
 
 convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
                                          return_var=TRUE, 
-                                         bounds=c(-Inf, Inf), 
+                                         lower=-Inf, upper=Inf, 
                                          log_scale=FALSE,
                                          return_intermediate_calcs=FALSE) {
   # Converts (univariate) Gaussian means and variances to rectified log-normal 
@@ -416,7 +443,8 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   # vectors of equal length; the same bounds will be applied to all entries.
   # `return_intermediate_calcs` returns intermediate computations that are
   # used when computing the rectified LN moments; see 
-  # `convert_Gaussian_to_rect_LN`.
+  # `convert_Gaussian_to_rect_LN`. The bounds can be vectors if the bounds
+  # differ by entry, or they can be scalars for uniform bounds.
 
   mean_Gaussian <- drop(mean_Gaussian)
   var_Gaussian <- drop(var_Gaussian)
@@ -431,9 +459,13 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
                                        return_mean=TRUE, return_var=FALSE)
   
   # Upper and lower bounds.
-  assert_that(length(bounds) == 2L)
-  b1 <- bounds[1]
-  b2 <- bounds[2]
+  b1 <- drop(lower)
+  b2 <- drop(upper)
+  if(length(b1) == 1L) b1 <- rep(b1, n)
+  if(length(b2) == 1L) b2 <- rep(b2, n)
+  if(length(b1) != n) stop("Lower bound must be length of `mean_Gaussian` or length 1.")
+  if(length(b2) != n) stop("Upper bound must be length of `mean_Gaussian` or length 1.")
+  
   constrain_lower <- is.finite(b1)
   constrain_upper <- is.finite(b2)
   
@@ -444,18 +476,21 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   
   # Probabilities involved in moment expressions.
   lprob_leq_upper <- lprob_num_upper <- rep(0, n)
-  if(constrain_upper) {
-    lprob_leq_upper <- pnorm(b2, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
-    lprob_num_upper <- pnorm(b2, mean_Gaussian + var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
-  }
+  lprob_leq_upper[constrain_upper] <- pnorm(b2[constrain_upper], 
+                                            mean_Gaussian[constrain_upper], 
+                                            sqrt(var_Gaussian[constrain_upper]), log.p=TRUE)
+  lprob_num_upper[constrain_upper] <- pnorm(b2[constrain_upper], 
+                                            mean_Gaussian[constrain_upper] + var_Gaussian[constrain_upper], 
+                                            sqrt(var_Gaussian[constrain_upper]), log.p=TRUE)
   
   lprob_leq_lower <- lprob_num_lower <- rep(-Inf, n)
-  if(constrain_lower) {
-    lprob_leq_lower <- pnorm(b1, mean_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
-    lprob_num_lower <- pnorm(b1, mean_Gaussian + var_Gaussian, 
-                            sqrt(var_Gaussian), log.p=TRUE)
-  }
-  
+  lprob_leq_lower[constrain_lower] <- pnorm(b1[constrain_lower], 
+                                            mean_Gaussian[constrain_lower], 
+                                            sqrt(var_Gaussian[constrain_lower]), log.p=TRUE)
+  lprob_num_lower[constrain_lower] <- pnorm(b1[constrain_lower], 
+                                            mean_Gaussian[constrain_lower] + var_Gaussian[constrain_lower], 
+                                            sqrt(var_Gaussian[constrain_lower]), log.p=TRUE)
+
   if(return_intermediate_calcs) {
     return_list$lprob_leq_upper <- lprob_leq_upper
     return_list$lprob_leq_lower <- lprob_leq_lower
@@ -483,14 +518,14 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
   
   # Computing (log of) truncated LN second moment: E[y^2].
   lprob_num_upper_y2 <- rep(0, n)
-  if(constrain_upper) {
-    lprob_num_upper_y2 <- pnorm(b2, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
-  }
-  
+  lprob_num_upper_y2[constrain_upper] <- pnorm(b2[constrain_upper], 
+                                               mean_Gaussian[constrain_upper] + 2*var_Gaussian[constrain_upper], 
+                                               sqrt(var_Gaussian[constrain_upper]), log.p=TRUE)
+
   lprob_num_lower_y2 <- rep(-Inf, n)
-  if(constrain_lower) {
-    lprob_num_lower_y2 <- pnorm(b1, mean_Gaussian + 2*var_Gaussian, sqrt(var_Gaussian), log.p=TRUE)
-  }
+  lprob_num_lower_y2[constrain_lower] <- pnorm(b1[constrain_lower], 
+                                               mean_Gaussian[constrain_lower] + 2*var_Gaussian[constrain_lower], 
+                                               sqrt(var_Gaussian[constrain_lower]), log.p=TRUE)
 
   log_diff_num_y2 <- rep(NA_real_, n)
   lprob_num_lower_y2_inf <- is.infinite(lprob_num_lower_y2)
@@ -513,8 +548,7 @@ convert_Gaussian_to_trunc_LN <- function(mean_Gaussian, var_Gaussian,
 
 
 convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
-                                        return_var=TRUE,
-                                        bounds=c(-Inf, Inf),
+                                        return_var=TRUE, lower=-Inf, upper=Inf,
                                         log_scale=FALSE) {
   # Converts Gaussian means and variances to truncated log-normal means and 
   # variances. If x ~ N(m, v) then y ~ trunc-LN(m, v; b1, b2) with respect to
@@ -531,20 +565,26 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   
   # First compute truncated moments.
   ln_trunc <- convert_Gaussian_to_trunc_LN(mean_Gaussian, var_Gaussian,
-                                           return_var=return_var, bounds=bounds, 
+                                           return_var=return_var,
+                                           lower=lower, upper=upper,
                                            log_scale=TRUE,
                                            return_intermediate_calcs=TRUE)
+  n <- length(ln_trunc$log_mean)
   
   # Lower and upper bounds (potentially infinite).
-  b1 <- bounds[1]
-  b2 <- bounds[2]
-  n <- length(ln_trunc$log_mean)
+  b1 <- drop(lower)
+  b2 <- drop(upper)
+  if(length(b1) == 1L) b1 <- rep(b1, n)
+  if(length(b2) == 1L) b2 <- rep(b2, n)
+  if(length(b1) != n) stop("Lower bound must be length of `mean_Gaussian` or length 1.")
+  if(length(b2) != n) stop("Upper bound must be length of `mean_Gaussian` or length 1.")
 
   # Probabilities for the three pieces of the rectified random variable. Some
   # values may be -Inf here, which will imply zero probability.
   # prob_upper = 1 - prob_leq_upper
   # prob_middle = 1 - prob_leq_upper - prob_leq_lower
-  upper_prob_zero <- (ln_trunc$lprob_leq_upper == 0)
+  eps <- 1e-16
+  upper_prob_zero <- (abs(ln_trunc$lprob_leq_upper) < eps)
   upper_prob_one <- is.infinite(ln_trunc$lprob_leq_upper)
   upper_prob_not_zero_one <- !(upper_prob_zero | upper_prob_one)
 
@@ -557,7 +597,7 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # log P(y < b1)
   lprob_lower <- ln_trunc$lprob_leq_lower
   lower_prob_zero <- is.infinite(lprob_lower)
-  lower_prob_one <- (lprob_lower == 0)
+  lower_prob_one <- (abs(lprob_lower) < eps)
   lower_prob_not_zero_one <- !(lower_prob_zero | lower_prob_one)
   
   # log P(b1 <= y <= b2)
@@ -571,14 +611,15 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
 
   # Compute rectified LN mean. Note lprob_middle can contain -Inf.
   log_summands <- cbind(ln_trunc$log_mean + lprob_middle)
-  if(ln_trunc$constrain_lower) {
-    log_summands <- cbind(log_summands, b1+lprob_lower)
-  }
-  if(ln_trunc$constrain_upper) {
-    log_summands <- cbind(log_summands, b2+lprob_upper)
-  }
+  constrain_lower <- ln_trunc$constrain_lower
+  constrain_upper <- ln_trunc$constrain_upper
+  add_lower <- add_upper <- rep(0, n)
+  add_lower[constrain_lower] <- b1[constrain_lower] + lprob_lower[constrain_lower]
+  add_upper[constrain_upper] <- b2[constrain_upper] + lprob_upper[constrain_upper]
+  log_summands <- cbind(log_summands, add_lower)
+  log_summands <- cbind(log_summands, add_upper)
   
-  # Note: `matrixStats::rowLogSumExps` can handle the presnece of -Inf values.
+  # Note: `matrixStats::rowLogSumExps` can handle the presence of -Inf values.
   log_rect_ln_mean <- matrixStats::rowLogSumExps(log_summands)
   if(log_scale) return_list$log_mean <- log_rect_ln_mean
   else return_list$mean <- exp(log_rect_ln_mean)
@@ -587,14 +628,16 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   
   # Computing rectified LN second moment.
   log_summands_y2 <- cbind(ln_trunc$log_Ey2 + lprob_middle)
-  if(ln_trunc$constrain_lower) {
-    log_summands_y2 <- cbind(log_summands_y2, 2*b1 + lprob_lower)
-  }
-  if(ln_trunc$constrain_upper) {
-    log_summands_y2 <- cbind(log_summands_y2, 2*b2 + lprob_upper)
-  }
+  add_lower_y2 <- add_upper_y2 <- rep(0, n)
+  add_lower_y2[constrain_lower] <- 2*b1[constrain_lower] + lprob_lower[constrain_lower]
+  add_upper_y2[constrain_upper] <- 2*b2[constrain_upper] + lprob_upper[constrain_upper]
+  log_summands_y2 <- cbind(log_summands_y2, add_lower_y2)
+  log_summands_y2 <- cbind(log_summands_y2, add_upper_y2)
   
+  # Very small values can cause issues in `log_diff_exp`. Currently just 
+  # thresholding as a hack.
   log_rect_Ey2 <- matrixStats::rowLogSumExps(log_summands_y2)
+  log_rect_Ey2[log_rect_Ey2 < 1e-8] <- 1e-8
   log_rect_ln_var <- log_diff_exp(log_rect_Ey2, 2*log_rect_ln_mean)
 
   if(log_scale) return_list$log_var <- log_rect_ln_var
@@ -643,7 +686,7 @@ rect_norm_quantile <- function(q, mean=0, sd=1, lower=-Inf, upper=Inf, lower.tai
     }
   }
   
-  # Compute cumeanlative probabilities
+  # Compute cumulative probabilities
   p_lower <- pnorm(lower, mean=mean, sd=sd)
   p_upper <- pnorm(upper, mean=mean, sd=sd)
   

@@ -375,6 +375,81 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
 }
 
 
+plot_1d_proj <- function(func, input_names_proj=NULL, n_points=100L, 
+                         input_list_proj=NULL, input_fixed=NULL, 
+                         input_bounds=NULL, input_grids=NULL, ...) {
+  # Plots 1d projections of the response surface of the function `func`, which
+  # is a function with multiple inputs that maps to a scalar response.
+  # If `input_grids` is passed, then no new grid points are created. 
+  # `input_grids` should be a list as returned by `get_input_grid_1d_projection()`.
+  
+  if(is.null(input_grids)) {
+    # Either `input_bounds` or `input_fixed` must be provided; the full set of
+    # parameter names are extracted from these objects.
+    input_names <- NULL
+    if(!is.null(input_bounds)) input_names <- colnames(input_bounds)
+    else if(!is.null(input_fixed)) input_names <- colnames(input_fixed)
+    
+    if(is.null(input_names)) {
+      stop("Either `input_bounds` or `input_fixed` must be provided, and must ",
+           "have column names set to the input names.")
+    }
+    
+    # Determine the inputs that will be varied. 
+    if(is.null(input_names_proj)) {
+      input_names_proj <- input_names
+    } else {
+      input_names_proj <- unique(input_names_proj)
+      assert_that(all(is.element(input_names_proj, input_names)))
+    }
+    
+    # Constructing input grids for varied parameters.
+    input_grids <- get_input_grid_1d_projection(input_names, 
+                                                x_vary=input_names_proj, 
+                                                X_list=input_list_proj, 
+                                                X_fixed=input_fixed,
+                                                X_bounds=input_bounds, 
+                                                n_points_default=n_points)
+  } else {
+    input_names <- names(input_grids)
+    assert_that(!is.null(input_names))
+  }
+  
+  # Helper function for computing response values at the input points given
+  # in `input_grids[[i]]`, which is a list containing one set of input 
+  # points per set of fixed values.
+  f <- function(i,j) func(input_grids[[i]][[j]])
+
+  compute_response <- function(i) {
+    l <- lapply(seq_along(input_grids[[i]]), function(j) f(i,j))
+    do.call(cbind, l)
+  }
+  
+  # Create plots, loop over each input that is varied.
+  plts <- list()
+  n_fixed <- length(input_names) - 1L
+  for(i in seq_along(input_grids)) {
+    input_name <- names(input_grids)[i]
+    
+    # Compute response values to be plotted, one per set of fixed values.
+    vals <- compute_response(i)
+    colnames(vals) <- paste0("fixed", 1:ncol(vals))
+    
+    # Construct plot.
+    input_1d <- drop(input_grids[[input_name]][[1]][,input_name])
+    plts[[input_name]] <- plot_curves_1d_helper(input_1d, pred=vals, 
+                                                xlab=input_name, ylab="response",
+                                                plot_title="1d Projection", ...)
+  }
+  
+  return(plts)
+}
+
+
+# ------------------------------------------------------------------------------
+# Helper functions.
+# ------------------------------------------------------------------------------
+
 get_input_grid_1d_projection = function(x_names, x_vary=x_names, X_list=NULL, 
                                         X_fixed=NULL, X_bounds=NULL, 
                                         n_points_default=100L) {
@@ -747,7 +822,7 @@ ggtheme_journal <- function(legend_position="none", legend_title=element_blank()
   return(theme_journal)
 }
 
-ggformat_journal <- function(plt, remove_title=TRUE, xlim=NULL, ylim=NULL, ...) {
+ggformat_journal <- function(plt, remove_title=FALSE, xlim=NULL, ylim=NULL, ...) {
   
   if(remove_title) plt <- plt + ggtitle(NULL)
   if(!is.null(xlim)) plt <- plt + xlim(xlim)

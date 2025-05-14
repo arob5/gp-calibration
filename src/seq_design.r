@@ -468,7 +468,6 @@ get_init_design_list <- function(inv_prob, design_method, N_design, inputs=NULL,
                                           prior_params=inv_prob$par_prior, ...)
   } else {
     assert_that(setequal(colnames(inputs), inv_prob$par_names))
-    assert_that(nrow(inputs) == N_design)
     design_info$input <- inputs
   }
   
