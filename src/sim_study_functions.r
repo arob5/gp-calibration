@@ -370,6 +370,184 @@ get_samp_dt_reps_agg <- function(experiment_dir, round, mcmc_tag, em_tag,
 }
 
 
+get_mcmc_rep_ids <- function(experiment_dir, round, mcmc_tags_prev, 
+                             design_tag_prev, em_tag_prev) {
+  # Fetches MCMC IDs that are associated with 
+  # the given round, MCMC tags (from the previous round), design tag
+  # (from the previous round) and emulator tag (from the previous round), all
+  # within the specified `experiment_dir`. This is typically intended to 
+  # identify "replications" of the same experimental setup. Note that 
+  # `mcmc_tags_prev` can be a vector of multiple tags, while the other 
+  # arguments should only specify a single tag.
+  
+  # Previous round - ensure that it exists (i.e., that this is not the first round).
+  prev_round <- round - 1L
+  assert_that(prev_round > 0)
+  
+  # Identify proper directories.
+  prev_round_dir <- file.path(experiment_dir, paste0("round", prev_round))
+  mcmc_dir_prev <- file.path(prev_round_dir, "mcmc")
+  em_dir_prev <- file.path(prev_round_dir, "em")
+  
+  # Restrict to specified em tag and design tag.
+  em_id_map <- fread(file.path(em_dir_prev, em_tag_prev, "id_map.csv"))
+  em_id_map <- em_id_map[design_tag==design_tag_prev]
+  id_map <- NULL
+  
+  for(mcmc_tag in mcmc_tags_prev) {
+    mcmc_id_map <- fread(file.path(mcmc_dir_prev, mcmc_tag, "id_map.csv"))
+    mcmc_id_map <- mcmc_id_map[em_tag==em_tag_prev]
+    mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, em_id_map, by="em_id",
+                                                all=FALSE)
+    mcmc_id_map[, mcmc_tag := mcmc_tag]
+    
+    if(is.null(id_map)) id_map <- copy(mcmc_id_map)
+    else id_map <- rbindlist(list(id_map, mcmc_id_map), use.names=TRUE)
+  }
+  
+  return(id_map)
+}
+
+
+# ------------------------------------------------------------------------------
+# Loading/Assembling sequential design/acquisition results.
+# ------------------------------------------------------------------------------
+
+load_acq_data <- function(experiment_dir, round, acq_id, mcmc_tag_prev,
+                          mcmc_id_prev) {
+  # Loads a single acquisition results file.
+  
+  results_path <- file.path(experiment_dir, paste0("round", round), 
+                            "design", paste0("acq_", acq_id), mcmc_tag_prev,
+                            mcmc_id_prev, "acq_results.rds")
+  acq_results <- readRDS(results_path)
+  return(acq_results)
+}
+
+
+process_acq_results <- function(acq_results) {
+  # Given a single acquisition results file, converts all of the tracked 
+  # quantities into a data.table, and also returns a separate data.table with 
+  # the responses at the acquired points and the values of the acquisition 
+  # function at each iteration. This latter data.table will have info for
+  # every iteration, while the former may not, depending on the interval at 
+  # which the tracked quantities were computed.
+  
+  tracked_quantities <- extract_acq_tracked_quantities_table(acq_results)
+  itr_info <- extract_acq_itr_info(acq_results)
+  
+  return(list(tracked_quantities=tracked_quantities, itr_info=itr_info))
+}
+
+
+extract_acq_tracked_quantities_table <- function(acq_results) {
+  # Returns data.table with columns: itr, name, metric, val. In the current
+  # setting "name" corresponds to the validation dataset used (prior vs.
+  # posterior validation). This function assumes a specific structure
+  # as I have currently set it up, but should be generalized in the future.
+  
+  dt <- data.table(itr=integer(), name=character(), metric=character(),
+                   val=numeric())
+  tracked_quantities <- acq_results$tracking_list$computed_quantities
+  
+  # Tracked quantities may not be computed every iteration.
+  itrs_tracked_str <- names(tracked_quantities)
+  itrs_tracked <- sapply(strsplit(itrs_tracked_str, "_", fixed=TRUE), 
+                         function(x) as.integer(x[2]))
+  
+  # Aggregated metrics.
+  log_scores_post <- sapply(itrs_tracked_str, 
+                            function(itr) drop(tracked_quantities[[itr]]$agg_post))
+  log_scores_prior <- sapply(itrs_tracked_str, 
+                             function(itr) drop(tracked_quantities[[itr]]$agg_prior))
+  dt_agg_post <- data.table(itr=itrs_tracked, name="post", metric="log_score",
+                            val=log_scores_post)
+  dt_agg_prior <- data.table(itr=itrs_tracked, name="prior", metric="log_score",
+                             val=log_scores_post)
+  dt <- rbindlist(list(dt, dt_agg_post, dt_agg_prior), use.names=TRUE)
+  
+  # Pointwise metrics (which have already been aggregated).
+  group_names <- c("pw_prior", "pw_post")
+  
+  for(i in seq_along(tracked_quantities)) {
+    itr <- itrs_tracked[i]
+    itr_quantities <- tracked_quantities[[i]]
+    
+    for(nm in group_names) {
+      dt_curr <- copy(itr_quantities[[nm]])
+      setnames(dt_curr, c("func", "mean"), c("metric", "val"))
+      nm_short <- ifelse(nm=="pw_post", "post", "prior")
+      dt_curr[, `:=`(name=nm_short, itr=itr)]
+      dt_curr[metric=="mse", `:=`(metric="rmse", val=sqrt(val))]
+      dt <- rbindlist(list(dt, dt_curr), use.names=TRUE)
+    }
+  }
+  
+  return(dt)  
+}
+
+
+extract_acq_itr_info <- function(acq_results) {
+  # Stores data.table with columns: itr, response, acq_val.
+  
+  data.table(itr = seq_along(acq_results$responses),
+             response = acq_results$responses,
+             acq_val = acq_results$tracking_list$acq_val)
+}
+
+
+process_acq_data_reps <- function(experiment_dir, round, acq_ids, mcmc_tags_prev,
+                                  design_tag_prev, em_tag_prev) {
+  # Loads acquisition results for all MCMC IDs that are associated with 
+  # the given round, acq IDs, MCMC tags (from the previous round), design tag
+  # (from the previous round) and emulator tag (from the previous round), all
+  # within the specified `experiment_dir`. This is typically intended to 
+  # identify "replications" of the same experimental setup. Note that 
+  # `mcmc_tags_prev` and `acq_ids` can be vectors with multiple elements, 
+  # while the other arguments should only specify one tag/ID each.
+  #
+  # Returns the same two data.tables as `process_acq_results()`, where the
+  # information from all of the loaded runs have been stacked together. 
+  # The following columns are also added: acq_id, mcmc_tag, mcmc_id.
+  # Also returns the ID map produced by `get_mcmc_rep_ids()`.
+  
+  dt_track <- dt_itr <- NULL
+  
+  # Fetch the MCMC IDs.
+  id_map <- get_mcmc_rep_ids(experiment_dir, round, mcmc_tags_prev, 
+                             design_tag_prev, em_tag_prev)
+  mcmc_tag_id <- unique(id_map[, .(mcmc_tag, mcmc_id)])
+  
+  for(acq_id in acq_ids) {
+    for(i in 1:nrow(mcmc_tag_id)) {
+      mcmc_tag_prev <- mcmc_tag_id[i,mcmc_tag]
+      mcmc_id_prev <- mcmc_tag_id[i,mcmc_id]
+      
+      # Process results from the acquisition run.
+      acq_results <- load_acq_data(experiment_dir, round, acq_id, 
+                                   mcmc_tag_prev, mcmc_id_prev)
+      results_list <- process_acq_results(acq_results)
+      
+      # Append to tracked quantities table.
+      tracked_quantities <- results_list$tracked_quantities
+      tracked_quantities[, `:=`(acq_id=acq_id, mcmc_tag=mcmc_tag_prev,
+                                mcmc_id=mcmc_id_prev)]
+      if(is.null(dt_track)) dt_track <- copy(tracked_quantities)
+      else dt_track <- rbindlist(list(dt_track, tracked_quantities))
+      
+      # Append to iteration info table.
+      itr_info <- results_list$itr_info
+      itr_info[, `:=`(acq_id=acq_id, mcmc_tag=mcmc_tag_prev, mcmc_id=mcmc_id_prev)]
+      if(is.null(dt_itr)) dt_itr <- copy(itr_info)
+      else dt_itr <- rbindlist(list(dt_itr, itr_info))
+    }
+  }
+  
+  return(list(dt_track=dt_track, dt_itr=dt_itr, id_map=id_map,
+              design_tag_prev=design_tag_prev, em_tag_prev=em_tag_prev))
+}
+
+
 # ------------------------------------------------------------------------------
 # Plotting
 # ------------------------------------------------------------------------------

@@ -375,6 +375,81 @@ plot_heatmap <- function(X, y, samples_kde=NULL, points_mat=NULL,
 }
 
 
+plot_1d_proj <- function(func, input_names_proj=NULL, n_points=100L, 
+                         input_list_proj=NULL, input_fixed=NULL, 
+                         input_bounds=NULL, input_grids=NULL, ...) {
+  # Plots 1d projections of the response surface of the function `func`, which
+  # is a function with multiple inputs that maps to a scalar response.
+  # If `input_grids` is passed, then no new grid points are created. 
+  # `input_grids` should be a list as returned by `get_input_grid_1d_projection()`.
+  
+  if(is.null(input_grids)) {
+    # Either `input_bounds` or `input_fixed` must be provided; the full set of
+    # parameter names are extracted from these objects.
+    input_names <- NULL
+    if(!is.null(input_bounds)) input_names <- colnames(input_bounds)
+    else if(!is.null(input_fixed)) input_names <- colnames(input_fixed)
+    
+    if(is.null(input_names)) {
+      stop("Either `input_bounds` or `input_fixed` must be provided, and must ",
+           "have column names set to the input names.")
+    }
+    
+    # Determine the inputs that will be varied. 
+    if(is.null(input_names_proj)) {
+      input_names_proj <- input_names
+    } else {
+      input_names_proj <- unique(input_names_proj)
+      assert_that(all(is.element(input_names_proj, input_names)))
+    }
+    
+    # Constructing input grids for varied parameters.
+    input_grids <- get_input_grid_1d_projection(input_names, 
+                                                x_vary=input_names_proj, 
+                                                X_list=input_list_proj, 
+                                                X_fixed=input_fixed,
+                                                X_bounds=input_bounds, 
+                                                n_points_default=n_points)
+  } else {
+    input_names <- names(input_grids)
+    assert_that(!is.null(input_names))
+  }
+  
+  # Helper function for computing response values at the input points given
+  # in `input_grids[[i]]`, which is a list containing one set of input 
+  # points per set of fixed values.
+  f <- function(i,j) func(input_grids[[i]][[j]])
+
+  compute_response <- function(i) {
+    l <- lapply(seq_along(input_grids[[i]]), function(j) f(i,j))
+    do.call(cbind, l)
+  }
+  
+  # Create plots, loop over each input that is varied.
+  plts <- list()
+  n_fixed <- length(input_names) - 1L
+  for(i in seq_along(input_grids)) {
+    input_name <- names(input_grids)[i]
+    
+    # Compute response values to be plotted, one per set of fixed values.
+    vals <- compute_response(i)
+    colnames(vals) <- paste0("fixed", 1:ncol(vals))
+    
+    # Construct plot.
+    input_1d <- drop(input_grids[[input_name]][[1]][,input_name])
+    plts[[input_name]] <- plot_curves_1d_helper(input_1d, pred=vals, 
+                                                xlab=input_name, ylab="response",
+                                                plot_title="1d Projection", ...)
+  }
+  
+  return(plts)
+}
+
+
+# ------------------------------------------------------------------------------
+# Helper functions.
+# ------------------------------------------------------------------------------
+
 get_input_grid_1d_projection = function(x_names, x_vary=x_names, X_list=NULL, 
                                         X_fixed=NULL, X_bounds=NULL, 
                                         n_points_default=100L) {
@@ -404,7 +479,7 @@ get_input_grid_1d_projection = function(x_names, x_vary=x_names, X_list=NULL,
   #            be constructed using `X_bounds`.
   #    X_fixed: matrix, of shape (m,d). Each row is a value at which to fix the 
   #             non-varying parameters. Column names must correspond to 
-  #             `x_names`.Technically, if a variable is never varied then it 
+  #             `x_names`. Technically, if a variable is never varied then it 
   #             need not be in the matrix, but it is typically easiest to 
   #             include all parameters as columns.
   #    X_bounds: matrix, of shape (2,d) with the two rows specifying lower and 
@@ -721,29 +796,33 @@ plot_fwd_model_output <- function(fwd_ens=NULL, output_ens=NULL, fwd_true=NULL,
 }
 
 
-
 # -----------------------------------------------------------------------------
 # ggplot themes and formatting functions. 
 # -----------------------------------------------------------------------------
 
-ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), title_size=35, 
-                            legend_size=20, ...) {
+ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), 
+                            title_size=35, legend_size=30, x_lab_size=30,
+                            y_lab_size=30, x_text_size=24, y_text_size=24, ...) {
   
   theme_journal <- theme(legend.position=legend_position, 
                          legend.title=legend_title,
                          legend.text=element_text(size=legend_size),
                          panel.grid.minor=element_blank(),  panel.grid.major=element_blank(),
                          panel.background=element_blank(), panel.border=element_blank(), 
-                         axis.line.x = element_line(size=0.5, linetype="solid", colour="black"),
-                         axis.line.y = element_line(size=0.5, linetype="solid", colour="black"),
+                         axis.line.x = element_line(linewidth=0.5, linetype="solid", colour="black"),
+                         axis.line.y = element_line(linewidth=0.5, linetype="solid", colour="black"),
                          plot.background=element_blank(), 
                          axis.title=element_text(size=22), 
-                         plot.title=element_text(size=title_size), ...)
-  
+                         plot.title=element_text(size=title_size), 
+                         axis.title.x = element_text(size=x_lab_size),
+                         axis.title.y = element_text(size=y_lab_size),
+                         axis.text.x = element_text(size=x_text_size),
+                         axis.text.y = element_text(size=y_text_size), ...)
+
   return(theme_journal)
 }
 
-ggformat_journal <- function(plt, remove_title=TRUE, xlim=NULL, ylim=NULL, ...) {
+ggformat_journal <- function(plt, remove_title=FALSE, xlim=NULL, ylim=NULL, ...) {
   
   if(remove_title) plt <- plt + ggtitle(NULL)
   if(!is.null(xlim)) plt <- plt + xlim(xlim)

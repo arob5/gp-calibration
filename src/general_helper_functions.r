@@ -39,7 +39,7 @@ mult_vec_with_mat_cols <- function(v, M) {
   v * M
 }
 
-log_exp_minus_1 <- function(x, threshold=100) {
+log_exp_minus_1 <- function(x, threshold=30.0) {
   # A numerically stable implementation of log(exp(x)-1). This computation 
   # shows up, for example, in computing the variance of a log-normal 
   # random variable. To prevent overflow, the computation uses the 
@@ -59,6 +59,38 @@ log_exp_minus_1 <- function(x, threshold=100) {
   
   idx_small_vals <- (x < threshold)
   x[idx_small_vals] <- log(exp(x[idx_small_vals]) - 1) 
+  return(x)
+}
+
+log_1_minus_exp <- function(x, threshold=-37.0) {
+  # A numerically stable implementation of log(1 - exp(x)), which is defined 
+  # for x < 0. To prevent overflow, the computation uses the 
+  # approximation log(exp(x)-1) ~ 0 for x less than `threshold` (a negative 
+  # number). `x` may any object containing numeric values which can be 
+  # indexed via `[`; e.g. a numeric vector or matrix. In these cases, 
+  # the `log` and `exp` are interpreted as being applied elementwise. 
+  #
+  # Args:
+  #    x: See above description. 
+  #    threshold: numeric(1), the threshold used to define the cutoff
+  #               point where the approximation is applied. 
+  #
+  # Returns: 
+  #    The approximated value of log(1 - exp(x)), which will be the same 
+  #    class and shape as `x`. 
+  
+  if(any(x >= 0)) {
+    stop("log_1_minus_exp(x) only defined for x < 0.")
+  }
+  
+  if(threshold >= 0) {
+    stop("`threshold` argument of log_1_minus_exp() must be < 0.")
+  }
+  
+  idx_small_vals <- (x < threshold)
+  x[idx_small_vals] <- 0
+  x[!idx_small_vals] <- log(1 - exp(x[!idx_small_vals]))
+    
   return(x)
 }
 

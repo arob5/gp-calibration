@@ -19,7 +19,7 @@ library(patchwork)
 library(scales)
 library(grid)
 
-# Settings: for now targetting a specific emulator/design tag pair.
+# Settings: for now targeting a specific emulator/design tag pair.
 experiment_tag <- "vsem"
 round <- 1L
 em_tag <- "llik_quad_mean"
@@ -163,7 +163,6 @@ saveRDS(coverage_plt_list, file.path(mcmc_dir, "summary_files", "coverage_plt_li
 
 plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
   grid_plt_list <- list()
-  par_names <- inv_prob$par_names
   q_min <- min(interval_probs)
   q_max <- max(interval_probs)
   
@@ -183,19 +182,33 @@ plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
       
       # Only add titles to the first row.
       if(i == 1L) {
-        plt <- plt + ggtitle(par)
+        # TODO: TEMP
+        if(par == "KEXT") nm <- "theta 1"
+        if(par == "GAMMA") nm <- "theta 2"
+        if(par == "Cv") nm <- "theta 3"
+        plt <- plt + ggtitle(nm)
+        
+        # plt <- plt + ggtitle(par)
       }
       
       # Only add x-axis tick labels to the last row.
       if(i != length(mcmc_tags)) {
         plt <- plt + theme(axis.text.x = element_blank())
       } else {
-        plt <- plt + theme(axis.text.x = element_text(size = 8))
+        plt <- plt + theme(axis.text.x = element_text(size=12))
       }
       
       # Only add y-axis labels and tick labels to the first column.
       if(j == 1L) {
-        plt <- plt + ylab(tag)
+        # TODO: TEMP
+        if(tag == "mean-rect") nm <- "mean"
+        if(tag == "marginal-rect") nm <- "marginal"
+        if(tag == "mcwmh-joint-rect") nm <- "noisy"
+        plt <- plt + ylab(nm) + 
+                theme(axis.title.y=element_text(size=16),
+                      axis.text.y=element_text(size=12))
+        
+        # plt <- plt + ylab(tag)
       } else {
         plt <- plt + theme(axis.text.y = element_blank(),
                            axis.title.y = element_blank())
@@ -212,6 +225,17 @@ plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
   # Format in grid.
   wrap_plots(grid_plt_list, ncol=length(par_names), nrow=length(mcmc_tags))
 }
+
+
+# Plug-in Mean.
+tags_mean <- c("mean-rect", "mcwmh-joint-rect")
+plt_grid_mean <- plot_grid(coverage_plt_list, tags_mean, par_names=c("KEXT","GAMMA","Cv"),
+                           interval_probs) & 
+                 theme(plot.background=element_rect(fill="transparent", color=NA))
+plot(plt_grid_mean)
+ggsave(file.path(plt_dir, "coverage_plots_for_imsi_poster.png"), plt_grid_mean,
+       width=7, height=7)
+
 
 
 # Comparing mean-rect, marginal-rect, and mcwmh-ind-rect.

@@ -564,8 +564,8 @@ gpWrapper$methods(
   
   predict = function(X_new, return_mean=TRUE, return_var=TRUE, return_cov=FALSE, 
                      return_cross_cov=FALSE, X_cross=NULL, include_noise=TRUE, 
-                     return_trend=TRUE, adjustment=NULL, bounds=c(-Inf,Inf), 
-                     ...) {
+                     return_trend=TRUE, adjustment=NULL, lower_bound=-Inf, 
+                     upper_bound=Inf, ...) {
     # Logic for all predict() functions:
     #   - `return_cov` refers to k(X_new, X_new) while `return_cross_cov` refers 
     #      to k(X_new, X_cross).
@@ -591,9 +591,11 @@ gpWrapper$methods(
     # The `adjustment` argument allows for a transformation to be applied to the 
     # Gaussian predictive distribution. Currently supports adjustments "truncated"
     # and "rectified", which transform to truncated and rectified Gaussian 
-    # distributions, respectively.
+    # distributions, respectively. The bounds `lower_bound` and `upper_bound`
+    # can be vectors of length equal to `nrow(X_new)`, or scalars (which
+    # will be interpreted as constant bounds applied to all points).
 
-    adjustment <- .self$get_dist_adjustment(adjustment, bounds)
+    adjustment <- .self$get_dist_adjustment(adjustment, lower_bound, upper_bound)
     if(!is.null(adjustment) && return_cross_cov) {
       stop("Currently `adjustment` must be 'none' if cross covariances are to be returned.")
     }
@@ -680,28 +682,33 @@ gpWrapper$methods(
     
     # Optionally apply transformation to Gaussian predictive distribution.
     if(isTRUE(adjustment=="truncated")) {
-      pred_list <- .self$convert_Gaussian_to_truncated(pred_list, bounds,
+      pred_list <- .self$convert_Gaussian_to_truncated(pred_list, 
+                                                       lower_bound=lower_bound,
+                                                       upper_bound=upper_bound,
                                                        use_cov=return_cov)
     } else if(isTRUE(adjustment=="rectified")) {
-      pred_list <- .self$convert_Gaussian_to_rectified(pred_list, bounds)
+      pred_list <- .self$convert_Gaussian_to_rectified(pred_list, 
+                                                       lower_bound=lower_bound,
+                                                       upper_bound=upper_bound)
     }
     
     return(pred_list)
   }, 
   
   
-  convert_Gaussian_to_truncated = function(pred_list, bounds=c(-Inf,Inf), 
+  convert_Gaussian_to_truncated = function(pred_list, lower_bound=-Inf, upper_bound=Inf, 
                                            return_mean=TRUE, return_var=TRUE, 
                                            return_cov=FALSE, use_cov=return_cov, ...) {
     # Transforms Gaussian predictive quantities in `pred_list` to truncated
-    # Gaussian quantities, where the truncation points are determined by `bounds`.
+    # Gaussian quantities, where the truncation points are determined by 
+    # `lower_bound`, `upper_bound`.
     # If `use_cov = TRUE`, then the Gaussian distribution is viewed as a multivariate
     # Gaussian and transformed to a multivariate truncated Gaussian. In this case, 
     # `llik_pred_list$cov` must be non-NULL. Otherwise, the transformation is applied
     # independently for each input. Currently supports computation of truncated 
     # Gaussian means, variances, and covariances; cross-covariances are not yet 
     # supported.
-    
+
     # Truncated Gaussian depends on first two moments of underlying Gaussian.
     assert_that(!is.null(pred_list$mean))
     if(use_cov) {
@@ -719,7 +726,19 @@ gpWrapper$methods(
     
     if(return_mean) trunc_pred_list$mean <- matrix(nrow=n_input, ncol=.self$Y_dim)
     if(return_var) trunc_pred_list$var <- matrix(nrow=n_input, ncol=.self$Y_dim)
-    if(return_cov) trunc_pred_list$var <- array(dim=c(n_input, n_input, .self$Y_dim))
+    if(return_cov) trunc_pred_list$cov <- array(dim=c(n_input, n_input, .self$Y_dim))
+    
+    # Extend scalar bounds to match number of inputs.
+    lower_bound <- drop(lower_bound)
+    upper_bound <- drop(upper_bound)
+    if(length(lower_bound) == 1L) lower_bound <- rep(lower_bound, n_input)
+    if(length(upper_bound) == 1L) upper_bound <- rep(upper_bound, n_input)
+    if(length(lower_bound) != n_input) {
+      stop("`lower_bound` must match input length or be a scalar.")
+    }
+    if(length(upper_bound) != n_input) {
+      stop("`upper_bound` must match input length or be a scalar.")
+    }
     
     # Loop over each independent GP.
     for(i in 1:.self$Y_dim) {
@@ -728,8 +747,7 @@ gpWrapper$methods(
       if(use_cov) {
         moments <- tmvtnorm::mtmvnorm(mean=pred_list$mean[,i], 
                                       sigma=as.matrix(pred_list$cov[,,i]), 
-                                      lower=rep(bounds[1], n_input),
-                                      upper=rep(bounds[2], n_input), 
+                                      lower=lower_bound, upper=upper_bound, 
                                       doComputeVariance=return_cov||return_var)
       }
       
@@ -738,8 +756,8 @@ gpWrapper$methods(
         if(use_cov) {
           trunc_pred_list$mean[,i] <- moments$tmean
         } else {
-          trunc_pred_list$mean[,i] <- truncnorm::etruncnorm(a=rep(bounds[1], n_input),
-                                                            b=rep(bounds[2], n_input),
+          trunc_pred_list$mean[,i] <- truncnorm::etruncnorm(a=lower_bound,
+                                                            b=upper_bound,
                                                             mean=pred_list$mean[,i],
                                                             sd=sqrt(pred_list$var[,i]))
         }
@@ -755,19 +773,17 @@ gpWrapper$methods(
           # essentially be a point mass on the bound, so we set the truncated
           # variance to a near-zero value.
           eps <- sqrt(.Machine$double.eps)
-          prob_upper_satsfied <- pnorm(bounds[2], mean=pred_list$mean[,i],
-                                       sd=sqrt(pred_list$var[,i]))
-          prob_lower_satisfied <- pnorm(bounds[1], mean=pred_list$mean[,i],
-                                        sd=sqrt(pred_list$var[,i]), lower.tail=FALSE)
-          prob_bounds_satisfied <- prob_upper_satsfied - prob_lower_satisfied
+          q_upper <- pnorm(upper_bound, mean=pred_list$mean[,i], sd=sqrt(pred_list$var[,i]))
+          q_lower <- pnorm(lower_bound, mean=pred_list$mean[,i], sd=sqrt(pred_list$var[,i]))
+          prob_bounds_satisfied <- q_upper - q_lower
           
           prob_threshold <- eps
           small_prob_sel <- (prob_bounds_satisfied < prob_threshold)
           trunc_pred_list$var[small_prob_sel,i] <- eps
           
           # Now compute variance for the remaining inputs.
-          trunc_pred_list$var[!small_prob_sel,i] <- truncnorm::vtruncnorm(a=rep(bounds[1], n_input),
-                                                                          b=rep(bounds[2], n_input),
+          trunc_pred_list$var[!small_prob_sel,i] <- truncnorm::vtruncnorm(a=lower_bound,
+                                                                          b=upper_bound,
                                                                           mean=pred_list$mean[!small_prob_sel,i],
                                                                           sd=sqrt(pred_list$var[!small_prob_sel,i]))
         }
@@ -782,9 +798,9 @@ gpWrapper$methods(
     return(trunc_pred_list)
   },
   
-  convert_Gaussian_to_rectified = function(pred_list, bounds=c(-Inf,Inf), 
-                                           return_mean=TRUE, return_var=TRUE, 
-                                           return_cov=FALSE, ...) {
+  convert_Gaussian_to_rectified = function(pred_list, lower_bound=-Inf,
+                                           upper_bound=Inf, return_mean=TRUE, 
+                                           return_var=TRUE, return_cov=FALSE, ...) {
     # Converts Gaussian predictive distribution to rectified Gaussian, defined 
     # as follows: if x~N(m,v) then y, defined as follows, is rectified Gaussian.
     # Set y := x when bounds[1] <= x <= bounds[2]. Set y := bounds[1] when x < bounds[1], 
@@ -804,14 +820,12 @@ gpWrapper$methods(
               "be computed.")
       rect_pred_list$cov <- NULL
     }
-    
-    # Lower and upper bounds.
-    l <- bounds[1]
-    u <- bounds[2]
-    
+
     # Compute truncated Gaussian moments, which are used in the rectified
     # Gaussian computations.
-    trunc_pred_list <- .self$convert_Gaussian_to_truncated(pred_list, bounds=bounds, 
+    trunc_pred_list <- .self$convert_Gaussian_to_truncated(pred_list, 
+                                                           lower_bound=lower_bound, 
+                                                           upper_bound=upper_bound,
                                                            return_mean=TRUE, 
                                                            return_var=return_var, 
                                                            use_cov=FALSE, ...)
@@ -820,31 +834,42 @@ gpWrapper$methods(
     if(return_mean) rect_pred_list$mean <- matrix(nrow=n_input, ncol=.self$Y_dim)
     if(return_var) rect_pred_list$var <- matrix(nrow=n_input, ncol=.self$Y_dim)
     
-    # Loop over each independent GP predictions.  
+    # Extend scalar bounds to match number of inputs.
+    l <- drop(lower_bound)
+    u <- drop(upper_bound)
+    if(length(l) == 1L) l <- rep(l, n_input)
+    if(length(u) == 1L) u <- rep(u, n_input)
+    if(length(l) != n_input) {
+      stop("`lower_bound` must match input length or be a scalar.")
+    }
+    if(length(u) != n_input) {
+      stop("`upper_bound` must match input length or be a scalar.")
+    }
+    
+    # Loop over each independent GP.  
     for(i in 1:.self$Y_dim) {
       # Compute probabilities used in law of total probability. The probability 
       # of being below the lower bound, above the upper bound, and the 
-      # probability of satisying both bound contraints.
+      # probability of satisying both bound constraints.
       lower_prob <- 0
-      if(is.finite(l)) {
-        l_val <- l
-        lower_prob <- pnorm(l, mean=pred_list$mean[,i], 
-                            sd=sqrt(pred_list$var[,i]))
-      } else {
-        # Required to avoid NaN resulting from 0*-Inf.
-        l_val <- 0
+      finite_l <- is.finite(l)
+      if(any(finite_l)) {
+        lower_prob[finite_l] <- pnorm(l[finite_l], mean=pred_list$mean[finite_l,i], 
+                                      sd=sqrt(pred_list$var[finite_l,i]))
       }
+      
+      l_val <- l
+      l_val[!finite_l] <- 0 # Required to avoid NaN resulting from 0*-Inf.
       
       upper_prob <- 0
-      if(is.finite(u)) {
-        u_val <- u
-        upper_prob <- pnorm(u, mean=pred_list$mean[,i], 
-                            sd=sqrt(pred_list$var[,i]), lower.tail=FALSE)
-      } else {
-        # Required to avoid NaN resulting from 0*Inf.
-        u_val <- 0
+      finite_u <- is.finite(u)
+      if(any(finite_u)) {
+        upper_prob[finite_u] <- pnorm(u[finite_u], mean=pred_list$mean[finite_u,i], 
+                                      sd=sqrt(pred_list$var[finite_u,i]), lower.tail=FALSE)
       }
-      
+      u_val <- u
+      u_val[!finite_u] <- 0 # Required to avoid NaN resulting from 0*Inf.
+
       middle_prob <- 1 - (lower_prob + upper_prob)
       
       if(return_mean) {
@@ -875,20 +900,20 @@ gpWrapper$methods(
   
   sample = function(X_new, use_cov=FALSE, include_noise=TRUE, N_samp=1L, 
                     pred_list=NULL, cov_sqrt_method="chol", 
-                    adjustment=NULL, bounds=c(-Inf,Inf), ...) {
+                    adjustment=NULL, lower_bound=-Inf, upper_bound=Inf, ...) {
     # If `pred_list` is passed, it should have all the required components. 
     # Returns array of dimension (num input, num samp, Y_dim). The "adjustment"
     # argument can be used to truncate the Gaussian predictive distribution
-    # to satisfy the bounds given by `bounds`. `adjustment = "truncated"` will 
-    # sample from a truncated Gaussian, while `adjustment = "rectified"` will 
-    # sample from a rectified Gaussian (i.e., a sample exceeding the upper bound
-    # will be set to the upper bound, and likewise for the lower bound).
-    # `cov_sqrt_method` is used in `sample_Gaussian()`.
+    # to satisfy the bounds given by `lower_bound`, `upper_bound`.
+    # `adjustment = "truncated"` will sample from a truncated Gaussian, while 
+    # `adjustment = "rectified"` will sample from a rectified Gaussian (i.e., a 
+    # sample exceeding the upper bound will be set to the upper bound, and 
+    # likewise for the lower bound). `cov_sqrt_method` is used in `sample_Gaussian()`.
 
     n_input <- nrow(X_new)
-    if(n_input < 2) use_cov <- FALSE
-    adjustment <- .self$get_dist_adjustment(adjustment, bounds)
-    
+    if(n_input < 2L) use_cov <- FALSE
+    adjustment <- .self$get_dist_adjustment(adjustment, lower_bound, upper_bound)
+
     # Compute required predictive quantities if not already provided. 
     if(is.null(pred_list)) {
       pred_list <- .self$predict(X_new, return_mean=TRUE, return_var=!use_cov,  
@@ -899,14 +924,16 @@ gpWrapper$methods(
     }
 
     # Produce samples.
-    if(adjustment=="truncated") {
+    if(isTRUE(adjustment=="truncated")) {
       samp <- .self$sample_truncated(X_new, use_cov=use_cov, 
                                      include_noise=include_noise, N_samp=N_samp,
-                                     pred_list=pred_list, bounds=bounds)
-    } else if(adjustment=="rectified") {
+                                     pred_list=pred_list, lower_bound=lower_bound,
+                                     upper_bound=upper_bound)
+    } else if(isTRUE(adjustment=="rectified")) {
       samp <- .self$sample_rectified(X_new, use_cov=use_cov, 
                                      include_noise=include_noise, N_samp=N_samp,
-                                     pred_list=pred_list, bounds=bounds)
+                                     pred_list=pred_list, lower_bound=lower_bound,
+                                     upper_bound=upper_bound)
     } else if(is.null(adjustment)) {
       samp <- .self$sample_Gaussian(X_new, use_cov=use_cov,
                                     include_noise=include_noise, N_samp=N_samp,
@@ -961,8 +988,8 @@ gpWrapper$methods(
   
   
   sample_truncated = function(X_new, use_cov=FALSE, include_noise=TRUE, 
-                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf),
-                              ...) {
+                              N_samp=1L, pred_list=NULL, lower_bound=-Inf,
+                              upper_bound=Inf, ...) {
     # Samples from a truncated version of the Gaussian predictive distribution.
     # If `use_cov=TRUE` this implies a multivariate truncated Gaussian, 
     # in which case the package `tmvtnorm` is used for sampling. Otherwise, 
@@ -982,16 +1009,28 @@ gpWrapper$methods(
       if(use_cov) assert_that(!is.null(pred_list$cov))
     }
     
-    samp <- array(dim=c(nrow(X_new), N_samp, .self$Y_dim))
-    for(i in 1:Y_dim) {
+    # Extend scalar bounds to match number of inputs.
+    n_input <- nrow(X_new)
+    lower_bound <- drop(lower_bound)
+    upper_bound <- drop(upper_bound)
+    if(length(lower_bound) == 1L) lower_bound <- rep(lower_bound, n_input)
+    if(length(upper_bound) == 1L) upper_bound <- rep(upper_bound, n_input)
+    if(length(lower_bound) != n_input) {
+      stop("`lower_bound` must match input length or be a scalar.")
+    }
+    if(length(upper_bound) != n_input) {
+      stop("`upper_bound` must match input length or be a scalar.")
+    }
+    
+    samp <- array(dim=c(n_input, N_samp, .self$Y_dim))
+    for(i in 1:.self$Y_dim) {
       if(use_cov) {
         samp[,,i] <- t(tmvtnorm::rtmvnorm(n=N_samp, mean=pred_list$mean[,i],
                                           sigma=as.matrix(pred_list$cov[,,i]),
-                                          lower=rep(bounds[1], nrow(X_new)),
-                                          upper=rep(bounds[2], nrow(X_new))))
+                                          lower=lower_bound, upper=upper_bound))
       } else {
-        for(j in 1:nrow(X_new)) {
-          samp[j,,i] <- truncnorm::rtruncnorm(n=N_samp, a=bounds[1], b=bounds[2],
+        for(j in 1L:n_input) {
+          samp[j,,i] <- truncnorm::rtruncnorm(n=N_samp, a=lower_bound[j], b=upper_bound[j],
                                               mean=pred_list$mean[j,i],
                                               sd=sqrt(pred_list$var[j,i]))
         }
@@ -1002,7 +1041,8 @@ gpWrapper$methods(
   },
   
   sample_rectified = function(X_new, use_cov=FALSE, include_noise=TRUE, 
-                              N_samp=1L, pred_list=NULL, bounds=c(-Inf,Inf), ...) {
+                              N_samp=1L, pred_list=NULL, lower_bound=-Inf,
+                              upper_bound=Inf, ...) {
     # Samples from a rectified version of the Gaussian predictive distribution.
     # This is accomplished by drawing samples from the Gaussian predictive 
     # distribution, and then thresholding the samples based on the bounds.
@@ -1012,9 +1052,25 @@ gpWrapper$methods(
                                   include_noise=include_noise, N_samp=N_samp,
                                   pred_list=pred_list, ...)
     
-    # Rectify the Gaussian samples.
-    samp <- pmax(samp, bounds[1])
-    samp <- pmin(samp, bounds[2])
+    # Extend scalar bounds to match number of inputs.
+    n_input <- nrow(X_new)
+    lower_bound <- drop(lower_bound)
+    upper_bound <- drop(upper_bound)
+    if(length(lower_bound) == 1L) lower_bound <- rep(lower_bound, n_input)
+    if(length(upper_bound) == 1L) upper_bound <- rep(upper_bound, n_input)
+    if(length(lower_bound) != n_input) {
+      stop("`lower_bound` must match input length or be a scalar.")
+    }
+    if(length(upper_bound) != n_input) {
+      stop("`upper_bound` must match input length or be a scalar.")
+    }
+    
+    # Rectify the Gaussian samples. Broadcasting lower_bounds to shape of `samp`
+    lower_bound <- array(lower_bound, dim=dim(samp))
+    upper_bound <- array(upper_bound, dim=dim(samp))
+    
+    samp <- pmax(samp, lower_bound)
+    samp <- pmin(samp, upper_bound)
     
     return(samp)
   },
@@ -1039,7 +1095,7 @@ gpWrapper$methods(
     stop(err_msg)
   },
   
-  get_dist_adjustment = function(adjustment=NULL, bounds=c(-Inf,Inf)) {
+  get_dist_adjustment = function(adjustment=NULL, lower_bound=-Inf, upper_bound=Inf) {
     # This method essentially validates arguments that are used to adjust the 
     # Gaussian predictive distribution of the GPs. Currently, the allowable 
     # adjustments are "truncated" and "rectified", which transform the Gaussian
@@ -1067,17 +1123,16 @@ gpWrapper$methods(
       return(NULL)
     }
     
-    # For truncated and rectified adjustments, check the required `bounds`
-    # argument. If `bounds = c(-Inf,Inf)` then set adjustment to NULL.
+    # For truncated and rectified adjustments, check the required bounds
+    # arguments. If the bounds are (-Inf, Inf) then set adjustment to NULL.
     if(adjustment %in% c("truncated", "rectified")) {
-      bounds <- drop(bounds)
-      assert_that(length(bounds)==2L, msg=paste0("For truncated/rectified ", 
-                  "adjustments, `bounds` must be vector of length 2. Separate", 
-                  " bounds for each output dimension not yet supported."))
-      assert_that(bounds[1] < bounds[2], 
-                  msg=paste0("Lower bound must be smaller than upper bound in",
-                             "`bounds` argument for distribution adjustment."))
-      if(all(is.infinite(bounds))) return(NULL)
+      lower_bound <- drop(lower_bound)
+      upper_bound <- drop(upper_bound)
+      if(all(is.infinite(lower_bound)) && all(is.infinite(upper_bound))) return(NULL)
+      
+      if(any(lower_bound > upper_bound)) {
+        stop("Some lower bounds greater than upper bounds.")
+      }
     }
     
     return(adjustment)

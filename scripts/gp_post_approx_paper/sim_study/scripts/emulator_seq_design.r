@@ -12,8 +12,10 @@
 # The round is an integer; e.g., `2` for the first round of sequential 
 # acquisition after the initial design round (round 1). In the round 2 example.
 # all outputs from this run will be stored in 
-# `<experiment_dir>/round2/design/<acq_id>/<mcmc_tag>/<mcmc_id>`. The MCMC 
-# tag/ID and acquisition ID are discussed below.
+# `<experiment_dir>/round2/design/<acq_tag>/<mcmc_tag>/<mcmc_id>`. The MCMC 
+# tag/ID and acquisition ID are discussed below. NOTE: I previously called
+# this "acq_id" instead of "acq_tag", so the variable names in this code may
+# reflect that old convention.
 #
 # The MCMC tag/ID correspond to an MCMC run from the previous round. Recall that
 # MCMC IDs are unique within tags, so both the tag and ID are required to specify
@@ -29,15 +31,15 @@
 # explicitly enforced, the code is set up so that all sequential design runs 
 # within a single round of sequential design will use the same `n_batch` value.
 # The other major portion of the settings is the acquisition function settings.
-# This is specified by passing and acquisition function ID "acq_id" via a 
-# command line argument. The acquisition function ID corresponds to the index
+# This is specified by passing and acquisition function tag "acq_tag" via a 
+# command line argument. The acquisition function tag corresponds to the index
 # of an element of the list, 
 # `<experiment_dir>/acq_settings_list.rds`, which must
 # be saved in advance of running this script.
 #
 # In all rounds beyond round 1, the design tags in the "design" directory
 # correspond to the acquisition function IDs. We make the assumption that 
-# the acquisition IDs complete encode the acquisition algorithm, so the 
+# the acquisition IDs completely encode the acquisition algorithm, so the 
 # only variation across methods is captured by this ID alone. This is similar
 # to the convention for the MCMC IDs. Both the MCMC and acquisition settings
 # are saved in lists in the base experiment directory and should not be 
