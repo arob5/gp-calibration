@@ -712,6 +712,46 @@ rect_norm_quantile <- function(q, mean=0, sd=1, lower=-Inf, upper=Inf, lower.tai
 }
 
 
+rect_lnorm_quantile <- function(q, meanlog, sdlog, lower, upper, log_scale=TRUE) {
+  # NOTE: this function was written with assistance from ChatGPT. It has been
+  # numerically tested for correctness.
+  
+  # Ensure q, meanlog, sdlog, lower, upper are same length (or scalars)
+  args <- list(q, meanlog, sdlog, lower, upper)
+  n <- max(lengths(args))
+  args <- lapply(args, function(x) if (length(x) == 1) rep(x, n) else x)
+  if (!all(lengths(args) == n)) stop("Arguments must be scalars or vectors of the same length.")
+  
+  q <- args[[1]]; meanlog <- args[[2]]; sdlog <- args[[3]]
+  lower <- args[[4]]; upper <- args[[5]]
+  
+  # Compute bounds in quantile space
+  p_lower <- pnorm(lower, meanlog, sdlog)
+  p_upper <- pnorm(upper, meanlog, sdlog)
+  
+  # Output vector
+  result <- numeric(n)
+  
+  for (i in seq_len(n)) {
+    if (q[i] <= p_lower[i]) {
+      result[i] <- exp(lower[i])
+    } else if (q[i] >= p_upper[i]) {
+      result[i] <- exp(upper[i])
+    } else {
+      # Rescale quantile to truncated normal quantile range
+      q_rescaled <- (q[i] - p_lower[i]) / (p_upper[i] - p_lower[i])
+      result[i] <- EnvStats::qlnormTrunc(q, meanlog=meanlog[i],
+                                         sdlog=sdlog[i],
+                                         min=exp(lower[i]),
+                                         max=exp(upper[i]))
+    }
+  }
+  
+  if(log_scale) return(log(result))
+  return(result)
+}
+
+
 weighted_quantile_logw <- function(x, log_w, probs = c(0.25, 0.5, 0.75)) {
   # Computes weighted empirical quantiles, where the weights are potentially
   # unnormalized, and on the log scale. It is assumed that the weights may

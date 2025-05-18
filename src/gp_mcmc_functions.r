@@ -40,11 +40,11 @@ library(parallel)
 #        representing "noisy" versions of a traditional Metropolis-Hastings
 #        scheme. The function arguments allow for a user to run a Monte Carlo 
 #        within Metropolis or a pseudo marginal algorithm.
-#    2.) mcmc_lik_approx: A Metropolis-Hastings algorithm defined with respect 
-#        to a deterministic approximation of the true likelihood (alternatively,
-#        can view this as an approximation to the unnormalized posterior 
-#        density). This function relies of the `calc_lik_approx()` method of 
-#        the llikEmulator object.
+#    2.) mcmc_gp_unn_post_dens_approx: A Metropolis-Hastings algorithm defined 
+#        with respect to a deterministic approximation of the true likelihood 
+#        (alternatively, can view this as an approximation to the unnormalized 
+#        posterior density). This function relies of the `calc_lik_approx()` 
+#        method of the llikEmulator object.
 #    3.) mcmc_acc_prob_approx: An approximate Metropolis-Hastings like algorithm 
 #        defined by a deterministic approximation to the true acceptance 
 #        probability. This function relies on the helper function 
@@ -53,10 +53,13 @@ library(parallel)
 #        implemented in the `BayesianTools` package. Hence, this function is 
 #        only for inference with exact log-likelihood objects.
 #
-# At this point, these algorithms are only applicable when the true likelihood
-# is of a multiplicative Gaussian form. This is due to the way that the 
-# likelihood parameters are treated by the functions, and should be 
-# generalized to more general likelihoods in the future.
+# Note that the log-likelihood emulator `llik_em` has been generalized to 
+# also represent a log-posterior emulator (i.e., approximation of the 
+# unnormalized log-posterior density). The MCMC algorithms have been modified
+# to recognize this by checking `llik_em$is_lpost_em`. If TRUE, the log-prior
+# will not be added when computing the acceptance probability. However, 
+# currently the prior object must still be provided, and will be used to 
+# screen proposals outside of the prior support.
 # -----------------------------------------------------------------------------
 
 # Need to check that the llik_em is correct for this function. 
@@ -66,7 +69,7 @@ library(parallel)
 # parameters are used for each term. 
 
 mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
-                            sig2_prior=NULL, mode="mcwmh", use_joint=TRUE,  
+                            sig2_prior=NULL, mode="mcwmh", use_joint=TRUE, n_avg=1L,
                             n_itr=50000L, cov_prop=NULL, log_scale_prop=NULL, 
                             adapt_cov_prop=TRUE, adapt_scale_prop=TRUE, 
                             adapt=adapt_cov_prop||adapt_scale_prop, 
@@ -86,6 +89,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   #    use_joint: logical, whether to utilize the log-likelihood emulator
   #               joint distribution across different parameter values, or treat
   #               the emulator as independent on a parameter-by-parameter basis.
+  #    n_avg: number of samples used in empirical averages; see `sample_mh_llik()`.
   #    n_itr: integer, the number of MCMC iterations.
   #    return_prop_sd: logical, if TRUE returns the trajectory of the standard 
   #                    deviations of the proposal distribution; that is, the 
@@ -107,6 +111,9 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
   # out why. 
   # assert_that(is_llik_em(llik_em))
 
+  # Determine whether `llik_em` approximates the log-likelihood or log-posterior.
+  is_lpost_em <- isTRUE(llik_em$is_lpost_em)
+  
   # Objects to store samples and other outputs.
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
@@ -173,18 +180,16 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
         if(is.infinite(lprior_prop)) {
           par_samp[itr,] <- par_samp[itr-1,]
         } else {
-          # Sample log-likelihood emulator.
-          llik_samp <- sample_mh_llik(llik_em, par_curr, par_prop, 
-                                      llik_curr=llik_curr, 
-                                      mode=mode, use_joint=use_joint, ...)
-          llik_curr <- llik_samp[1]
-          llik_prop <- llik_samp[2]
+          # Sample log-likelihood emulator and compute acceptance probability.
+          mh_results <- sample_mh_llik(llik_em, lprior, par_curr, par_prop, 
+                                       llik_curr=llik_curr, lprior_curr=lprior_curr, 
+                                       lprior_prop=lprior_prop, mode=mode, 
+                                       use_joint=use_joint, n_avg=n_avg, ...)
+          llik_curr <- mh_results$llik_curr
+          llik_prop <- mh_results$llik_prop
+          alpha <- mh_results$acc_prob
 
           # Accept-Reject step.
-          lpost_curr <- lprior_curr + llik_curr
-          lpost_prop <- lprior_prop + llik_prop
-          alpha <- min(1.0, exp(lpost_prop - lpost_curr))
-          
           if(runif(1) <= alpha) {
             par_samp[itr,] <- par_prop
             par_curr <- par_prop
@@ -279,6 +284,9 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
   # TODO: add check that parameter order in par_prior, llik_em, and optionally 
   #       par_init/cov_prop align.
 
+  # Determine whether `llik_em` approximates the log-likelihood or log-posterior.
+  is_lpost_em <- llik_em$is_lpost_em
+  
   # Objects to store samples. 
   d <- llik_em$dim_input
   par_samp <- matrix(nrow=n_itr, ncol=d)
@@ -302,7 +310,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
                                        simplify=TRUE, ...)
   lprior <- get_lprior_dens(par_prior)
   lprior_curr <- lprior(par_curr)
-  lpost_curr <- lprior_curr + llik_curr
+  lpost_curr <- ifelse(is_lpost_em, llik_curr, lprior_curr+llik_curr)
   
   # Proposal covariance.
   if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
@@ -339,7 +347,7 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
                                                log_scale=TRUE, 
                                                alpha=alpha_quantile, 
                                                simplify=TRUE, ...) 
-          lpost_prop <- lprior_prop + llik_prop
+          lpost_prop <- ifelse(is_lpost_em, llik_prop, lprior_prop+llik_prop)
           
           # Accept-Reject step.
           alpha <- min(1.0, exp(lpost_prop - lpost_curr))
@@ -404,6 +412,9 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
                                     adapt_factor_numerator=10, 
                                     adapt_interval=200L, ...) {
   
+  # Determine whether `llik_em` approximates the log-likelihood or log-posterior.
+  is_lpost_em <- isTRUE(llik_em$is_lpost_em)
+  
   # Currently only marginal acceptance probability approximation is supported.
   assert_that(mode %in% "marginal")
   
@@ -467,11 +478,13 @@ mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL,
           alpha <- 0
         } else {
           # Compute acceptance probability approximation.
+          lp_curr <- ifelse(is_lpost_em, 0, lprior_curr)
+          lp_prop <- ifelse(is_lpost_em, 0, lprior_prop)
           alpha_list <- get_gp_mh_acc_prob_approx(par_curr, par_prop, llik_em, 
                                                   mode=mode, use_joint=use_joint,
                                                   lik_par_val=sig2_curr,
-                                                  lprior_curr=lprior_curr,
-                                                  lprior_prop=lprior_prop, ...)
+                                                  lprior_curr=lp_curr,
+                                                  lprior_prop=lp_prop, ...)
           
           alpha <- alpha_list$acc_prob
           pred <- alpha_list$llik_pred_list
@@ -600,13 +613,20 @@ mcmc_bt_wrapper <- function(llik_em, par_prior, approx_type=NULL,
   # TODO: why does this check fail when executed in parallel?
   # assert_that(is_llik_em(llik_em))
 
+  # Determine whether `llik_em` approximates the log-likelihood or log-posterior.
+  is_lpost_em <- isTRUE(llik_em$is_lpost_em)
+  
   # Log-likelihood function. Set up to accept numeric vector `par` as an 
   # argument.
   llik <- llik_em$get_llik_func(approx_type=approx_type, ...)
-
+  
   # Log prior density and sampling function.
   lprior <- get_lprior_dens(par_prior)
   prior_sampler <- get_prior_sampler(par_prior)
+  
+  # If log-posterior emulator, subtract off prior here as it will be added
+  # back during MCMC.
+  llik <- function(U, ...) llik(U) - lprior(U)
   
   # Create BayesianSetup object.
   bayesianSetup <- BayesianTools::createBayesianSetup(likelihood=llik, 
@@ -693,11 +713,16 @@ adapt_MH_proposal_cov <- function(cov_prop, log_scale_prop, times_adapted, adapt
 #  For running chains in parallel and setting initial conditions.
 # ------------------------------------------------------------------------------
 
-sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL, 
-                           mode="mcwmh", use_joint=TRUE, ...) {
+sample_mh_llik <- function(llik_em, lprior, par_curr, par_prop, llik_curr=NULL, 
+                           lprior_curr=NULL, lprior_prop=NULL, mode="mcwmh", 
+                           use_joint=TRUE, n_avg=1L, ...) {
   # A helper function for `mcmc_noisy` to sample the log-likelihood values 
-  # at the current and proposed points for use in computing a 
-  # Metropolis-Hastings acceptance ratio.
+  # at the current and proposed points and to compute a 
+  # Metropolis-Hastings acceptance probability. The function returns 
+  # the log of the expected likelihood (or posterior density depending on
+  # `llik_em$is_lpost_em`) and an approximate MH acceptance probability.
+  # The method used to compute the probability will depend on `mode` and 
+  # `use_joint`.
   #
   # Different possibilities:
   # mcwmh: sample llik at both current and proposed points. Samples jointly
@@ -705,11 +730,11 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   #        independently.
   # pseudo-marginal: If `use_joint = TRUE`, samples the proposed llik value  
   #                  independently and returns `llik_curr` unchanged for the  
-  #                  current value. This targets the "marginal" posterior  
-  #                  approximation. If FALSE, `use_joint = TRUE` then samples the 
-  #                  proposed llik value conditional on the current 
-  #                  log-likelihood value. `llik_curr` is returned unchanged 
-  #                  in either case.
+  #                  current value. This targets the "marginal" or 
+  #                  "expected likelihood" posterior approximation. If FALSE, 
+  #                  `use_joint = TRUE` then samples the proposed llik value 
+  #                  conditional on the current log-likelihood value. 
+  #                  `llik_curr` is returned unchanged in either case.
   #
   # Args:
   #    llik_em:
@@ -717,8 +742,24 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   #    par_prop: numeric, the proposed parameter value.
   #    llik_curr: numeric, the log-likelihood value at the current point. 
   #               Required for all modes except for "mcwmh".
+  #    lprior_curr: numeric, the current log-prior value.
+  #    lprior_prop: numeric, the current log-prior value.
   #    mode: either "mcwmh" or "pseudo-marginal". See description above.
   #    use_joint: logical, see description above.
+  #    n_avg: Number of samples to draw. Empirical averages of these samples 
+  #           will be used for the likelihood and acc prob computations.
+  #
+  # Returns:
+  # list, with elements "llik_curr", "llik_prop", "acc_prob", "lprior_curr",
+  # "lprior_prop". The first two are the log of the empirical average of the 
+  # likelihood samples (note: not the average of the log-likelihood samples). 
+  # "acc_prob" will be computed as the average of the induced acceptance 
+  # probability samples if `mode = "mcwmh"`. If `mode = "pseudo-marginal"` then 
+  # the acc prob is computed by plugging in the empirical likelihood averages.
+  
+  if((mode == "pseudo-marginal") && is.null(llik_curr)) {
+    stop("Pseudo-marginal mode requires `llik_curr`.")
+  }
   
   # The joint pseudo-marginal algorithm requires updating the current GP 
   # emulator, so make a deep copy here to avoid updating in global scope.
@@ -732,15 +773,37 @@ sample_mh_llik <- function(llik_em, par_curr, par_prop, llik_curr=NULL,
   # mcwmh mode samples llik values at both current and proposed points.
   # pseudo-marg mode samples the llik only at the proposed point, and recycles  
   # the current llik value.
-  par <- matrix(par_prop, nrow=1, dimnames=list(NULL, llik_em$input_names))
+  par <- matrix(par_prop, nrow=1L, dimnames=list(NULL, llik_em$input_names))
   if(mode=="mcwmh") par <- rbind(par_curr, par)
-  
-  llik_samp <- llik_em_copy$sample(par, use_cov=use_joint,
-                                   include_nugget=TRUE, ...)
-  llik_samp <- drop(llik_samp)
-  if(mode=="pseudo-marginal") llik_samp <- c(llik_curr, llik_samp)
 
-  return(llik_samp)
+  # Draw llik samples and compute log of likelihood mean via logSumExp. In
+  # psuedo-marginal method the current llik value is not changed.
+  llik_samp <- llik_em_copy$sample(par, use_cov=use_joint, N_samp=n_avg, ...)
+  llik_samp <- matrix(llik_samp, nrow=nrow(par), ncol=n_avg)
+  llik_avg <- matrixStats::rowLogSumExps(llik_samp)
+  if(mode=="pseudo-marginal") llik_avg <- c(llik_curr, llik_avg)
+
+  # Compute acceptance probability.
+  is_lpost_em <- llik_em$is_lpost_em
+  if(is.null(lprior_curr)) lprior_curr <- lprior(par_curr)
+  if(is.null(lprior_prop)) lprior_prop <- lprior(par_prop)
+  
+  if(mode=="pseudo-marginal") {
+    lpost_curr <- ifelse(is_lpost_em, llik_avg[1], lprior_curr+llik_avg[1])
+    lpost_prop <- ifelse(is_lpost_em, llik_avg[2], lprior_prop+llik_avg[2])
+    alpha <- min(1.0, exp(lpost_prop - lpost_curr))
+  } else {
+    if(!is_lpost_em) {
+      llik_samp[1,] <- llik_samp[1,] + lprior_curr
+      llik_samp[2,] <- llik_samp[2,] + lprior_prop
+    }
+    
+    alpha_samp <- pmin(1.0, exp(llik_samp[2,] - llik_samp[1,]))
+    alpha <- mean(alpha_samp)
+  }
+  
+  return(list(acc_prob=alpha, llik_curr=llik_avg[1], llik_prop=llik_avg[2],
+              lprior_curr=lprior_curr, lprior_prop=lprior_prop))
 }
 
 
