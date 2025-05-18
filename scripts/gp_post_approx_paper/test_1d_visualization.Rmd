@@ -200,7 +200,7 @@ em_pred_llik <- em_llik$predict_emulator(test_info$input, return_cov=TRUE)
 ```{r}
 # Fit forward model emulator.
 em_fwd_gp <- gpWrapperKerGP(design_info$input, design_info$fwd, 
-                             scale_input=TRUE, normalize_output=TRUE)
+                            scale_input=TRUE, normalize_output=TRUE)
 em_fwd_gp$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
 em_fwd_gp$fit(multistart=10, trace=TRUE)
 em_fwd_gp$summarize()
@@ -231,7 +231,6 @@ em_llik$plot_samp_1d(test_info$input, em_pred_list=em_pred_llik, N_samp=20L,
 em_llik$plot_samp_1d(test_info$input, em_pred_list=em_pred_llik, N_samp=20L, 
                      true_llik=test_info$llik, include_bounds=TRUE, 
                      adjustment="rectified", use_cov=TRUE)
-
 ```
 
 ## Emulator Distribution Plots
@@ -264,7 +263,6 @@ plt_gp_dist_fwd <- em_fwd$emulator_model$plot_pred_1d(test_info$input, include_i
 
 plot(plt_gp_dist_llik)
 plot(plt_gp_dist_fwd)
-
 ```
 
 ```{r}

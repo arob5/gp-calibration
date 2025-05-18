@@ -79,7 +79,7 @@ posterior distribution over model parameters while minimizing the number of requ
 A popular class of methods involves replacing either the computer model or the log-likelihood function with a statistical 
 surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
 The surrogate can be trained offline \citep{modularization} using a small set of expensive model runs (often performed in 
-parallel), which can then replace the exact likelihood to facilitate the application of 
+parallel), which then replaces the exact likelihood to facilitate the application of 
 standard inference schemes such as Markov chain Monte Carlo (MCMC).
 
 The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference.
@@ -104,7 +104,7 @@ in both the tasks of surrogate-induced posterior approximation and sequential de
 closed-form expressions also allows for improved interpretability. On the other hand, the desire for analytical tractability
 severely limits modeling flexibility. Many existing methodologies are limited to the Gaussian setting: requiring emulators with 
 Gaussian predictive distributions, or imposing a Gaussian assumption on the likelihood being approximated.
-Small deviations from these assumptions commonly break the closed-form computations enjoyed in this limited setting.
+Small deviations from these assumptions commonly break the closed-form computations enjoyed in this limited regime.
 
 We begin our review of surrogate-assisted Bayesian inversion with a discussion of the surrogate construction itself,
 drawing a distinction between two general strategies common in the literature: (i.) forward model emulation, whereby
@@ -128,18 +128,18 @@ We also discuss [our work], which provides an alternative approach to generate a
 stochastic surrogate, with the additional benefit of handling the common setting of non-parametric emulator models.
 
 The final portion of this article focuses on improving an existing surrogate by augmenting the training data 
-using a new set of exact simulation evaluations. This presents a sequential design (i.e., active learning) problem, 
+using a new set of exact simulation evaluations. This constitutes a sequential design (i.e., active learning) problem, 
 whereby the selection of new training points is optimized to yield maximal improvement in the induced 
 posterior approximation. This leads to an instance of the ``exploration vs. exploitation'' balancing act,
 familiar to fields such as Bayesian optimization \citep{reviewBayesOpt} and Bayesian quadrature 
 \citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, among others. In the present setting, this 
 manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
 and exploring other regions of parameter space. In the GP surrogate setting, a variety of 
-objective (i.e., acquisition) functions have been proposed that seek to to target high probability regions, 
+design criteria (i.e., acquisition functions) have been proposed that seek to to target high probability regions, 
 while also acknowledging uncertainty in the GP model 
 \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}.
 We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
-facilitate improved interpretation of the resulting criteria in settings where closed-form expressions are available.
+facilitate improved iterpretability in settings where closed-form expressions are available.
 We also highlight batch sequential approaches, where multiple design points are acquired simultaneously. 
 Batch sequential design becomes increasingly essential as the cost of likelihood evaluations increases, as it allows for 
 parallel computations. 
@@ -148,14 +148,20 @@ While much of the discussion here is agnostic to the specifics of the underlying
 to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
 using dynamic ecological models of the carbon cycle.
 
+
+
+
+
+
+
+
+
+
+
+
+
 % An Overview of Surrogate modeling in Bayesian inference 
 \section{An Overview of Surrogate Modeling in Bayesian Inference}
-[\todo: note that I drafted the above introduction with a single paper in mind that is part review paper, part our new proposed
-methods. I'm sticking in this section here to provide a more in depth review of past work, with no mention of our proposed
-methods. There is overlap with the intro, but just sticking this here for now.]
-
-\vspace \vspace
-
 In this section, we provide an overview of the typical workflow for Bayesian inference using surrogate models. We note 
 that surrogate models are widely used for tasks other than Bayesian inversion, including optimization, sensitivity analysis, 
 and contour estimation [\todo: add citations]. This review is restricted to settings in which the surrogate is utilized to induce
@@ -168,7 +174,7 @@ provides the training data for fitting a surrogate model. In the computer experi
 locations are typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples include 
 latin hypercube designs and Sobol sequences (\todo: cite). In the present context, the prior distribution defining the 
 Bayesian model encodes a priori knowledge about important regions of parameter space. Therefore, the initial 
-design is typically sampled from the prior, potentially with a space-filling adjustment
+design is typically sampled from the prior, potentially with a space-filling adjustment. 
 
 We focus on the typical modular \citep{modularization} surrogate modeling workflow, whereby the surrogate model is trained 
 using only a set of forward model input-output pairs. The alternative approach of jointly learning the surrogate and the 
@@ -206,7 +212,6 @@ in the inverse problems literature. Cite new paper on Monte Carlo approximations
 
 \subsection{Sequential Design}
 Calibration vs. consistency. Consistency: SUR framework, Youssef MCMC work, Teckentrup work, Sanz-Alonso paper
-
 
 % Setting and Background 
 \section{Setting and Background}

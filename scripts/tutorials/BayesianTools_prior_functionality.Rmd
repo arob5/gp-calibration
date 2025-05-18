@@ -1,0 +1,58 @@
+---
+title: "BayesianTools R Package Prior Distribution Functionality"
+author: "Andrew Roberts"
+date: '2025-03-17'
+output: html_document
+---
+
+The goal of this file is to explore the functionality supported by the R package
+`BayesianTools` with regard to defining parameters and prior distributions.
+
+```{r, echo=FALSE, include=FALSE}
+library(BayesianTools)
+```
+
+# The Prior Distribution Object
+`BayesianTools` has a prior distribution class, and objects can be generated with 
+`createPrior`. The class is called `prior` and stores the following information:
+* `density`: the log density, vectorized to accept either vector or matrix (one row per value) inputs.
+* `sampler`: sampling function, also vectorized to be able to produce multiple samples, which are stored in the rows of a matrix.
+* `lower`: vector of lower bounds for each parameter.
+* `upper`: vector of upper bounds for each parameter.
+* `best`: I guess this encodes some notion of a "best guess" for a parameter; defaults to the midpoint between lower and upper bounds.
+* `originalDensity`: the raw log-density that is passed to `createPrior`, which is a non-vectorized version of the log-density.
+* `checkStart`: a function that tests that the object's methods run without errors.
+* A `print` method is implemented for the class.
+
+There are a few peculiarities to keep in mind:
+* If no sampler is provided, but bounds are provided, then a default generator is generated that is uniform between the bounds. While I see how this makes sense with regard to generating initial conditions for MCMC, I could also see it leading to problems as it implies the sampling function doesn't actually sample from the prior.
+* The lower/upper bounds modify the density so that -Inf is returned when a value is outside the bounds. They do not result in a normalized/truncated density. They also do not modify the sampler at all, meaning that the user should ensure the bounds they pass are consistent with the sampler they pass.
+* No attribute describing parameter length/shape is stored in the object.
+
+
+```{r}
+# Create prior object.
+
+ldens <- function(x) dnorm(x[1], log=TRUE) + dgamma(x[2], shape=1, log=TRUE)
+sampler <- function() c(rnorm(1), rgamma(1, shape=1))
+
+prior <- createPrior(density=ldens, sampler=sampler, lower=c(0, -Inf))
+print(prior)
+```
+
+```{r}
+# Sampling.
+prior$sampler(5)
+```
+```{r}
+# Evaluating log-density.
+x <- cbind(c(-1, 0, 1), c(-10, 1, 4))
+
+prior$density(x)
+```
+
+BayesianTools also has some convenience functions for generating uniform, truncated normal,
+and beta priors. It also has a function `createPriorDensity` that constructs a density 
+estimate from samples and then returns a prior object.
+
+
