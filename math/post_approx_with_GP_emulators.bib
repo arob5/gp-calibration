@@ -849,9 +849,9 @@ series = {IJCAI'15}
 @article{Binois_2018,
    title={Replication or Exploration? Sequential Design for Stochastic Simulation Experiments},
    volume={61},
-   ISSN={1537-2723},
+   issn={1537-2723},
    url={http://dx.doi.org/10.1080/00401706.2018.1469433},
-   DOI={10.1080/00401706.2018.1469433},
+   doi={10.1080/00401706.2018.1469433},
    number={1},
    journal={Technometrics},
    publisher={Informa UK Limited},
@@ -859,6 +859,23 @@ series = {IJCAI'15}
    year={2018},
    month=sep, pages={7–23} 
   }
+
+
+% Original stepwise uncertainty reduction paper
+@article{BectSUR,
+  title={Sequential design of computer experiments for the estimation of a probability of failure},
+  author={Bect, Julien and Ginsbourger, David and Li, Ling and Picheny, Victor and Vazquez, Emmanuel},
+  journal={Statistics and Computing},
+  volume={22},
+  number={3},
+  pages={773-793},
+  year={2011},
+  month={April},
+  publisher={Springer Science and Business Media LLC},
+  doi={10.1007/s11222-011-9241-4},
+  url={http://dx.doi.org/10.1007/s11222-011-9241-4},
+  issn={1573-1375}
+}
 
 
 % Some closed-form IVAR expressions
@@ -1079,8 +1096,6 @@ eprint = {
 }
 }
 
-
-
 % Classic paper on batch BayesOpt; Kriging believer and constant liar heuristics for approximating multi-points EI. 
 @Inbook{Ginsbourger2010,
 author="Ginsbourger, David
@@ -1115,6 +1130,16 @@ url = {https://www.sciencedirect.com/science/article/pii/S0378375809003747},
 author = {Jason L. Loeppky and Leslie M. Moore and Brian J. Williams},
 keywords = {Computer experiment, Gaussian process, Random function, Latin hypercube sample, Maximin distance, Entropy},
 abstract = {Computer models simulating a physical process are used in many areas of science. Due to the complex nature of these codes it is often necessary to approximate the code, which is typically done using a Gaussian process. In many situations the number of code runs available to build the Gaussian process approximation is limited. When the initial design is small or the underlying response surface is complicated this can lead to poor approximations of the code output. In order to improve the fit of the model, sequential design strategies must be employed. In this paper we introduce two simple distance based metrics that can be used to augment an initial design in a batch sequential manner. In addition we propose a sequential updating strategy to an orthogonal array based Latin hypercube sample. We show via various real and simulated examples that the distance metrics and the extension of the orthogonal array based Latin hypercubes work well in practice.}
+}
+
+% Thesis on batch Bayesian optimization
+@phdthesis{batchBOThesis,
+  author       = {Nathan Hunt},
+  title        = {Batch Bayesian Optimization},
+  school       = {Massachusetts Institute of Technology},
+  year         = {2020},
+  type         = {Ph.D. thesis}, 
+  url          = {https://hdl.handle.net/1721.1/128591}
 }
 
 % Deep Gaussian Processes via MCMC sampling; estimates IMSPE and ALC criteria using the MCMC samples. 

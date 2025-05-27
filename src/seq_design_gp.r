@@ -108,7 +108,7 @@ get_acq_model_response <- function(input, model_response_heuristic,
 # -----------------------------------------------------------------------------
 
 acq_IVAR_grid <- function(input, gp, grid_points, weights=NULL, 
-                          adjustment=NULL, bounds=NULL, ...) {
+                          adjustment=NULL, lower_bound=-Inf, upper_bound=Inf, ...) {
   # A grid-based (sample sum approximation) of the integrated variance criterion 
   # for GPs (also known as integrated mean squared prediction error). When `input` 
   # is a matrix with more than 1 row, then the acquisition will be computed
@@ -131,7 +131,6 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=NULL,
   # prediction under the adjusted distribution, not the current GP distribution.
   
   # TODO: validate_args_acq_IVAR_grid()
-  
   if(is.null(weights)) {
     weights <- 1/nrow(grid_points)
   }
@@ -145,19 +144,23 @@ acq_IVAR_grid <- function(input, gp, grid_points, weights=NULL,
   # just set to a vector of zeros. If an adjustment is being made, then we 
   # approximate the response with the GP predictive mean - a "kriging believer"
   # type approximation.
-  adjustment <- gp_copy$get_dist_adjustment(adjustment, bounds)
+  adjustment <- gp_copy$get_dist_adjustment(adjustment, lower_bound, upper_bound)
   if(is.null(adjustment)) {
-    pseudo_response <- matrix(0, nrow=nrow(input), ncol=1)
+    pseudo_response <- matrix(0, nrow=nrow(input), ncol=1L)
   } else {
     pseudo_response <- gp_copy$predict(input, return_var=FALSE, return_trend=FALSE,
-                                       adjustment=adjustment, bounds=bounds, ...)$mean
+                                       adjustment=adjustment, lower_bound=lower_bound, 
+                                       upper_bound=upper_bound, ...)$mean
   }
   
+  # Note that if no adjustment is made (i.e., the predictive dist is Gaussian), then
+  # the GP variance does not depend on `pseudo_response`.
   gp_copy$update(input, pseudo_response, update_hyperpar=FALSE, ...)
 
   # Evaluate conditional variance at grid points. 
   pred_var <- gp_copy$predict(grid_points, return_mean=FALSE, return_var=TRUE, 
-                              adjustment=adjustment, bounds=bounds, ...)$var
+                              adjustment=adjustment, lower_bound=lower_bound,
+                              upper_bound=upper_bound, ...)$var
   
   # Return the weighted sum of conditional variances. 
   return(sum(drop(pred_var) * weights))

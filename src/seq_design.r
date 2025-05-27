@@ -184,7 +184,7 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
   # iterations. `candidate_grid` is only used when `opt_method = "grid"`; it is 
   # a matrix containing the finite set of inputs over which the discrete 
   # optimization is performed.
- 
+
   # Model must inherit from gpWrapper, llikEmulator, or be NULL.
   identify_model_type(model)
   if(is.null(model)) stop("At present, NULL model is not supported.")
@@ -219,7 +219,7 @@ run_seq_design <- function(model, acq_func_name, n_batch, opt_method,
   inputs <- matrix(nrow=n_batch, ncol=input_dim, dimnames=list(NULL, input_names))
   responses <- rep(NA_real_, n_batch)
 
-  for(i in 1:n_batch) {
+  for(i in 1L:n_batch) {
     print(paste0("Iteration: ", i))
 
     # Acquire new input point.
@@ -329,7 +329,7 @@ get_pseudo_response <- function(input, response_heuristic, model=NULL,
   # called once at the beginning of the process. This is handled by the 
   # `response_lie` argument; if non-NULL, then this value will be used instead
   # of computing a new lie.
-  
+
   if(is.null(response_heuristic)) {
     return(true_func(input))
   } else if(response_heuristic == "kb") {

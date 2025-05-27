@@ -196,8 +196,8 @@ llikEmulator$methods(
   
   get_lik_par = function(lik_par_val=NULL, ...) {
     if(is.null(lik_par_val)) lik_par_val <- .self$lik_par
-    assert_that(!is.null(lik_par_val), 
-                msg="Missing likelihood parameter.")
+    # assert_that(!is.null(lik_par_val), 
+    #             msg="Missing likelihood parameter.")
     return(lik_par_val)
   },
   
@@ -220,12 +220,13 @@ llikEmulator$methods(
     lb <- .self$llik_bounds
     
     # Get shift function.
+    sf <- NULL
     if(apply_shift && shift_bounds) {
-    sf <- .self$get_shift_func(shift_func_new, add_shifts)
-    shift_vals <- sf(input)
-    } else {
-      shift_vals <- 0
+      sf <- .self$get_shift_func(shift_func_new, add_shifts)
     }
+    
+    if(is.null(sf)) shift_vals <- 0
+    else shift_vals <- sf(input)
     
     # Evaluate bound function at inputs.
     if(is.function(lb)) {

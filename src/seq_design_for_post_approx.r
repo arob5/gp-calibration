@@ -56,8 +56,8 @@ evaluate_llik_acq_func_vectorized <- function(acq_func, input_mat, llik_em=NULL,
   #    evaluations. 
   
   input_names <- colnames(input_mat)
-  apply(input_mat, 1, function(input) acq_func(matrix(input, nrow=1, 
-                                                      dimnames=list(NULL,input_names)), 
+  apply(input_mat, 1L, function(input) acq_func(matrix(input, nrow=1L, 
+                                                       dimnames=list(NULL,input_names)), 
                                                llik_em=llik_em, ...))
 }
 
@@ -246,9 +246,12 @@ acq_llik_neg_var_gp <- function(input, llik_em, ...) {
   
   assert_that(is_gp(llik_em$emulator_model))
 
+  # Get bounds.
+  bounds <- llik_em$get_llik_bounds(input=input, ...)
+  
   args <- c(list(...), 
             list(input=input, gp=llik_em$emulator_model, 
-                 bounds=llik_em$get_llik_bounds()))
+                 lower_bound=bounds$lower, upper_bound=bounds$upper))
   
   do.call(acq_neg_var, args)
 }
@@ -265,9 +268,12 @@ acq_llik_neg_entropy_gp <- function(input, llik_em, ...) {
   
   assert_that(is_gp(llik_em$emulator_model))
   
+  # Get bounds.
+  bounds <- llik_em$get_llik_bounds(input=input, ...)
+  
   args <- c(list(...), 
             list(input=input, gp=llik_em$emulator_model, 
-                 bounds=llik_em$get_llik_bounds()))
+                 lower_bound=bounds$lower, upper_bound=bounds$upper))
   do.call(acq_neg_entropy, args)
 }
 
@@ -279,6 +285,7 @@ acq_llik_neg_var_lik <- function(input, llik_em, ...) {
   # likelihood emulator (exponential of the log-likelihood emulator) at  
   # inputs `input`. If `log_scale` is TRUE (the default), then the 
   # negative of the log of the variance is returned. 
+
   -llik_em$predict_lik(input, return_mean=FALSE, return_var=TRUE, 
                        log_scale=TRUE, ...)$log_var  
 }
@@ -293,9 +300,12 @@ acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=NULL, ...
   
   assert_that(is_gp(llik_em$emulator_model))
   
+  # Get bounds.
+  bounds <- llik_em$get_llik_bounds(input=input, ...)
+  
   args <- c(list(...), 
             list(input=input, gp=llik_em$emulator_model, grid_points=grid_points, 
-                 weights=weights, bounds=llik_em$get_llik_bounds()))
+                 weights=weights, lower_bound=bounds$lower, upper_bound=bounds$upper))
   do.call(acq_IVAR_grid, args)
 }
 
@@ -307,15 +317,18 @@ acq_llik_IENT_grid_gp <- function(input, llik_em, grid_points, weights=NULL, ...
   
   assert_that(is_gp(llik_em$emulator_model))
   
+  # Get bounds.
+  bounds <- llik_em$get_llik_bounds(input=input, ...)
+  
   args <- c(list(...), 
             list(input=input, gp=llik_em$emulator_model, grid_points=grid_points, 
-                 weights=weights, bounds=llik_em$get_llik_bounds()))
+                 weights=weights, lower_bound=bounds$lower, upper_bound=bounds$upper))
   do.call(acq_IENT_grid, args)
 }
 
 
 acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL, 
-                                log_scale=TRUE, plugin=FALSE, ...) {
+                                log_scale=TRUE, ...) {
   # Approximates the integrated expected variance criterion for a random likelihood induced 
   # by a log-likelihood emulator. The integral approximation is obtained via a discretization
   # at inputs `grid_points`. The argument `plugin` is passed to the `calc_expected_lik_cond_var`
@@ -327,10 +340,16 @@ acq_llik_IEVAR_grid <- function(input, llik_em, grid_points, weights=NULL,
   # Defined for `llik_em` objects that depend on an underlying Gaussian process (GP); i.e., 
   # `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates the standard integrated variance 
   # (i.e., integrated mean squared prediction error) GP criterion by approximating the integral 
-  # with a discrete sum at inputs `grid_points`.
+  # with a discrete sum at inputs `grid_points`. If adjustments are applied to the predictive
+  # distribution (truncated, rectified) the expected variance formula is no longer exact; 
+  # a plug-in heuristic is used.
 
+  # Get bounds.
+  bounds <- llik_em$get_llik_bounds(input=input, ...)
+  
   log_evar <- llik_em$calc_expected_lik_cond_var(grid_points, input, log_scale=TRUE, 
-                                                 plugin=plugin, ...)
+                                                 plugin=TRUE, lower_bound=bounds$lower,
+                                                 upper_bound=bounds$upper, ...)
   
   if(is.null(weights)) {
     log_weights <- 0

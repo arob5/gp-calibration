@@ -584,7 +584,7 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # prob_upper = 1 - prob_leq_upper
   # prob_middle = 1 - prob_leq_upper - prob_leq_lower
   eps <- 1e-16
-  upper_prob_zero <- (abs(ln_trunc$lprob_leq_upper) < eps)
+  upper_prob_zero <- (abs(ln_trunc$lprob_leq_upper) < eps) # i.e., prob <= upper bound is 1.
   upper_prob_one <- is.infinite(ln_trunc$lprob_leq_upper)
   upper_prob_not_zero_one <- !(upper_prob_zero | upper_prob_one)
 
@@ -638,7 +638,11 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   # thresholding as a hack.
   log_rect_Ey2 <- matrixStats::rowLogSumExps(log_summands_y2)
   log_rect_Ey2[log_rect_Ey2 < 1e-8] <- 1e-8
-  log_rect_ln_var <- log_diff_exp(log_rect_Ey2, 2*log_rect_ln_mean)
+  neg_var_idx <- (log_rect_Ey2 < 2*log_rect_ln_mean)
+  log_rect_ln_var <- rep(NA, n)
+  log_rect_ln_var[!neg_var_idx] <- log_diff_exp(log_rect_Ey2[!neg_var_idx], 
+                                                2*log_rect_ln_mean[!neg_var_idx])
+  log_rect_ln_var[neg_var_idx] <- -70
 
   if(log_scale) return_list$log_var <- log_rect_ln_var
   else return_list$var <- exp(log_rect_ln_var)

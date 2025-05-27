@@ -782,8 +782,8 @@ gpWrapper$methods(
           trunc_pred_list$var[small_prob_sel,i] <- eps
           
           # Now compute variance for the remaining inputs.
-          trunc_pred_list$var[!small_prob_sel,i] <- truncnorm::vtruncnorm(a=lower_bound,
-                                                                          b=upper_bound,
+          trunc_pred_list$var[!small_prob_sel,i] <- truncnorm::vtruncnorm(a=lower_bound[!small_prob_sel],
+                                                                          b=upper_bound[!small_prob_sel],
                                                                           mean=pred_list$mean[!small_prob_sel,i],
                                                                           sd=sqrt(pred_list$var[!small_prob_sel,i]))
         }
@@ -1081,7 +1081,7 @@ gpWrapper$methods(
     .self$augment_design(X_new, Y_new)
     N_design_new <- nrow(X_train)
     
-    for(i in 1:.self$Y_dim) {
+    for(i in 1L:.self$Y_dim) {
       gp_model[[i]] <<- .self$update_package(X_train[(N_design_curr+1):N_design_new,,drop=FALSE], 
                                              Y_train[(N_design_curr+1):N_design_new, i], 
                                              output_idx=i, update_hyperpar=update_hyperpar, ...)
@@ -1543,7 +1543,8 @@ gpWrapper$methods(
     else Y_train <<- rbind(Y_train, Y_new)
   }, 
   
-  calc_expected_exp_cond_var = function(X_eval, X_cond, include_noise=TRUE, log_scale=TRUE, ...) {
+  calc_expected_exp_cond_var = function(X_eval, X_cond, include_noise=TRUE, log_scale=TRUE, 
+                                        adjustment=NULL, lower_bound=-Inf, upper_bound=Inf, ...) {
     # Computes the log of E_l Var[exp(f(X_eval))|f(X_cond)=l], the expected conditional variance 
     # due to conditioning on `X_cond`. The expected conditional variance is evaluated at inputs 
     # `X_eval`. The expectation is with respect to the current GP predictive distribution, 
@@ -1551,13 +1552,20 @@ gpWrapper$methods(
     # more than one GP, then this expectation is computed independently for each GP. 
     # Returns matrix of shape `(nrow(X_eval), Y_dim)`, where `Y_dim` is the number of 
     # independent GPs. 
+    #
+    # Note: the computation is only exact when the predictive distribution is Gaussian. In the
+    # case that an adjustment (rectified, truncated) is applied, the formula is a heuristic that
+    # simply plugs the adjusted mean in place of the typical Gaussian mean.
     
     N_eval <- nrow(X_eval)
     gp_copy <- .self$copy(shallow=FALSE)
+    adjustment <- .self$get_dist_adjustment(adjustment, lower_bound, upper_bound)
     
     # Emulator predictions at evaluation locations and at conditioning locations. 
-    pred <- gp_copy$predict(X_cond, return_mean=TRUE, return_var=TRUE, ...)
-    pred_eval <- gp_copy$predict(X_eval, return_mean=FALSE, return_var=TRUE, ...)
+    pred <- gp_copy$predict(X_cond, return_mean=TRUE, return_var=TRUE, adjustment=adjustment,
+                            lower_bound=lower_bound, upper_bound=upper_bound, ...)
+    pred_eval <- gp_copy$predict(X_eval, return_mean=FALSE, return_var=TRUE, adjustment=adjustment,
+                                 lower_bound=lower_bound, upper_bound=upper_bound, ...)
     
     # Update the GP model, treating the predictive mean as the observed 
     # response at the evaluation locations. This leaves the predictive 
@@ -1573,7 +1581,8 @@ gpWrapper$methods(
       lnp_cond_log_var[,j] <- convert_Gaussian_to_LN(mean_Gaussian=pred_cond$mean[,j], 
                                                      var_Gaussian=pred_cond$var[,j],
                                                      return_mean=FALSE, return_var=TRUE, 
-                                                     log_scale=TRUE)$log_var
+                                                     log_scale=TRUE, adjustment=adjustment,
+                                                     lower=lower_bound, upper=upper_bound)$log_var
     }
     
     # Compute the variance inflation term on the log scale. 
