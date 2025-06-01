@@ -206,11 +206,11 @@ llikEmulator$methods(
     setNames(.self$field(attr_name), llik_label)
   },
   
-  get_llik_bounds = function(input, shift_bounds=TRUE, apply_shift=TRUE, 
-                             shift_func_new=NULL, add_shifts=TRUE, ...) {
+  get_llik_bounds = function(input, lik_par_val=NULL, shift_bounds=TRUE, 
+                             apply_shift=TRUE, shift_func_new=NULL, add_shifts=TRUE, ...) {
     # Returns list of (potentially input-dependent) lower and upper bounds on
     # the predictive distribution. By default, the bounds are interpreted
-    # as applying to the already shifted distribution; e.g., for upper bounds 
+    # as applying to the already shifted distribution; e.g., for upper bounds, 
     # L(u) + shift(u) <= bound(u). If `shift_bounds` is TRUE, the shifted
     # bound bound(u) - shift(u) is returned (which is a bound on L(u)). If 
     # FALSE, the bound is not shifted. Note that `apply_shift` must also 
@@ -230,7 +230,7 @@ llikEmulator$methods(
     
     # Evaluate bound function at inputs.
     if(is.function(lb)) {
-      bounds <- lb(input)
+      bounds <- lb(input, lik_par_val=lik_par_val, ...)
       bounds$lower <- bounds$lower - shift_vals
       bounds$upper <- bounds$upper - shift_vals
       return(bounds)
@@ -430,12 +430,27 @@ llikEmulator$methods(
                                         normalize=normalize, em_pred_list=em_pred_list,
                                         llik_pred_list=llik_pred_list, ...)
     
-    # Apply deterministic shift (only affects mean).
+    # Apply deterministic shift (affects mean and variance/cov).
     if(apply_shift) {
       s <- get_shift_func(shift_func_new=shift_func_new, add_shifts=add_shifts)
       if(!is.null(s)) {
-        if(log_scale) lik_pred_list$log_mean <- lik_pred_list$log_mean + s(input)
-        else lik_pred_list$mean <- lik_pred_list$mean * exp(s(input))
+        shift_vals <- s(input)
+        
+        # Shift mean.
+        if(log_scale) lik_pred_list$log_mean <- lik_pred_list$log_mean + shift_vals
+        else lik_pred_list$mean <- lik_pred_list$mean * exp(shift_vals)
+        
+        # Shift variance.
+        if(return_var) {
+          if(log_scale) lik_pred_list$log_var <- lik_pred_list$log_var + 2*shift_vals
+          else lik_pred_list$var <- lik_pred_list$var * shift_vals^2
+        }
+        
+        # Shift covariance.
+        if(!is.null(lik_pred_list$cov)) {
+          lik_pred_list$cov <- mult_vec_with_mat_cols(shift_vals, lik_pred_list$cov)
+          lik_pred_list$cov <- mult_vec_with_mat_rows(shift_vals, lik_pred_list$cov)
+        }
       }
     }
     
@@ -2311,12 +2326,18 @@ llikEmulatorGPFwdGauss$methods(
       initFields(L_Cov=t(chol(Cov))) 
     }
     
+    # Upper bound for Gaussian log-likelihood.
+    llik_bound_func <- function(input, lik_par_val=NULL, ...) {
+      upper <- .self$compute_log_det(lik_par_val)
+      list(lower=-Inf, upper=upper)
+    }
+    
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=Cov, 
               dim_input=dim_par, default_conditional=default_conditional, 
               input_names=par_names, default_normalize=default_normalize, 
               lik_description="Gaussian likelihood",
               emulator_description="Forward model GP emulator", 
-              exact_llik=FALSE, ...)
+              exact_llik=FALSE, llik_bounds=llik_bound_func, ...)
   },
   
   get_lik_par = function(lik_par_val=NULL, return_chol=FALSE, ...) {
@@ -2379,11 +2400,6 @@ llikEmulatorGPFwdGauss$methods(
     # Construct log likelihood.
     llik <- -0.5 * colSums(solve(L, add_vec_to_mat_cols(.self$y, -t(fwd_model_vals)))^2)
     llik + .self$compute_log_det(lik_par_chol=L)
-  },
-  
-  get_llik_bounds = function(lik_par_val=NULL, ...) {
-    upper <- .self$compute_log_det(lik_par_val)
-    c(-Inf,upper)
   },
   
   .sample = function(input, lik_par_val=NULL, em_pred_list=NULL, N_samp=1L, 
@@ -2621,12 +2637,18 @@ llikEmulatorGPFwdGaussDiag$methods(
                              "or 1 and only contain positive numbers."))
     }
     
+    # Upper bound for Gaussian log-likelihood.
+    llik_bound_func <- function(input, lik_par_val=NULL, ...) {
+      upper <- .self$compute_log_det(lik_par_val)
+      list(lower=-Inf, upper=upper)
+    }
+    
     callSuper(emulator_model=gp_model, llik_label=llik_lbl, lik_par=sig2, 
               dim_input=dim_par, default_conditional=default_conditional, 
               input_names=par_names, default_normalize=default_normalize, 
               lik_description="Gaussian likelihood, diagonal covariance.",
               emulator_description="Forward model GP emulator", 
-              exact_llik=FALSE, ...)
+              exact_llik=FALSE, llik_bounds=llik_bound_func, ...)
   },
   
   get_lik_par = function(lik_par_val=NULL, ...) {
@@ -2644,11 +2666,6 @@ llikEmulatorGPFwdGaussDiag$methods(
     }
     
     return(lik_par_val)
-  },
-  
-  get_llik_bounds = function(lik_par_val=NULL, ...) {
-    upper <- .self$compute_log_det(lik_par_val)
-    c(-Inf,upper)
   },
   
   compute_log_det = function(lik_par_val=NULL) {

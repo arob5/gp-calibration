@@ -291,6 +291,23 @@ acq_llik_neg_var_lik <- function(input, llik_em, ...) {
 }
 
 
+acq_llik_neg_entropy_lik <- function(input, llik_em, ...) {
+  # Returns the negative entropy of the likelihood/posterior surrogate under
+  # the assumption that the log-posterior surrogate predictive distribution
+  # is Gaussian. The entropy is with respect to the natural log, and constants
+  # are dropped.
+  
+  # if(!("llikEmulatorGP" %in% class(llik_em))) {
+  #   stop("`acq_llik_neg_entropy_lik` is currently only defined for ",
+  #        "`llikEmulatorGP`.")
+  # }
+  
+  llik_pred <- llik_em$predict(input, return_mean=TRUE, return_var=TRUE, ...)
+  
+  -1 * (llik_pred$mean + 0.5 * log(llik_pred$var))
+}
+
+
 acq_llik_IVAR_grid_gp <- function(input, llik_em, grid_points, weights=NULL, ...) {
   # Defined for `llik_em` objects that depend on an underlying Gaussian process 
   # (GP); i.e., `is_gp(llik_em$emulator_model)` must be `TRUE`. Approximates 

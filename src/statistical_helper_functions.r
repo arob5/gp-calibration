@@ -74,6 +74,7 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   #    "Uniform", param1=lower, param2=upper
   #    "Gamma", param1=shape, param2=rate
   #    "Beta", param1=shape1, param2=shape2
+  #    "Logitnormal", param1=Gaussian mean, param2=Gaussian std dev
   #    "Truncated_Gaussian", param1=mean, param2=standard deviation (the moments
   #     of the Gaussian distribution inducing the truncated Gaussian), 
   #     bound_lower=lower truncation value, bound_upper=upper truncation value.
@@ -108,6 +109,8 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   Uniform_priors <- par_prior[par_prior$dist == "Uniform",]
   Gamma_priors <- par_prior[par_prior$dist == "Gamma",]
   Beta_priors <- par_prior[par_prior$dist == "Beta",]
+  Lognormal_priors <- par_prior[par_prior$dist == "Lognormal",]
+  Logitnormal_priors <- par_prior[par_prior$dist == "Logitnormal",]
   Truncated_Gaussian_priors <- par_prior[par_prior$dist == "Truncated_Gaussian",]
   
   if(nrow(Gaussian_priors) > 0) {
@@ -128,6 +131,19 @@ calc_lprior_dens_single_input <- function(par, par_prior) {
   if(nrow(Beta_priors) > 0) {
     lprior <- lprior + sum(dbeta(Beta_priors$val, shape1=Beta_priors$param1, 
                                  shape2=Beta_priors$param2, log=TRUE))
+  }
+  
+  if(nrow(Lognormal_priors) > 0) {
+    lprior <- lprior + sum(dlnorm(Lognormal_priors$val, 
+                                  meanlog=Lognormal_priors$param1, 
+                                  sdlog=Lognormal_priors$param2, log=TRUE))
+  }
+  
+  if(nrow(Logitnormal_priors) > 0) {
+    lprior <- lprior + sum(greybox::dlogitnorm(Logitnormal_priors$val, 
+                                               mu=Logitnormal_priors$param1, 
+                                               sigma=Logitnormal_priors$param2, 
+                                               log=TRUE))
   }
   
   if(nrow(Truncated_Gaussian_priors) > 0) {
@@ -174,6 +190,10 @@ sample_prior <- function(par_prior, n=1L) {
       par_samp[,j] <- rgamma(n, shape=par_prior[j, "param1"], rate=par_prior[j, "param2"])
     } else if(par_prior[j, "dist"] == "Beta") {
       par_samp[,j] <- rbeta(n, shape1=par_prior[j, "param1"], shape2=par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"] == "Lognormal") {
+      par_samp[,j] <- rlnorm(n, meanlog=par_prior[j, "param1"], sdlog=par_prior[j, "param2"])
+    } else if(par_prior[j, "dist"] == "Logitnormal") {
+      par_samp[,j] <- greybox::rlogitnorm(n, mu=par_prior[j, "param1"], sigma=par_prior[j, "param2"])
     } else if(par_prior[j, "dist"]=="Truncated_Gaussian") {
       par_samp[,j] <- truncnorm::rtruncnorm(n, a=par_prior[j, "bound_lower"], 
                                             b=par_prior[j, "bound_upper"], 
@@ -231,6 +251,21 @@ get_prior_bounds <- function(par_prior, tail_prob_excluded=0.01,
       } else {
         bounds[1,j] <- qbeta(p, par_prior[j,"param1"], par_prior[j,"param2"])
         bounds[2,j] <- qbeta(p, par_prior[j,"param1"], par_prior[j,"param2"], lower.tail=FALSE)
+      }
+    } else if(dist_name == "Lognormal") {
+      if(set_hard_bounds) {
+        bounds[1,j] <- 0
+      } else {
+        bounds[1,j] <- qlnorm(p, meanlog=par_prior[j,"param1"], sdlog=par_prior[j,"param2"])
+      }
+      bounds[2,j] <- qlnorm(p, meanlog=par_prior[j,"param1"], sdlog=par_prior[j,"param2"], lower.tail=FALSE)
+    } else if(dist_name == "Logitnormal") {
+      if(set_hard_bounds) {
+        bounds[1,j] <- 0
+        bounds[2,j] <- 1
+      } else {
+        bounds[1,j] <- greybox::qlogitnorm(p, par_prior[j,"param1"], par_prior[j,"param2"])
+        bounds[2,j] <- greybox::qlogitnorm(1-p, par_prior[j,"param1"], par_prior[j,"param2"])
       }
     } else if(dist_name == "Truncated_Gaussian") {
       if(set_hard_bounds) {

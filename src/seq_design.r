@@ -149,9 +149,10 @@ compare_acq_funcs <- function(input, acq_func_names, model=NULL, ...) {
 }
 
 
-compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
+compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, 
+                                       return_list=TRUE, ...) {
   # A convenience function that acts as a wrapper around `compare_acq_funcs`,
-  # which calls this function for each Gaussian process in the list `gp_list`. 
+  # which calls this function for each model in the list `model_list`. 
   #
   # Args:
   #    input: matrix, of dimension (N,D) containing N D-dimensional inputs 
@@ -161,15 +162,35 @@ compare_acq_funcs_by_model <- function(input, acq_func_names, model_list, ...) {
   #                    excluding the "acq_" prefix. 
   #    model_list: list of objects, each of which inherit from `gpWrapper`
   #                or `llikEmulator`. 
+  #    return_list: if TRUE, returns list of length equal to the number of models.
+  #                 Otherwise converts to single data.table with a new column "model".
   #    ...: other arguments passed to `compare_acq_funcs()`. 
   #
   # Returns:
-  #    list of length `length(gp_list)`. Each element contains a matrix, 
-  #    the output of `compare_acq_funcs()` evaluated using the respective model. 
-  #    The names attribute of the list is set to `names(model_list)`. 
+  #    If `return_list=TRUE` list of length `length(gp_list)`. Each element 
+  #    contains a matrix, the output of `compare_acq_funcs()` evaluated using 
+  #    the respective model. The names attribute of the list is set to 
+  #    `names(model_list)`. 
   
   assert_that(is.list(model_list))
-  lapply(model_list, function(model) compare_acq_funcs(input, acq_func_names, model, ...))
+  
+  # Set model names.
+  model_names <- names(model_list)
+  if(is.null(model_names)) model_names <- paste0("model", seq_along(model_list))
+
+  # One matrix output per model.
+  l <- lapply(model_list, function(model) compare_acq_funcs(input, acq_func_names, model, ...))
+  names(l) <- model_names
+  if(return_list) return(l)
+  
+  # Convert to data.table.
+  for(i in seq_along(l)) {
+    l[[i]] <- as.data.table(l[[i]])
+    l[[i]]$model <- model_names[i]
+  }
+  
+  dt <- rbindlist(l, use.names=TRUE)
+  return(dt)
 }
 
 
@@ -604,6 +625,16 @@ map_from_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
         stop("`map_from_uniform()`: Bounds not supported for Beta dist.")
       }
       X[,j] <- qbeta(X[,j], shape1=prior_dist_info[j,"param1"], shape2=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Lognormal") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Lognormal dist.")
+      }
+      X[,j] <- qlnorm(X[,j], meanlog=prior_dist_info[j,"param1"], sdlog=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Logitnormal") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Logitnormal dist.")
+      }
+      X[,j] <- greybox::qlogitnorm(X[,j], mu=prior_dist_info[j,"param1"], sigma=prior_dist_info[j,"param2"])
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }
@@ -663,6 +694,16 @@ map_to_uniform <- function(X, prior_dist_info=NULL, bounds=NULL) {
         stop("`map_from_uniform()`: Bounds not supported for Beta dist.")
       }
       X[,par_name] <- pbeta(X[,par_name], shape1=prior_dist_info[j,"param1"], shape2=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Lognormal") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Lognormal dist.")
+      }
+      X[,par_name] <- plnorm(X[,par_name], meanlog=prior_dist_info[j,"param1"], sdlog=prior_dist_info[j,"param2"])
+    } else if(dist_name == "Logitnormal") {
+      if(!is.na(bounds[1,j]) || !is.na(bounds[1,j])) {
+        stop("`map_from_uniform()`: Bounds not supported for Logitnormal dist.")
+      }
+      X[,par_name] <- greybox::plogitnorm(X[,par_name], mu=prior_dist_info[j,"param1"], sigma=prior_dist_info[j,"param2"])
     } else {
       stop("Unsupported prior distribution: ", dist_name)
     }

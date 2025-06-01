@@ -1661,7 +1661,7 @@ sim_sample_based_approx_1d_grid <- function(llik_em, par_prior_params, bounds,
   return(par_samp)
 }
 
-estimate_sample_based_density_1d_grid <- function(llik_em, par_prior_params, input_grid, 
+estimate_sample_based_density_1d_grid <- function(llik_em, par_prior, input_grid, 
                                                   N_monte_carlo=1000L, lik_par_val=NULL, ...) {
   # This function is similar to `sim_sample_based_approx_1d_grid()` but its goal is not 
   # to draw parameter samples `u`, but instead to estimate the expectation of the random 
@@ -1685,8 +1685,8 @@ estimate_sample_based_density_1d_grid <- function(llik_em, par_prior_params, inp
   # Simulate log-likelihood values. Return shape is (N_grid, N_monte_carlo).
   llik_samp <- llik_em$sample(input_grid, lik_par_val=lik_par_val, N_samp=N_monte_carlo, ...)
 
-  # Assuming numbers are reasonable for now so exponentiating is fine. 
-  lprior_dens <- calc_lprior_theta(input_grid, par_prior_params)
+  # Assuming numbers are reasonable for now so exponentiating is fine.
+  lprior_dens <- calc_lprior_dens(input_grid, par_prior)
   post_dens_samp <- exp(add_vec_to_mat_cols(lprior_dens, llik_samp))
   
   # Normalize.

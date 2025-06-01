@@ -269,7 +269,7 @@ acq_neg_var <- function(input, gp, ...) {
   # `input`. The negative is due to the fact that the framework assumes
   # that acquisition functions are always minimized, so to implement 
   # the "maximum variance" acquisition it must be negated here. 
-  
+
   -1 * gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]
 }
 
@@ -278,21 +278,6 @@ acq_neg_entropy <- function(input, gp, ...) {
   # `input`. 
   
   -0.5 * log(2*pi*gp$predict(input, return_mean=FALSE, return_var=TRUE, ...)$var[,1]) - 0.5
-}
-
-
-acq_neg_exp_entropy <- function(input, gp, ...) {
-  # Returns the negative entropy of the log-normal process 
-  # (LNP) `exp(gp)` at the input points `input`. This is technically 
-  # the negative entropy (computed with respect to the natural log) 
-  # up to a multiplicative constant. Multiplying the returned value
-  # by C^2, where C = log2(e) gives the exact negative entropy. 
-  
-  gp_pred <- gp$predict(input, return_mean=TRUE, return_var=TRUE, ...)
-  lnp_pred <- convert_Gaussian_to_LN(mean_Gaussian=gp_pred$mean, var_Gaussian=gp_pred$var,
-                                     return_mean=FALSE, return_var=TRUE, log_scale=TRUE)
-  
-  -lnp_pred$log_mean - 0.5 * lnp_pred$log_var - 0.5*log(2*pi) - 0.5
 }
 
 
