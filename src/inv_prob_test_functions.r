@@ -544,15 +544,15 @@ get_vsem_test_paper <- function(default_conditional=FALSE, default_normalize=TRU
   
   # Priors: modifying defaults. Note that Gamma uses shape-rate parameterization.
   par_prior <- as.data.table(get_vsem_default_priors())
-  par_prior[par_name=="KEXT", `:=`(dist="Logitnormal", param1=0, param2=1, bound_lower=0, bound_upper=1)]
+  par_prior[par_name=="KEXT", `:=`(dist="Beta", param1=2, param2=2, bound_lower=0, bound_upper=1)]
   par_prior[par_name=="LAR", `:=`(dist="Gamma", param1=4, param2=2, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="LUE", `:=`(dist="Gamma", param1=2, param2=400, bound_lower=0, bound_upper=Inf)]
-  par_prior[par_name=="GAMMA", `:=`(dist="Logitnormal", param1=-1, param2=1, bound_lower=0, bound_upper=1)]
-  par_prior[par_name=="tauV", `:=`(dist="Lognormal", param1=7, param2=0.7, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="GAMMA", `:=`(dist="Beta", param1=1.5, param2=3.0, bound_lower=0, bound_upper=1)]
+  par_prior[par_name=="tauV", `:=`(dist="Gamma", param1=3, param2=0.003, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="tauS", `:=`(dist="Gamma", param1=3.0, param2=0.00015, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="tauR", `:=`(dist="Gamma", param1=3.0, param2=0.00015, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="Av", `:=`(dist="Beta", param1=2, param2=2, bound_lower=0, bound_upper=1)]
-  par_prior[par_name=="Cv", `:=`(dist="Lognormal", param1=1.5, param2=0.3, bound_lower=0, bound_upper=Inf)]
+  par_prior[par_name=="Cv", `:=`(dist="Gamma", param1=10, param2=2.0, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="Cs", `:=`(dist="Gamma", param1=17, param2=1, bound_lower=0, bound_upper=Inf)]
   par_prior[par_name=="Cr", `:=`(dist="Gamma", param1=10, param2=2, bound_lower=0, bound_upper=Inf)]
   par_prior <- as.data.frame(par_prior)
