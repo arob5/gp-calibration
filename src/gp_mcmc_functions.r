@@ -239,7 +239,7 @@ mcmc_noisy_llik <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
           sig2_samp[itr,] <- sig2_curr
         }
       }
-    },  error = function(cond) {
+    }, error = function(cond) {
       err <<- cond
       message("mcmc_gp_noisy() MCMC error; iteration ", itr)
       message(conditionMessage(cond))
@@ -780,6 +780,14 @@ sample_mh_llik <- function(llik_em, lprior, par_curr, par_prop, llik_curr=NULL,
   # psuedo-marginal method the current llik value is not changed.
   llik_samp <- llik_em_copy$sample(par, use_cov=use_joint, N_samp=n_avg, ...)
   llik_samp <- matrix(llik_samp, nrow=nrow(par), ncol=n_avg)
+  
+  # Check for NA values.
+  na_sel <- is.na(llik_samp)
+  if(any(na_sel)) {
+    message("sample_mh_llik(): llik samples resulted in NA value(s). Setting NAs to -Inf.")
+    llik_samp[na_sel] <- -Inf
+  }
+  
   llik_avg <- matrixStats::rowLogSumExps(llik_samp)
   if(mode=="pseudo-marginal") llik_avg <- c(llik_curr, llik_avg)
 
@@ -800,6 +808,8 @@ sample_mh_llik <- function(llik_em, lprior, par_curr, par_prop, llik_curr=NULL,
     
     alpha_samp <- pmin(1.0, exp(llik_samp[2,] - llik_samp[1,]))
     alpha <- mean(alpha_samp)
+    
+    if(is.na(alpha) || is.null(alpha)) browser() 
   }
   
   return(list(acc_prob=alpha, llik_curr=llik_avg[1], llik_prop=llik_avg[2],
@@ -871,13 +881,12 @@ run_mcmc_chains <- function(mcmc_func_name, llik_em, n_chain=4L,
 
   # Sample initial conditions from prior if not provided and if not deferring 
   # to the underlying MCMC function.
-
   if(!defer_ic) {
     if(is.null(par_init)) {
       ic_settings[c("llik_em","par_prior","n_ic")] <- list(llik_em, par_prior, n_chain)
       par_init <- do.call("get_mcmc_ic", ic_settings)
     } else {
-      if(!is.matrix(par_init)) par_init <- matrix(par_init, nrow=1)
+      if(!is.matrix(par_init)) par_init <- matrix(par_init, nrow=1L)
       assert_that(nrow(par_init) == n_chain)
     }
     par_init_list <- lapply(1:n_chain, function(i) par_init[i,])
@@ -1210,7 +1219,7 @@ get_mcmc_ic <- function(llik_em, par_prior, n_ic,
   assert_that(sum(n_ic_by_method)==n_ic)
   methods <- names(n_ic_by_method[n_ic_by_method >= 1])
   par_names <- llik_em$input_names
-  ic <- matrix(nrow=0, ncol=length(par_names), dimnames=list(NULL, par_names))
+  ic <- matrix(nrow=0L, ncol=length(par_names), dimnames=list(NULL, par_names))
 
   if("prior" %in% methods) {
     ic_prior <- get_batch_design(design_method, N_batch=n_ic_by_method["prior"], 

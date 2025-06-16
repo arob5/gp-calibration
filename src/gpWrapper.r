@@ -1111,7 +1111,7 @@ gpWrapper$methods(
     # Returns:
     # character, the adjustment. Typically will be the same as the `adjustment`
     # argument, but may be changed based on argument checking.
-    
+
     # Currently, both "none" and NULL interpreted as no adjustment.
     if(is.null(adjustment) || (adjustment == "none")) return(NULL)
     
@@ -2913,5 +2913,69 @@ gpWrapperKerGP$methods(
   }
   
 )
+
+
+# ------------------------------------------------------------------------------
+# Helper functions.
+# ------------------------------------------------------------------------------
+
+quad_loss <- function(beta, X, y, wt=1) {
+  yhat <- X %*% beta
+  0.5 * sum(wt * (y - yhat)^2)
+}
+
+grad_quad_loss <- function(beta, X, y, wt=1) {
+  if(length(wt)==1) wt <- rep(wt, nrow(X))
+  WX <- mult_vec_with_mat_cols(wt, X)
+  crossprod(X, WX) %*% beta - crossprod(X,wt*y)
+}
+
+quad_basis <- function(Phi) {
+  # Constant, linear, and quadratic features. No cross terms.
+  
+  n <- nrow(Phi)
+  d <- ncol(Phi)
+  X <- cbind(rep(1,n), Phi, Phi^2)
+}
+
+fit_constr_quad_reg <- function(design_info, inv_prob) {
+  # Regression with quadratic loss and quadratic basis functions. Coefficients
+  # on quadratic terms constrained to be negative. The regression is performed
+  # in unbounded/transformed parameter space. 
+  
+  # Get parameter transformation functions.
+  par_maps <- inv_prob$par_maps
+
+  # Get true likelihood, parameterized as function of transformed parameter phi.
+  llik <- function(U, ...) inv_prob$llik_obj$assemble_llik(U)
+  llik_phi <- function(Phi, ...) llik(par_maps$inv(Phi), ...)
+  
+  # Define design matrix with quadratic terms.
+  Phi <- par_maps$fwd(design_info$input)
+  d <- ncol(Phi)
+  X <- quad_basis(Phi)
+  response <- llik_phi(Phi)
+  
+  # Constrain quadratic coefficients to be negative (d constraints).
+  zeros <- matrix(0, nrow=d, ncol=d+1)
+  constraints <- diag(-1, nrow=d, ncol=d)
+  ui <- cbind(zeros, constraints)
+  ci <- rep(0, d)
+  
+  # Constrained optimization.
+  beta_init <- rep(-1, ncol(X))
+  fit <- constrOptim(theta=beta_init, f=quad_loss, grad=grad_quad_loss, 
+                     ui=ui, ci=ci, X=X, y=response)
+  
+  return(fit)
+}
+
+
+
+
+
+
+
+
 
 

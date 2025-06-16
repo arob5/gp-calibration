@@ -38,7 +38,7 @@ get_lprior_dens <- function(par_prior) {
   # is vectorized so that it accepts matrix inputs where each row is a different 
   # parameter vector at which to evaluate the prior. In this case, the log-prior
   # density function returns a vector of length equal to the number of rows in 
-  # the input matrix. See `calc_lprior_denssingle_input()` for requirements on 
+  # the input matrix. See `calc_lprior_dens_single_input()` for requirements on 
   # `par_prior`.
   
   function(par) calc_lprior_dens(par, par_prior)
@@ -59,9 +59,19 @@ calc_lprior_dens <- function(par, par_prior) {
   if(isTRUE(par_prior == "flat")) return(0)
   
   # If single input is passed as a numeric vector. 
-  if(is.null(nrow(par))) par <- matrix(par, nrow=1)
+  if(is.null(nrow(par))) par <- matrix(par, nrow=1L)
   
-  return(apply(par, 1, function(u) calc_lprior_dens_single_input(u, par_prior)))
+  # Set -Inf if parameter is outside bounds.
+  outside_support <- par_violates_bounds(par, par_prior)
+  
+  lprior_vals <- rep(NA, nrow(par))
+  lprior_vals[outside_support] <- -Inf
+  if(sum(!outside_support) > 0) {
+    lprior_vals[!outside_support] <- apply(par[!outside_support,,drop=FALSE], 1L, 
+                                           function(u) calc_lprior_dens_single_input(u, par_prior))
+  }
+  
+  return(lprior_vals)
 }
 
 
@@ -161,11 +171,54 @@ get_prior_sampler <- function(par_prior) {
   function(n=1L, ...) sample_prior(par_prior, n=n)
 }
 
+par_violates_bounds <- function(par, par_prior) {
+  # `par` is (n,d) matrix with parameters stacked in the rows. Returns vector
+  # of length `n` that indicates whether each parameter violates bound constraints
+  # or not.
+  
+  if(is.null(dim(par))) par <- matrix(par, nrow=1L)
+  n <- nrow(par)
+  
+  lower <- par_prior$bound_lower
+  upper <- par_prior$bound_upper
+  
+  # No bounds to enforce.
+  if(!isTRUE(any(is.finite(lower)) | any(is.finite(upper)))) {
+    return(rep(FALSE, n))
+  }
+  
+  apply(par, 1L, function(x) any(x < lower) | any(x > upper))
+}
 
-sample_prior <- function(par_prior, n=1L) {
+
+sample_prior <- function(par_prior, n=1L, max_itr=1e5) {
+  # A wrapper around `sample_prior_unbounded()` that implements a basic 
+  # rejection sampler to enforce bound constraints. Note that this could be 
+  # made more efficient by only resampling the subset of the parameter vector
+  # that violates the bounds.
+  
+  samp <- sample_prior_unbounded(par_prior, n=n)
+
+  itr <- 1L
+  while(TRUE) {
+    row_violates_bound <- par_violates_bounds(samp, par_prior)
+    n_violations <- sum(row_violates_bound)
+    if(n_violations == 0L) return(samp)
+    samp[row_violates_bound,] <- sample_prior_unbounded(par_prior, n=n_violations)
+    
+    itr <- itr + 1L
+    if(itr > max_itr) stop("Number of iterations in `sample_prior()` exceeded.")
+  }
+  
+}
+
+
+sample_prior_unbounded <- function(par_prior, n=1L) {
   # Return independent samples from prior distribution defined by `par_prior`. 
   # Currently only supports priors that assume prior independence across 
-  # parameters. 
+  # parameters. Does not enforce bounds in the `bound_lower`/`bound_upper`
+  # columns except for distributions that are explicitly parameterized
+  # in terms of the bounds (e.g., truncated normal).
   #
   # Args:
   #    par_prior: See `calc_lprior_dens_single_input()` for the requirements on 
@@ -628,13 +681,15 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   lprob_upper[upper_prob_zero] <- -Inf
   lprob_upper[upper_prob_one] <- 0
   lprob_upper[upper_prob_not_zero_one] <- log_1_minus_exp(ln_trunc$lprob_leq_upper[upper_prob_not_zero_one])
-    
+  upper_prob_one[lprob_upper < eps] <- TRUE  
+  upper_prob_not_zero_one[lprob_upper < eps] <- FALSE
+  
   # log P(y < b1)
   lprob_lower <- ln_trunc$lprob_leq_lower
   lower_prob_zero <- is.infinite(lprob_lower)
   lower_prob_one <- (abs(lprob_lower) < eps)
   lower_prob_not_zero_one <- !(lower_prob_zero | lower_prob_one)
-  
+
   # log P(b1 <= y <= b2)
   lprob_middle <- rep(NA_real_, n)
   lprob_middle[lower_prob_one | upper_prob_one] <- -Inf

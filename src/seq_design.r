@@ -444,7 +444,6 @@ get_batch_design <- function(method, N_batch, prior_params=NULL,
   # subsample = subsample from `design_candidates` weighted by `design_candidate_weights`.
   
   if(method == "LHS") return(get_LHS_sample(N_batch, prior_dist_info=prior_params, ...))
-  else if(method == "EKI_finite_time") return(run_EKI_finite_time(N_steps))
   else if(method == "tensor_product_grid") return(get_tensor_product_grid(N_batch, prior_dist_info=prior_params, ...))
   else if(method == "simple") {
     samp <- sample_prior(prior_params, n=N_batch)
@@ -854,6 +853,226 @@ gen_extrapolation_test_inputs <- function(d, N_points_per_dim, max_scaler=2.0, s
   
   return(list(inputs=X_test_long, idx=break_points))
 }
+
+
+# TODO: TEMP; chatGPT solutions for better inner optimization:
+library(nloptr)
+library(GenSA)
+
+optimize_acq <- function(
+    acq_fun,        # Acquisition function: numeric vector -> scalar
+    lower, upper,   # Box bounds
+    n_random = 50,  # Number of random starting points
+    n_top = 5,      # How many top points to refine with BOBYQA
+    fallback = TRUE # Use GenSA fallback if BOBYQA fails
+) {
+  d <- length(lower)
+  stopifnot(length(upper) == d)
+  
+  # Step 1: Random Search
+  random_points <- matrix(runif(n_random * d, lower, upper), ncol = d, byrow = TRUE)
+  values <- apply(random_points, 1, acq_fun)
+  
+  top_indices <- order(-values)[1:n_top]
+  top_points <- random_points[top_indices, , drop = FALSE]
+  
+  best_val <- -Inf
+  best_x <- NULL
+  
+  for (i in 1:n_top) {
+    x0 <- top_points[i, ]
+    
+    # Step 2: Try BOBYQA
+    res <- tryCatch({
+      nloptr(
+        x0 = x0,
+        eval_f = function(x) -acq_fun(x),  # Minimize negative of acq
+        lb = lower, ub = upper,
+        opts = list(
+          algorithm = "NLOPT_LN_BOBYQA",
+          xtol_rel = 1e-6,
+          maxeval = 100
+        )
+      )
+    }, error = function(e) NULL)
+    
+    # Step 3: Fallback to GenSA if needed
+    if (is.null(res) || is.null(res$objective) || is.na(res$objective)) {
+      if (fallback) {
+        res <- GenSA(
+          par = x0,
+          fn = function(x) -acq_fun(x),
+          lower = lower,
+          upper = upper
+        )
+      } else {
+        next
+      }
+    }
+    
+    # Update best
+    val <- -res$objective
+    if (!is.na(val) && val > best_val) {
+      best_val <- val
+      best_x <- res$par
+    }
+  }
+  
+  list(par = best_x, value = best_val)
+}
+
+
+#
+# Batch extension.
+#
+
+# library(nloptr)
+# library(GenSA)
+
+optimize_acq_batch_joint <- function(
+    acq_fun,        # function(X_batch_matrix) => scalar
+    lower, upper,   # bounds vectors of length d
+    batch_size = 4,
+    n_random = 100,
+    n_top = 5,
+    fallback = TRUE
+) {
+  d <- length(lower)
+  k <- batch_size
+  
+  # Step 1: Generate random initial batches
+  random_batches <- array(runif(n_random * k * d, lower, upper), dim = c(n_random, k, d))
+  
+  # Step 2: Score each batch
+  scores <- sapply(1:n_random, function(i) {
+    batch_matrix <- random_batches[i, , , drop = FALSE]
+    acq_fun(matrix(batch_matrix, nrow = k, ncol = d))
+  })
+  
+  top_idx <- order(-scores)[1:n_top]
+  top_batches <- random_batches[top_idx, , , drop = FALSE]
+  
+  best_val <- -Inf
+  best_par <- NULL
+  
+  for (i in 1:n_top) {
+    x0 <- as.vector(top_batches[i, , ])  # Flatten to 1D for optimization
+    
+    obj_fn <- function(par_vec) {
+      X_batch <- matrix(par_vec, ncol = d, byrow = TRUE)
+      -acq_fun(X_batch)
+    }
+    
+    # Try nloptr
+    res <- tryCatch({
+      nloptr(
+        x0 = x0,
+        eval_f = obj_fn,
+        lb = rep(lower, k),
+        ub = rep(upper, k),
+        opts = list(algorithm = "NLOPT_LN_BOBYQA", xtol_rel = 1e-6, maxeval = 200)
+      )
+    }, error = function(e) NULL)
+    
+    if ((is.null(res) || is.null(res$objective) || is.na(res$objective)) && fallback) {
+      res <- GenSA(
+        par = x0,
+        fn = obj_fn,
+        lower = rep(lower, k),
+        upper = rep(upper, k)
+      )
+    }
+    
+    val <- -res$objective
+    if (!is.na(val) && val > best_val) {
+      best_val <- val
+      best_par <- res$par
+    }
+  }
+  
+  # Return best batch as a (k x d) matrix
+  matrix(best_par, ncol = d, byrow = TRUE)
+}
+
+
+#
+# Parallel batch evaluations.
+# 
+
+# install.packages(c("furrr", "future", "nloptr", "GenSA"))
+# library(furrr)
+# library(future)
+# plan(multisession)  # or multicore on Unix
+
+optimize_acq_batch_joint_parallel <- function(
+    acq_fun,        # function(X_batch_matrix) => scalar
+    lower, upper,   # numeric vectors of length d
+    batch_size = 4,
+    n_random = 100,
+    n_top = 5,
+    fallback = TRUE
+) {
+  d <- length(lower)
+  k <- batch_size
+  total_dim <- k * d
+  
+  # Step 1: Generate random batches
+  random_batches <- array(runif(n_random * total_dim, lower, upper),
+                          dim = c(n_random, k, d))
+  
+  # Step 2: Evaluate acquisition function in parallel
+  scores <- future_sapply(1:n_random, function(i) {
+    X_batch <- matrix(random_batches[i, , ], nrow = k, ncol = d)
+    acq_fun(X_batch)
+  })
+  
+  top_idx <- order(-scores)[1:n_top]
+  top_batches <- random_batches[top_idx, , , drop = FALSE]
+  
+  # Step 3: Parallel optimization over top batches
+  results <- future_lapply(1:n_top, function(i) {
+    x0 <- as.vector(top_batches[i, , ])
+    
+    obj_fn <- function(par_vec) {
+      X_batch <- matrix(par_vec, nrow = k, ncol = d, byrow = TRUE)
+      -acq_fun(X_batch)
+    }
+    
+    # Primary optimizer: nloptr
+    res <- tryCatch({
+      nloptr(
+        x0 = x0,
+        eval_f = obj_fn,
+        lb = rep(lower, k),
+        ub = rep(upper, k),
+        opts = list(algorithm = "NLOPT_LN_BOBYQA", xtol_rel = 1e-6, maxeval = 200)
+      )
+    }, error = function(e) NULL)
+    
+    # Fallback: GenSA
+    if ((is.null(res) || is.null(res$objective) || is.na(res$objective)) && fallback) {
+      res <- GenSA(
+        par = x0,
+        fn = obj_fn,
+        lower = rep(lower, k),
+        upper = rep(upper, k)
+      )
+    }
+    
+    list(par = res$par, val = -res$objective)
+  })
+  
+  # Step 4: Select best result
+  best_result <- results[[which.max(sapply(results, function(r) r$val))]]
+  matrix(best_result$par, ncol = d, byrow = TRUE)
+}
+
+
+
+
+
+
+
 
 
 

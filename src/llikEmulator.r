@@ -370,6 +370,10 @@ llikEmulator$methods(
       if(!is.null(s)) llik_samp <- llik_samp + s(input)
     }
     
+    if(sum(is.na(llik_samp)) > 0L) {
+      message("Some llikEmulator samples are NA.")
+    }
+    
     return(llik_samp)
   },
   
@@ -2154,8 +2158,8 @@ llikEmulatorExactGaussDiag$methods(
   },
   
   .assemble_llik = function(input, lik_par_val=NULL, 
-                           conditional=default_conditional, 
-                           normalize=default_normalize, ...) {
+                            conditional=default_conditional, 
+                            normalize=default_normalize, ...) {
     # `input` should have dimension (N_input, D). Returns vector of length `N_input.` 
     # NOTE: currently ignoring conditional/normalize here, as I decide what 
     # to do with these arguments. Just always normalizing.

@@ -169,7 +169,7 @@ plot_curves_1d_helper <- function(X_new, pred, df_by=NULL,
  
   # Set default title, if not provided. 
   if(is.null(plot_title)) plot_title <- "Approximations"
-  
+
   # Column names of `pred` are used for plot labels. 
   if(is.null(dim(pred))) pred <- matrix(pred, ncol=1)
   if(is.null(colnames(pred))) {
@@ -803,6 +803,7 @@ plot_fwd_model_output <- function(fwd_ens=NULL, output_ens=NULL, fwd_true=NULL,
 ggtheme_journal <- function(legend_position="none", legend_title=element_blank(), 
                             title_size=35, legend_size=30, x_lab_size=30,
                             y_lab_size=30, x_text_size=24, y_text_size=24, ...) {
+  # Pass additional arguments to `theme` via `...`.
   
   theme_journal <- theme(legend.position=legend_position, 
                          legend.title=legend_title,
