@@ -856,8 +856,8 @@ gen_extrapolation_test_inputs <- function(d, N_points_per_dim, max_scaler=2.0, s
 
 
 # TODO: TEMP; chatGPT solutions for better inner optimization:
-library(nloptr)
-library(GenSA)
+# library(nloptr)
+# library(GenSA)
 
 optimize_acq <- function(
     acq_fun,        # Acquisition function: numeric vector -> scalar

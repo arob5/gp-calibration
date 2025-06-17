@@ -681,9 +681,9 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   lprob_upper[upper_prob_zero] <- -Inf
   lprob_upper[upper_prob_one] <- 0
   lprob_upper[upper_prob_not_zero_one] <- log_1_minus_exp(ln_trunc$lprob_leq_upper[upper_prob_not_zero_one])
-  upper_prob_one[lprob_upper < eps] <- TRUE  
-  upper_prob_not_zero_one[lprob_upper < eps] <- FALSE
-  
+  upper_prob_one[abs(lprob_upper) < eps] <- TRUE  
+  upper_prob_not_zero_one[abs(lprob_upper) < eps] <- FALSE
+
   # log P(y < b1)
   lprob_lower <- ln_trunc$lprob_leq_lower
   lower_prob_zero <- is.infinite(lprob_lower)
@@ -703,11 +703,10 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   log_summands <- cbind(ln_trunc$log_mean + lprob_middle)
   constrain_lower <- ln_trunc$constrain_lower
   constrain_upper <- ln_trunc$constrain_upper
-  add_lower <- add_upper <- rep(0, n)
+  add_lower <- add_upper <- rep(-Inf, n)
   add_lower[constrain_lower] <- b1[constrain_lower] + lprob_lower[constrain_lower]
   add_upper[constrain_upper] <- b2[constrain_upper] + lprob_upper[constrain_upper]
-  log_summands <- cbind(log_summands, add_lower)
-  log_summands <- cbind(log_summands, add_upper)
+  log_summands <- cbind(log_summands, add_lower, add_upper)
   
   # Note: `matrixStats::rowLogSumExps` can handle the presence of -Inf values.
   log_rect_ln_mean <- matrixStats::rowLogSumExps(log_summands)
@@ -718,16 +717,15 @@ convert_Gaussian_to_rect_LN <- function(mean_Gaussian, var_Gaussian,
   
   # Computing rectified LN second moment.
   log_summands_y2 <- cbind(ln_trunc$log_Ey2 + lprob_middle)
-  add_lower_y2 <- add_upper_y2 <- rep(0, n)
+  add_lower_y2 <- add_upper_y2 <- rep(-Inf, n)
   add_lower_y2[constrain_lower] <- 2*b1[constrain_lower] + lprob_lower[constrain_lower]
   add_upper_y2[constrain_upper] <- 2*b2[constrain_upper] + lprob_upper[constrain_upper]
-  log_summands_y2 <- cbind(log_summands_y2, add_lower_y2)
-  log_summands_y2 <- cbind(log_summands_y2, add_upper_y2)
+  log_summands_y2 <- cbind(log_summands_y2, add_lower_y2, add_upper_y2)
   
   # Very small values can cause issues in `log_diff_exp`. Currently just 
   # thresholding as a hack.
   log_rect_Ey2 <- matrixStats::rowLogSumExps(log_summands_y2)
-  log_rect_Ey2[log_rect_Ey2 < 1e-8] <- 1e-8
+  log_rect_Ey2[abs(log_rect_Ey2) < 1e-8] <- 1e-8
   neg_var_idx <- (log_rect_Ey2 < 2*log_rect_ln_mean)
   log_rect_ln_var <- rep(NA, n)
   log_rect_ln_var[!neg_var_idx] <- log_diff_exp(log_rect_Ey2[!neg_var_idx], 
