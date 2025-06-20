@@ -2604,10 +2604,16 @@ llikEmulatorGPFwdGauss$methods(
 # llikEmulatorGPFwdGaussDiag class.
 #
 # A special case of `llikEmulatorGPFwdGauss` where the covariance matrix is 
-# assumed to be diagonal. See llikEmulatorGPFwdGauss` for details.
+# assumed to be diagonal. See llikEmulatorGPFwdGauss` for details. Assumes 
+# likelihood of the form: 
+#
+# p(y|u) = prod_{i=1}^{N_obs} N(y_i | G(u), diag{sig2_1, ..., sig2_P})
+# 
+# where P = N_output and G(u) is P-dimensional.
+#
 # The `lik_par` here is defined to be the vector of variances `sig2`. If `sig2` 
 # is passed as a scalar value (but `N_output` is greater than 1), then the 
-# same variance is used for all outputs. 
+# same variance is used for all outputs.
 # -----------------------------------------------------------------------------
 
 llikEmulatorGPFwdGaussDiag <- setRefClass(
@@ -2739,11 +2745,20 @@ llikEmulatorGPFwdGaussDiag$methods(
     llik <- vector(mode="numeric", length=nrow(fwd_model_vals))
     for(i in seq_along(llik)) {
       sig2_val_i <- ifelse(inflate_var, sig2_val + var_inflation_vals[i,], sig2_val)
-      llik[i] <- -0.5 * sum(mult_vec_with_mat_rows(1/sig2_val_i, 
-                                               add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2))  
+      llik[i] <- -0.5 * sum(mult_vec_with_mat_rows(1/sig2_val_i,
+                                               add_vec_to_mat_rows(-fwd_model_vals[i,], .self$y)^2))
       if(normalize || !conditional) llik[i] <- llik[i] - 0.5 * .self$N_obs * sum(log(sig2_val_i))
     }
     if(normalize) llik <- llik - 0.5*.self$N_obs * .self$N_output * log(2*pi)
+
+    # Old approach.
+    # llik <- rep(0, nrow(fwd_model_vals))
+    # stdev <- sqrt(sig2_val)
+    # for(i in seq_along(llik)) {
+    #   for(j in seq_len(.self$N_obs)) {
+    #     llik[i] <- llik[i] + sum(dnorm(.self$y[j,], fwd_model_vals[i,], stdev, log=TRUE))
+    #   }
+    # }
     
     return(llik)
   }, 
@@ -2783,8 +2798,7 @@ llikEmulatorGPFwdGaussDiag$methods(
     llik_samp <- matrix(nrow=nrow(input), ncol=N_samp)
 
     for(i in 1:N_samp) {
-      llik_samp[,i] <- .self$assemble_llik(matrix(fwd_model_samp[,i,],  
-                                                  nrow=nrow(input), ncol=N_output), 
+      llik_samp[,i] <- .self$assemble_llik(matrix(fwd_model_samp[,i,], nrow=nrow(input), ncol=.self$N_output), 
                                            lik_par_val, conditional, normalize)
     }
     
@@ -2910,6 +2924,31 @@ llikEmulatorGPFwdGaussDiag$methods(
     return(lik_pred_list)
   }, 
   
+  .calc_quantiles = function(input, p, lik_par_val=NULL, em_pred_list=NULL,
+                             conditional=default_conditional, normalize=default_normalize,
+                             lower_tail=TRUE, include_noise=TRUE, n_mc=1e3, ...) {
+    # Monte Carlo approximation.
+    
+    if(!lower_tail) p <- 1 - p
+    llik_samp <- .self$sample(input_grid, N_samp=n_mc, use_cov=FALSE, apply_shift=FALSE,
+                              conditional=conditional, normalize=normalize, 
+                              include_noise=include_noise, em_pred_list=em_pred_list, ...)
+    q <- apply(llik_samp, 1L, function(x) quantile(x, p))
+  },
+  
+  .calc_lik_quantiles = function(input, p, lik_par_val=NULL, em_pred_list=NULL,
+                                 conditional=default_conditional, normalize=default_normalize,
+                                 lower_tail=TRUE, include_noise=TRUE, log_scale=TRUE, n_mc=1e3, ...) {
+    # Monte Carlo approximation. Note that this is the same as the exponential of the
+    # log-likelihood quantiles, since the exponential is strictly increasing.
+    
+    log_q <- .self$calc_quantiles(input, p, lik_par_val=lik_par_val, em_pred_list=em_pred_list,
+                                  conditional=conditional, normalize=normalize, lower_tail=lower_tail,
+                                  include_noise=include_noise, n_mc=n_mc, ...)
+    
+    if(log_scale) return(log_q)
+    return(exp(log_q))
+  },
   
   calc_lik_marginal_approx = function(em_pred_list=NULL, input=NULL,
                                       lik_par_val=NULL, 
