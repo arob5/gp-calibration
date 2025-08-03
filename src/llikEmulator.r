@@ -341,6 +341,7 @@ llikEmulator$methods(
     return(llik_vals)
   },
   
+  
   sample = function(input, lik_par_val=NULL, N_samp=1L,
                     em_pred_list=NULL, llik_pred_list=NULL,
                     conditional=default_conditional,
@@ -376,6 +377,7 @@ llikEmulator$methods(
     
     return(llik_samp)
   },
+  
   
   predict = function(input, lik_par_val=NULL, return_mean=TRUE, return_var=TRUE, 
                      return_cov=FALSE, return_cross_cov=FALSE, input_cross=NULL,
@@ -1742,9 +1744,14 @@ llikEmulatorGP$methods(
                                 upper_bound=bounds$upper, ...)[,,1,drop=FALSE]             
   },
   
-  update_emulator = function(input_new, llik_new, update_hyperpar=FALSE, ...) {
+  update_emulator = function(input_new, em_new, update_hyperpar=FALSE, ...) {
     # Condition the GP emulator on the new input pair (input_new, llik_new).
-    .self$emulator_model$update(.self$get_input(input_new), matrix(llik_new, ncol=1), 
+    # `em_new` is the emulated quantity, which for this class will be the 
+    # log-likelihood, log-posterior, or some shifted version of these.
+    # No shifting is done in this function, `em_new` should already correspond
+    # to the emulated quantity.
+
+    .self$emulator_model$update(.self$get_input(input_new), matrix(em_new, ncol=1L), 
                                 update_hyperpar=update_hyperpar, ...)
   },
   

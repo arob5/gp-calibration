@@ -401,6 +401,184 @@ mcmc_gp_unn_post_dens_approx <- function(llik_em, par_prior, approx_type,
 }
 
 
+mcmc_mwg_ep <- function(llik_em, par_prior, par_init=NULL, sig2_init=NULL,
+                        sig2_prior=NULL, n_itr=50000L, cov_prop=NULL, 
+                        log_scale_prop=NULL, adapt_cov_prop=TRUE, use_joint=TRUE,
+                        adapt_scale_prop=TRUE, adapt=adapt_cov_prop||adapt_scale_prop, 
+                        return_prop_sd=FALSE, accept_rate_target=0.24, 
+                        adapt_factor_exponent=0.8, adapt_factor_numerator=10, 
+                        adapt_interval=200, ...) {
+  # Args:
+  #    llik_em: an object for which `is_llik_em(llik_em)` is TRUE.
+  #    par_prior: data.frame defining the prior distribution for `par`. 
+  #    par_init: numeric, d-dimensional vector, the initial condition. If NULL,
+  #              samples from the prior to determine the initial condition.
+  #    sig2_init: numeric, the initial condition for the variance parameters. 
+  #    sig2_prior: list defining the prior distribution on the variance 
+  #                parameters.
+  #    n_itr: integer, the number of MCMC iterations.
+  #    return_prop_sd: logical, if TRUE returns the trajectory of the standard 
+  #                    deviations of the proposal distribution; that is, the 
+  #                    square root of the diagonal of the proposal covariance.
+  #    Remaining arguments define the proposal covariance adaptation, and are 
+  #    passed to `adapt_MH_proposal_cov()`.
+  #
+  # Returns:
+  # list, with the main element named "samp". This element is itself a list with
+  # elements "par" and "sig2". The elements of the outer list other than "samp"  
+  # store other information regarding the MCMC run (initial conditions, proposal 
+  # adaptation settings, etc.). 
+  # TODO: ensure that `sig2_init` is named vector, if non-NULL. 
+  # And that the names include the names of the outputs where sig2 must be 
+  # learned. Ensure `par_init` has names as well. 
+
+  
+  #
+  # TODO: current issue - assemble_llik does not add the shift, so the prior
+  #       density is not being added for lpost emulators
+  #
+  
+  # Determine whether `llik_em` approximates the log-likelihood or log-posterior.
+  is_lpost_em <- isTRUE(llik_em$is_lpost_em)
+  
+  # Objects to store samples and other outputs.
+  d <- llik_em$dim_input
+  par_samp <- matrix(nrow=n_itr, ncol=d)
+  llik_em_samp <- matrix(nrow=n_itr, ncol=2L)
+  chain_info <- matrix(nrow=n_itr, ncol=d+2)
+  colnames(par_samp) <- llik_em$input_names
+  colnames(llik_em_samp) <- c("llik_par_curr", "llik_par_prop")
+  colnames(chain_info) <- c("llik", "lprior", llik_em$input_names)
+  
+  # Set initial conditions for parameter.
+  if(is.null(par_init)) par_init <- sample_prior(par_prior, n=1L)[1,]
+  par_samp[1,] <- drop(par_init)
+  par_curr <- par_samp[1,]
+  lprior <- get_lprior_dens(par_prior)
+  lprior_curr <- lprior(par_curr)
+  
+  # Sample initial emulator trajectory, evaluated at current parameter.
+  em_curr_par_curr <- llik_em$sample_emulator(par_curr, ...)
+  llik_curr_par_curr <- llik_em$assemble_llik(em_curr_par_curr, ...)
+  llik_em_samp[1,] <- c(llik_curr_par_curr, NA)
+  
+  # Proposal covariance for parameter update.
+  if(is.null(cov_prop)) cov_prop <- diag(rep(1,d))
+  if(is.null(log_scale_prop)) log_scale_prop <- log(2.38) - 0.5*log(d)
+  L_cov_prop <- t(chol(cov_prop))
+  accept_count <- 0
+  times_adapted <- 0
+  
+  # Store initial chain info.
+  chain_info[1,] <- c(llik_curr_par_curr, lprior_curr, 
+                      exp(log_scale_prop) * sqrt(diag(cov_prop)))
+  
+  # Variable to store error condition, if it occurs.
+  err <- NULL
+  
+  # Main MCMC loop. 
+  tryCatch(
+    {
+      for(itr in 2L:n_itr) {
+        
+        #
+        # Metropolis step for emulator update.
+        #
+        
+        # Proposal for parameter update is done here so that the value of the
+        # emulator at the proposed value can be sampled.
+        par_prop <- par_curr + (exp(log_scale_prop) * L_cov_prop %*% matrix(rnorm(d), ncol=1))[,1]
+        lprior_prop <- lprior(par_prop)
+        
+        # Emulator proposal evaluated at current parameter.
+        # beta <- 0.5
+        # adjustment <- llik_em$sample_emulator(par_curr, adjustment=NULL) - 
+        #               llik_em$predict_em(par_curr, return_var=FALSE)$mean
+        # em_prop_par_curr <- sqrt(1-beta^2) * em_curr_par_curr + beta * adjustment
+        # llik_prop_par_curr <- llik_em$assemble_llik(em_prop_par_curr, ...)
+        
+        em_prop_par_curr <- llik_em$sample_emulator(par_curr, ...)
+        llik_prop_par_curr <- llik_em$assemble_llik(em_prop_par_curr, ...)
+
+        # Accept/Reject step.
+        if(log(runif(1)) < llik_prop_par_curr - llik_curr_par_curr) {
+          # Emulator samples at current/proposed parameters from the newly accepted trajectory.
+          em_curr_par_curr <- em_prop_par_curr
+          em_curr_par_prop <- sample_cond_em(llik_em, par_prop, par_curr, em_curr_par_curr)
+          llik_curr_par_curr <- llik_prop_par_curr
+          llik_curr_par_prop <- llik_em$assemble_llik(em_curr_par_prop, ...)
+        } else {
+          # Sample emulator at proposed parameter from the current emulator trajectory.
+          em_curr_par_prop <- sample_cond_em(llik_em, par_prop, par_curr, em_curr_par_curr)
+          llik_curr_par_prop <- llik_em$assemble_llik(em_curr_par_prop, ...)
+        }
+        
+        # Store current trajectory evaluated at current/proposed parameter values.
+        llik_em_samp[itr,] <- c(llik_curr_par_curr, llik_curr_par_prop)
+        
+        #
+        # Metropolis step for calibration parameters.
+        #
+        
+        # Immediately reject if proposal has prior density zero.
+        if(is.infinite(lprior_prop)) {
+          par_samp[itr,] <- par_samp[itr-1,]
+        } else {
+          lpost_vals <- c(llik_curr_par_curr, llik_curr_par_prop)
+          if(!is_lpost_em) lpost_vals <- lpost_vals + c(lprior_curr, lprior_prop)
+          
+          if(log(runif(1)) <= diff(lpost_vals)) {
+            par_samp[itr,] <- par_prop
+            par_curr <- par_prop
+            lprior_curr <- lprior_prop
+            llik_curr_par_curr <- llik_curr_par_prop
+            accept_count <- accept_count + 1L 
+          } else {
+            par_samp[itr,] <- par_curr
+          }
+        }
+        
+        # Adapt proposal covariance matrix and scaling term.
+        if(adapt && (((itr-1) %% adapt_interval) == 0)) {
+          times_adapted <- times_adapted + 1L
+          adapt_list <- adapt_MH_proposal_cov(cov_prop=cov_prop, 
+                                              log_scale_prop=log_scale_prop, 
+                                              times_adapted=times_adapted, 
+                                              adapt_cov=adapt_cov_prop, 
+                                              adapt_scale=adapt_scale_prop,
+                                              samp_interval=par_samp[(itr-adapt_interval+1):itr,,drop=FALSE], 
+                                              accept_rate=accept_count/adapt_interval, 
+                                              accept_rate_target=accept_rate_target, 
+                                              adapt_factor_exponent=adapt_factor_exponent, 
+                                              adapt_factor_numerator=adapt_factor_numerator)
+          cov_prop <- adapt_list$cov
+          log_scale_prop <- adapt_list$log_scale
+          if(adapt_cov_prop) L_cov_prop <- adapt_list$L_cov
+          accept_count <- 0L
+        }
+        
+        # Store chain info for current step.
+        chain_info[itr,] <- c(llik_curr_par_curr, lprior_curr, 
+                              exp(log_scale_prop) * sqrt(diag(cov_prop)))
+      }
+    }, error = function(cond) {
+      err <<- cond
+      message("mcmc_mwg_ep() MCMC error; iteration ", itr)
+      message(conditionMessage(cond))
+    }
+  )
+  
+  return(list(samp=list(par=par_samp, llik_em=llik_em_samp),
+              info=list(dens=chain_info[,1:2], 
+                        prop_sd=chain_info[,3:ncol(chain_info),drop=FALSE]),
+              log_scale_prop=log_scale_prop, L_cov_prop=L_cov_prop, 
+              par_curr=par_curr, par_prop=par_prop, 
+              llik_curr_par_curr=llik_curr_par_curr,
+              llik_prop_par_curr=llik_prop_par_curr,
+              itr_curr=itr, par_init=par_init, condition=err))
+}
+
+
 mcmc_gp_acc_prob_approx <- function(llik_em, par_prior, par_init=NULL, 
                                     sig2_init=NULL, mode="marginal",
                                     use_joint=TRUE, n_itr=50000L, cov_prop=NULL, 
@@ -756,6 +934,9 @@ sample_mh_llik <- function(llik_em, lprior, par_curr, par_prop, llik_curr=NULL,
   # "acc_prob" will be computed as the average of the induced acceptance 
   # probability samples if `mode = "mcwmh"`. If `mode = "pseudo-marginal"` then 
   # the acc prob is computed by plugging in the empirical likelihood averages.
+  #
+  #
+  # TODO: pseudo-marginal with `use_joint` currently only valid for log-likelihood emulator.
   
   if((mode == "pseudo-marginal") && is.null(llik_curr)) {
     stop("Pseudo-marginal mode requires `llik_curr`.")
@@ -814,6 +995,16 @@ sample_mh_llik <- function(llik_em, lprior, par_curr, par_prop, llik_curr=NULL,
   
   return(list(acc_prob=alpha, llik_curr=llik_avg[1], llik_prop=llik_avg[2],
               lprior_curr=lprior_curr, lprior_prop=lprior_prop))
+}
+
+sample_cond_em <- function(llik_em, par, par_cond, em_cond, ...) {
+  # A helper function that takes an existing llikEmulator object `llik_em`,
+  # conditions the underlying emulator on the new observations (par_cond, em_cond),
+  # then samples the updated emulator at the inputs `par`.  
+
+  llik_em_copy <- llik_em$copy(shallow=FALSE)
+  llik_em_copy$update_emulator(par_cond, em_cond, update_hyperpar=FALSE)
+  llik_em_copy$sample_emulator(par, ...)
 }
 
 
